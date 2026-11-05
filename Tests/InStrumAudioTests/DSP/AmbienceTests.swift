@@ -1,4 +1,5 @@
 import XCTest
+import InStrumCore
 import InStrumDSP
 
 /// Ambience generators through the C API.
@@ -163,6 +164,8 @@ final class AmbienceTests: XCTestCase {
             XCTAssertTrue(out.l.allSatisfy(\.isFinite) && out.r.allSatisfy(\.isFinite), name)
             XCTAssertLessThanOrEqual(max(out.l.map(abs).max() ?? 0, out.r.map(abs).max() ?? 0), 1, name)
         }
+        // Storms: the storm and plains families.
+        checkStormSourcesInTheirBands()
     }
 
     /// A wave breaks: a low crash first, then the bright wash sliding up the sand.
@@ -1006,5 +1009,372 @@ extension AmbienceTests {
         XCTAssertGreaterThan(few.perSecond, 0, "a few still call at 0.15")
         XCTAssertLessThanOrEqual(few.perSecond, 0.25 * chorus.perSecond, "\(few.perSecond) calls a second at 0.15")
         XCTAssertTrue(chorus.out.l.allSatisfy(\.isFinite) && chorus.out.r.allSatisfy(\.isFinite))
+    }
+}
+
+// MARK: - Storms: the storm and plains families, and thunder that arrives late
+
+extension AmbienceTests {
+    static func queueThunder(_ delay: Float, _ strength: Float, at t: Double) -> Action { (t, { isd_ambience_queue_thunder($0, delay, strength) }) }
+    static func allSoundOff(at t: Double) -> Action { (t, { isd_ambience_all_sound_off($0) }) }
+    static func clearThunder(at t: Double) -> Action { (t, { isd_ambience_clear_thunder($0) }) }
+    static func trigger(_ source: ISDAmbienceSource, at t: Double) -> Action { (t, { isd_ambience_debug_trigger($0, source) }) }
+
+    /// The inflow roar's resonance for a key root (C = 0): a fifth (equal-tempered) below its tonic in A2–G♯3.
+    static func roarTonic(_ root: Int) -> Double { 2 * tonic(root) * pow(2, -7.0 / 12) }
+
+    /// The strongest peak within ±60 cents of `hz` in a Welch average of Blackman–Harris power spectra (`size`-sample
+    /// segments, hop size/2; parabolic on log power), and how far it stands over the spectrum 1.5–2.5 semitones either
+    /// side of `hz` (dB). A noise resonance's peak wanders inside its own width in any one segment; the average holds it.
+    static func welchPeak(_ x: [Float], near hz: Double, size: Int = 1 << 17) -> (hz: Double, prominence: Double) {
+        var power = [Double](repeating: 0, count: size / 2)
+        var start = 0
+        while start + size <= x.count {
+            let p = DSPTestKit.powerSpectrum(Array(x[start..<(start + size)]), size: size)
+            for i in 0..<min(power.count, p.count) { power[i] += p[i] }
+            start += size / 2
+        }
+        let binHz = sr / Double(size)
+        let lo = Int(hz * pow(2, -60.0 / 1200) / binHz), hi = Int(hz * pow(2, 60.0 / 1200) / binHz) + 1
+        guard lo > 1, hi < power.count - 1 else { return (0, 0) }
+        var best = lo
+        for i in lo...hi where power[i] > power[best] { best = i }
+        let a = log(power[best - 1] + 1e-300), b = log(power[best] + 1e-300), c = log(power[best + 1] + 1e-300)
+        let d = a - 2 * b + c, offset = d != 0 ? 0.5 * (a - c) / d : 0
+        var side = 0.0, n = 0
+        for i in 1..<power.count {
+            let semitones = abs(12 * log2(Double(i) * binHz / hz))
+            if semitones >= 1.5, semitones <= 2.5 { side += power[i]; n += 1 }
+        }
+        return ((Double(best) + offset) * binHz, 10 * log10(power[best] / max(1e-300, side / Double(max(1, n)))))
+    }
+
+    /// The calls of a flight as heard: a 10 ms frame (both ears, 1.5–6 kHz) within 20 dB of the loudest that rises 8 dB or
+    /// more over the frame before it (a call's attack; the room's tail between calls never rises so); each call's pan
+    /// (L − R)/(L + R) by energy over that frame and the three after.
+    static func callPans(_ out: (l: [Float], r: [Float])) -> [Double] {
+        let left = frameDB(bandpass(out.l, 1500, 6000), ms: 10), right = frameDB(bandpass(out.r, 1500, 6000), ms: 10)
+        let both: [Double] = zip(left, right).map { (a: Double, b: Double) -> Double in 10 * log10(0.5 * (pow(10, a / 10) + pow(10, b / 10)) + 1e-30) }
+        let top = both.max() ?? -200
+        var pans: [Double] = [], i = 1
+        while i + 4 <= both.count {
+            if both[i] >= top - 20, both[i] - both[i - 1] >= 8 {
+                var l = 0.0, r = 0.0
+                for k in i..<(i + 4) { l += pow(10, left[k] / 10); r += pow(10, right[k] / 10) }
+                pans.append((l - r) / (l + r))
+                i += 4
+            } else {
+                i += 1
+            }
+        }
+        return pans
+    }
+
+    /// Picture first, sound late (Storms spec §3, §8.3): thunder queued 3 s out starts 3 s later to the frame (3.0 ±
+    /// 0.05 s, with silence before it), rolls for 2–8 s with at least 80% of its energy at 20–150 Hz, under the limiter. A
+    /// strike 0.3 km off (0.9 s) and one 4 km off (12 s, the cap) each arrive on their own delay; the far one rolls at
+    /// least 2 s longer, lower, and at least 6 dB softer at its loudest. (g++ mirror, seed 1: 2.99 s, 3.70 s long, 95.4%,
+    /// peak 0.22; near 0.89 s, 2.95 s, −16.7 dBFS, 65 Hz; far 11.99 s, 7.15 s, −29.8 dBFS, 53 Hz.)
+    func testThunderArrivesLate() {
+        func roll(_ delay: Float) -> (out: (l: [Float], r: [Float]), onset: Double, length: Double, loudest: Double, centroid: Double) {
+            let d = Double(delay)
+            let out = Self.render(seconds: 1 + d + 9, actions: [Self.level(ISD_AMB_THUNDER_ROLL, 1), Self.queueThunder(delay, 0.8, at: 1)])
+            let frames = Self.frameDB(Self.mid(out), ms: 10), top = frames.max() ?? -200
+            let onset = Double(frames.firstIndex { $0 >= top - 40 } ?? 0) * 0.01 - 1
+            let slow = Self.stereoFrames(out, ms: 50, from: 0, to: 1 + d + 9), loudest = slow.max() ?? -200
+            let heard = slow.indices.filter { slow[$0] >= loudest - 30 }
+            let length = Double((heard.last ?? 0) - (heard.first ?? 0) + 1) * 0.05
+            let centroid = DSPTestKit.averageCentroid(SynthRender.slice(Self.mid(out), 1 + d, 1 + d + 8), sampleRate: Self.sr)
+            return (out, onset, length, loudest, centroid)
+        }
+        let middle = roll(3), near = roll(0.9), far = roll(12)
+        XCTAssertEqual(middle.onset, 3, accuracy: 0.05, "the roll starts \(middle.onset) s after the strike")
+        XCTAssertLessThan(DSPTestKit.dBFS(SynthRender.slice(Self.mid(middle.out), 1, 3.95)), -100, "nothing arrives early")
+        XCTAssertTrue((2...8).contains(middle.length), "it rolls for \(middle.length) s")
+        let low = Self.bandShare(SynthRender.slice(Self.mid(middle.out), 4, 12), 20, 150)
+        XCTAssertGreaterThanOrEqual(low, 0.8, "\(low) of its energy at 20–150 Hz")
+        XCTAssertLessThan(max(DSPTestKit.peak(middle.out.l), DSPTestKit.peak(middle.out.r)), 0.5, "under the limiter")
+        XCTAssertEqual(near.onset, 0.9, accuracy: 0.05, "a strike 0.3 km off: \(near.onset) s")
+        XCTAssertEqual(far.onset, 12, accuracy: 0.05, "a strike 4 km off: \(far.onset) s")
+        XCTAssertGreaterThanOrEqual(far.length, near.length + 2, "far \(far.length) s, near \(near.length) s")
+        XCTAssertGreaterThanOrEqual(near.loudest - far.loudest, 6, "near \(near.loudest) dBFS, far \(far.loudest) dBFS")
+        XCTAssertLessThan(far.centroid, near.centroid, "far \(Int(far.centroid)) Hz, near \(Int(near.centroid)) Hz")
+        for out in [middle.out, near.out, far.out] { XCTAssertTrue(out.l.allSatisfy(\.isFinite) && out.r.allSatisfy(\.isFinite)) }
+    }
+
+    /// Review focus 4: the queue holds 16 (20 queued at once: the four oldest give way, so the first roll is the fifth's, at
+    /// 3 s, and 16 roll); all-sound-off drops what is on its way and stops a roll (at least 10 dB down in the half second
+    /// after, 20 dB in the 1.5 s after that, the room's tail ringing out); a world switch (the roll's level to nothing, or
+    /// clear) drops what is on its way and a queue while the roll fades is never heard, while the next world's thunder
+    /// still comes; a clear drops only what was queued before it; a silent roll ignores the queue. (g++ mirror: 0 then 16,
+    /// the first at 2.99 s; 12.8 and 25.2 dB down; 0, 0, 0 then 1, 1, 0.)
+    func testThunderQueueIsBoundedAndCleared() {
+        func rolls(_ actions: [Action], seconds: Double, by t: Double) -> (count: Int32, out: (l: [Float], r: [Float])) {
+            var count: Int32 = -1
+            var all = actions
+            all.append((t, { count = isd_ambience_debug_events($0, ISD_AMB_THUNDER_ROLL) }))
+            let out = Self.render(seconds: seconds, actions: all)
+            return (count, out)
+        }
+        var twenty: [Action] = [Self.level(ISD_AMB_THUNDER_ROLL, 1)]
+        for i in 1...20 { twenty.append(Self.queueThunder(0.5 * Float(i), 0.5, at: 0.5)) }
+        XCTAssertEqual(rolls(twenty, seconds: 3, by: 2.9).count, 0, "the four oldest gave way")
+        let all = rolls(twenty, seconds: 11.5, by: 11.4)
+        XCTAssertEqual(all.count, 16, "16 roll")
+        let first = Self.frameDB(Self.mid(all.out), ms: 10).firstIndex { $0 > -100 }.map { Double($0) * 0.01 } ?? -1
+        XCTAssertEqual(first, 3, accuracy: 0.05, "the first roll is the fifth's: \(first) s")
+
+        var four: [Action] = [Self.level(ISD_AMB_THUNDER_ROLL, 1)]
+        for d in 2...5 { four.append(Self.queueThunder(Float(d), 0.8, at: 1)) }
+        let panic = rolls(four + [Self.allSoundOff(at: 1.5)], seconds: 9, by: 8.9)
+        XCTAssertEqual(panic.count, 0, "all sound off: nothing arrives")
+        XCTAssertLessThan(DSPTestKit.dBFS(SynthRender.slice(Self.mid(panic.out), 1.5, 9)), -150)
+        let rolling: [Action] = [Self.level(ISD_AMB_THUNDER_ROLL, 1), Self.queueThunder(0.5, 1, at: 1)]
+        let kept = Self.mid(Self.render(seconds: 5, actions: rolling)), cut = Self.mid(Self.render(seconds: 5, actions: rolling + [Self.allSoundOff(at: 2)]))
+        let soon = DSPTestKit.dBFS(SynthRender.slice(kept, 2.05, 2.5)) - DSPTestKit.dBFS(SynthRender.slice(cut, 2.05, 2.5))
+        let later = DSPTestKit.dBFS(SynthRender.slice(kept, 2.5, 4)) - DSPTestKit.dBFS(SynthRender.slice(cut, 2.5, 4))
+        XCTAssertGreaterThanOrEqual(soon, 10, "a roll stops: \(soon) dB down in the half second after")
+        XCTAssertGreaterThanOrEqual(later, 20, "and \(later) dB down after that")
+
+        let gone = rolls(four + [Self.level(ISD_AMB_THUNDER_ROLL, 0, at: 1.5), Self.queueThunder(1, 1, at: 2)], seconds: 9, by: 8.9)
+        XCTAssertEqual(gone.count, 0, "the world's thunder going: nothing arrives, and nothing queued as it fades")
+        let cleared = four + [Self.clearThunder(at: 1.5), Self.queueThunder(1, 1, at: 2)]
+        XCTAssertEqual(rolls(cleared, seconds: 3, by: 2.9).count, 0, "cleared: nothing arrives")
+        XCTAssertEqual(rolls(cleared, seconds: 9, by: 8.9).count, 1, "the next world's thunder still does")
+        // In one render (2.0 s and 2.001 s fall in the same block): the clear, then a new strike's thunder, which stays.
+        let same: [Action] = [Self.level(ISD_AMB_THUNDER_ROLL, 1), Self.queueThunder(3, 1, at: 1), Self.clearThunder(at: 2), Self.queueThunder(0.5, 1, at: 2.001)]
+        XCTAssertEqual(rolls(same, seconds: 4.5, by: 4.4).count, 1, "a clear drops only what came before it")
+        let silent = rolls([Self.queueThunder(0.5, 1, at: 0.5)], seconds: 3, by: 2.9)
+        XCTAssertEqual(silent.count, 0)
+        XCTAssertLessThan(DSPTestKit.dBFS(silent.out.l), -150, "no thunder while the roll is silent")
+    }
+
+    /// Hail on a far shed's tin roof (spec §8.3): at level 1 a dense rain of 600–800 stones a second with at least 85% of
+    /// the sound at 1.5–4 kHz (the roof's own panel modes), near −26 dBFS, the shed off to the right; the rate follows the
+    /// hail (the level): at 0.3 fewer than a quarter as many. (g++ mirror: 696.9 and 115.8 a second, 92.7%, −26.7 dBFS,
+    /// the right 3.0 dB up.)
+    func testHailOnTinBand() {
+        func hail(_ level: Float) -> (out: (l: [Float], r: [Float]), perSecond: Double) {
+            var counts: [Int32] = []
+            let out = Self.render(seconds: 13, actions: [Self.level(ISD_AMB_HAIL_TIN, level),
+                                                         (3, { counts.append(isd_ambience_debug_events($0, ISD_AMB_HAIL_TIN)) }),
+                                                         (12.99, { counts.append(isd_ambience_debug_events($0, ISD_AMB_HAIL_TIN)) })])
+            return (out, counts.count == 2 ? Double(counts[1] - counts[0]) / 10 : 0)
+        }
+        let full = hail(1), light = hail(0.3)
+        XCTAssertTrue((600...800).contains(full.perSecond), "\(full.perSecond) stones a second at 1")
+        XCTAssertGreaterThan(light.perSecond, 0)
+        XCTAssertLessThanOrEqual(light.perSecond, 0.25 * full.perSecond, "\(light.perSecond) a second at 0.3")
+        let share = Self.bandShare(SynthRender.slice(Self.mid(full.out), 3, 13), 1500, 4000)
+        XCTAssertGreaterThanOrEqual(share, 0.85, "\(share) at 1.5–4 kHz")
+        let db = Self.stereoDB(full.out, 3, 13)
+        XCTAssertTrue((-30 ... -22).contains(db), "\(db) dBFS")
+        let side = DSPTestKit.dBFS(SynthRender.slice(full.out.r, 3, 13)) - DSPTestKit.dBFS(SynthRender.slice(full.out.l, 3, 13))
+        XCTAssertGreaterThanOrEqual(side, 1.5, "the shed off to the right: \(side) dB")
+        XCTAssertTrue(full.out.l.allSatisfy(\.isFinite) && full.out.r.allSatisfy(\.isFinite))
+    }
+
+    /// The flock flees the storm (spec §8.3): as the birds' level comes up a flight starts, and each call is heard farther
+    /// round to one side than the last (the storm is ahead): over four seeds, at least six calls heard, all on one side,
+    /// their azimuth never stepping back toward the storm (by more than 0.03 of the pan), from near ahead (|pan| ≤ 0.4) to
+    /// well round (≥ 0.8). (g++ mirror, seed 1: 9 calls, +0.22 +0.41 +0.54 +0.65 +0.75 +0.83 +0.88 +0.93 +0.97; seeds
+    /// 1–12 at closeness 0, 0.5 and 1 never step back more than 0.045.)
+    func testBirdsFleeSweepAway() {
+        for seed: UInt64 in 1...4 {
+            let out = Self.render(seconds: 8, seed: seed, actions: [Self.level(ISD_AMB_BIRDS_FLEE, 1)])
+            let pans = Self.callPans(out)
+            XCTAssertGreaterThanOrEqual(pans.count, 6, "seed \(seed): \(pans.count) calls heard")
+            guard let first = pans.first, let last = pans.last else { continue }
+            XCTAssertTrue(pans.allSatisfy { $0 * last > 0 }, "seed \(seed): all to one side: \(pans)")
+            for i in 1..<pans.count {
+                XCTAssertGreaterThanOrEqual(abs(pans[i]), abs(pans[i - 1]) - 0.03, "seed \(seed): call \(i) steps back toward the storm: \(pans)")
+            }
+            XCTAssertLessThanOrEqual(abs(first), 0.4, "seed \(seed): the first call near ahead: \(first)")
+            XCTAssertGreaterThanOrEqual(abs(last), 0.8, "seed \(seed): the last well round: \(last)")
+            XCTAssertTrue(out.l.allSatisfy(\.isFinite) && out.r.allSatisfy(\.isFinite))
+        }
+    }
+
+    /// The inflow roar's resonance sits a fifth below the key's tonic (in A2–G♯3) within 5 cents, in each ear and both
+    /// together, standing at least 10 dB over the wind around it: D major G2 (98.0 Hz), F♯ minor B2 (123.5 Hz), and with
+    /// no key yet E's, A2 (110.0 Hz); a new key glides in (D, then A at 10 s: on G2 until then, on D2, 73.4 Hz, by 18 s). It
+    /// is all dry, so the shared room's modulated tail never pulls it off. (g++ mirror: +0.28, −0.36, −0.08 cents, ears
+    /// within 1.6, prominence 16.3–18.0 dB; 12 seeds × 4 keys within 2.1 cents.)
+    func testInflowRoarTunedBelowTheKey() {
+        for (root, major) in [(2, true), (6, false), (-1, true)] {
+            var actions: [Action] = [Self.level(ISD_AMB_INFLOW_ROAR, 1)]
+            if root >= 0 { actions.append(Self.key(Int32(root), major: major)) }
+            let out = Self.render(seconds: 25, actions: actions)
+            let want = Self.roarTonic(root >= 0 ? root : 4)
+            let both = Self.welchPeak(SynthRender.slice(Self.mid(out), 3, 25), near: want)
+            XCTAssertEqual(DSPTestKit.cents(both.hz, want), 0, accuracy: 5, "root \(root): \(both.hz) Hz against \(want) Hz")
+            XCTAssertGreaterThanOrEqual(both.prominence, 10, "root \(root): the resonance stands \(both.prominence) dB clear")
+            for (ear, x) in [("left", out.l), ("right", out.r)] {
+                let f = Self.welchPeak(SynthRender.slice(x, 3, 25), near: want).hz
+                XCTAssertEqual(DSPTestKit.cents(f, want), 0, accuracy: 5, "root \(root), \(ear): \(f) Hz")
+            }
+            XCTAssertTrue(out.l.allSatisfy(\.isFinite) && out.r.allSatisfy(\.isFinite))
+        }
+        let glide = Self.mid(Self.render(seconds: 32, actions: [Self.level(ISD_AMB_INFLOW_ROAR, 1), Self.key(2, major: true), Self.key(9, major: false, at: 10)]))
+        let before = Self.welchPeak(SynthRender.slice(glide, 3, 10), near: Self.roarTonic(2)).hz
+        let after = Self.welchPeak(SynthRender.slice(glide, 18, 32), near: Self.roarTonic(9)).hz
+        XCTAssertEqual(DSPTestKit.cents(before, Self.roarTonic(2)), 0, accuracy: 5, "on D's: \(before) Hz")
+        XCTAssertEqual(DSPTestKit.cents(after, Self.roarTonic(9)), 0, accuracy: 5, "then on A's: \(after) Hz")
+    }
+
+    /// The smell of rain before the rain (spec §8.3): at 0.35 (early in a gust front's Hit) a soft hiss with at least 80%
+    /// of it at 1–8 kHz and not one drop, and at virga's 0.5 not one drop in a minute either; at 1 the first fat drops
+    /// patter (200 or more in 20 s) over a hiss 6 dB louder or more; as the level rises from nothing the hiss is heard (a
+    /// 50 ms frame over −60 dBFS) at least half a second before the first drop falls. (g++ mirror: 0 drops, −37.7 dBFS,
+    /// 90.7%; virga 0 drops in a minute; 363 drops, −27.8 dBFS; heard at 0.25 s, the first drop by 1.65 s.)
+    func testRainOnDustRisesBeforeRain() {
+        func dust(_ level: Float, seconds: Double = 23) -> (out: (l: [Float], r: [Float]), drops: Int32) {
+            var drops: Int32 = -1
+            let out = Self.render(seconds: seconds, actions: [Self.level(ISD_AMB_RAIN_ON_DUST, level),
+                                                              (seconds - 0.01, { drops = isd_ambience_debug_events($0, ISD_AMB_RAIN_ON_DUST) })])
+            return (out, drops)
+        }
+        let before = dust(0.35), virga = dust(0.5, seconds: 63), rain = dust(1)
+        XCTAssertEqual(before.drops, 0, "the smell of rain, no rain")
+        XCTAssertEqual(virga.drops, 0, "virga's rain never reaches the ground")
+        let hiss = Self.stereoDB(before.out, 3, 23)
+        XCTAssertGreaterThan(hiss, -50, "the hiss is heard: \(hiss) dBFS")
+        XCTAssertGreaterThanOrEqual(Self.bandShare(SynthRender.slice(Self.mid(before.out), 3, 23), 1000, 8000), 0.8)
+        XCTAssertGreaterThanOrEqual(rain.drops, 200, "\(rain.drops) drops in 20 s")
+        XCTAssertGreaterThanOrEqual(Self.stereoDB(rain.out, 3, 23) - hiss, 6)
+        var counts: [Int32] = []
+        var actions: [Action] = [Self.level(ISD_AMB_RAIN_ON_DUST, 1)]
+        for i in 0..<80 { actions.append((Double(i) * 0.05, { counts.append(isd_ambience_debug_events($0, ISD_AMB_RAIN_ON_DUST)) })) }
+        let rising = Self.render(seconds: 4, actions: actions)
+        let frames = Self.stereoFrames(rising, ms: 50, from: 0, to: 4)
+        let heard = frames.firstIndex { $0 > -60 }.map { Double($0) * 0.05 } ?? 99
+        let firstDrop = counts.firstIndex { $0 > 0 }.map { Double($0) * 0.05 } ?? -1
+        XCTAssertGreaterThanOrEqual(firstDrop - heard, 0.5, "the hiss at \(heard) s, the first drop by \(firstDrop) s")
+        XCTAssertTrue(rain.out.l.allSatisfy(\.isFinite) && rain.out.r.allSatisfy(\.isFinite))
+    }
+
+    /// Dry cicadas stop dead 2 s before a close strike (spec §9.3), end to end: the world (`CicadaHush`) is asked for a strike
+    /// 5 km off at 4 s (it lands at once and the cicadas sing on) and one 1.2 km off at 6 s (held): the cicadas' level goes to
+    /// nothing, the chorus stops dead (15 dB down within 0.1–0.2 s, 40 dB from half a second on) and the strike lands 2 s
+    /// after the hush, its thunder rolling in 3.6 s later into the silence (60 dB down). (g++ mirror, seed 1: 20.8, 50.4 and
+    /// 116.0 dB down; the far strike's 2 s within 0.1 dB of the chorus before it.)
+    func testCicadasStopBeforeACloseStrike() throws {
+        let a = try XCTUnwrap(isd_ambience_create(Self.sr, 256, 1))
+        defer { isd_ambience_destroy(a) }
+        isd_ambience_set_level(a, ISD_AMB_DRY_CICADAS, 1)
+        isd_ambience_set_level(a, ISD_AMB_THUNDER_ROLL, 1)
+        var hush = CicadaHush()
+        let total = Int(16 * Self.sr), dt = 256 / Self.sr
+        var l = [Float](repeating: 0, count: total), r = l
+        var asked = -1.0, landed = -1.0, farLanded = false
+        for i in stride(from: 0, to: total, by: 256) {
+            let t = Double(i) / Self.sr
+            if i > 0, let km = hush.step(dt: dt) {   // the elapsed block first, then this block's asks
+                landed = t
+                let roll = QueuedThunder.strike(km: km, strength: 0.8)
+                isd_ambience_queue_thunder(a, Float(roll.delay), Float(roll.strength))
+            }
+            if t >= 4, !farLanded {
+                farLanded = hush.strike(atKm: 5)
+                let roll = QueuedThunder.strike(km: 5, strength: 0.5)   // capped at 12 s: it arrives at 16 s, after the test
+                isd_ambience_queue_thunder(a, Float(roll.delay), Float(roll.strength))
+            }
+            if t >= 6, asked < 0 {
+                asked = t
+                let landsNow = hush.strike(atKm: 1.2)
+                XCTAssertFalse(landsNow, "a close strike waits for the silence")
+            }
+            isd_ambience_set_level(a, ISD_AMB_DRY_CICADAS, Float(hush.level(1)))
+            l.withUnsafeMutableBufferPointer { lp in r.withUnsafeMutableBufferPointer { rp in isd_ambience_render(a, lp.baseAddress! + i, rp.baseAddress! + i, Int32(min(256, total - i))) } }
+        }
+        XCTAssertTrue(farLanded, "a far strike lands at once")
+        XCTAssertEqual(landed - asked, 2, accuracy: 0.01, "the close strike lands \(landed - asked) s after the hush")
+        let m = Self.mid((l: l, r: r)), band = Self.bandpass(m, 3000, 9000)
+        let singing = DSPTestKit.dBFS(SynthRender.slice(band, 3, 4))
+        XCTAssertGreaterThan(singing, -40, "the chorus is heard: \(singing) dBFS")
+        XCTAssertEqual(DSPTestKit.dBFS(SynthRender.slice(band, 4.1, 6)), singing, accuracy: 1.5, "the far strike leaves them singing")
+        let dead = singing - DSPTestKit.dBFS(SynthRender.slice(band, asked + 0.1, asked + 0.2))
+        let silent = singing - DSPTestKit.dBFS(SynthRender.slice(band, asked + 0.5, landed))
+        let through = singing - DSPTestKit.dBFS(SynthRender.slice(band, landed, landed + 3.6))
+        XCTAssertGreaterThanOrEqual(dead, 15, "stopped dead: \(dead) dB down 0.1–0.2 s after the hush")
+        XCTAssertGreaterThanOrEqual(silent, 40, "silent before the strike: \(silent) dB down")
+        XCTAssertGreaterThanOrEqual(through, 60, "and through to its thunder: \(through) dB down")
+        let low = { (from: Double, to: Double) -> Double in DSPTestKit.dBFS(Self.bandpass(SynthRender.slice(m, from, to), 30, 150)) }
+        XCTAssertGreaterThanOrEqual(low(landed + 3.6, landed + 4.6) - low(landed + 2.4, landed + 3.4), 20, "the close strike's thunder rolls in")
+        XCTAssertTrue(l.allSatisfy(\.isFinite) && r.allSatisfy(\.isFinite))
+    }
+
+    /// The windmill turns with the wind (spec §9.3): from 15 to 45 s, the wheel spun up, it pumps at the Core's law
+    /// (`WeatherAmbience.windmillRate`, within 5%: 0.75 strokes a second in a gale, 0.30 at 0.45) and is heard doing so
+    /// (its envelope repeats at the stroke's period within 5%), louder in the stronger wind, off to the left by the tank;
+    /// below the cut-in it stands still and silent. (g++ mirror: 0.767 and 0.300 a second, periods 1.33 and 3.32 s on
+    /// seeds 1–4, −37.2 and −51.1 dBFS, the left 4.9 dB up.)
+    func testWindmillFollowsWind() {
+        func mill(_ level: Float) -> (out: (l: [Float], r: [Float]), perSecond: Double) {
+            var counts: [Int32] = []
+            let out = Self.render(seconds: 45, actions: [Self.level(ISD_AMB_WINDMILL, level),
+                                                         (15, { counts.append(isd_ambience_debug_events($0, ISD_AMB_WINDMILL)) }),
+                                                         (44.99, { counts.append(isd_ambience_debug_events($0, ISD_AMB_WINDMILL)) })])
+            return (out, counts.count == 2 ? Double(counts[1] - counts[0]) / 30 : -1)
+        }
+        var loudness: [Double] = []
+        for wind in [1.0, 0.45] {
+            let run = mill(Float(wind)), law = WeatherAmbience.windmillRate(wind)
+            XCTAssertEqual(run.perSecond, law, accuracy: 0.05 * law, "wind \(wind): \(run.perSecond) strokes a second against \(law)")
+            let m = SynthRender.slice(Self.mid(run.out), 15, 45)
+            let env = Self.frameDB(m, ms: 10).map { pow(10, $0 / 20) }
+            let period = 1 / law
+            var best = -1.0, bestLag = 0
+            for lag in Int(0.7 * period * 100)...Int(1.3 * period * 100) {
+                var s = 0.0
+                for i in 0..<(env.count - lag) { s += env[i] * env[i + lag] }
+                if s > best { best = s; bestLag = lag }
+            }
+            XCTAssertEqual(Double(bestLag) * 0.01, period, accuracy: 0.05 * period, "wind \(wind): heard every \(Double(bestLag) * 0.01) s")
+            loudness.append(Self.stereoDB(run.out, 15, 45))
+            let side = DSPTestKit.dBFS(SynthRender.slice(run.out.l, 15, 45)) - DSPTestKit.dBFS(SynthRender.slice(run.out.r, 15, 45))
+            XCTAssertGreaterThanOrEqual(side, 3, "off to the left: \(side) dB")
+            XCTAssertTrue(run.out.l.allSatisfy(\.isFinite) && run.out.r.allSatisfy(\.isFinite))
+        }
+        XCTAssertGreaterThanOrEqual(loudness[0] - loudness[1], 6, "louder in the gale: \(loudness)")
+        let still = mill(0.06)
+        XCTAssertEqual(still.perSecond, 0, "below the cut-in it stands still")
+        XCTAssertLessThan(DSPTestKit.dBFS(still.out.l), -150)
+        XCTAssertEqual(WeatherAmbience.windmillRate(0.06), 0)
+    }
+
+    /// testNewSourcesInTheirBands, Storms: the storm and plains families, each around its band at level 1 (the thunder
+    /// rolling a queued strike; the birds, the grid and the far truck set going at 3 s): continuous beds by their RMS, events
+    /// by their peaks; all finite and under full scale. (g++ mirror, seed 1: centroids 2460, 2500, 3215, 64, 99, 3149, 5222,
+    /// 367, 213, 5531, 1449, 93 Hz; levels −24.1, −26.7, peak −17.2, peak −8.2, −24.9, −28.4, −25.0, peak −14.3, peak
+    /// −24.9, −40.8, −42.0, −38.0 dBFS; the rain on dust −27.6.)
+    func checkStormSourcesInTheirBands() {
+        let table: [(ISDAmbienceSource, String, ClosedRange<Double>, ClosedRange<Double>, Bool)] = [
+            (ISD_AMB_GRASS_WIND, "grass wind", 1500...4500, -30 ... -18, false),
+            (ISD_AMB_HAIL_TIN, "hail on tin", 1500...4000, -32 ... -20, false),
+            (ISD_AMB_BIRDS_FLEE, "birds fleeing", 2000...5000, -26 ... -12, true),
+            (ISD_AMB_THUNDER_ROLL, "thunder roll", 30...150, -20 ... -4, true),
+            (ISD_AMB_INFLOW_ROAR, "inflow roar", 60...200, -30 ... -18, false),
+            (ISD_AMB_RAIN_ON_DUST, "rain on dust", 1500...6000, -34 ... -22, false),
+            (ISD_AMB_DRY_CICADAS, "dry cicadas", 3500...8000, -31 ... -19, false),
+            (ISD_AMB_WINDMILL, "windmill", 150...1500, -22 ... -8, true),
+            (ISD_AMB_CATTLE_GRID, "cattle grid", 80...1000, -32 ... -14, true),
+            (ISD_AMB_DUST_TICKS, "dust ticks", 3000...9000, -48 ... -34, false),
+            (ISD_AMB_SHIMMER_HUM, "shimmer hum", 900...2500, -48 ... -36, false),
+            (ISD_AMB_FAR_TRUCK, "far truck", 50...400, -46 ... -32, false),
+        ]
+        for (source, name, band, loudness, byPeak) in table {
+            var actions: [Action] = [Self.level(source, 1)]
+            if source == ISD_AMB_THUNDER_ROLL { actions.append(Self.queueThunder(1.5, 0.8, at: 3)) }
+            if [ISD_AMB_BIRDS_FLEE, ISD_AMB_CATTLE_GRID, ISD_AMB_FAR_TRUCK].contains(source) { actions.append(Self.trigger(source, at: 3)) }
+            let seconds = source == ISD_AMB_CATTLE_GRID || source == ISD_AMB_FAR_TRUCK ? 25.0 : 13.0
+            let out = Self.render(seconds: seconds, actions: actions)
+            let centroid = DSPTestKit.averageCentroid(SynthRender.slice(Self.mid(out), 3, seconds), sampleRate: Self.sr)
+            let db = byPeak ? Self.peakDB(out, 3, seconds) : Self.stereoDB(out, 3, seconds)
+            XCTAssertTrue(band.contains(centroid), "\(name): centroid \(Int(centroid)) Hz")
+            XCTAssertTrue(loudness.contains(db), "\(name): \(String(format: "%.1f", db)) dBFS\(byPeak ? " peak" : "")")
+            XCTAssertTrue(out.l.allSatisfy(\.isFinite) && out.r.allSatisfy(\.isFinite), name)
+            XCTAssertLessThanOrEqual(max(out.l.map(abs).max() ?? 0, out.r.map(abs).max() ?? 0), 1, name)
+        }
     }
 }

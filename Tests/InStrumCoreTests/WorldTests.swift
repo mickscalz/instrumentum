@@ -599,6 +599,78 @@ final class WorldTests: XCTestCase {
         WeatherAmbience.levels(s, base: &none)
         XCTAssertNil(none[.wind])
     }
+
+    /// Storms spec §9.3: the dry cicadas stop dead 2 s before a close strike. A far strike (2 km or more) lands at once and
+    /// leaves them singing; a close one stills them at once and is held until they have been silent 2 s, never sooner (a
+    /// second close one asked for meanwhile joins it, the nearer kept); once they are still a close strike lands at once;
+    /// they sing again 8 s after the last close strike, and their level follows (nothing while hushed).
+    func testCicadaHushHoldsACloseStrike() {
+        var hush = CicadaHush()
+        let far = hush.strike(atKm: 5), edge = hush.strike(atKm: CicadaHush.closeKm)
+        XCTAssertTrue(far, "a far strike lands at once")
+        XCTAssertTrue(edge, "2 km is still far")
+        XCTAssertFalse(hush.hushed)
+        XCTAssertEqual(hush.level(0.8), 0.8)
+        let close = hush.strike(atKm: 1.5)
+        XCTAssertFalse(close, "a close strike waits for the silence")
+        XCTAssertTrue(hush.hushed)
+        XCTAssertEqual(hush.level(0.8), 0, "the cicadas' level goes to nothing: the engine stops them dead")
+        let dt = 1.0 / 60
+        var t = 0.0, landed: Double?, km: Double?, joined = false
+        while landed == nil, t < 5 {
+            t += dt
+            if t >= 0.5, !joined {
+                joined = true
+                let second = hush.strike(atKm: 0.8)
+                XCTAssertFalse(second, "a second close strike joins the first")
+            }
+            if let k = hush.step(dt: dt) { landed = t; km = k }
+        }
+        XCTAssertEqual(landed ?? -1, CicadaHush.lead, accuracy: dt + 1e-9, "it lands 2 s after the hush")
+        XCTAssertGreaterThanOrEqual(landed ?? 0, CicadaHush.lead - 1e-9, "never sooner")
+        XCTAssertEqual(km ?? -1, 0.8, accuracy: 1e-12, "the nearer one")
+        XCTAssertNil(hush.held)
+        XCTAssertTrue(hush.hushed, "still silent after the strike")
+        let atOnce = hush.strike(atKm: 1)
+        XCTAssertTrue(atOnce, "once they are still, a close strike lands at once")
+        var since = 0.0, sang: Double?, stray = 0
+        while sang == nil, since < 20 {
+            since += dt
+            if hush.step(dt: dt) != nil { stray += 1 }
+            if !hush.hushed { sang = since }
+        }
+        XCTAssertEqual(stray, 0, "nothing else was held")
+        XCTAssertEqual(sang ?? -1, CicadaHush.after, accuracy: dt + 1e-9, "they sing again 8 s after the last close strike")
+        XCTAssertEqual(hush.level(0.8), 0.8)
+        // Nonsense in, nothing out.
+        var odd = CicadaHush()
+        let nan = odd.strike(atKm: .nan), stepped = odd.step(dt: 1)
+        XCTAssertTrue(nan)
+        XCTAssertNil(stepped)
+        XCTAssertFalse(odd.hushed)
+    }
+
+    /// Storms spec §9.3: the windmill turns with the wind, by the engine's own law (AmbienceTests.testWindmillFollowsWind
+    /// hears it): still below the cut-in (0.08), 0.75 strokes a second in a gale, evenly between; the gusts drive it on top
+    /// of the wind (+0.3 × gust, to 1 at most); the wheel turns 3.29 times a stroke.
+    func testWindmillFollowsTheWind() {
+        XCTAssertEqual(WeatherAmbience.windmillRate(0), 0)
+        XCTAssertEqual(WeatherAmbience.windmillRate(WeatherAmbience.windmillCutIn), 0, "still at the cut-in")
+        XCTAssertEqual(WeatherAmbience.windmillRate(1), 0.75, accuracy: 1e-12, "45 a minute in a gale")
+        XCTAssertEqual(WeatherAmbience.windmillRate(0.45), 0.75 * 0.37 / 0.92, accuracy: 1e-12)
+        XCTAssertEqual(WeatherAmbience.windmillRate(3), 0.75, accuracy: 1e-12, "a gale is a gale")
+        XCTAssertEqual(WeatherAmbience.windmillRate(.nan), 0)
+        let rates = stride(from: 0.0, through: 1.0, by: 0.05).map { WeatherAmbience.windmillRate($0) }
+        XCTAssertEqual(rates, rates.sorted(), "faster the harder the wind")
+        var sky = SkyState(); sky.wind = 0.5; sky.gust = 0.5
+        XCTAssertEqual(WeatherAmbience.windmillDrive(sky), 0.65, accuracy: 1e-6, "the gusts on top of the wind")
+        XCTAssertEqual(WeatherAmbience.windmillRate(sky), WeatherAmbience.windmillRate(0.65), accuracy: 1e-6)
+        sky.wind = 0.9; sky.gust = 1
+        XCTAssertEqual(WeatherAmbience.windmillDrive(sky), 1)
+        sky.wind = .nan; sky.gust = .nan
+        XCTAssertEqual(WeatherAmbience.windmillDrive(sky), 0)
+        XCTAssertEqual(WeatherAmbience.windmillGear, 3.29, accuracy: 1e-12)
+    }
 }
 
 // MARK: - Snowbound Cabin
