@@ -149,6 +149,16 @@ final class CPUBudgetTests: XCTestCase {
         XCTAssertLessThan(seconds / 10, 0.06, "Blue Depth used \(String(format: "%.1f", seconds * 10))% of real time")
     }
 
+    /// Endless Rise at its worst (spec §4.3): eight held notes on eight pitch classes, so 64 riser saws over eight pad
+    /// voices, for 10 s with Grit .6 and Space .5 (the mirror: 5.3–5.6% of a core on the build machine, where Blue Depth's
+    /// budget takes 3.2–4.2%; that one runs at about 2% here in CI).
+    func testEndlessRiseBudget() {
+        let held = [36, 43, 50, 57, 64, 71, 78, 85].map { R.noteOn(0, UInt8($0), 90) }
+        let p: [Int: Float] = [Int(ISD_P_GRIT_ER): 0.6, Int(ISD_P_SPACE): 0.5]
+        let seconds = bestOfThree { _ = R.render(ISD_ENGINE_ENDLESS_RISE, seconds: 10, params: p, events: held) }
+        XCTAssertLessThan(seconds / 10, 0.07, "Endless Rise used \(String(format: "%.1f", seconds * 10))% of real time")
+    }
+
     /// The cabin's and the bedroom's soundscapes, each heard through the window.
     func testWindowAmbienceBudget() {
         typealias A = AmbienceTests
