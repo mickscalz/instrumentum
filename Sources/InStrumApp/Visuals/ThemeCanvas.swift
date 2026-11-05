@@ -97,8 +97,11 @@ final class ThemeCanvas: NSObject, MTKViewDelegate {
         hub.set(.width, sound.width, at: now)
         for (address, value) in model.drainDialChanges() { hub.set(.dial(address), value, at: now) }
         director.instrumentPulse = model.instrumentPulse   // Blue Depth's arp grid, for the visuals that blink with it
+        director.instrumentPressure = model.instrumentPressure   // the grand's morph and its repeats, for the worlds
+        director.instrumentRepeat = model.instrumentRepeat
         let frame = director.step(dt: frameDt, t: now, quality: level)
         let dt = director.visualDt   // the renderers' clock, as the director's controls shape it
+        model.forceMorph(director.forcedMorph)   // the world's forced morph (the storm's arrival) to the grand
         model.updateAmbience(director.ambience(for: frame, at: now), at: now)
         model.noteSceneReport(director.report)
         let gentle = model.effectiveGentleVisuals

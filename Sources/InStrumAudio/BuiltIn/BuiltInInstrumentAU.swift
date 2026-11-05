@@ -83,6 +83,28 @@ public final class BuiltInInstrumentAU: AUAudioUnit {
         }
     }
 
+    // MARK: - The grand's morph and repeats (Single Note Grand; every other engine ignores them)
+
+    /// The morph the world forces on the voice (Storms spec §9.2: Morph .8 for the storm's arrival), 0…1; nil (or a
+    /// negative value) lets it go, and the morph returns to the player's pressure over 250 ms. Any thread: the engine
+    /// keeps it in an atomic read once per control block and moves to it through its own smoothing, so calling it every
+    /// frame is cheap and never steps.
+    public func setForcedMorph(_ morph: Float?) {
+        if let synth = box.synth { isd_synth_set_forced_morph(synth, morph ?? -1) }
+    }
+
+    /// The morph the engine is using, 0…1: the player's pressure over the Morph floor, or the world's forced morph,
+    /// smoothed 80 ms up and 250 ms down. 0 for every other engine. Any thread.
+    public var morphInUse: Float {
+        box.synth.map { Float(isd_synth_debug_count($0, ISD_DEBUG_MORPH_PERMILLE)) / 1000 } ?? 0
+    }
+
+    /// True while the engine hears the same key struck four or more times at 2 a second or faster. False for every
+    /// other engine. Any thread.
+    public var isRepeating: Bool {
+        box.synth.map { isd_synth_debug_is_repeating($0) != 0 } ?? false
+    }
+
     // MARK: - Rendering
 
     public override func allocateRenderResources() throws {

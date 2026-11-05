@@ -36,6 +36,14 @@ public protocol InstrumentEngine: AnyObject {
     func restartAudio()
     /// Puts the sound back if it stopped or its output disappeared; a note for the user when it acted.
     func checkHealth() -> String?
+    /// Built-in instruments only (Single Note Grand; every other engine ignores it): the morph the world forces on the
+    /// voice, 0…1; nil (or a negative value) lets it go.
+    func setForcedMorph(_ morph: Float?)
+    /// Built-in instruments only (Single Note Grand; 0 otherwise): the morph the engine is using, 0…1.
+    var morphInUse: Float { get }
+    /// Built-in instruments only (Single Note Grand; false otherwise): the same key struck four or more times at 2 a
+    /// second or faster.
+    var isRepeating: Bool { get }
 }
 
 public extension InstrumentEngine {
@@ -52,6 +60,9 @@ public extension InstrumentEngine {
     @discardableResult func selectOutputDevice(uid: String?) -> Bool { false }
     func restartAudio() {}
     func checkHealth() -> String? { nil }
+    func setForcedMorph(_ morph: Float?) {}
+    var morphInUse: Float { 0 }
+    var isRepeating: Bool { false }
 }
 
 /// What the app model needs from the MIDI input (lets tests use a fake).
@@ -68,4 +79,11 @@ extension MIDIInput: MIDIControlling {}
 extension AudioEngine: InstrumentEngine {
     public func applyPatch(_ patch: Patch) { loadedBuiltIn?.apply(patch) }
     public var builtInPatchID: String? { loadedBuiltIn?.patchID }
+}
+
+/// Single Note Grand's morph and repeats (Storms spec §4.2, §9.2), through the loaded built-in instrument.
+extension AudioEngine {
+    public func setForcedMorph(_ morph: Float?) { loadedBuiltIn?.setForcedMorph(morph) }
+    public var morphInUse: Float { loadedBuiltIn?.morphInUse ?? 0 }
+    public var isRepeating: Bool { loadedBuiltIn?.isRepeating ?? false }
 }

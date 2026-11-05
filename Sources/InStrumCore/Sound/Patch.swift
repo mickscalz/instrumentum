@@ -5,6 +5,9 @@ public enum BuiltInEngine: String, Codable, CaseIterable {
     case reefMarimba
     case magmaBass, replicantBrass
 
+    /// Storms, Set 18 (engine 17).
+    case singleNoteGrand
+
     public var displayName: String {
         switch self {
         case .feltGlass: return "Felt Glass"
@@ -20,6 +23,7 @@ public enum BuiltInEngine: String, Codable, CaseIterable {
         case .reefMarimba: return "Reef Marimba"
         case .blueDepth: return "Blue Depth"
         case .magmaBass: return "Magma Bass"
+        case .singleNoteGrand: return "Single Note Grand"
         case .replicantBrass: return "Replicant Brass"
         }
     }
@@ -94,6 +98,14 @@ public enum PatchLibrary {
         Patch(id: "ghost-signal", name: "Ghost Signal", engine: .blueDepth, values: blueDepth(blink: 0.35, murk: 0.45, ghosts: 0.75, echo: 0.65, bass: 0.30, tempo: 118, space: 0.70, width: 0.70), creditID: "underwater"),
         Patch(id: "pressure-hull", name: "Pressure Hull", engine: .blueDepth, values: blueDepth(blink: 0.75, murk: 0.80, ghosts: 0.25, echo: 0.40, bass: 0.80, tempo: 118, space: 0.45, width: 0.50), creditID: "underwater"),
         Patch(id: "surface-light", name: "Surface Light", engine: .blueDepth, values: blueDepth(blink: 0.50, murk: 0.25, ghosts: 0.35, echo: 0.55, bass: 0.40, tempo: 118, space: 0.50, width: 0.65), creditID: "underwater"),
+        // Single Note Grand, after "Runaway" (Storms spec §4.2; brief single-note-grand.md): the brief's table, Runaway
+        // first (the engine's defaults), Felt .2 in every one. The spec sets no Width or Space: Runaway keeps the engine's
+        // (.50, .50); Marble Hall opens out with its room, Broken Voice comes closer so the voice stays in front, Dry Grand
+        // is dry and close. Reasoned rather than heard, so check them by ear.
+        Patch(id: "single-note-grand", name: "Runaway", engine: .singleNoteGrand, values: singleNoteGrand(hall: 0.70, felt: 0.20, morph: 0, octaveDown: 0.50, breakDrive: 0.50, width: 0.50, space: 0.50), creditID: "runaway"),
+        Patch(id: "marble-hall", name: "Marble Hall", engine: .singleNoteGrand, values: singleNoteGrand(hall: 1.0, felt: 0.20, morph: 0, octaveDown: 0.50, breakDrive: 0.50, width: 0.70, space: 0.70), creditID: "runaway"),
+        Patch(id: "broken-voice", name: "Broken Voice", engine: .singleNoteGrand, values: singleNoteGrand(hall: 0.70, felt: 0.20, morph: 0.60, octaveDown: 0.50, breakDrive: 0.90, width: 0.40, space: 0.40), creditID: "runaway"),
+        Patch(id: "dry-grand", name: "Dry Grand", engine: .singleNoteGrand, values: singleNoteGrand(hall: 0.10, felt: 0.20, morph: 0, octaveDown: 0.50, breakDrive: 0.50, width: 0.45, space: 0.25), creditID: "runaway"),
         // Magma Bass (Fire & Neon spec §4.2; brief magma-bass.md). Mono is 0 or 1. Its "Hold My Liquor" credit comes with
         // its card (Task 15): every credit needs card art.
         Patch(id: "magma-bass", name: "Magma", engine: .magmaBass, values: magma(growl: 0.55, heat: 0.50, erupt: 0.70, rumble: 0.35, grit: 0.25, flow: 0.20, shape: 0.15, mono: 0, spark: 0.40, res: 0.35)),
@@ -171,5 +183,11 @@ public enum PatchLibrary {
 
     private static func pad(bloom: Double, drift: Double, motion: Double, shimmer: Double, brightness: Double, space: Double) -> [String: Double] {
         ["bloom": bloom, "drift": drift, "motion": motion, "shimmer": shimmer, "brightness": brightness, "space": space]
+    }
+
+    /// The dials in the instrument's order (Hall, Felt, Morph, Octave Down, Break, Width, Space), each 0…1.
+    private static func singleNoteGrand(hall: Double, felt: Double, morph: Double, octaveDown: Double, breakDrive: Double, width: Double,
+                                        space: Double) -> [String: Double] {
+        ["hall": hall, "felt": felt, "morph": morph, "octaveDown": octaveDown, "break": breakDrive, "width": width, "space": space]
     }
 }

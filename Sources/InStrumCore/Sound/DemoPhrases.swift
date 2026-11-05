@@ -294,6 +294,49 @@ public enum DemoPhrases {
         return m.sorted
     }()
 
+    /// D minor at 86 BPM for about 25 s, the way Single Note Grand plays (Storms spec §4.2): one note, D5, struck alone on
+    /// the eighths for two bars, a little louder on each beat and as it goes (the grand hears it repeated from the fourth
+    /// strike), and on through two more as a low D and then a low B♭ join it. Then it opens into chords: G minor, the
+    /// note slowing to the beat; an A suspended chord, over which the note is held and pressed into (a swell of pressure:
+    /// the piano becomes a voice); the note falls to C♯ as the chord resolves to A, under the pressure, before the
+    /// pressure lets go and a D minor chord with the D on top rings out. Original material, nothing quoted from any record.
+    public static let singleNoteGrand: Phrase = {
+        var m = Builder()
+        let beat = 60.0 / 86
+        func t(_ beats: Double) -> Double { 0.3 + beats * beat }
+        // The one note, D5, on the eighths for four bars.
+        for k in 0..<32 {
+            let accent = k % 2 == 0 ? 4 : 0
+            let rise = Int((14 * Double(k) / 31).rounded())
+            m.note(t(0.5 * Double(k)), 74, UInt8(50 + rise + accent), 0.4 * beat)
+        }
+        // Bars 3 and 4: a low D, then a low B♭, under it.
+        m.note(t(8), 38, 56, 4 * beat - 0.05); m.note(t(8) + 0.02, 45, 50, 4 * beat - 0.07)
+        m.note(t(12), 34, 58, 4 * beat - 0.05); m.note(t(12) + 0.02, 41, 52, 4 * beat - 0.07)
+        // Bar 5: G minor, rolled up softly, and the note on the beat.
+        for (k, n) in [(43, 60), (50, 56), (67, 62), (70, 64)].enumerated() {
+            let start = t(16) + 0.025 * Double(k)
+            m.note(start, UInt8(n.0), UInt8(n.1), t(20) - 0.05 - start)
+        }
+        for (k, v) in [68, 62, 64, 60].enumerated() { m.note(t(16 + Double(k)), 74, UInt8(v), 0.8 * beat) }
+        // Bars 6 and 7: an A suspended chord held under the note, pressed into until the piano sings; the note falls to C♯
+        // as the chord resolves to A, and the pressure lets go.
+        for (k, n) in [(45, 58), (52, 54), (64, 58), (69, 60)].enumerated() {
+            let start = t(20) + 0.025 * Double(k)
+            m.note(start, UInt8(n.0), UInt8(n.1), t(28) - 0.05 - start)
+        }
+        m.note(t(20), 74, 70, t(24) - 0.05 - t(20))
+        m.note(t(24), 73, 66, t(28) - 0.05 - t(24))
+        m.pressure(t(20.25), from: 0, to: 0.9, over: 3.25 * beat)
+        m.pressure(t(25.5), from: 0.9, to: 0, over: 2 * beat)
+        // Bars 8 and 9: D minor, rolled up to the D on top, left to ring.
+        for (k, n) in [(38, 58), (45, 54), (53, 56), (62, 60), (65, 62), (69, 64), (74, 70)].enumerated() {
+            let start = t(28) + 0.025 * Double(k)
+            m.note(start, UInt8(n.0), UInt8(n.1), t(35.6) - start)
+        }
+        return m.sorted
+    }()
+
     /// F♯ minor at 118 BPM for about 20 s, the way Blue Depth plays: the right hand holds a chord from C3 up and the arp
     /// blinks it on the sixteenths in the order it was pressed (C♯, A, F♯, falling), through the dotted-eighth echo,
     /// while the left hand strikes a big bass note below C3 once a bar (F♯, D, D, B, B, C♯, F♯), so the same blinking

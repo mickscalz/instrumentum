@@ -78,6 +78,19 @@ public final class AppModel: ObservableObject {
         pulseLive.withLockUnchecked { InstrumentPulse(engine: $0.engine, values: $0.values) }
     }
 
+    /// The grand's half of the step (Storms spec §3, §4.2, §9.2), which the canvas hands `SceneDirector` before every
+    /// step: the morph Single Note Grand sings at, as the engine reads it back (the player's pressure over the Morph floor,
+    /// or the world's forced morph, smoothed 80 ms up and 250 ms down), so the strike distance and the voice's distortion
+    /// are one number; and whether it hears the same key struck four or more times at 2 a second or faster. 0 and false
+    /// for every other instrument and a plugin.
+    public nonisolated var instrumentPressure: Float { engine.morphInUse }
+    public nonisolated var instrumentRepeat: Bool { engine.isRepeating }
+
+    /// The morph the world forces on the grand's voice (`SceneDirector.forcedMorph`), which the canvas hands over after
+    /// every step: 0…1, or nil (or a negative value) to let it go, when the morph returns to the player's pressure over
+    /// 250 ms. The engine keeps it in an atomic read once per control block. Every other instrument and a plugin ignore it.
+    public func forceMorph(_ morph: Float?) { engine.setForcedMorph(morph) }
+
     private let store: SettingsStore
     private let launchGuard: LaunchGuard
     var settings: AppSettings

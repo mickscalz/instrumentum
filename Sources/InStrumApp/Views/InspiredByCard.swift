@@ -65,7 +65,7 @@ struct InspiredByCard: View {
         case .song(let c):
             return Words(kicker: "INSPIRED BY", title: art?.titleCase == true ? c.song.uppercased() : c.song,
                          subtitle: "\(c.artist) · \(c.album) · \(String(c.year))", line: c.line,
-                         linerNotes: "\(c.key) · TRACK \(c.trackNumber) · \(Int(c.tempoBPM.rounded())) BPM", listen: c,
+                         linerNotes: Self.linerNotes(c), listen: c,
                          accessibility: "Inspired by \(c.song) by \(c.artist), \(c.album), \(String(c.year)). \(c.line)")
         case .place(let s):
             return Words(kicker: "BORN FROM A PLACE", title: s.name, subtitle: s.moodName, line: nil, linerNotes: nil, listen: nil,
@@ -134,6 +134,13 @@ struct InspiredByCard: View {
                 Canvas { ctx, size in art?.draw(in: ctx, size: size, t: tl.date.timeIntervalSinceReferenceDate, pulse: pulse) }
             }
         }
+    }
+
+    /// Key · track · tempo, as the card's top corner sets them: `F♯ minor · TRACK 7 · 118 BPM`. A key the credit doesn't
+    /// state (a disputed one) is left out: "Runaway" reads `TRACK 9 · 86 BPM`.
+    static func linerNotes(_ c: Credit) -> String {
+        let notes: [String] = [c.key, "TRACK \(c.trackNumber)", "\(Int(c.tempoBPM.rounded())) BPM"]
+        return notes.filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
     /// Opens the Spotify app's search, or the web search when the app isn't installed.

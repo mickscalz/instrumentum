@@ -69,6 +69,7 @@ public enum BuiltInCatalog {
         case .reefMarimba: return "isRM"
         case .blueDepth: return "isBD"
         case .magmaBass: return "isMG"   // not isMB: Morning Box has it
+        case .singleNoteGrand: return "isSN"   // the plan's isSNG, cut to the four characters a subtype holds
         case .replicantBrass: return "isRB"
         }
     }
@@ -88,6 +89,7 @@ public enum BuiltInCatalog {
         case .reefMarimba: return ISD_ENGINE_REEF_MARIMBA
         case .blueDepth: return ISD_ENGINE_BLUE_DEPTH
         case .magmaBass: return ISD_ENGINE_MAGMA_BASS
+        case .singleNoteGrand: return ISD_ENGINE_SINGLE_NOTE_GRAND
         case .replicantBrass: return ISD_ENGINE_REPLICANT_BRASS
         }
     }
