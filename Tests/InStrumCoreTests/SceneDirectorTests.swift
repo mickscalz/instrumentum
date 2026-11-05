@@ -308,6 +308,64 @@ final class SceneDirectorTests: XCTestCase {
         for (a, b) in zip(peaks, peaks.dropFirst()) { XCTAssertEqual((b - a) * 1000, 127.1, accuracy: 2) }
     }
 
+    /// A world that chooses its own storm sky (Storms spec §6, §8.1): no crawlers, sheet lightning often, a supercell
+    /// held at its Core.
+    struct StormSkyProbe: ThemeModel, SkyAware {
+        static let id = "storm-sky-probe", displayName = "Storm sky probe"
+        static let parameters: [ParamSpec] = [
+            SkyExtraMode.spec(id: SkyExtraMode.crawlersID, name: "Anvil crawlers", help: "Spider lightning", default: .off),
+            SkyExtraMode.spec(id: SkyExtraMode.sheetID, name: "Sheet lightning", help: "Heat lightning", default: .often),
+            SupercellStage.spec(default: .core),
+        ]
+        static let macroTargets: [Macro: [(id: String, weight: Double)]] = [:]
+        var sky: SkyState?
+        init() {}
+        mutating func handle(_ e: PerformanceEvent) {}
+        mutating func setSky(_ s: SkyState) { sky = s }
+        mutating func step(dt: Double, params: ParameterSet, roles: RoleValues, inputs: InputFrame, quality: QualityLevel) -> SkyState? { sky }
+    }
+
+    /// The director reads the storm sky's world parameters every step (`crawlers.mode`, `sheet.mode`, `supercell.stage`)
+    /// and hands on the world's Random Beautiful table: a world without them follows the Sky extras settings and has no
+    /// supercell; a world with them wins over the settings; leaving it leaves them behind, and the next world's table
+    /// rides along.
+    func testStormSkyReachesTheSky() {
+        var s = SkySettings(); s.timeMode = .frozen; s.frozenHour = 23; s.cityID = "melbourne"; s.weatherMode = .pick
+        s.weather = .thunderheads; s.crawlersMode = .often; s.sheetMode = .off
+        let night = Date(timeIntervalSince1970: 1_793_000_000)
+        let lake = SceneDirector(themeID: MoonlitLakeModel.id, state: ThemeState(), reaction: ReactionPresets.expressivePianist)
+        lake.sky.reset(settings: s)
+        lake.clock = { night }
+        for i in 1...300 { _ = lake.step(dt: 1, t: Double(i), quality: .high) }
+        XCTAssertGreaterThan(lake.sky.crawlerSky.spawned, 0, "the settings' Often")
+        XCTAssertEqual(lake.sky.sheetSky.spawned, 0, "the settings' Off")
+        XCTAssertEqual(lake.lastSky?.supercell, 0)
+        XCTAssertEqual(lake.parameters.choice(SkyExtraMode.crawlersID), "", "the lake has no parameter of its own")
+        XCTAssertEqual(lake.sky.randomExtras, [.gustFront: 0.3], "the lake's table: storms appear there, it isn't dry")
+
+        let probe = SceneDirector(entry: ThemeEntry.make(StormSkyProbe.self), state: ThemeState(),
+                                  reaction: ReactionPresets.expressivePianist)
+        probe.sky.reset(settings: s)
+        probe.clock = { night }
+        for i in 1...300 { _ = probe.step(dt: 1, t: Double(i), quality: .high) }
+        XCTAssertEqual(probe.sky.crawlerSky.spawned, 0, "the world's Off beats the settings' Often")
+        XCTAssertGreaterThan(probe.sky.sheetSky.spawned, 0, "the world's Often beats the settings' Off")
+        XCTAssertEqual(probe.lastSky?.supercell, 1)
+        XCTAssertEqual(probe.lastSky?.supercellPhase ?? 0, 0.5, accuracy: 1e-6, "held at its Core")
+        XCTAssertEqual(probe.sky.randomExtras, [:], "no table of its own")
+        // Its stage is a parameter like any other: Clearing, and the storm plays on to it.
+        probe.parameters.set(SupercellStage.id, .choice("Clearing"))
+        for i in 301...360 { _ = probe.step(dt: 1, t: Double(i), quality: .high) }
+        XCTAssertEqual(probe.lastSky?.supercellPhase ?? 0, Float(5.0 / 6), accuracy: 1e-6)
+        // Leaving it for the coast road: no supercell, the settings' crawlers again, and the road's table.
+        let before = probe.sky.crawlerSky.spawned
+        probe.switchTheme(to: CoastRoadModel.id, state: ThemeState())
+        for i in 361...660 { _ = probe.step(dt: 1, t: Double(i), quality: .high) }
+        XCTAssertEqual(probe.lastSky?.supercell, 0)
+        XCTAssertGreaterThan(probe.sky.crawlerSky.spawned, before)
+        XCTAssertEqual(probe.sky.randomExtras, [.gustFront: 0.3, .virga: 0.5])
+    }
+
     func testMoodLookIsNeutralAtHalf() {
         let n = Mood.neutral
         XCTAssertEqual(MoodLook.exposure(n), 1, accuracy: 1e-6)

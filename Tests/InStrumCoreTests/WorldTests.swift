@@ -526,6 +526,66 @@ final class WorldTests: XCTestCase {
         XCTAssertNil(faint[.crickets], "a few fireflies leave the crickets alone")
     }
 
+    /// Storms (spec §7): the gust front and virga in the worlds. Outdoors (the lake, the beach, the road), a gust front
+    /// at its Hit roars on the wind (0.8, 12 dB over the Approach's 0.2) with the rain on dust rising; virga brings a dry
+    /// wind and the petrichor and no rain anywhere. The cold worlds have the gust front's rain as snow and virga dry; the
+    /// warm reef keeps both; the lounge has no storm at all; the sea is whipped up by the outflow and left be by virga.
+    func testStormWeathersInTheWorlds() {
+        var front = daySky(); front.weather = .gustFront; front.nextWeather = .gustFront
+        front.gustFront = WorldWeather.gustFront(elapsed: 100, duration: 180, cross: 15)
+        front.wind = 1; front.outflow = 1; front.warmthGrade = -0.08
+        XCTAssertEqual(front.gustFront?.stage, .hit)
+        let roar = WeatherAmbience.gustRoar(front) ?? 0
+        XCTAssertEqual(roar, 0.8, accuracy: 1e-9)
+        for (name, scene) in scenes(front) {
+            XCTAssertGreaterThanOrEqual(scene.level(.wind), roar - 1e-9, name)
+            XCTAssertEqual(scene.level(.rainOnDust), WeatherAmbience.rainOnDust(front) ?? -1, accuracy: 1e-9, name)
+            XCTAssertGreaterThan(scene.level(.rainOnDust), 0.3, name)
+        }
+        var approach = daySky(); approach.weather = .gustFront; approach.nextWeather = .gustFront
+        approach.gustFront = WorldWeather.gustFront(elapsed: 20, duration: 180, cross: 15)
+        var calm: [AmbienceSource: Double] = [:]
+        WeatherAmbience.levels(approach, base: &calm)
+        XCTAssertEqual(calm[.wind] ?? -1, 0.2, accuracy: 1e-9, "the inflow gusts before the Hit")
+        XCTAssertNil(calm[.rainOnDust], "no smell of rain yet")
+        XCTAssertNil(WeatherAmbience.gustRoar(daySky()))
+        XCTAssertNil(WeatherAmbience.rainOnDust(daySky()))
+        XCTAssertNil(WeatherAmbience.virgaWind(daySky()))
+
+        // Its Rain in the cold: snow, never rain. Virga in the cold: still dry.
+        var rain = front; rain.gustFront = WorldWeather.gustFront(elapsed: 170, duration: 180, cross: 15); rain.rain = 0.6
+        let cold = WorldWeather.cold(rain)
+        XCTAssertEqual(cold.rain, 0)
+        XCTAssertGreaterThanOrEqual(cold.snow, 0.6 - 1e-6)
+        var virga = daySky(); virga.weather = .virga; virga.nextWeather = .virga; virga.virga = 1; virga.gust = 0.5
+        XCTAssertEqual([WorldWeather.cold(virga).rain, WorldWeather.cold(virga).snow], [0, 0])
+        XCTAssertEqual(WorldWeather.warm(front).weather, .gustFront, "the warm reef keeps both")
+        XCTAssertEqual(WorldWeather.warm(virga).weather, .virga)
+
+        // Virga outdoors: the dry wind (0.25 + 0.35 × gust) and the petrichor (0.5), no rain on the water or the glass.
+        for (name, scene) in scenes(virga) {
+            XCTAssertGreaterThanOrEqual(scene.level(.wind), 0.25 + 0.35 * 0.5 - 1e-9, name)
+            XCTAssertEqual(scene.level(.rainOnDust), 0.5, accuracy: 1e-9, name)
+            XCTAssertEqual(scene.level(.rainOnWater), 0, name)
+            XCTAssertEqual(scene.level(.rainOnGlass), 0, name)
+        }
+
+        // Space has no storm.
+        var stormy = rain
+        stormy.crawlers = [CrawlerSlot(segments: [], born: 0, duration: 1, peak: 0.3, brightness: 0.3)]
+        stormy.sheet = [SheetSlot(azimuth: 90, width: 20, height: 4, born: 0, duration: 0.2, strength: 1, brightness: 0.2)]
+        stormy.stormFlash = 0.3; stormy.virga = 0.5; stormy.farStorm = 1; stormy.supercell = 1; stormy.supercellPhase = 0.5
+        let space = SpaceshipLoungeModel.weatherless(stormy)
+        XCTAssertTrue(space.crawlers.isEmpty && space.sheet.isEmpty)
+        XCTAssertNil(space.gustFront)
+        XCTAssertEqual([space.stormFlash, space.outflow, space.warmthGrade, space.virga, space.farStorm, space.supercell,
+                        space.supercellPhase], [0, 0, 0, 0, 0, 0, 0])
+
+        // The sea: whipped up by the outflow as by a squall; left be by virga.
+        XCTAssertEqual(OceanSwell.weatherScale(front), 1.7, accuracy: 1e-6)
+        XCTAssertEqual(OceanSwell.weatherScale(virga), 1, accuracy: 1e-6)
+    }
+
     /// Sets 7 & 8 spec §5: diamond dust is still air: the wind is capped at 0.2.
     func testDiamondDustStillsTheWind() {
         var levels: [AmbienceSource: Double] = [.wind: 0.6]

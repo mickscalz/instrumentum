@@ -237,7 +237,7 @@ extension LivingSkyTests {
     }
 
     func testNewWeatherValues() {
-        XCTAssertEqual(WeatherKind.allCases, [.clear, .lightCloud, .overcast, .mist, .drizzle, .rain, .storm, .snow, .blizzard, .afterRain, .sunShower, .fogBank, .sleet, .monsoon, .hail, .smokeHaze, .iceFog, .thunderheads, .dustStorm, .flurries, .freezingDrizzle, .squall, .dryLightning, .humid, .diamondDust, .rime, .seaSmoke])
+        XCTAssertEqual(WeatherKind.allCases, [.clear, .lightCloud, .overcast, .mist, .drizzle, .rain, .storm, .snow, .blizzard, .afterRain, .sunShower, .fogBank, .sleet, .monsoon, .hail, .smokeHaze, .iceFog, .thunderheads, .dustStorm, .flurries, .freezingDrizzle, .squall, .dryLightning, .humid, .diamondDust, .rime, .seaSmoke, .gustFront, .virga])
         // cloud, rain, snow, mist, wind, halo, frost, gust (spec §6.1)
         let table: [WeatherKind: [Float]] = [
             .clear: [0, 0, 0, 0.1, 0.1, 0, 0.15, 0],
@@ -267,6 +267,8 @@ extension LivingSkyTests {
             .diamondDust: [0.05, 0, 0, 0.2, 0.02, 1, 0.9, 0],
             .rime: [0.3, 0, 0, 0.85, 0.08, 0.2, 1, 0],
             .seaSmoke: [0.1, 0, 0, 0.35, 0.06, 0.3, 0.9, 0],
+            .gustFront: [0.9, 0.2, 0, 0.5, 1, 0, 0, 1],
+            .virga: [0.7, 0, 0, 0.6, 0.4, 0, 0, 0.3],
         ]
         for k in WeatherKind.allCases {
             let v = k.values
@@ -851,8 +853,8 @@ extension LivingSkyTests {
 
 extension LivingSkyTests {
     func testRimeValues() {
-        XCTAssertEqual(Array(WeatherKind.allCases.suffix(2)), [.rime, .seaSmoke],
-                       "appended at the end (sea smoke after it), so every saved weather keeps its meaning")
+        XCTAssertEqual(Array(WeatherKind.allCases[25...26]), [.rime, .seaSmoke],
+                       "appended in order (sea smoke after it, then the Storms' two), so every saved weather keeps its meaning")
         let v = WeatherKind.rime.values
         // cloud, rain, snow, mist, wind, halo, frost, gust, rime (spec §6.1)
         XCTAssertEqual([v.cloud, v.rain, v.snow, v.mist, v.wind, v.halo, v.frost, v.gust, v.rime], [0.3, 0, 0, 0.85, 0.08, 0.2, 1, 0, 1])
@@ -1075,7 +1077,8 @@ extension LivingSkyTests {
     /// Sea smoke (spec §6.1): the table's values, appended at the end, not wet, rough or flashing, and frost all day; the
     /// sky carries its steam, the cold worlds keep it, and the swell lies down to 0.4.
     func testSeaSmokeValues() {
-        XCTAssertEqual(WeatherKind.allCases.last, .seaSmoke, "appended at the end, so every saved weather keeps its meaning")
+        XCTAssertEqual(WeatherKind.allCases.firstIndex(of: .seaSmoke), 26,
+                       "appended after rime (the Storms' two after it), so every saved weather keeps its meaning")
         XCTAssertEqual(WeatherKind.seaSmoke.rawValue, "seaSmoke")
         let v = WeatherKind.seaSmoke.values
         // cloud, rain, snow, mist, wind, halo, frost, gust, steam
@@ -1110,5 +1113,67 @@ extension LivingSkyTests {
         XCTAssertEqual(WorldWeather.cold(still).steam, 1)
         XCTAssertEqual(AuroraFjordModel.fjordSky(still).weather, .seaSmoke)
         XCTAssertEqual(OceanSwell.weatherScale(still), 0.4, accuracy: 1e-6)
+    }
+}
+
+// MARK: - Storms (Sets 17 & 18): the Gust front and Virga, the two Sky extras modes
+
+extension LivingSkyTests {
+    /// The two Storms weathers (spec §7): appended at the end (so every saved weather keeps its meaning), their values,
+    /// their flags (a gust front ends in rain and is rough; virga is neither), the two new fields only in their own kind,
+    /// blending like the rest, and in no world's Random Beautiful unless its table adds them.
+    func testStormWeatherValues() {
+        XCTAssertEqual(Array(WeatherKind.allCases.suffix(2)), [.gustFront, .virga], "appended at the end")
+        XCTAssertEqual([WeatherKind.gustFront.rawValue, WeatherKind.virga.rawValue], ["gustFront", "virga"])
+        let g = WeatherKind.gustFront.values
+        // cloud, rain, snow, mist, wind, gust, outflow, virga
+        XCTAssertEqual([g.cloud, g.rain, g.snow, g.mist, g.wind, g.gust, g.outflow, g.virga], [0.9, 0.2, 0, 0.5, 1, 1, 1, 0])
+        XCTAssertEqual([g.halo, g.frost, g.fireflies, g.pillar, g.rime, g.steam], [0, 0, 0, 0, 0, 0])
+        XCTAssertTrue(WeatherKind.gustFront.isWet, "it ends in rain, so after the rain may follow")
+        XCTAssertTrue(WeatherKind.gustFront.isRough, "Calm random weather never picks it")
+        XCTAssertFalse(WeatherKind.gustFront.flashes, "its lightning is the crawlers on its anvil")
+        XCTAssertFalse(WeatherKind.gustFront.frostFormsOnlyAtNight)
+        for k in WeatherKind.allCases where k != .gustFront { XCTAssertEqual(k.values.outflow, 0, "\(k)") }
+        XCTAssertEqual(WeatherValues.mix(WeatherKind.clear.values, g, 0.5).outflow, 0.5, accuracy: 1e-6)
+        XCTAssertEqual(WeatherValues.mix(WeatherKind.clear.values, WeatherKind.virga.values, 0.25).virga, 0.25, accuracy: 1e-6)
+        XCTAssertEqual([WeatherKind.gustFront.beautyWeight, WeatherKind.virga.beautyWeight], [0, 0])
+        // Settled in the sky: virga's streaks and no rain; the gust front's Approach (its staged weather, not its nominal).
+        let virga = sky(.virga).step(now: start, dt: 0)
+        XCTAssertEqual([virga.rain, virga.virga, virga.outflow], [0, 1, 0])
+        let front = sky(.gustFront, hour: 13).step(now: start, dt: 0)
+        XCTAssertEqual(front.gustFront?.stage, .approach)
+        XCTAssertEqual(front.rain, 0)
+        XCTAssertEqual(front.outflow, 0, "no outflow before the Hit")
+        XCTAssertEqual(front.cloudCover, 0.45, accuracy: 1e-5, "the shelf cloud still on the horizon")
+        XCTAssertNil(sky(.storm).step(now: start, dt: 0).gustFront)
+    }
+
+    /// The two Sky extras modes (Natural) and the gust front's length (180 s) by default (spec §6, §7.1); the one-tap
+    /// looks set them (Gentle: Natural, Natural, 300 s; Dramatic: Often, Often, 120 s; Dreamy: Natural, Often, 240 s) and
+    /// Reset restores them; the modes' names and their world parameters.
+    func testStormExtrasSettings() {
+        let d = SkySettings()
+        XCTAssertEqual([d.crawlersMode, d.sheetMode], [.natural, .natural])
+        XCTAssertEqual(d.gustFrontSeconds, 180)
+        let looks: [(SkySettings.AdvancedPreset, SkyExtraMode, SkyExtraMode, Double)] =
+            [(.gentle, .natural, .natural, 300), (.dramatic, .often, .often, 120), (.dreamy, .natural, .often, 240)]
+        for (look, crawlers, sheet, seconds) in looks {
+            var s = SkySettings(); s.crawlersMode = .off; s.sheetMode = .off; s.gustFrontSeconds = 600
+            s.applyAdvanced(look)
+            XCTAssertEqual([s.crawlersMode, s.sheetMode], [crawlers, sheet], "\(look)")
+            XCTAssertEqual(s.gustFrontSeconds, seconds, "\(look)")
+            s.resetAdvanced()
+            XCTAssertEqual([s.crawlersMode, s.sheetMode], [.natural, .natural], "Reset after \(look)")
+            XCTAssertEqual(s.gustFrontSeconds, 180, "Reset after \(look)")
+        }
+        var hand = SkySettings(); hand.crawlersMode = .often; hand.sheetMode = .off; hand.gustFrontSeconds = 75
+        hand.resetAdvanced()
+        XCTAssertEqual(hand, SkySettings())
+        XCTAssertEqual(SkyExtraMode.allCases.map(\.rawValue), ["Off", "Natural", "Often"])
+        XCTAssertEqual([SkyExtraMode.crawlersID, SkyExtraMode.sheetID], ["crawlers.mode", "sheet.mode"])
+        let spec = SkyExtraMode.spec(id: SkyExtraMode.crawlersID, name: "Anvil crawlers", help: "Spider lightning", default: .often)
+        XCTAssertEqual([spec.id, spec.name, spec.group], ["crawlers.mode", "Anvil crawlers", "Sky"])
+        XCTAssertEqual(spec.kind, .choice(["Off", "Natural", "Often"]))
+        XCTAssertEqual(spec.defaultValue, .choice("Often"))
     }
 }
