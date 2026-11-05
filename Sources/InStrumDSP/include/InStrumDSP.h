@@ -20,7 +20,11 @@ void isd_reverb_process(ISDReverb *reverb, const float *inL, const float *inR, f
 
 // ---------- Built-in instruments ----------
 typedef enum { ISD_ENGINE_FELT_GLASS = 0, ISD_ENGINE_ORBIT_PAD = 1, ISD_ENGINE_HONEY_TAPE = 2, ISD_ENGINE_HAZE_BELLS = 3, ISD_ENGINE_CABIN_FELT = 4, ISD_ENGINE_MORNING_BOX = 5, ISD_ENGINE_POLAR_CHOIR = 6, ISD_ENGINE_PLANKTON_KEYS = 7, ISD_ENGINE_TEA_HOUSE_KOTO = 8, ISD_ENGINE_ZEN_SHAKUHACHI = 9, ISD_ENGINE_BLUE_DEPTH = 10, ISD_ENGINE_REEF_MARIMBA = 11,
-               ISD_ENGINE_MAGMA_BASS = 12, ISD_ENGINE_REPLICANT_BRASS = 13 } ISDEngine;
+               ISD_ENGINE_MAGMA_BASS = 12, ISD_ENGINE_REPLICANT_BRASS = 13,
+               /* 14 and 15 are Home Lights' (Sets 15 & 16). */
+               /* Storms (Sets 17 & 18), reserved: Endless Rise (spec 2026-11-05-storms-design.md §4.1) and Single Note
+                  Grand (§4.2). Not creatable until their tasks land: isd_synth_create returns NULL for them. */
+               ISD_ENGINE_ENDLESS_RISE = 16, ISD_ENGINE_SINGLE_NOTE_GRAND = 17 } ISDEngine;
 
 /// Parameter addresses (stable: saved in presets and instrument state).
 enum {
@@ -43,6 +47,13 @@ enum {
     /// Replicant Brass with Chrome Bass (Sets 13 & 14, reserved; spec §4.3). Tempo 70…170, default 120.
     ISD_P_SWELL_RB = 140, ISD_P_BLAZE = 141, ISD_P_UNISON_WIDTH = 142, ISD_P_HALL = 143, ISD_P_CHROME = 144,
     ISD_P_PUNCH = 145, ISD_P_ARP_MODE = 146, ISD_P_ARP_RATE = 147, ISD_P_SPLIT = 148, ISD_P_TEMPO_RB = 149,
+    /// Endless Rise (Storms, Sets 17 & 18, reserved; spec 2026-11-05-storms-design.md §4.1). Rise is the riser's climb
+    /// in octaves a second (0 switches the riser off, else 0.02…0.5; default 0.08); Tempo 70…170, default 124. Also
+    /// uses ISD_P_SPACE and ISD_P_WIDTH.
+    ISD_P_RISE = 150, ISD_P_PRESSURE = 151, ISD_P_GRIT_ER = 152, ISD_P_PULSE = 153, ISD_P_TEMPO_ER = 154,
+    ISD_P_TAIL = 155, ISD_P_SUB = 156,
+    /// Single Note Grand (Storms, Sets 17 & 18, reserved; spec §4.2). Also uses ISD_P_SPACE and ISD_P_WIDTH.
+    ISD_P_HALL_SNG = 160, ISD_P_FELT_SNG = 161, ISD_P_MORPH = 162, ISD_P_OCTAVE_DOWN = 163, ISD_P_BREAK = 164,
     ISD_P_MOOD_ENERGY = 100, ISD_P_MOOD_WARMTH = 101, ISD_P_MOOD_BRIGHTNESS = 102, ISD_P_MOOD_SPACE = 103, ISD_P_MOOD_MOTION = 104,
     /// Test hook (unit 3, never shown): Orbit Pad plays one plain saw, no detune, drift, motion or chorus.
     ISD_P_DEBUG_LAYER_A_ONLY = 200,
@@ -68,7 +79,13 @@ enum {
     ISD_P_DEBUG_NO_ROLL = 215, ISD_P_DEBUG_BAR_ONLY = 216,
     /// Test hooks (unit 3, never shown; reserved for Sets 13 & 14): Magma Bass dry (no fold, drive or spark);
     /// Replicant Brass without the Chrome arp; Replicant Brass dry (no chorus or hall).
-    ISD_P_DEBUG_MB_DRY = 217, ISD_P_DEBUG_RB_NO_ARP = 218, ISD_P_DEBUG_RB_DRY = 219
+    ISD_P_DEBUG_MB_DRY = 217, ISD_P_DEBUG_RB_NO_ARP = 218, ISD_P_DEBUG_RB_DRY = 219,
+    /// Test hooks (unit 3, never shown; Storms, Sets 17 & 18, reserved): Endless Rise's pad alone; its riser alone;
+    /// Endless Rise dry (no pulse, drive, reverb or slop).
+    ISD_P_DEBUG_ER_PAD_ONLY = 220, ISD_P_DEBUG_ER_RISE_ONLY = 221, ISD_P_DEBUG_ER_DRY = 222,
+    /// Test hooks (unit 3, never shown; Storms, Sets 17 & 18, reserved): Single Note Grand's piano alone; its voice
+    /// alone; the grand dry (no hall).
+    ISD_P_DEBUG_SNG_PIANO_ONLY = 223, ISD_P_DEBUG_SNG_VOICE_ONLY = 224, ISD_P_DEBUG_SNG_DRY = 225
 };
 
 /// unit: 0 generic 0…1, 1 cents, 2 semitones, 3 internal (test hooks: hosts never show or save these).
@@ -102,6 +119,20 @@ int isd_synth_active_voices(const ISDSynth *synth);
 typedef enum { ISD_DEBUG_RETUNES = 0, ISD_DEBUG_HORN_NOTE = 1, ISD_DEBUG_BUILD_PERMILLE = 2, ISD_DEBUG_WALL_UNISON = 3,
                /* Magma Bass: how many eruption swells hard low chords have set off. */ ISD_DEBUG_ERUPTIONS = 4 } ISDDebugCount;
 int isd_synth_debug_count(const ISDSynth *synth, ISDDebugCount which);
+
+// ---------- Storms (Sets 17 & 18), reserved: declared here, defined by Tasks 2 and 4 of the Storms plan ----------
+/// Endless Rise. Any thread. Tension 0…1 from the Excitement step (or from aftertouch): it multiplies the riser's rate
+/// by 1 + 3·tension and opens the pad's filter. An atomic, read once per control block.
+void isd_synth_set_tension(ISDSynth *synth, float tension);
+/// Endless Rise. Any thread. The drop: the riser resolves, the pad's filter snaps open and a 48 Hz thump fires. A
+/// second drop within 2.5 s is ignored.
+void isd_synth_trigger_drop(ISDSynth *synth);
+/// Single Note Grand. Any thread. Forces the morph (0…1) over aftertouch, for the storm's arrival; a negative value
+/// releases it, and the morph returns to the player's aftertouch over 250 ms.
+void isd_synth_set_forced_morph(ISDSynth *synth, float morph);
+/// Internal (tests) and the repeat detector's read-back (any thread): 1 while the same key has been struck four or more
+/// times at 2 a second or faster, else 0.
+int isd_synth_debug_is_repeating(const ISDSynth *synth);
 
 // ---------- Ambience (generated live, never loops) ----------
 typedef enum {
@@ -143,6 +174,17 @@ typedef enum {
     /// damselfish trains of 3–10 pulses at 20–60 Hz, knocks, pops and croaks, calling more often the higher the level
     /// until they gather into a chorus, near −30 dBFS RMS at 1.
     ISD_AMB_SONAR, ISD_AMB_HULL_CREAK, ISD_AMB_WHALE, ISD_AMB_BUBBLES, ISD_AMB_SHRIMP, ISD_AMB_FISH_CHORUS,
+    /// Storms (Sets 17 & 18), reserved: no source behind these ids yet (Task 8 of the Storms plan), so a level set on
+    /// one is ignored. The storm family (outdoor): GRASS_WIND a broad band rustle keyed to wind; HAIL_TIN hail on a far
+    /// shed's roof, dense tuned clicks at 1.5–4 kHz, rate by hail; BIRDS_FLEE a scatter of calls that sweep away in
+    /// azimuth; THUNDER_ROLL a long low roll of 2–8 s, in no key (isd_ambience_queue_thunder sets its delay);
+    /// INFLOW_ROAR a low wind body rising with energy, resonant a fifth below the key's tonic; RAIN_ON_DUST petrichor,
+    /// a soft hiss that rises before rain. The plains family (outdoor): DRY_CICADAS a dusk band that stops dead 2 s
+    /// before a close strike; WINDMILL a slow creak-and-clank at the wind's rate, in no key; CATTLE_GRID a far truck
+    /// crossing a grid, rare; DUST_TICKS; SHIMMER_HUM heat shimmer as a faint high hum that fades with dusk; FAR_TRUCK.
+    /// Ids are never saved (Swift keeps names), so a merge with Fire & Neon's twelve may renumber them.
+    ISD_AMB_GRASS_WIND, ISD_AMB_HAIL_TIN, ISD_AMB_BIRDS_FLEE, ISD_AMB_THUNDER_ROLL, ISD_AMB_INFLOW_ROAR, ISD_AMB_RAIN_ON_DUST,
+    ISD_AMB_DRY_CICADAS, ISD_AMB_WINDMILL, ISD_AMB_CATTLE_GRID, ISD_AMB_DUST_TICKS, ISD_AMB_SHIMMER_HUM, ISD_AMB_FAR_TRUCK,
     ISD_AMB_COUNT
 } ISDAmbienceSource;
 
@@ -171,6 +213,10 @@ void isd_ambience_set_night_cool(ISDAmbience *ambience, float cool);
 void isd_ambience_set_density(ISDAmbience *ambience, float density);
 /// Any thread. Thunder rolls in 0.5 s (near) to 6 s (far) later.
 void isd_ambience_trigger_thunder(ISDAmbience *ambience, float distance);
+/// Storms (Sets 17 & 18), reserved: declared here, defined by Task 8 of the Storms plan. Any thread. Thunder that
+/// arrives late: the roll starts `delaySeconds` after the call (the picture first, the sound after: 3 s a kilometre,
+/// capped at 12 s), at `strength` 0…1. The queue holds 16 and is cleared by a world switch and by all-sound-off.
+void isd_ambience_queue_thunder(ISDAmbience *ambience, float delaySeconds, float strength);
 /// Any thread. A wave breaks on the shore (strength 0…1): a crash, a wash up the sand and a backwash. Silent
 /// unless the surf is up.
 void isd_ambience_trigger_wave(ISDAmbience *ambience, float strength);

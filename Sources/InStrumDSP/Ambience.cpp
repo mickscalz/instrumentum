@@ -18,6 +18,7 @@ const float kGain[ISD_AMB_COUNT] = {
     /* ice groan */ 0.10f, /* waterfall */ 0.134f, /* lapping */ 0.72f, /* boat */ 0.24f,
     /* temple bell */ 0.143f, /* paper screens */ 0.216f, /* water-knocker */ 0.055f, /* warbler */ 0.107f,
     /* sonar */ 0.0845f, /* hull creak */ 0.066f, /* whale */ 0.0663f, /* bubbles */ 0.083f, /* shrimp */ 0.223f, /* fish chorus */ 0.182f,
+    // Storms (Sets 17 & 18): twelve ids reserved in the header, no source and no gain yet (zero-filled; Task 8 sets them).
 };
 
 /// sin(2πx) for x in cycles (any value). 9th-order odd polynomial after folding: error ≈ 2e-6.
@@ -2395,7 +2396,8 @@ Ambience::Ambience(double sampleRate, uint64_t seed) : sr(sampleRate), room(samp
 Ambience::~Ambience() = default;
 
 void Ambience::setLevel(int source, float level) {
-    if (source < 0 || source >= ISD_AMB_COUNT) return;
+    // A reserved id with no source behind it (the Storms families until Task 8) is ignored.
+    if (source < 0 || source >= ISD_AMB_COUNT || !sources[source]) return;
     Ramp &r = ramps[source];
     const float v = clamp01(level);
     if (v > 0.f && r.silent()) sources[source]->wake(ctx);

@@ -6,6 +6,10 @@ public enum AmbienceSource: String, Codable, CaseIterable {
     case iceGroan, waterfall, lapping, boat
     case templeBell, paperScreens, waterKnocker, warbler
     case sonar, hullCreak, whaleSong, bubbles, snappingShrimp, fishChorus
+    /// Storms (Sets 17 & 18), reserved: the storm family, then the plains family. Silent until the engine has sources
+    /// for them (Task 8 of the Storms plan).
+    case grassWind, hailOnTin, birdsFlee, thunderRoll, inflowRoar, rainOnDust
+    case dryCicadas, windmill, cattleGrid, dustTicks, shimmerHum, farTruck
 }
 
 /// The key the player is in (spec §7.1): root 0…11 (C = 0), major or minor.

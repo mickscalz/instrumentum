@@ -230,8 +230,12 @@ final class CPUBudgetTests: XCTestCase {
         var felt = [R.pedal(0, 127)]
         for n: UInt8 in [36, 43, 48, 52, 55, 60, 64, 67, 71, 72, 76, 79, 83, 84, 88, 91] { felt.append(R.noteOn(0, n, 90)) }
         let pad = [48, 55, 60, 63, 67, 70, 72, 75].map { R.noteOn(0, UInt8($0), 90) }
-        XCTAssertEqual(ISD_AMB_COUNT.rawValue, 38)
-        var ambience: [AmbienceTests.Action] = (0..<Int(ISD_AMB_COUNT.rawValue)).map { AmbienceTests.level(ISDAmbienceSource(UInt32($0)), 0.6) }
+        // 38 sources, plus the twelve Storms ids reserved in the header with no source behind them until Task 8 of the
+        // Storms plan (which makes this 50 playing sources and re-measures the budget).
+        XCTAssertEqual(ISD_AMB_COUNT.rawValue, 50)
+        let playing = Int(ISD_AMB_FISH_CHORUS.rawValue) + 1
+        XCTAssertEqual(playing, 38)
+        var ambience: [AmbienceTests.Action] = (0..<playing).map { AmbienceTests.level(ISDAmbienceSource(UInt32($0)), 0.6) }
         ambience += [AmbienceTests.pingSonar(at: 0), AmbienceTests.startWhale(at: 0), AmbienceTests.bubbles(0.8, at: 1)]
         let seconds = bestOfThree {
             _ = R.render(seconds: 10, events: felt)

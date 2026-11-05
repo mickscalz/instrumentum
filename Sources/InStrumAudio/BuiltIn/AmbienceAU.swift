@@ -125,6 +125,18 @@ public final class AmbienceAU: AUAudioUnit {
         case .bubbles: return ISD_AMB_BUBBLES
         case .snappingShrimp: return ISD_AMB_SHRIMP
         case .fishChorus: return ISD_AMB_FISH_CHORUS
+        case .grassWind: return ISD_AMB_GRASS_WIND
+        case .hailOnTin: return ISD_AMB_HAIL_TIN
+        case .birdsFlee: return ISD_AMB_BIRDS_FLEE
+        case .thunderRoll: return ISD_AMB_THUNDER_ROLL
+        case .inflowRoar: return ISD_AMB_INFLOW_ROAR
+        case .rainOnDust: return ISD_AMB_RAIN_ON_DUST
+        case .dryCicadas: return ISD_AMB_DRY_CICADAS
+        case .windmill: return ISD_AMB_WINDMILL
+        case .cattleGrid: return ISD_AMB_CATTLE_GRID
+        case .dustTicks: return ISD_AMB_DUST_TICKS
+        case .shimmerHum: return ISD_AMB_SHIMMER_HUM
+        case .farTruck: return ISD_AMB_FAR_TRUCK
         }
     }
 
