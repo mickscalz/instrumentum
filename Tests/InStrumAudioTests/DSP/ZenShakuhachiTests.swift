@@ -251,6 +251,20 @@ final class ZenShakuhachiTests: XCTestCase {
         XCTAssertEqual(DSPTestKit.cents(f, ref), 0, accuracy: 5)
     }
 
+    /// Final review (Review focus 1's family): a note sunk into meri by its own key's (poly) pressure at Bend 1, then
+    /// reset all controllers (CC 121): it comes back up to pitch, as it does when channel pressure is reset.
+    func testResetAllControllersLetsPolyPressureGo() {
+        var p = tone; p[Int(ISD_P_BEND)] = 1
+        let held = [R.noteOn(0, 74, 100), R.Event(time: 0.4, bytes: [0xA0, 74, 127])]
+        let ref = midiHz(74)
+        let pressed = R.render(flute, seconds: 1.2, params: p, events: held).l
+        let sunk = DSPTestKit.fundamental(R.slice(pressed, 0.8, 1.2), sampleRate: R.sr, near: ref * pow(2, -150.0 / 1200))
+        XCTAssertEqual(DSPTestKit.cents(sunk, ref), -150, accuracy: 15, "poly pressure is meri")
+        let reset = R.render(flute, seconds: 2.0, params: p, events: held + [R.Event(time: 1.0, bytes: [0xB0, 121, 0])]).l
+        let f = DSPTestKit.fundamental(R.slice(reset, 1.5, 2.0), sampleRate: R.sr, near: ref)
+        XCTAssertEqual(DSPTestKit.cents(f, ref), 0, accuracy: 5, "reset all controllers lets it go")
+    }
+
     // MARK: - Endings
 
     func testReleaseDecays() {
