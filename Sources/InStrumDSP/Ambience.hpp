@@ -1,7 +1,8 @@
-// Ambience: thirty-eight sources generated live (never loops), each gliding to its level over 2.5 s, through a
+// Ambience: fifty sources generated live (never loops), each gliding to its level over 2.5 s, through a
 // small room whose amount follows "closeness", ducking under the instrument while you play. Outdoor sources can be
 // heard through a window ("indoors"): darker and quieter, while the indoor ones stay close. In-key sources (the
-// temple bell, the sonar) follow the key the player is in.
+// temple bell, the sonar, the inflow roar, the heat shimmer) follow the key the player is in. Thunder can be queued to
+// arrive late by its distance (the picture first, the sound after).
 // Everything is preallocated; the setters are lock-free atomics read at the start of each render.
 #pragma once
 #include "DSPCommon.hpp"
@@ -30,18 +31,23 @@ public:
     virtual ~AmbienceSource() = default;
     /// Called when the source comes up from silence: schedule events afresh.
     virtual void wake(const AmbienceContext &) {}
+    /// Its next event now (tests): the birds take flight, a truck crosses the grid, a far truck passes. Most have none.
+    virtual void triggerNow(const AmbienceContext &) {}
     virtual void render(float *l, float *r, int n, const AmbienceContext &c) = 0;
     float direct = 1.f, send = 0.5f;   // how much goes straight out and how much into the room
     /// Indoors (or at the glass itself): never muffled by the window.
     bool indoor = false;
     /// This block's level (0…1), for sources whose events thin out as they fade.
     float level = 0.f;
+    /// The level it is gliding to (0…1): a drop to nothing stops the cicadas dead instead of fading them.
+    float levelTarget = 0.f;
     /// Events started so far (tests): the street counts its passing cars.
     int events = 0;
 };
 
 class Thunder;
-namespace amb { class Surf; class Kettle; class Boat; class TempleBell; class WaterKnocker; class Warbler; class Sonar; class Whale; class Bubbles; }
+namespace amb { class Surf; class Kettle; class Boat; class TempleBell; class WaterKnocker; class Warbler; class Sonar; class Whale; class Bubbles;
+                class ThunderRoll; }
 
 class Ambience {
 public:
@@ -53,6 +59,16 @@ public:
     void setNightCool(float c) { ctx.cool = clamp01(c); }
     void setDensity(float d) { ctx.density = d < 0.5f ? 0.5f : (d > 1.5f ? 1.5f : d); }
     void triggerThunder(float distance);
+    /// Thunder that arrives late (Storms spec §3): a roll starting `delaySeconds` (0…12) from now, at `strength` 0…1, as
+    /// from a strike delaySeconds / 3 km off. Heard only while the thunder roll is up; 16 wait at most (a 17th drops the
+    /// oldest), and the queue is cleared as the roll's level goes to nothing.
+    void queueThunder(float delaySeconds, float strength);
+    /// A world switch: every roll still waiting is dropped (those already rolling fade with the world).
+    void clearThunder();
+    /// Panic: the queue is dropped and every roll and clap fades out within 40 ms; the beds carry on.
+    void allSoundOff();
+    /// A source's next event now (tests), waking it first if it is silent.
+    void triggerNow(int source);
     void setSpeed(float s) { speedTarget = clamp01(s); }
     void setSurfDistance(float d) { ctx.surfDistance = clamp01(d); }
     /// A wave breaks now (0…1); heard only while the surf is up.
@@ -118,6 +134,7 @@ private:
     amb::Sonar *sonar = nullptr;
     amb::Whale *whale = nullptr;
     amb::Bubbles *bubbles = nullptr;
+    amb::ThunderRoll *thunderRoll = nullptr;
     float speedTarget = 0, indoorsTarget = 0, indoors = 0, indoorsApplied = -1, wetTarget = 0, snowTarget = 0;
     float windowA1 = 1, windowA2 = 0, windowA3 = 0, windowGain = 1;
     Ramp ramps[ISD_AMB_COUNT];

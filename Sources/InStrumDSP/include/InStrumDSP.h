@@ -174,15 +174,26 @@ typedef enum {
     /// damselfish trains of 3–10 pulses at 20–60 Hz, knocks, pops and croaks, calling more often the higher the level
     /// until they gather into a chorus, near −30 dBFS RMS at 1.
     ISD_AMB_SONAR, ISD_AMB_HULL_CREAK, ISD_AMB_WHALE, ISD_AMB_BUBBLES, ISD_AMB_SHRIMP, ISD_AMB_FISH_CHORUS,
-    /// Storms (Sets 17 & 18), reserved: no source behind these ids yet (Task 8 of the Storms plan), so a level set on
-    /// one is ignored. The storm family (outdoor): GRASS_WIND a broad band rustle keyed to wind; HAIL_TIN hail on a far
-    /// shed's roof, dense tuned clicks at 1.5–4 kHz, rate by hail; BIRDS_FLEE a scatter of calls that sweep away in
-    /// azimuth; THUNDER_ROLL a long low roll of 2–8 s, in no key (isd_ambience_queue_thunder sets its delay);
-    /// INFLOW_ROAR a low wind body rising with energy, resonant a fifth below the key's tonic; RAIN_ON_DUST petrichor,
-    /// a soft hiss that rises before rain. The plains family (outdoor): DRY_CICADAS a dusk band that stops dead 2 s
-    /// before a close strike; WINDMILL a slow creak-and-clank at the wind's rate, in no key; CATTLE_GRID a far truck
-    /// crossing a grid, rare; DUST_TICKS; SHIMMER_HUM heat shimmer as a faint high hum that fades with dusk; FAR_TRUCK.
-    /// Ids are never saved (Swift keeps names), so a merge with Fire & Neon's twelve may renumber them.
+    /// Storms (Sets 17 & 18), all outdoor. The storm family: GRASS_WIND a field of dry grass in the wind (the level is
+    /// the wind: brighter and busier as it rises, gust waves sweeping across from one side to the other, seed heads
+    /// ticking), 1.5–6 kHz, near −24 dBFS RMS at 1; HAIL_TIN hail on a far shed's tin roof (the level is the hail: 700
+    /// impacts a second at 1, rising with the level's 1.5 power, each ringing the roof's own panel modes at 1.5–4 kHz;
+    /// mostly dry); BIRDS_FLEE a flock flushed ahead of the storm: wingbeats, then 8–13 harsh calls one at a time, each
+    /// farther round to one side, fainter and duller, sweeping away from the storm (ahead) in azimuth: a flight as the
+    /// level comes up, then rarer ones (15–45 s apart and growing, as the field empties); THUNDER_ROLL thunder that
+    /// arrives late (isd_ambience_queue_thunder): a roll of 2–8 s, nearly all of it below 150 Hz, a crack first when
+    /// close, in no key; it makes no sound of its own; INFLOW_ROAR a low wind body that opens with the level (the storm's
+    /// energy) around a resonant throat a fifth below the key's tonic (in A2–G♯3: 73–139 Hz; all dry, so never off the
+    /// key); RAIN_ON_DUST petrichor: a soft hiss from the first of the level, the first fat drops pattering only past 0.6
+    /// (virga's 0.5 stays dry). The plains family: DRY_CICADAS a dusk chorus (4.2–6.8 kHz) that stops dead, together,
+    /// within 50 ms when its level drops to nothing (a world hushes them 2 s before a close strike) and comes back singer
+    /// by singer; WINDMILL a steel water pump (the level is the wind: still
+    /// below 0.08, then 0.75 × (level − 0.08) / 0.92 strokes a second), clanking at the top of each stroke, knocking at
+    /// the bottom and creaking, in no key; CATTLE_GRID a vehicle on the far road drumming over a grid's bars, every
+    /// 90–240 s; DUST_TICKS grit on the wind against wire and tin, 3–9 kHz, more in the gusts; SHIMMER_HUM a faint high
+    /// hum on the key's tonic in A5–G♯6 with its fifth and octave, beating slowly (the world fades it with the heat);
+    /// FAR_TRUCK a road train on a far highway every 50–140 s, swelling and fading over 30–60 s. Ids are never saved
+    /// (Swift keeps names), so a merge with Fire & Neon's twelve may renumber them.
     ISD_AMB_GRASS_WIND, ISD_AMB_HAIL_TIN, ISD_AMB_BIRDS_FLEE, ISD_AMB_THUNDER_ROLL, ISD_AMB_INFLOW_ROAR, ISD_AMB_RAIN_ON_DUST,
     ISD_AMB_DRY_CICADAS, ISD_AMB_WINDMILL, ISD_AMB_CATTLE_GRID, ISD_AMB_DUST_TICKS, ISD_AMB_SHIMMER_HUM, ISD_AMB_FAR_TRUCK,
     ISD_AMB_COUNT
@@ -196,7 +207,9 @@ float isd_ambience_debug_tone_hz(float hz, float sampleRate, float seconds);
 /// ice its groans and cracks together; lapping its sloshes; the boat its passes; the temple bell its strikes; the
 /// paper screens their rustles; the water-knocker its clacks; the warbler its calls; the sonar its pings; the hull
 /// its groans and ticks together; the whale its units; the bubbles their bursts; the shrimp their snaps; the fish
-/// their calls).
+/// their calls; the grass nothing; the hail its stones; the birds their calls; the thunder roll its rolls; the rain on
+/// dust its drops; the cicadas their phrases; the windmill its strokes; the cattle grid and the far truck their
+/// passes; the dust its ticks).
 int isd_ambience_debug_events(const ISDAmbience *ambience, ISDAmbienceSource source);
 /// The same seed gives the same ambience.
 ISDAmbience *isd_ambience_create(double sampleRate, int maxFrames, uint64_t seed);
@@ -213,10 +226,21 @@ void isd_ambience_set_night_cool(ISDAmbience *ambience, float cool);
 void isd_ambience_set_density(ISDAmbience *ambience, float density);
 /// Any thread. Thunder rolls in 0.5 s (near) to 6 s (far) later.
 void isd_ambience_trigger_thunder(ISDAmbience *ambience, float distance);
-/// Storms (Sets 17 & 18), reserved: declared here, defined by Task 8 of the Storms plan. Any thread. Thunder that
-/// arrives late: the roll starts `delaySeconds` after the call (the picture first, the sound after: 3 s a kilometre,
-/// capped at 12 s), at `strength` 0…1. The queue holds 16 and is cleared by a world switch and by all-sound-off.
+/// Any thread. Thunder that arrives late (Storms): a roll on ISD_AMB_THUNDER_ROLL starting `delaySeconds` (0…12) after
+/// the next render begins (the picture first, the sound after: 3 s a kilometre, capped at 12 s), at `strength` 0…1, as
+/// from a strike delaySeconds / 3 km off. Ignored while the thunder roll is silent or fading out. The queue holds 16 (a
+/// 17th drops the oldest); a world switch (isd_ambience_clear_thunder, or the roll's level going to 0) and
+/// isd_ambience_all_sound_off clear it.
 void isd_ambience_queue_thunder(ISDAmbience *ambience, float delaySeconds, float strength);
+/// Any thread. A world switch: every roll still waiting in the queue (queued before this call) is dropped; rolls
+/// already sounding fade out with the world's levels.
+void isd_ambience_clear_thunder(ISDAmbience *ambience);
+/// Any thread. Panic: the thunder queue is cleared and every roll and clap still sounding (queued or triggered) fades
+/// out within 40 ms. The beds carry on: they are the world, not a stuck note.
+void isd_ambience_all_sound_off(ISDAmbience *ambience);
+/// Internal (tests): a source's next event happens at the next render (the birds take flight, a truck crosses the
+/// cattle grid, a far truck passes); ignored by sources without events of their own.
+void isd_ambience_debug_trigger(ISDAmbience *ambience, ISDAmbienceSource source);
 /// Any thread. A wave breaks on the shore (strength 0…1): a crash, a wash up the sand and a backwash. Silent
 /// unless the surf is up.
 void isd_ambience_trigger_wave(ISDAmbience *ambience, float strength);

@@ -18,7 +18,8 @@ final class AmbienceBox {
 }
 
 /// The live ambience (spec §5) as an in-process generator Audio Unit. It plays on its own bus,
-/// never through the instrument's, so panic and the sound-character tap leave it alone.
+/// never through the instrument's, so the sound-character tap never hears it and panic leaves its beds alone (a panic only
+/// drops the thunder on its way and stops any that is rolling).
 public final class AmbienceAU: AUAudioUnit {
     private let box = AmbienceBox()
     private var outputBus: AUAudioUnitBus!
@@ -46,7 +47,18 @@ public final class AmbienceAU: AUAudioUnit {
 
     public func setScene(_ scene: AmbienceScene) {
         state.withLockUnchecked { $0.scene = scene }
-        apply(thunder: scene.thunder, wave: scene.wave, bubbles: scene.bubbleBurst)
+        apply(thunder: scene.thunder, wave: scene.wave, bubbles: scene.bubbleBurst, thunderQueue: scene.thunderQueue)
+    }
+
+    /// A world switch (Storms Review focus 4): thunder still on its way from the last world never arrives in the next
+    /// (rolls already sounding fade out with the world's levels).
+    public func clearThunder() {
+        if let a = box.ambience { isd_ambience_clear_thunder(a) }
+    }
+
+    /// Panic: the thunder on its way is dropped and anything rolling fades out within 40 ms; the beds carry on.
+    public func allSoundOff() {
+        if let a = box.ambience { isd_ambience_all_sound_off(a) }
     }
 
     /// Off fades every source out (and stops the work); on brings the scene back.
@@ -61,7 +73,7 @@ public final class AmbienceAU: AUAudioUnit {
         if changed { apply(thunder: nil) }
     }
 
-    private func apply(thunder: Double?, wave: Double? = nil, bubbles: Double? = nil) {
+    private func apply(thunder: Double?, wave: Double? = nil, bubbles: Double? = nil, thunderQueue: [QueuedThunder] = []) {
         guard let a = box.ambience else { return }
         let s = state.withLockUnchecked { $0 }
         for source in AmbienceSource.allCases {
@@ -83,6 +95,8 @@ public final class AmbienceAU: AUAudioUnit {
         if let distance = thunder, s.enabled { isd_ambience_trigger_thunder(a, Float(distance)) }
         if let strength = wave, s.enabled { isd_ambience_trigger_wave(a, Float(strength)) }
         if let strength = bubbles, s.enabled { isd_ambience_trigger_bubbles(a, Float(strength)) }
+        // After the levels: the engine hears a roll only while the thunder roll is up.
+        if s.enabled { for roll in thunderQueue { isd_ambience_queue_thunder(a, Float(roll.delay), Float(roll.strength)) } }
     }
 
     static func cSource(_ s: AmbienceSource) -> ISDAmbienceSource {

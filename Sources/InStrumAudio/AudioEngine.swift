@@ -152,7 +152,8 @@ public final class AudioEngine {
         if isOn || released { ambience?.setPlaying(isOn) }
     }
 
-    /// Silences everything: pedal up, all notes off, all sound off.
+    /// Silences everything: pedal up, all notes off, all sound off; and the ambience's thunder (Storms Review focus 4):
+    /// what is on its way never arrives and what is rolling stops. The ambience's beds carry on.
     public func panic() {
         for ch: UInt8 in 0..<16 {
             send([0xB0 | ch, 64, 0])
@@ -160,6 +161,12 @@ public final class AudioEngine {
             send([0xB0 | ch, 120, 0])
         }
         for note: UInt8 in 0...127 { send([0x80, note, 0]) }
+        shared.withLockUnchecked { $0.ambience }?.allSoundOff()
+    }
+
+    /// A world switch: thunder queued in the last world never arrives in the next (Storms Review focus 4).
+    public func clearAmbienceThunder() {
+        shared.withLockUnchecked { $0.ambience }?.clearThunder()
     }
 
     public var audioLevel: Float {

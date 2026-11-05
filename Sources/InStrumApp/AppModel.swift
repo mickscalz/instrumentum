@@ -211,6 +211,7 @@ public final class AppModel: ObservableObject {
 
     public func panic() {
         engine.panic()
+        ambienceLive.withLockUnchecked { $0.pendingThunder = nil; $0.pendingThunderQueue.removeAll() }   // nothing on its way
         live.withLockUnchecked { l in l.events += l.state.reset() }
     }
 
@@ -462,6 +463,9 @@ public final class AppModel: ObservableObject {
         let resolved = ThemeRegistry.resolve(id)
         guard resolved != themeID else { return }
         stopTheArp()
+        // Storms Review focus 4: no thunder queued in the last world arrives in this one, whatever this one plays.
+        ambienceLive.withLockUnchecked { $0.pendingThunderQueue.removeAll() }
+        engine.clearAmbienceThunder()
         themeID = resolved
         settings.themeID = resolved
         visualsVersion += 1
@@ -575,8 +579,12 @@ public final class AppModel: ObservableObject {
         var pendingThunder: Double?
         var pendingWave: Double?
         var pendingBubbles: Double?
+        /// Thunder on its way, held by the throttle, with when the world asked (its delay runs from then).
+        var pendingThunderQueue: [(thunder: QueuedThunder, at: Double)] = []
         var closeness = 0.5
     }
+    /// The engine's thunder queue holds 16: so does the throttle's.
+    nonisolated static let thunderQueueLimit = 16
     nonisolated private let ambienceLive = OSAllocatedUnfairLock(uncheckedState: AmbienceLive())
 
     public var ambienceSettings: AmbienceSettings { settings.ambience }
@@ -586,7 +594,10 @@ public final class AppModel: ObservableObject {
     /// the player is in) or thunder, a wave or a burst of bubbles is due. The user's closeness leans the world's own
     /// closeness; a thunderclap, a wave or a bubble burst held back by the throttle goes next time (two waves or two
     /// bursts inside one tenth of a second go as the bigger one), unless the next scene has no surf or no bubbles (a
-    /// new world): a beach's wave never crashes in the next world, and the submarine's bubbles never rise in it.
+    /// new world): a beach's wave never crashes in the next world, and the submarine's bubbles never rise in it. Queued
+    /// thunder held back goes next time too, every roll of it (16 at most, the oldest giving way), its delay shortened by
+    /// the time it waited, so it still arrives when the strike's distance says; it stays behind when the next scene has
+    /// no thunder roll.
     public nonisolated func updateAmbience(_ s: AmbienceScene, at t: Double = ProcessInfo.processInfo.systemUptime) {
         let out: AmbienceScene? = ambienceLive.withLockUnchecked { a in
             var scene = s
@@ -596,17 +607,27 @@ public final class AppModel: ObservableObject {
             if s.level(.surf) <= 0 { a.pendingWave = nil }   // the world changed: its waves stay behind
             if let burst = s.bubbleBurst { a.pendingBubbles = max(burst, a.pendingBubbles ?? 0) }
             if s.level(.bubbles) <= 0 { a.pendingBubbles = nil }   // and its bubbles too
+            if !s.thunderQueue.isEmpty {
+                a.pendingThunderQueue += s.thunderQueue.map { (thunder: $0, at: t) }
+                let over = a.pendingThunderQueue.count - Self.thunderQueueLimit
+                if over > 0 { a.pendingThunderQueue.removeFirst(over) }
+            }
+            if s.level(.thunderRoll) <= 0 { a.pendingThunderQueue.removeAll() }   // and its thunder
             scene.thunder = a.pendingThunder
             scene.wave = a.pendingWave
             scene.bubbleBurst = a.pendingBubbles
+            scene.thunderQueue = a.pendingThunderQueue.map {
+                QueuedThunder(delay: max(0, $0.thunder.delay - max(0, t - $0.at)), strength: $0.thunder.strength)
+            }
             guard t - a.lastSend >= Self.ambienceInterval - 1e-9 else { return nil }
-            if scene.thunder == nil, scene.wave == nil, scene.bubbleBurst == nil, let previous = a.sent,
+            if scene.thunder == nil, scene.wave == nil, scene.bubbleBurst == nil, scene.thunderQueue.isEmpty, let previous = a.sent,
                !Self.ambienceChanged(previous, scene) { return nil }
             a.sent = scene
             a.lastSend = t
             a.pendingThunder = nil
             a.pendingWave = nil
             a.pendingBubbles = nil
+            a.pendingThunderQueue.removeAll()
             return scene
         }
         if let out { engine.setAmbience(out) }
