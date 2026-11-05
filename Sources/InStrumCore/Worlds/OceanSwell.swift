@@ -77,6 +77,8 @@ public struct OceanSwell {
             case .diamondDust: return 0.3
             case .rime: return 0.3
             case .seaSmoke: return 0.4
+            case .gustFront: return 1.7   // the outflow whips the sea up as a squall does
+            case .virga: return 1
             }
         }
         let b = min(1, max(0, s.weatherBlend))
