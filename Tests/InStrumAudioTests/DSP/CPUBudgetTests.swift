@@ -159,6 +159,16 @@ final class CPUBudgetTests: XCTestCase {
         XCTAssertLessThan(seconds / 10, 0.07, "Endless Rise used \(String(format: "%.1f", seconds * 10))% of real time")
     }
 
+    /// Single Note Grand at the spec's worst (§4.3): a ten-note chord for 10 s with Hall 1 and Morph .5, so every string
+    /// sings on and every voice runs its formants and clipper under the longest hall (the mirror: 3.8–3.9% of a core on
+    /// the build machine, where Felt Glass's budget chord takes 3.2–3.5%).
+    func testSingleNoteGrandBudget() {
+        let chord = [36, 43, 48, 52, 55, 60, 64, 67, 71, 76].map { R.noteOn(0, UInt8($0), 90) }
+        let p: [Int: Float] = [Int(ISD_P_HALL_SNG): 1, Int(ISD_P_MORPH): 0.5]
+        let seconds = bestOfThree { _ = R.render(ISD_ENGINE_SINGLE_NOTE_GRAND, seconds: 10, params: p, events: chord) }
+        XCTAssertLessThan(seconds / 10, 0.06, "Single Note Grand used \(String(format: "%.1f", seconds * 10))% of real time")
+    }
+
     /// The cabin's and the bedroom's soundscapes, each heard through the window.
     func testWindowAmbienceBudget() {
         typealias A = AmbienceTests
