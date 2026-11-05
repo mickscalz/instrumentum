@@ -196,6 +196,19 @@ final class TeaHouseKotoTests: XCTestCase {
         }
     }
 
+    /// Final review (Review focus 1's family): reset all controllers (CC 121) lets a key's own (poly) pressure go as well
+    /// as channel pressure, so the yuri it started stops and the string rings on at pitch.
+    func testResetAllControllersStopsTheYuri() {
+        var p = dry; p[Int(ISD_P_YURI)] = 1
+        let e4 = midiHz(64)
+        let events = [R.noteOn(0, 64, 100), polyPressure(0.2, 64, 127), R.Event(time: 1.15, bytes: [0xB0, 121, 0])]
+        let out = R.render(koto, seconds: 2.2, params: p, events: events).l
+        let before = wobble(track(out, ref: e4, from: 0.5, to: 1.1))
+        XCTAssertGreaterThan(before.cents, 8, "poly pressure gives yuri: \(before.cents) cents")
+        let after = wobble(track(out, ref: e4, from: 1.35, to: 2.15))
+        XCTAssertLessThan(after.cents, 2, "reset all controllers stops it: \(after.cents) cents")
+    }
+
     // MARK: - The open strings
 
     /// Bloom 1, E4 plucked: the open B4 string (hirajōshi on E) rings over 1–2 s at least 10 dB above the same with the

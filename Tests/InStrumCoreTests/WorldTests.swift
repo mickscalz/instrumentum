@@ -843,6 +843,17 @@ extension WorldTests {
         XCTAssertEqual(ra.level(.drips), 0)
     }
 
+    /// Sets 9 & 10 spec §5 (final review): rimed trees and roofs soak up sound, so the street, the breeze and the birds
+    /// come through the sash a little more hushed (the window's indoors + WeatherAmbience.indoorsLift), shut or open.
+    func testBedroomHushesInRime() {
+        var model = BedroomDawnModel()
+        var s = bedroomSky(sun: 5, hour: 6.5); s.rime = 1
+        model.setSky(s)
+        XCTAssertEqual(bedroomStep(&model, seconds: 0.1).ambience.indoors, 0.7 + 0.15, accuracy: 1e-9, "shut")
+        let open = ThemeState(values: ["window.open": .bool(true)])
+        XCTAssertEqual(bedroomStep(&model, seconds: 0.1, state: open).ambience.indoors, 0.35 + 0.15, accuracy: 1e-9, "open")
+    }
+
     func testCurtainsMoveMoreWithTheWindowOpen() {
         func motion(open: Bool) -> Double {
             var model = BedroomDawnModel()

@@ -190,9 +190,12 @@ public struct BedroomDawnModel: ThemeModel, MoodAware, SkyAware {
         ]
         WeatherAmbience.levels(sky, base: &levels)
         let activity = min(1, 0.6 * roles[.energy] + 0.4 * roles[.density])
+        // The window's own hush, and rime's on top of it (rimed trees and roofs soak up the street; spec §5 of Sets 9 & 10).
+        let window: Double = open ? Self.indoorsOpen : Self.indoorsClosed
         return AmbienceScene(levels: levels, nightCool: 0, activity: activity, thunder: nil,
                              closeness: MoodLook.ambienceCloseness(base: 0.6, mood), density: MoodLook.ambienceDensity(mood),
-                             indoors: open ? Self.indoorsOpen : Self.indoorsClosed, wetness: Double(sky.wetness), snowOnGlass: Double(sky.snow))
+                             indoors: min(1, window + WeatherAmbience.indoorsLift(sky)), wetness: Double(sky.wetness),
+                             snowOnGlass: Double(sky.snow))
     }
 }
 
