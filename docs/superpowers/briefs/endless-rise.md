@@ -68,6 +68,6 @@ Rise is in octaves a second (0 switches the riser off). The spec lists only what
 | Pad Only | 0 | .40 | .30 | .50 | 124 | .60 | .70 | .60 | .70 |
 
 ## In the app (Task 3, as built)
-- **The credit:** "FADE", Kanye West, *The Life of Pablo*, 2016, track 18 (the final tracklist, from memory: check it), 124 BPM (the felt pulse). No key is claimed until one is heard, so the card's liner notes read `TRACK 18 · 124 BPM`.
+- **The credit:** "FADE", Kanye West, *The Life of Pablo*, 2016, 124 BPM (the felt pulse). Credits carry only verified facts, so it states no key (still to be heard) and no track number (not verified; `Credit.trackNumber` is optional for this), and the card's liner notes read `124 BPM` alone.
 - **Tension and the drop:** `SceneDirector` owns Excitement and steps it every frame from the notes; its `instrumentCue` (Excitement's tension, and the drop on the one step it lands) reaches the engine through `AppModel.cueInstrument` and the two C calls. With build and drop off, the cue is 0.7 × the pressure, so with the engine's own 0.3 the riser climbs at the pressure itself (aftertouch = Tension). `SceneDirector.instrumentTension` is the same number for the world.
 - **The demo** (`DemoPhrases.endlessRise`, F minor at 124) is rendered as the app plays it, through a director, because its drop is Excitement's.

@@ -328,7 +328,8 @@ final class InspiredByCardTests: XCTestCase {
     }
 
     /// The credit for "FADE" (Storms spec §2, §12), exactly: words and a link only. Its tempo is the felt pulse, 124,
-    /// until Michael taps it; it claims no key until one is heard, so the liner notes leave the key out.
+    /// until Michael taps it. Credits carry only verified facts: it states no key (still to be heard) and no track number
+    /// (not verified), so the liner notes read "124 BPM" alone.
     func testFadeCredit() {
         let c = CreditLibrary.fade
         XCTAssertEqual(c.id, "fade")
@@ -336,7 +337,7 @@ final class InspiredByCardTests: XCTestCase {
         XCTAssertEqual(c.artist, "Kanye West")
         XCTAssertEqual(c.album, "The Life of Pablo")
         XCTAssertEqual(c.year, 2016)
-        XCTAssertEqual(c.trackNumber, 18)
+        XCTAssertNil(c.trackNumber, "no track number stated: it isn't verified")
         XCTAssertEqual(c.key, "", "no key claimed until it is heard")
         XCTAssertEqual(c.tempoBPM, 124)
         XCTAssertEqual(c.line, "A relentless pulse under a rise that never resolves.")
@@ -351,20 +352,24 @@ final class InspiredByCardTests: XCTestCase {
         XCTAssertEqual(ListenLink.spotifyWeb(for: c).absoluteString, "https://open.spotify.com/search/Kanye%20West%20FADE")
         // Endless Rise's presets carry it.
         for p in PatchLibrary.patches(for: .endlessRise) { XCTAssertEqual(p.credit, c, p.id) }
-        // The card says it in words: the song, the artist, the album and its year, and the liner notes without a key.
+        // The card says it in words: the song, the artist, the album and its year, and the liner notes with neither a key
+        // nor a track number.
         let card = InspiredByCard(credit: c)
         XCTAssertEqual(card.words.kicker, "INSPIRED BY")
         XCTAssertEqual(card.words.title, "FADE")
         XCTAssertEqual(card.words.subtitle, "Kanye West · The Life of Pablo · 2016")
-        XCTAssertEqual(card.words.linerNotes, "TRACK 18 · 124 BPM")
+        XCTAssertEqual(card.words.linerNotes, "124 BPM")
+        XCTAssertFalse(card.words.linerNotes?.contains("TRACK") ?? true, "no track number on the card")
         XCTAssertEqual(card.words.line, c.line)
         XCTAssertEqual(card.words.listen, c)
         XCTAssertEqual(card.words.accessibility,
                        "Inspired by FADE by Kanye West, The Life of Pablo, 2016. A relentless pulse under a rise that never resolves.")
-        // Every other card keeps its key in its liner notes.
+        // Every other card keeps its key and its track number in its liner notes.
         XCTAssertEqual(InspiredByCard(credit: CreditLibrary.underwater).words.linerNotes, "F♯ minor · TRACK 7 · 118 BPM")
         for other in CreditLibrary.all where other.id != c.id {
-            XCTAssertTrue(InspiredByCard(credit: other).words.linerNotes?.hasPrefix(other.key + " · TRACK") ?? false, other.id)
+            XCTAssertNotNil(other.trackNumber, other.id)
+            let notes: String = InspiredByCard(credit: other).words.linerNotes ?? ""
+            XCTAssertEqual(notes, "\(other.key) · TRACK \(other.trackNumber ?? 0) · \(Int(other.tempoBPM.rounded())) BPM", other.id)
         }
     }
 

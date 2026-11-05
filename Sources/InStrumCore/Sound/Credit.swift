@@ -3,13 +3,14 @@ public struct Credit: Codable, Equatable, Identifiable {
     public let id: String
     public let song, artist, album: String
     public let year: Int
-    public let trackNumber: Int
+    /// The song's place on its album, when it is a verified fact; nil states none (the card then names no track).
+    public let trackNumber: Int?
     public let key: String
     public let tempoBPM: Double
     /// What inspired us, in one line.
     public let line: String
 
-    public init(id: String, song: String, artist: String, album: String, year: Int, trackNumber: Int, key: String, tempoBPM: Double, line: String) {
+    public init(id: String, song: String, artist: String, album: String, year: Int, trackNumber: Int?, key: String, tempoBPM: Double, line: String) {
         self.id = id; self.song = song; self.artist = artist; self.album = album; self.year = year
         self.trackNumber = trackNumber; self.key = key; self.tempoBPM = tempoBPM; self.line = line
     }
@@ -46,9 +47,10 @@ public enum CreditLibrary {
                                           album: "Solace", year: 2018, trackNumber: 7, key: "F♯ minor", tempoBPM: 118,
                                           line: "The blinking, echoing arp that starts it, murky as deep water.")
     /// "FADE" (Storms spec §2, §12; brief endless-rise.md). Its tempo is disputed, so the card breathes at 124 until
-    /// Michael taps it; no key is claimed until it is heard (the card's liner notes then leave the key out).
+    /// Michael taps it. Credits carry only verified facts, so it states no key (still to be heard) and no track number
+    /// (not verified): the card's liner notes read "124 BPM" alone.
     public static let fade = Credit(id: "fade", song: "FADE", artist: "Kanye West", album: "The Life of Pablo", year: 2016,
-                                    trackNumber: 18, key: "", tempoBPM: 124,
+                                    trackNumber: nil, key: "", tempoBPM: 124,
                                     line: "A relentless pulse under a rise that never resolves.")
     public static let all: [Credit] = [comeBackToEarth, innerbloom, musicToWatchBoysTo, highByTheBeach, stay, dunno, wings,
                                        happinessIsAButterfly, underwater, fade]

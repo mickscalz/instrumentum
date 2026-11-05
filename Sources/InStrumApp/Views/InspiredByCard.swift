@@ -21,7 +21,7 @@ struct InspiredByCard: View {
         var subtitle: String
         /// What inspired us, in one line (shown on hover); song cards only.
         var line: String?
-        /// Key · track · tempo (the key left out while a credit claims none); song cards only.
+        /// Key · track · tempo (a key or track a credit doesn't state left out); song cards only.
         var linerNotes: String?
         /// The song the Listen button finds; nil: no Listen button.
         var listen: Credit?
@@ -136,10 +136,11 @@ struct InspiredByCard: View {
         }
     }
 
-    /// Key · track · tempo, as the card's top corner sets them: `F♯ minor · TRACK 7 · 118 BPM`. A credit that claims no key
-    /// (its key is still to be heard) leaves it out: `TRACK 18 · 124 BPM`.
+    /// Key · track · tempo, as the card's top corner sets them: `F♯ minor · TRACK 7 · 118 BPM`. A key or a track number
+    /// the credit doesn't state (not yet heard, or not verified) is left out: "FADE" reads `124 BPM`.
     static func linerNotes(_ c: Credit) -> String {
-        let notes: [String] = [c.key, "TRACK \(c.trackNumber)", "\(Int(c.tempoBPM.rounded())) BPM"]
+        let track: String = c.trackNumber.map { "TRACK \($0)" } ?? ""
+        let notes: [String] = [c.key, track, "\(Int(c.tempoBPM.rounded())) BPM"]
         return notes.filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
