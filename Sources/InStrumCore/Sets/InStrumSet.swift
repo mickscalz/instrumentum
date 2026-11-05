@@ -49,8 +49,17 @@ public enum SetLibrary {
     public static let zenRockGarden = InStrumSet(id: "zen-rock-garden", name: "Zen Rock Garden", moodName: "Ordered calm",
                                                  mood: .orderedCalm, worldID: ZenRockGardenModel.id, visual: "Rake Lines",
                                                  patchID: "zen-shakuhachi", ambience: AmbienceSettings(), creditID: nil)
+    /// Sets 11 and 12 ("Deep Water"): the submarine after "Underwater"; the reef born from its place (a place card).
+    public static let submarineWindow = InStrumSet(id: "submarine-window", name: "Submarine Window", moodName: "Pressure, hush",
+                                                   mood: .deepHush, worldID: SubmarineWindowModel.id, visual: "Deep Lights",
+                                                   patchID: "blue-depth", ambience: AmbienceSettings(),
+                                                   creditID: CreditLibrary.underwater.id)
+    public static let greatBarrierReef = InStrumSet(id: "great-barrier-reef", name: "Great Barrier Reef", moodName: "Colourful, alive",
+                                                    mood: .reefAlive, worldID: GreatBarrierReefModel.id, visual: "Coral Pulse",
+                                                    patchID: "reef-marimba", ambience: AmbienceSettings(), creditID: nil)
     public static let all: [InStrumSet] = [moonlitLake, spaceshipLounge, goldenHourBeach, coastRoad, snowboundCabin, bedroomDawn,
-                                           auroraFjord, bioluminescentBay, teaHouseSnow, zenRockGarden]
+                                           auroraFjord, bioluminescentBay, teaHouseSnow, zenRockGarden, submarineWindow,
+                                           greatBarrierReef]
 
     public static func set(id: String) -> InStrumSet? { all.first { $0.id == id } }
 }
