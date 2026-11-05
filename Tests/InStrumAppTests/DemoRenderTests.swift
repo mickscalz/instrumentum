@@ -205,7 +205,9 @@ final class DemoRenderTests: XCTestCase {
                                            waves: [Wave] = [], speed: Float = 0, surfDistance: Float = 0, indoors: Float = 0,
                                            snowOnGlass: Float = 0, kettleAt: Double? = nil,
                                            boatAt: Double? = nil, bellAt: Double? = nil,
-                                           knockerAt: Double? = nil) -> (l: [Float], r: [Float]) {
+                                           knockerAt: Double? = nil, key: (root: Int32, major: Int32)? = nil,
+                                           sonarAt: Double? = nil,
+                                           bubbles: (at: Double, strength: Float)? = nil) -> (l: [Float], r: [Float]) {
         guard let a = isd_ambience_create(rate, 512, 7) else { return ([], []) }
         defer { isd_ambience_destroy(a) }
         for (source, level) in levels { isd_ambience_set_level(a, source, level) }
@@ -214,7 +216,9 @@ final class DemoRenderTests: XCTestCase {
         isd_ambience_set_surf_distance(a, surfDistance)
         isd_ambience_set_indoors(a, indoors)
         isd_ambience_set_snow_on_glass(a, snowOnGlass)
+        if let key { isd_ambience_set_key(a, key.root, key.major) }
         var kettlePending = kettleAt, boatPending = boatAt, bellPending = bellAt, knockerPending = knockerAt
+        var sonarPending = sonarAt, bubblesPending = bubbles
         let total = Int(seconds * rate), block = 256
         var l = [Float](repeating: 0, count: total), r = [Float](repeating: 0, count: total)
         var i = 0, nextWave = 0
@@ -227,12 +231,85 @@ final class DemoRenderTests: XCTestCase {
             if let b = boatPending, Int(b * rate) < i + n { isd_ambience_debug_start_boat(a); boatPending = nil }
             if let b = bellPending, Int(b * rate) < i + n { isd_ambience_debug_strike_bell(a); bellPending = nil }
             if let k = knockerPending, Int(k * rate) < i + n { isd_ambience_debug_start_knocker(a); knockerPending = nil }
+            if let p = sonarPending, Int(p * rate) < i + n { isd_ambience_debug_ping_sonar(a); sonarPending = nil }
+            if let b = bubblesPending, Int(b.at * rate) < i + n { isd_ambience_trigger_bubbles(a, b.strength); bubblesPending = nil }
             l.withUnsafeMutableBufferPointer { lp in
                 r.withUnsafeMutableBufferPointer { rp in isd_ambience_render(a, lp.baseAddress! + i, rp.baseAddress! + i, Int32(n)) }
             }
             i += n
         }
         return (l, r)
+    }
+
+    /// The deep-water ambience demos (Sets 11 & 12 spec §11), mixed as the worlds mix them (`SubmarineWindowModel`'s
+    /// ambience and `GreatBarrierReefModel.levels`), from the start, `seconds` long.
+    /// - `submarine-window-ambience`: aboard at the default depth (0.35, 65 m: too deep for the shallows' shrimp and
+    ///   rain), heard through the hull (indoors 0.85): the machinery's hum, the scrubbers' air and the hull's ticks, the
+    ///   hull settling (0.25 + 0.35 × depth), a humpback far off (0.2 + 0.15 × 0.7, near its mid-depth best) and the
+    ///   bubbles' bed; the sonar in F♯ minor (Blue Depth's demo's key, and "Underwater"'s), pinged at 3 s once its level
+    ///   has glided in, so it rings F♯6; and an accent's burst of bubbles at 8 s (strength 0.8, a hard note's).
+    /// - `great-barrier-reef-ambience`: the reef at dusk (the sun 4° down, in November, so no humpbacks) from the
+    ///   waterline, outdoors: the snapping shrimp at their twilight rate (0.55 × 1.6), the fish chorus's dusk drumming at
+    ///   its peak (0.4), the far reef crest's surf with the swell breaking on it, the lapping at the waterline, the
+    ///   breeze and the bubbles' bed.
+    nonisolated static func deepWaterAmbience(_ name: String, seconds: Double) -> (l: [Float], r: [Float]) {
+        switch name {
+        case "submarine-window-ambience":
+            let depth = 0.35, midDepth = 1 - abs(depth - 0.5) * 2
+            return renderAmbience([(ISD_AMB_SHIP_HUM, 0.35), (ISD_AMB_AIR_FLOW, 0.3), (ISD_AMB_HULL_TICKS, 0.15),
+                                   (ISD_AMB_HULL_CREAK, Float(0.25 + 0.35 * depth)), (ISD_AMB_SONAR, 0.5),
+                                   (ISD_AMB_WHALE, Float(0.2 + 0.15 * midDepth)), (ISD_AMB_BUBBLES, 0.15)],
+                                  seconds: seconds, indoors: Float(SubmarineWindowModel.indoors), key: (root: 6, major: 0),
+                                  sonarAt: 3, bubbles: (at: 8, strength: 0.8))
+        case "great-barrier-reef-ambience":
+            var swell = OceanSwell(seed: 5)
+            var waves: [Wave] = []
+            for _ in 0..<Int(seconds * 60) { waves += swell.step(dt: 1.0 / 60) }
+            return renderAmbience([(ISD_AMB_SHRIMP, Float(GreatBarrierReefModel.shrimpLevel * 1.6)),
+                                   (ISD_AMB_FISH_CHORUS, Float(GreatBarrierReefModel.fishPeak)), (ISD_AMB_SURF, 0.3),
+                                   (ISD_AMB_LAPPING, 0.45), (ISD_AMB_BREEZE, 0.25), (ISD_AMB_BUBBLES, 0.15)],
+                                  seconds: seconds, waves: waves, surfDistance: 0.9)
+        default:
+            return ([], [])
+        }
+    }
+    nonisolated static let deepWaterScenes = ["submarine-window-ambience", "great-barrier-reef-ambience"]
+
+    /// The power (dB) of `x` at `hz` between `t0` and `t1` seconds (a Goertzel bin).
+    nonisolated static func toneDB(_ x: [Float], hz: Double, from t0: Double, to t1: Double) -> Double {
+        let a = max(0, Int(t0 * rate)), b = min(x.count, Int(t1 * rate))
+        guard a < b else { return -300 }
+        let c = 2 * cos(2 * Double.pi * hz / rate)
+        var s1 = 0.0, s2 = 0.0
+        for i in a..<b {
+            let v = Double(x[i]) + c * s1 - s2
+            s2 = s1; s1 = v
+        }
+        let n = Double(b - a)
+        return 10 * log10(max((s1 * s1 + s2 * s2 - c * s1 * s2) / (n * n), 1e-30))
+    }
+
+    /// The deep-water demos render as the release renders them (here their first 12 s): finite, under full scale and
+    /// audible, and the submarine's sonar, pinged at 3 s, rings in the demo's key, F♯6 (1480 Hz), not its default E6,
+    /// well above the moment before. (On the mirror, g++ and clang++ with FMA contraction, over the whole minute: the
+    /// submarine peaks at 0.14–0.15 (about −17 dBFS) with an RMS of −30.8 dBFS, and the ping's first 0.3 s sit 19.5 dB
+    /// over E6 and 17 dB over the same bin just before it; the reef at dusk peaks at 0.70 (−3.1 dBFS, a snapping shrimp's
+    /// loudest snap) with an RMS of −24.8 dBFS.)
+    func testDeepWaterAmbienceDemosRender() {
+        for name in Self.deepWaterScenes {
+            let audio = Self.deepWaterAmbience(name, seconds: 12)
+            XCTAssertEqual(audio.l.count, Int(12 * Self.rate), name)
+            XCTAssertTrue(audio.l.allSatisfy(\.isFinite) && audio.r.allSatisfy(\.isFinite), name)
+            let peak = max(audio.l.map(abs).max() ?? 0, audio.r.map(abs).max() ?? 0)
+            XCTAssertLessThan(peak, 1.0, name)
+            let rms = (audio.l.reduce(0) { $0 + Double($1) * Double($1) } / Double(max(1, audio.l.count))).squareRoot()
+            XCTAssertGreaterThan(20 * log10(max(rms, 1e-10)), -50, name)
+        }
+        let sub = Self.deepWaterAmbience("submarine-window-ambience", seconds: 4)
+        let fSharp6 = 1479.98, e6 = 1318.51
+        let ping = Self.toneDB(sub.l, hz: fSharp6, from: 3.0, to: 3.3)
+        XCTAssertGreaterThan(ping - Self.toneDB(sub.l, hz: e6, from: 3.0, to: 3.3), 10, "the ping is in F♯, not E")
+        XCTAssertGreaterThan(ping - Self.toneDB(sub.l, hz: fSharp6, from: 2.5, to: 2.8), 10, "the ping lands at 3 s")
     }
 
     func testWriteAmbienceDemos() throws {
@@ -296,6 +373,17 @@ final class DemoRenderTests: XCTestCase {
         for (name, levels, indoors, snow, kettle, bell, knocker) in stillScenes {
             let audio = Self.renderAmbience(levels, seconds: 60, indoors: indoors, snowOnGlass: snow, kettleAt: kettle,
                                             bellAt: bell, knockerAt: knocker)
+            let peak = max(audio.l.map(abs).max() ?? 0, audio.r.map(abs).max() ?? 0)
+            XCTAssertLessThanOrEqual(peak, 1.0, name)
+            let rms = (audio.l.reduce(0) { $0 + Double($1) * Double($1) } / Double(max(1, audio.l.count))).squareRoot()
+            XCTAssertGreaterThan(20 * log10(max(rms, 1e-10)), -60, name)
+            try Self.writeWAV(audio, to: url.appendingPathComponent("\(name).wav"))
+            try PreviewRenderer.writePNG(Spectrogram.image(left: audio.l, sampleRate: Self.rate, width: 1400, height: 500),
+                                         to: url.appendingPathComponent("\(name)-spectrogram.png"))
+        }
+        // The deep water: the submarine aboard with a sonar ping and a burst of bubbles, the reef at dusk.
+        for name in Self.deepWaterScenes {
+            let audio = Self.deepWaterAmbience(name, seconds: 60)
             let peak = max(audio.l.map(abs).max() ?? 0, audio.r.map(abs).max() ?? 0)
             XCTAssertLessThanOrEqual(peak, 1.0, name)
             let rms = (audio.l.reduce(0) { $0 + Double($1) * Double($1) } / Double(max(1, audio.l.count))).squareRoot()

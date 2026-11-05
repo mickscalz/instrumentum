@@ -630,6 +630,88 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(m.mood, .delicate)
     }
 
+    /// Set 11: the submarine loads Blue Depth on its "Underwater" preset under Deep Lights, with its mood, and its arp's
+    /// pulse reaches the director (Deep Lights blinks on it, spec §7.6); changing the visual or the preset marks it
+    /// modified, and Restore brings it back.
+    func testApplyingTheSubLoadsBlueDepth() async throws {
+        let m = makeModel()
+        await m.launch(skipPluginInSafeMode: false)
+        m.setAmbienceEnabled(false)
+        m.setAmbienceVolume(0.6)
+        await m.applySet("submarine-window")
+        XCTAssertEqual(engine.loaded.last.flatMap { BuiltInCatalog.engine(for: $0) }, .blueDepth)
+        XCTAssertEqual(engine.applied.last?.id, "blue-depth")
+        XCTAssertEqual(m.builtInPatch?.id, "blue-depth")
+        XCTAssertEqual(m.builtInPatch?.creditID, CreditLibrary.underwater.id, "the preset carries the set's credit")
+        XCTAssertEqual(engine.moods.last, .deepHush)
+        XCTAssertEqual(m.mood, .deepHush)
+        XCTAssertEqual(m.themeID, SubmarineWindowModel.id)
+        XCTAssertEqual(visual(m), "Deep Lights")
+        XCTAssertEqual(m.instrumentPulse, InstrumentPulse(bpm: 118, gate: 0.60), "Deep Lights blinks with the arp")
+        XCTAssertTrue(engine.ambienceEnabled)
+        XCTAssertEqual(engine.ambienceVolume, Float(AmbienceSettings().volume), accuracy: 1e-6)
+        XCTAssertEqual(m.activeSetID, "submarine-window")
+        XCTAssertFalse(m.isSetModified)
+        XCTAssertEqual(store.load().activeSetID, "submarine-window")
+        m.saveThemeState(ThemeState(values: ["visual": .choice("Galaxy Warp")]), for: SubmarineWindowModel.id)
+        XCTAssertTrue(m.isSetModified)
+        await m.restoreSet()
+        XCTAssertFalse(m.isSetModified)
+        XCTAssertEqual(visual(m), "Deep Lights")
+        m.applyPatch(try XCTUnwrap(PatchLibrary.all.first { $0.id == "ghost-signal" }))   // another Blue Depth preset
+        XCTAssertTrue(m.isSetModified)
+        await m.restoreSet()
+        XCTAssertEqual(m.builtInPatch?.id, "blue-depth")
+        XCTAssertFalse(m.isSetModified)
+    }
+
+    /// Set 12: the reef loads Reef Marimba under Coral Pulse, with its mood (no arp, so no pulse); changing the visual or
+    /// the preset marks it modified, and Restore brings it back. Switching between the two deep-water sets swaps the
+    /// engine each way, and leaving the submarine stops Blue Depth's arp on the way (review focus 1).
+    func testApplyingTheReefLoadsTheMarimba() async throws {
+        let m = makeModel()
+        await m.launch(skipPluginInSafeMode: false)
+        m.setAmbienceEnabled(false)
+        m.setAmbienceVolume(0.6)
+        await m.applySet("great-barrier-reef")
+        XCTAssertEqual(engine.loaded.last.flatMap { BuiltInCatalog.engine(for: $0) }, .reefMarimba)
+        XCTAssertEqual(engine.applied.last?.id, "reef-marimba")
+        XCTAssertEqual(m.builtInPatch?.id, "reef-marimba")
+        XCTAssertNil(m.builtInPatch?.creditID, "born from its place")
+        XCTAssertEqual(engine.moods.last, .reefAlive)
+        XCTAssertEqual(m.mood, .reefAlive)
+        XCTAssertEqual(m.themeID, GreatBarrierReefModel.id)
+        XCTAssertEqual(visual(m), "Coral Pulse")
+        XCTAssertNil(m.instrumentPulse, "no arp, so no pulse")
+        XCTAssertTrue(engine.ambienceEnabled)
+        XCTAssertEqual(engine.ambienceVolume, Float(AmbienceSettings().volume), accuracy: 1e-6)
+        XCTAssertEqual(m.activeSetID, "great-barrier-reef")
+        XCTAssertFalse(m.isSetModified)
+        m.saveThemeState(ThemeState(values: ["visual": .choice("Galaxy Warp")]), for: GreatBarrierReefModel.id)
+        XCTAssertTrue(m.isSetModified)
+        await m.restoreSet()
+        XCTAssertFalse(m.isSetModified)
+        XCTAssertEqual(visual(m), "Coral Pulse")
+        m.applyPatch(try XCTUnwrap(PatchLibrary.all.first { $0.id == "soft-yarn" }))   // another Reef Marimba preset
+        XCTAssertTrue(m.isSetModified)
+        await m.restoreSet()
+        XCTAssertEqual(m.builtInPatch?.id, "reef-marimba")
+        XCTAssertFalse(m.isSetModified)
+        // Down to the submarine and back up to the reef.
+        await m.applySet("submarine-window")
+        XCTAssertEqual(engine.loaded.last.flatMap { BuiltInCatalog.engine(for: $0) }, .blueDepth)
+        XCTAssertEqual(m.themeID, SubmarineWindowModel.id)
+        XCTAssertEqual(m.mood, .deepHush)
+        engine.sent.removeAll()
+        await m.applySet("great-barrier-reef")
+        XCTAssertEqual(engine.sent, [[0xB0, 123, 0]], "leaving the submarine stops the arp, once")
+        XCTAssertEqual(engine.loaded.last.flatMap { BuiltInCatalog.engine(for: $0) }, .reefMarimba)
+        XCTAssertEqual(m.themeID, GreatBarrierReefModel.id)
+        XCTAssertEqual(m.mood, .reefAlive)
+        XCTAssertNil(m.instrumentPulse)
+        XCTAssertFalse(m.isSetModified)
+    }
+
     /// Review focus 4: settings saved by the eight-set build (Sets 7 & 8, with the bay applied and a sky from before rime
     /// frost and iridescent cloud) open on this build's ten-set gallery: the bay is still the active set, unmodified, with
     /// its mood; the sky's two new dials take their defaults; and the two still places apply from there and come back on
@@ -663,10 +745,11 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(m.themeID, BioluminescentBayModel.id)
         XCTAssertEqual(visual(m), "Glow Wake")
         XCTAssertFalse(m.isSetModified, "the bay comes back as it was set")
-        // The gallery: the eight it knew, in their places, then the two still places.
-        XCTAssertEqual(SetLibrary.all.count, 10)
+        // The gallery: the eight it knew, in their places, then the two still places (and since Sets 11 & 12, the deep
+        // water after them: `testOldSetStoresStillLoad`).
+        XCTAssertEqual(SetLibrary.all.count, 12)
         XCTAssertEqual(SetLibrary.all.firstIndex { $0.id == "bioluminescent-bay" }, 7)
-        XCTAssertEqual(SetLibrary.all.suffix(2).map(\.id), ["tea-house-snow", "zen-rock-garden"])
+        XCTAssertEqual(SetLibrary.all.dropFirst(8).prefix(2).map(\.id), ["tea-house-snow", "zen-rock-garden"])
         await m.applySet("tea-house-snow")
         XCTAssertEqual(engine.loaded.last.flatMap { BuiltInCatalog.engine(for: $0) }, .teaHouseKoto)
         XCTAssertEqual(m.activeSetID, "tea-house-snow")
@@ -681,6 +764,92 @@ final class AppModelTests: XCTestCase {
         let again = makeModel()
         XCTAssertEqual(again.activeSetID, "zen-rock-garden")
         XCTAssertEqual(again.mood, .orderedCalm)
+    }
+
+    /// Review focus 4 (Sets 11 & 12): what the ten-set build stored still loads, on this build's twelve-set gallery.
+    /// - The gallery that build wrote out (its ten sets; the still places with no credit key) decodes as this build's first
+    ///   ten, in their places.
+    /// - Settings it saved with the garden applied, a sky from before the meteors (no `meteorRate`) whose stored weather list
+    ///   knows no sea smoke, and the garden's world state with no `meteors.mode`, load unmodified: the garden is still the
+    ///   active set, with its mood; the meteors take their default rate, the stored list is kept, and the garden follows
+    ///   the calendar.
+    /// - The gallery shows twelve: the ten it knew, then the submarine and the reef, which apply from there, unmodified,
+    ///   and come back on the next launch.
+    func testOldSetStoresStillLoad() async throws {
+        // The ten-set gallery as that build wrote it: a place's set has no credit key; a song's set carries its credit.
+        let tenSetGallery = ["moonlit-lake", "spaceship-lounge", "golden-hour-beach", "coast-road", "snowbound-cabin",
+                             "bedroom-dawn", "aurora-fjord", "bioluminescent-bay", "tea-house-snow", "zen-rock-garden"]
+        let teaHouse = #"{"id":"tea-house-snow","name":"Tea House Snow","moodName":"Delicate, hushed","#
+            + #""mood":{"energy":0.2,"warmth":0.55,"brightness":0.5,"space":0.3,"motion":0.2},"#
+            + #""worldID":"tea-house-snow","visual":"Steam Lines","patchID":"tea-house-koto","#
+            + #""ambience":{"enabled":true,"volume":0.25,"closeness":0.5}}"#
+        XCTAssertEqual(try JSONDecoder().decode(InStrumSet.self, from: Data(teaHouse.utf8)), SetLibrary.teaHouseSnow)
+        let ten = Array(SetLibrary.all.prefix(10))
+        XCTAssertEqual(ten.map(\.id), tenSetGallery, "the older sets keep their places")
+        let stored = try JSONEncoder().encode(ten)
+        let objects = try XCTUnwrap(try JSONSerialization.jsonObject(with: stored) as? [[String: Any]])
+        XCTAssertEqual(objects.count, 10)
+        XCTAssertEqual(objects.filter { $0["creditID"] == nil }.compactMap { $0["id"] as? String }, ["tea-house-snow", "zen-rock-garden"])
+        XCTAssertEqual(try JSONDecoder().decode([InStrumSet].self, from: stored), ten)
+
+        // Settings as the ten-set build saved them.
+        let older = makeModel()
+        await older.launch(skipPluginInSafeMode: false)
+        var sky = older.skySettings
+        sky.randomExcluded = [.rime, .diamondDust]
+        older.setSkySettings(sky)
+        await older.applySet("zen-rock-garden")
+        // Let its debounced save land first (half a second), so nothing of the older build's writes after the edit below.
+        try await Task.sleep(nanoseconds: 700_000_000)
+        let url = dir.appendingPathComponent("settings.json")
+        let saved = try JSONSerialization.jsonObject(with: Data(contentsOf: url))
+        var json = try XCTUnwrap(saved as? [String: Any])
+        var savedSky = try XCTUnwrap(json["sky"] as? [String: Any])
+        XCTAssertNotNil(savedSky["meteorRate"])
+        savedSky.removeValue(forKey: "meteorRate")
+        json["sky"] = savedSky
+        try JSONSerialization.data(withJSONObject: json).write(to: url)
+        let written = try String(contentsOf: url, encoding: .utf8)
+        for key in ["meteorRate", "meteors.mode", "seaSmoke", "submarine-window", "great-barrier-reef"] {
+            XCTAssertFalse(written.contains(key), key)
+        }
+        XCTAssertTrue(written.contains("zen-rock-garden"))
+        XCTAssertTrue(written.contains("diamondDust"))
+
+        engine = FakeEngine()
+        let m = makeModel()
+        XCTAssertEqual(m.activeSetID, "zen-rock-garden")
+        XCTAssertEqual(m.mood, .orderedCalm)
+        XCTAssertEqual(m.skySettings.meteorRate, 2, "the meteors' default rate")
+        XCTAssertEqual(m.skySettings.randomExcluded, [.rime, .diamondDust], "the stored weather list is kept")
+        await m.launch(skipPluginInSafeMode: false)
+        XCTAssertEqual(engine.loaded.last.flatMap { BuiltInCatalog.engine(for: $0) }, .zenShakuhachi)
+        XCTAssertEqual(m.builtInPatch?.id, "zen-shakuhachi")
+        XCTAssertEqual(engine.moods.last, .orderedCalm)
+        XCTAssertEqual(m.themeID, ZenRockGardenModel.id)
+        XCTAssertEqual(visual(m), "Rake Lines")
+        XCTAssertEqual(ThemeRegistry.parameterSet(for: ZenRockGardenModel.id, state: m.themeState(for: ZenRockGardenModel.id))
+                        .choice("meteors.mode"), MeteorMode.follow.rawValue, "the garden follows the calendar")
+        XCTAssertFalse(m.isSetModified, "the garden comes back as it was set")
+
+        // The gallery: the ten it knew, in their places, then the deep water.
+        XCTAssertEqual(SetLibrary.all.count, 12)
+        XCTAssertEqual(SetLibrary.all.prefix(10).map(\.id), tenSetGallery)
+        XCTAssertEqual(SetLibrary.all.suffix(2).map(\.id), ["submarine-window", "great-barrier-reef"])
+        await m.applySet("submarine-window")
+        XCTAssertEqual(engine.loaded.last.flatMap { BuiltInCatalog.engine(for: $0) }, .blueDepth)
+        XCTAssertEqual(m.activeSetID, "submarine-window")
+        XCTAssertFalse(m.isSetModified)
+        await m.applySet("great-barrier-reef")
+        XCTAssertEqual(engine.loaded.last.flatMap { BuiltInCatalog.engine(for: $0) }, .reefMarimba)
+        XCTAssertFalse(m.isSetModified)
+        XCTAssertEqual(store.load().activeSetID, "great-barrier-reef")
+        XCTAssertEqual(store.load().sky, m.skySettings)
+        // And the reef comes back on the next launch, with its mood.
+        engine = FakeEngine()
+        let again = makeModel()
+        XCTAssertEqual(again.activeSetID, "great-barrier-reef")
+        XCTAssertEqual(again.mood, .reefAlive)
     }
 
     func testChangingAPartMarksModifiedAndRestoreReverts() async {

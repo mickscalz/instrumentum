@@ -3,13 +3,14 @@ import XCTest
 
 final class SetsTests: XCTestCase {
     /// Every set is whole: its world, visual and preset exist, and it carries a song's credit or, born from its place, none
-    /// (the App's `InspiredByCardTests.testEverySetHasACardOrPlaceArt` checks that each one then has its card).
-    func testTenSetsAreComplete() throws {
+    /// (the App's `InspiredByCardTests.testEverySetHasACardOrPlaceArt` checks that each one then has its card). Sets 11 and
+    /// 12 ("Deep Water") come last, the submarine then the reef (spec §2).
+    func testTwelveSetsAreComplete() throws {
         XCTAssertEqual(SetLibrary.all.map(\.id), ["moonlit-lake", "spaceship-lounge", "golden-hour-beach", "coast-road",
                                                   "snowbound-cabin", "bedroom-dawn", "aurora-fjord", "bioluminescent-bay",
-                                                  "tea-house-snow", "zen-rock-garden"])
-        XCTAssertEqual(Set(SetLibrary.all.map(\.id)).count, 10, "ids are unique")
-        XCTAssertEqual(Set(SetLibrary.all.map(\.worldID)).count, 10, "one world each")
+                                                  "tea-house-snow", "zen-rock-garden", "submarine-window", "great-barrier-reef"])
+        XCTAssertEqual(Set(SetLibrary.all.map(\.id)).count, 12, "ids are unique")
+        XCTAssertEqual(Set(SetLibrary.all.map(\.worldID)).count, 12, "one world each")
         for s in SetLibrary.all {
             XCTAssertEqual(ThemeRegistry.resolve(s.worldID), s.worldID, s.id)
             let visual = try XCTUnwrap(ThemeRegistry.parameters(for: s.worldID).first { $0.id == "visual" }, s.id)
@@ -117,8 +118,34 @@ final class SetsTests: XCTestCase {
         XCTAssertEqual(garden.patchID, "zen-shakuhachi")
         XCTAssertEqual(garden.ambience, AmbienceSettings())
         XCTAssertNil(garden.creditID, "born from its place, not a song")
-        // Only the two still places go without a song.
-        XCTAssertEqual(SetLibrary.all.filter { $0.creditID == nil }.map(\.id), ["tea-house-snow", "zen-rock-garden"])
+        // The deep water (spec §2, §11): the submarine after "Underwater", the reef born from its place.
+        let sub = try XCTUnwrap(SetLibrary.set(id: "submarine-window"))
+        XCTAssertEqual(sub, SetLibrary.submarineWindow)
+        XCTAssertEqual(sub.name, "Submarine Window")
+        XCTAssertEqual(sub.moodName, "Pressure, hush")
+        XCTAssertEqual(sub.mood, .deepHush)
+        XCTAssertEqual(sub.worldID, SubmarineWindowModel.id)
+        XCTAssertEqual(sub.visual, "Deep Lights")
+        XCTAssertTrue(SubmarineWindowModel.visuals.contains(sub.visual))
+        XCTAssertEqual(PatchLibrary.all.first { $0.id == sub.patchID }?.engine, .blueDepth)
+        XCTAssertEqual(sub.patchID, "blue-depth")
+        XCTAssertEqual(sub.ambience, AmbienceSettings())
+        XCTAssertEqual(sub.creditID, CreditLibrary.underwater.id)
+        XCTAssertEqual(sub.creditID, "underwater")
+        let reef = try XCTUnwrap(SetLibrary.set(id: "great-barrier-reef"))
+        XCTAssertEqual(reef, SetLibrary.greatBarrierReef)
+        XCTAssertEqual(reef.name, "Great Barrier Reef")
+        XCTAssertEqual(reef.moodName, "Colourful, alive")
+        XCTAssertEqual(reef.mood, .reefAlive)
+        XCTAssertEqual(reef.worldID, GreatBarrierReefModel.id)
+        XCTAssertEqual(reef.visual, "Coral Pulse")
+        XCTAssertTrue(GreatBarrierReefModel.visuals.contains(reef.visual))
+        XCTAssertEqual(PatchLibrary.all.first { $0.id == reef.patchID }?.engine, .reefMarimba)
+        XCTAssertEqual(reef.patchID, "reef-marimba")
+        XCTAssertEqual(reef.ambience, AmbienceSettings())
+        XCTAssertNil(reef.creditID, "born from its place, not a song")
+        // Only the two still places and the reef go without a song.
+        XCTAssertEqual(SetLibrary.all.filter { $0.creditID == nil }.map(\.id), ["tea-house-snow", "zen-rock-garden", "great-barrier-reef"])
         // Every set's mood is its own.
         let setMoods = SetLibrary.all.map(\.mood)
         for i in 0..<setMoods.count { for j in (i + 1)..<setMoods.count { XCTAssertNotEqual(setMoods[i], setMoods[j]) } }
@@ -130,7 +157,8 @@ final class SetsTests: XCTestCase {
     /// Sets saved by older builds always carried a credit; they still decode now it is optional. A set born from its
     /// place (no credit) is written without the key and reads back as nil, as does an explicit null. And the gallery an
     /// eight-set build stored (Review focus 4) reads back as this build's first eight, in their places, with their credits;
-    /// the two still places come after them.
+    /// the two still places come after them, then the deep water (the App's `testOldSetStoresStillLoad` opens a ten-set
+    /// build's store on the twelve-set gallery).
     func testOldSetsWithACreditStillDecode() throws {
         let old = #"{"id":"moonlit-lake","name":"Moonlit Lake","moodName":"Serene","#
             + #""mood":{"energy":0.2,"warmth":0.45,"brightness":0.3,"space":0.85,"motion":0.25},"#
@@ -143,7 +171,7 @@ final class SetsTests: XCTestCase {
             XCTAssertEqual(try JSONDecoder().decode(InStrumSet.self, from: JSONEncoder().encode(s)), s, s.id)
         }
         let places = SetLibrary.all.filter { $0.creditID == nil }
-        XCTAssertEqual(places, [SetLibrary.teaHouseSnow, SetLibrary.zenRockGarden])
+        XCTAssertEqual(places, [SetLibrary.teaHouseSnow, SetLibrary.zenRockGarden, SetLibrary.greatBarrierReef])
         for place in places {
             let written = try JSONEncoder().encode(place)
             XCTAssertFalse(String(decoding: written, as: UTF8.self).contains("creditID"), place.id)
@@ -163,7 +191,8 @@ final class SetsTests: XCTestCase {
         XCTAssertEqual(objects.compactMap { $0["creditID"] as? String }, eight.compactMap(\.creditID), "every older set carries its credit")
         XCTAssertEqual(objects.count, 8)
         XCTAssertEqual(try JSONDecoder().decode([InStrumSet].self, from: stored), eight)
-        XCTAssertEqual(Array(SetLibrary.all.dropFirst(8)), [SetLibrary.teaHouseSnow, SetLibrary.zenRockGarden])
+        XCTAssertEqual(Array(SetLibrary.all.dropFirst(8)), [SetLibrary.teaHouseSnow, SetLibrary.zenRockGarden,
+                                                            SetLibrary.submarineWindow, SetLibrary.greatBarrierReef])
     }
 
     func testNewMoods() {
@@ -177,8 +206,11 @@ final class SetsTests: XCTestCase {
         // The still places (spec §8.1, §9.1).
         XCTAssertEqual(Mood.delicate, Mood(energy: 0.2, warmth: 0.55, brightness: 0.5, space: 0.3, motion: 0.2))
         XCTAssertEqual(Mood.orderedCalm, Mood(energy: 0.15, warmth: 0.45, brightness: 0.55, space: 0.5, motion: 0.15))
+        // The deep water (Sets 11 & 12 spec §8.1, §9.1, §10): pressure and hush; colourful and alive.
+        XCTAssertEqual(Mood.deepHush, Mood(energy: 0.3, warmth: 0.3, brightness: 0.15, space: 0.9, motion: 0.45))
+        XCTAssertEqual(Mood.reefAlive, Mood(energy: 0.65, warmth: 0.75, brightness: 0.85, space: 0.45, motion: 0.75))
         let moods = [Mood.serene, .dreamy, .warmHaze, .restless, .hushedWarm, .softWaking, .electricAwe, .secretGlow,
-                     .delicate, .orderedCalm]
+                     .delicate, .orderedCalm, .deepHush, .reefAlive]
         for i in 0..<moods.count { for j in (i + 1)..<moods.count { XCTAssertNotEqual(moods[i], moods[j]) } }
     }
 
