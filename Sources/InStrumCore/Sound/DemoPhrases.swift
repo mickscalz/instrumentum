@@ -319,6 +319,44 @@ public enum DemoPhrases {
         return m.sorted
     }()
 
+    /// F minor at 124 BPM for about 23.5 s, the way Endless Rise plays (Storms spec §4.1): a minor chord (F2 C3 F3 A♭3
+    /// C4) rolled softly and held for eight bars while the pad ducks on every beat and the riser climbs over it; bars 5
+    /// and 6 add an eighth-note figure inside the chord (C3 F3 A♭3 F3), bars 7 and 8 a line that climbs from A♭4 to C6,
+    /// up a third and back a step on every beat and louder as it goes, under a swell of pressure, so the tension gathers;
+    /// then, on the downbeat of bar 9, a hard low F minor chord (F2 C3 F3 A♭3, at 118 and more within 15 ms): the drop.
+    /// The riser resolves into it and fades, and the pad pulses on alone for four bars before everything lets go.
+    /// Original material, nothing quoted from any record. The drop is Excitement's (the riser takes the hard chord
+    /// only once tension has gathered), so the demo is rendered as the app plays it: its notes reach a scene director
+    /// whose cue reaches the engine every frame (`DemoRenderTests.renderPlayed`).
+    public static let endlessRise: Phrase = {
+        var m = Builder()
+        let beat = 60.0 / 124
+        func t(_ beats: Double) -> Double { 0.3 + beats * beat }
+        // The held chord, rolled up softly (30 ms apart, so it's no hard chord), let go just before the drop.
+        for (k, n) in [41, 48, 53, 56, 60].enumerated() {
+            let start = t(0) + 0.03 * Double(k)
+            m.note(start, UInt8(n), UInt8(64 + 2 * k), t(32) - 0.08 - start)
+        }
+        // Bars 5 and 6: an eighth-note figure inside the chord, the pulse made a part.
+        let figure: [UInt8] = [48, 53, 56, 53]   // C3 F3 A♭3 F3
+        for k in 0..<16 { m.note(t(16 + 0.5 * Double(k)), figure[k % 4], UInt8(60 + k), 0.4 * beat) }
+        // Bars 7 and 8: the climb, up the F minor scale a third and back a step on every beat, from A♭4 to C6.
+        let scale: [UInt8] = [60, 61, 63, 65, 67, 68, 70, 72, 73, 75, 77, 79, 80, 82, 84, 85, 87, 89]   // C4 … F6
+        let steps = [0, 2, 1, 3, 2, 4, 3, 5, 4, 6, 5, 7, 6, 8, 7, 9]
+        for (k, d) in steps.enumerated() {
+            let velocity = 64 + Int((2.4 * Double(k)).rounded())
+            m.note(t(24 + 0.5 * Double(k)), scale[5 + d], UInt8(velocity), 0.4 * beat)
+        }
+        m.pressure(t(24), from: 0, to: 0.75, over: 7.5 * beat)
+        m.pressure(t(31.6), from: 0.75, to: 0, over: 0.15)
+        // Bar 9: the drop, held for four bars.
+        for (k, n) in [41, 48, 53, 56].enumerated() {
+            let start = t(32) + 0.005 * Double(k)
+            m.note(start, UInt8(n), UInt8(124 - 2 * k), t(48) - start)
+        }
+        return m.sorted
+    }()
+
     private struct Builder {
         var events: Phrase = []
         mutating func note(_ t: Double, _ n: UInt8, _ v: UInt8, _ length: Double) {

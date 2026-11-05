@@ -4,6 +4,7 @@ public enum BuiltInEngine: String, Codable, CaseIterable {
     case blueDepth
     case reefMarimba
     case magmaBass, replicantBrass
+    case endlessRise
 
     public var displayName: String {
         switch self {
@@ -21,6 +22,7 @@ public enum BuiltInEngine: String, Codable, CaseIterable {
         case .blueDepth: return "Blue Depth"
         case .magmaBass: return "Magma Bass"
         case .replicantBrass: return "Replicant Brass"
+        case .endlessRise: return "Endless Rise"
         }
     }
 }
@@ -107,6 +109,14 @@ public enum PatchLibrary {
         Patch(id: "tears-in-rain", name: "Tears in Rain", engine: .replicantBrass, values: replicant(swell: 0.85, blaze: 0.35, width: 0.80, hall: 0.80, chrome: 0.45, punch: 0.35, arp: 4, rate: 1, split: 48, tempo: 120)),
         Patch(id: "chrome-rush", name: "Chrome Rush", engine: .replicantBrass, values: replicant(swell: 0.35, blaze: 0.65, width: 0.60, hall: 0.40, chrome: 0.75, punch: 0.80, arp: 1, rate: 3, split: 48, tempo: 132)),
         Patch(id: "night-brass", name: "Night Brass", engine: .replicantBrass, values: replicant(swell: 0.70, blaze: 0.55, width: 0.75, hall: 0.65, chrome: 0.60, punch: 0.50, arp: 0, rate: 3, split: 0, tempo: 120)),
+        // Endless Rise, after "FADE" (Storms spec §4.1; brief endless-rise.md): the brief's table, Supercell first (the
+        // engine's defaults). The spec sets no Space or Width: Supercell keeps the engine's (.50, .60); the others lean
+        // with their character (Slow Front far and wide, Siren close so its pulse stays tight, Pad Only with air round it),
+        // reasoned rather than heard, so check them by ear.
+        Patch(id: "endless-rise", name: "Supercell", engine: .endlessRise, values: endlessRise(rise: 0.08, pressure: 0.40, grit: 0.30, pulse: 0.50, tempo: 124, tail: 0.60, sub: 0.70, space: 0.50, width: 0.60), creditID: "fade"),
+        Patch(id: "slow-front", name: "Slow Front", engine: .endlessRise, values: endlessRise(rise: 0.03, pressure: 0.40, grit: 0.30, pulse: 0, tempo: 124, tail: 1.0, sub: 0.70, space: 0.70, width: 0.75), creditID: "fade"),
+        Patch(id: "siren", name: "Siren", engine: .endlessRise, values: endlessRise(rise: 0.30, pressure: 0.40, grit: 0.60, pulse: 0.80, tempo: 128, tail: 0.60, sub: 0.70, space: 0.35, width: 0.50), creditID: "fade"),
+        Patch(id: "pad-only", name: "Pad Only", engine: .endlessRise, values: endlessRise(rise: 0, pressure: 0.40, grit: 0.30, pulse: 0.50, tempo: 124, tail: 0.60, sub: 0.70, space: 0.60, width: 0.70), creditID: "fade"),
     ]
 
     public static func defaultPatch(for engine: BuiltInEngine) -> Patch {
@@ -167,6 +177,13 @@ public enum PatchLibrary {
 
     private static func replicant(swell: Double, blaze: Double, width: Double, hall: Double, chrome: Double, punch: Double, arp: Double, rate: Double, split: Double, tempo: Double) -> [String: Double] {
         ["swell": swell, "blaze": blaze, "width": width, "hall": hall, "chrome": chrome, "punch": punch, "arp": arp, "rate": rate, "split": split, "tempo": tempo]
+    }
+
+    /// The dials in the instrument's order. Rise is octaves a second (0 switches the riser off); Tempo is the Pulse's, in
+    /// BPM (70…170); every other dial 0…1.
+    private static func endlessRise(rise: Double, pressure: Double, grit: Double, pulse: Double, tempo: Double, tail: Double, sub: Double,
+                                    space: Double, width: Double) -> [String: Double] {
+        ["rise": rise, "pressure": pressure, "grit": grit, "pulse": pulse, "tempo": tempo, "tail": tail, "sub": sub, "space": space, "width": width]
     }
 
     private static func pad(bloom: Double, drift: Double, motion: Double, shimmer: Double, brightness: Double, space: Double) -> [String: Double] {

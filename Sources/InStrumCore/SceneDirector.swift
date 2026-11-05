@@ -29,11 +29,14 @@ public enum MoodLook {
     public static func ambienceDensity(_ m: Mood) -> Double { 0.7 + 0.6 * m.energy }
 }
 
-/// The built-in instrument's own pulse (spec §7.6), for visuals that blink with it: an arp's tempo and its gate.
+/// The built-in instrument's own pulse (spec §7.6), for visuals that blink with it: an arp's tempo and its gate, or Endless
+/// Rise's Pulse (Storms spec §3).
 public struct InstrumentPulse: Equatable {
-    /// The arp's tempo: it steps once a sixteenth (60 / bpm / 4 s), from a phrase's first note, as the arp does.
+    /// The arp's tempo: it steps once a sixteenth (60 / bpm / 4 s), from a phrase's first note, as the arp does. Endless
+    /// Rise's is its Pulse's Tempo: the pad ducks once a beat, every fourth sixteenth of the same grid.
     public var bpm: Double
-    /// How hard it blinks, 0…1 (Blue Depth's Blink: its gate shortens as this rises).
+    /// How hard it blinks, 0…1 (Blue Depth's Blink: its gate shortens as this rises; Endless Rise's Pulse: how deep the
+    /// pad ducks).
     public var gate: Double
 
     public init(bpm: Double, gate: Double) {
@@ -42,9 +45,17 @@ public struct InstrumentPulse: Equatable {
     }
 
     /// The pulse of a built-in instrument with these dials (by identifier, in their own units): Blue Depth's arp, at
-    /// its Tempo with Blink as the gate, while Blink is up. Nil for any other instrument (or none), and for Blue Depth
-    /// at Blink 0, which has no arp (the engine's own threshold, so the visuals and the arp agree).
+    /// its Tempo with Blink as the gate, while Blink is up; Chrome Bass's arp; Endless Rise's Pulse, at its Tempo with the
+    /// Pulse as the gate, while the Pulse is up. Nil for any other instrument (or none), for Blue Depth at Blink 0, which
+    /// has no arp (the engine's own threshold, so the visuals and the arp agree), and for Endless Rise at Pulse 0 (or with
+    /// no Pulse dial named), whose pad then doesn't duck.
     public init?(engine: BuiltInEngine?, values: [String: Double]) {
+        if engine == .endlessRise {
+            guard let pulse = values["pulse"], pulse > 1e-3 else { return nil }
+            let tempo: Double = values["tempo"] ?? 124   // the dial's default, the card's felt pulse
+            self.init(bpm: min(170, max(70, tempo)), gate: min(1, pulse))
+            return
+        }
         if engine == .replicantBrass {
             // Chrome Bass's arp: Rate's step expressed as the sixteenth of an equivalent tempo; no pulse with the arp
             // off or with no split (no left hand to play it).
@@ -58,6 +69,21 @@ public struct InstrumentPulse: Equatable {
         guard engine == .blueDepth, let blink = values["blink"], blink > 1e-3 else { return nil }
         let tempo: Double = values["tempo"] ?? 118   // the dial's default, the record's tempo
         self.init(bpm: min(160, max(70, tempo)), gate: min(1, blink))
+    }
+}
+
+/// What the scene asks of the built-in instrument after each step (Storms spec §3, §4.1): the tension to hand the engine
+/// (`isd_synth_set_tension`) and whether a drop landed on this step (`isd_synth_trigger_drop`, once). With build and
+/// drop on, the tension is Excitement's, and the engine adds 0.3 × the player's pressure itself; with it off, it is
+/// 0.7 × the pressure, so with the engine's 0.3 the riser climbs at the pressure itself (aftertouch = Tension).
+/// Engines other than Endless Rise, and plugins, ignore both.
+public struct InstrumentCue: Equatable {
+    public var tension: Float
+    public var drop: Bool
+
+    public init(tension: Float = 0, drop: Bool = false) {
+        self.tension = tension
+        self.drop = drop
     }
 }
 
@@ -122,6 +148,9 @@ protocol AnyThemeBoxProtocol {
     mutating func setMood(_ m: Mood)
     mutating func setSky(_ s: SkyState)
     mutating func setPulse(_ p: InstrumentPulse?)
+    mutating func setExcitement(_ e: ExcitementFrame)
+    /// The world's own surprises (`SurpriseListing`), 0 when it has none.
+    var surpriseCount: Int { get }
     mutating func step(dt: Double, params: ParameterSet, roles: RoleValues, inputs: InputFrame, quality: QualityLevel) -> Any
 }
 
@@ -144,6 +173,12 @@ struct ThemeBox<T: ThemeModel>: AnyThemeBoxProtocol {
         aware.pulse = p
         if let back = aware as? T { model = back }
     }
+    mutating func setExcitement(_ e: ExcitementFrame) {
+        guard T.self is ExcitementAware.Type, var aware = model as? ExcitementAware else { return }
+        aware.setExcitement(e)
+        if let back = aware as? T { model = back }
+    }
+    var surpriseCount: Int { (T.self as? SurpriseListing.Type)?.surpriseCount ?? 0 }
     mutating func step(dt: Double, params: ParameterSet, roles: RoleValues, inputs: InputFrame, quality: QualityLevel) -> Any {
         model.step(dt: dt, params: params, roles: roles, inputs: inputs, quality: quality)
     }
@@ -161,10 +196,30 @@ public final class SceneDirector {
 
     /// The set's mood, pushed into mood-aware models every step.
     public var mood = Mood.neutral
-    /// The built-in instrument's pulse (Blue Depth's arp grid), which the app sets from the current patch and its
-    /// dials; nil for every other instrument. It is about the instrument, so it carries over a world switch. Every step
-    /// hands it to a pulse-aware model (`PulseAware`) first.
+    /// The built-in instrument's pulse (Blue Depth's arp grid, Chrome Bass's arp, Endless Rise's Pulse), which the app
+    /// sets from the current patch and its dials; nil for every other instrument. It is about the instrument, so it
+    /// carries over a world switch. Every step hands it to a pulse-aware model (`PulseAware`) first.
     public var instrumentPulse: InstrumentPulse?
+
+    /// Excitement (Fire & Neon spec §5), owned here: every note reaches it as it reaches the theme, and each step steps it
+    /// before the theme and hands its frame to an excitement-aware model (`ExcitementAware`). It is about the playing,
+    /// so it carries over a world switch.
+    public private(set) var excitement = Excitement()
+    /// Excitement's controls (energy, moments, surprises, build and drop).
+    public var excitementSettings: ExcitementSettings {
+        get { excitement.settings }
+        set { excitement.settings = newValue }
+    }
+    /// What Excitement handed out on the latest step.
+    public private(set) var excitementFrame = ExcitementFrame()
+    /// The player's pressure (aftertouch, channel or a key's), 0…1: the latest, 0 after all notes off.
+    public private(set) var pressure: Float = 0
+    /// The tension the instrument and the world climb on together (Storms spec §3): with build and drop on, Excitement's
+    /// tension plus 0.3 × the pressure (at most 1); with it off, the pressure itself. It is the number Endless Rise's
+    /// riser climbs at, so a world that turns with it (the wall cloud) turns with the sound.
+    public private(set) var instrumentTension: Float = 0
+    /// What the app hands the built-in instrument after this step: the tension and, on the one step a drop lands, the drop.
+    public private(set) var instrumentCue = InstrumentCue()
     /// Stepped each frame for sky-aware models (worlds).
     public let sky = LivingSky(settings: SkySettings())
     /// The latest sky state, when the active theme uses one.
@@ -235,9 +290,17 @@ public final class SceneDirector {
     public func handle(_ events: [PerformanceEvent], at t: Double) {
         for e in events {
             switch e {
-            case let .noteOn(note, _): held.insert(note)
-            case let .noteOff(note): held.remove(note)
-            case .allNotesOff: held.removeAll()
+            case let .noteOn(note, velocity):
+                held.insert(note)
+                excitement.noteOn(Int(note), velocity: velocity)
+            case let .noteOff(note):
+                held.remove(note)
+                excitement.noteOff(Int(note))
+            case .allNotesOff:
+                for note in held { excitement.noteOff(Int(note)) }
+                held.removeAll()
+                pressure = 0
+            case let .pressure(p): pressure = min(1, max(0, p))
             default: break
             }
             box.handle(e)
@@ -256,6 +319,7 @@ public final class SceneDirector {
         lastRoles = roles
         box.setMood(mood)
         box.setPulse(instrumentPulse)
+        stepExcitement(dt: dt)
         if box.wantsSky {
             // All three are world parameters, read every step: a world without them (choice "") follows the sky and the
             // calendar, so leaving a world whose aurora or meteors are "Always" leaves them behind.
@@ -267,5 +331,23 @@ public final class SceneDirector {
             box.setSky(s)
         }
         return box.step(dt: dt, params: parameters.withOffsets(offsets), roles: roles, inputs: frame, quality: quality)
+    }
+
+    /// Steps Excitement by the step's dt, hands its frame to the theme, and works out the instrument's tension and cue
+    /// (Storms spec §3, §4.1). A drop is cued only on the step its moment arrives, so it reaches the engine once.
+    private func stepExcitement(dt: Double) {
+        excitement.holding = holding
+        excitement.reduceMotion = controls.reduceMotion
+        let e = excitement.step(dt: dt, surpriseCount: box.surpriseCount)
+        excitementFrame = e
+        box.setExcitement(e)
+        let p = pressure
+        if excitement.settings.buildAndDrop {
+            instrumentTension = min(1, e.tension + 0.3 * p)
+            instrumentCue = InstrumentCue(tension: e.tension, drop: dt > 0 && e.moment?.isDrop == true)
+        } else {
+            instrumentTension = p
+            instrumentCue = InstrumentCue(tension: 0.7 * p, drop: false)
+        }
     }
 }

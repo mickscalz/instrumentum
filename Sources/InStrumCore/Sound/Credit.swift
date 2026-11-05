@@ -45,8 +45,13 @@ public enum CreditLibrary {
     public static let underwater = Credit(id: "underwater", song: "Underwater", artist: "RÜFÜS DU SOL",
                                           album: "Solace", year: 2018, trackNumber: 7, key: "F♯ minor", tempoBPM: 118,
                                           line: "The blinking, echoing arp that starts it, murky as deep water.")
+    /// "FADE" (Storms spec §2, §12; brief endless-rise.md). Its tempo is disputed, so the card breathes at 124 until
+    /// Michael taps it; no key is claimed until it is heard (the card's liner notes then leave the key out).
+    public static let fade = Credit(id: "fade", song: "FADE", artist: "Kanye West", album: "The Life of Pablo", year: 2016,
+                                    trackNumber: 18, key: "", tempoBPM: 124,
+                                    line: "A relentless pulse under a rise that never resolves.")
     public static let all: [Credit] = [comeBackToEarth, innerbloom, musicToWatchBoysTo, highByTheBeach, stay, dunno, wings,
-                                       happinessIsAButterfly, underwater]
+                                       happinessIsAButterfly, underwater, fade]
 
     public static func credit(id: String) -> Credit? { all.first { $0.id == id } }
 }

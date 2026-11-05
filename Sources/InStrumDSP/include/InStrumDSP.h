@@ -126,9 +126,9 @@ int isd_synth_debug_count(const ISDSynth *synth, ISDDebugCount which);
 // ---------- Storms (Sets 17 & 18): the riser's calls (Task 2); the grand's are declared here, defined by Task 4 ----------
 /// Endless Rise. Any thread. Tension 0…1 from the Excitement step: it multiplies the riser's rate by 1 + 3·tension,
 /// opens the pad's filter (600 Hz → 6 kHz at Pressure .4) and brings the riser forward. The engine adds 0.3 × the
-/// player's pressure to it (so with nothing set, a full press is tension 0.3); with Excitement off the host passes the
-/// pressure itself here. An atomic, read once per control block and smoothed over 50 ms, so it never steps. Other
-/// engines ignore it.
+/// player's pressure to it (so with nothing set, a full press is tension 0.3); with Excitement off the host passes 0.7 ×
+/// the pressure here, so the two make the pressure itself (spec §4.1: aftertouch = Tension). An atomic, read once per
+/// control block and smoothed over 50 ms, so it never steps. Other engines ignore it.
 void isd_synth_set_tension(ISDSynth *synth, float tension);
 /// Endless Rise. Any thread. The drop: the riser resolves onto the chord within 120 ms and fades out over 2.5 s, the
 /// pad's filter snaps open and a 48 Hz thump fires. A second drop is ignored until the first's release envelope has

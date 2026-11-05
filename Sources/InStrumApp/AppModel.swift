@@ -246,6 +246,16 @@ public final class AppModel: ObservableObject {
         autosave()
     }
 
+    /// Hands the director's step to the built-in instrument (Storms spec §3, §4.1): the tension, every step, and the drop
+    /// on the one step it lands. The canvas calls it after each step, on the main thread; the engine keeps both in atomics
+    /// it reads once per control block (the plan's ruling), so the sound follows within a step. With build and drop on
+    /// the tension is Excitement's (the engine adds the player's pressure itself); with it off it is the pressure, so
+    /// aftertouch drives the riser alone. Plugins and every other engine ignore both.
+    public func cueInstrument(_ cue: InstrumentCue) {
+        engine.setTension(cue.tension)
+        if cue.drop { engine.triggerDrop() }
+    }
+
     /// The pulse follows a preset's dials (and then the dials themselves as they move, through the dial reader).
     private func follow(_ patch: Patch) {
         pulseLive.withLockUnchecked { l in for (identifier, value) in patch.values { l.values[identifier] = value } }

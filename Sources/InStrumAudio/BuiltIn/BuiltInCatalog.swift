@@ -70,6 +70,7 @@ public enum BuiltInCatalog {
         case .blueDepth: return "isBD"
         case .magmaBass: return "isMG"   // not isMB: Morning Box has it
         case .replicantBrass: return "isRB"
+        case .endlessRise: return "isER"
         }
     }
 
@@ -89,6 +90,7 @@ public enum BuiltInCatalog {
         case .blueDepth: return ISD_ENGINE_BLUE_DEPTH
         case .magmaBass: return ISD_ENGINE_MAGMA_BASS
         case .replicantBrass: return ISD_ENGINE_REPLICANT_BRASS
+        case .endlessRise: return ISD_ENGINE_ENDLESS_RISE
         }
     }
 
