@@ -32,6 +32,13 @@ public:
     virtual void setTension(float tension) { (void)tension; }
     /// Any thread (Endless Rise): the drop. The engine counts it in an atomic and takes it at its next control block.
     virtual void triggerDrop() {}
+    /// Any thread (Single Note Grand): the morph the world forces (0…1) over the player's pressure; a negative value
+    /// releases it. The engine keeps it in an atomic and reads it once per control block. Engines without a morph
+    /// ignore it.
+    virtual void setForcedMorph(float morph) { (void)morph; }
+    /// Any thread (Single Note Grand): whether the same key has just been struck four or more times at 2 a second or
+    /// faster. Engines that don't listen for it say no.
+    virtual bool isRepeating() const { return false; }
 };
 
 } // namespace isd

@@ -32,7 +32,10 @@
 //     BandPass                     a state-variable band-pass with unity gain at its centre.
 //     TwoFormant                   two band-passes with gliding centres, for voice-like layers. reset(f1, f2),
 //                                  setGains(g1, g2) (give g2 the opposite sign, as parallel formant synthesis does,
-//                                  so the pair adds between its centres), setTargets(f1, f2), update(glide, sr) once
+//                                  so the pair adds between its centres; with both positive the pair dips between
+//                                  them instead and never turns a signal it is mixed with against itself, as Single
+//                                  Note Grand's crossfade needs), setBandwidths(b1, b2) (constant bandwidths in Hz in
+//                                  place of the shared q), setTargets(f1, f2), update(glide, sr) once
 //                                  per block (glide 0…1: the share of the way, in octaves, each centre moves this
 //                                  block), process(x). response(f, re, im) / responseAt(f): the pair's gain at f, for
 //                                  levelling a layer whose pitch moves against the formants (a pair cancels above
@@ -249,13 +252,17 @@ struct BandPass {
 struct TwoFormant {
     BandPass bp[2];
     float hz[2] = {500.f, 1000.f}, target[2] = {500.f, 1000.f}, gain[2] = {1.f, -0.25f}, q = 5.f;
+    /// Constant bandwidths (Hz) in place of the shared q, as a voice's formants keep theirs while they move (0: use q).
+    float bw[2] = {0.f, 0.f};
     void reset(float f1, float f2) { hz[0] = target[0] = f1; hz[1] = target[1] = f2; bp[0].reset(); bp[1].reset(); }
     void setTargets(float f1, float f2) { target[0] = f1; target[1] = f2; }
     void setGains(float g1, float g2) { gain[0] = g1; gain[1] = g2; }
+    void setBandwidths(float b1, float b2) { bw[0] = b1; bw[1] = b2; }
+    float qOf(int i) const { return bw[i] > 0.f ? hz[i] / bw[i] : q; }
     void update(float glide, float sr) {
         for (int i = 0; i < 2; ++i) {
             hz[i] *= std::exp2(clamp01(glide) * std::log2(target[i] / hz[i]));
-            bp[i].set(hz[i], q, sr);
+            bp[i].set(hz[i], qOf(i), sr);
         }
     }
     float process(float x) { return gain[0] * bp[0].process(x) + gain[1] * bp[1].process(x); }
@@ -265,7 +272,7 @@ struct TwoFormant {
         re = im = 0.f;
         for (int i = 0; i < 2; ++i) {
             // h = (j r/Q) / (1 − r² + j r/Q), r = f / centre: unity at the centre.
-            const float r = f / hz[i], a = 1.f - r * r, b = r / q, d = a * a + b * b;
+            const float r = f / hz[i], a = 1.f - r * r, b = r / qOf(i), d = a * a + b * b;
             re += gain[i] * (b * b) / d;
             im += gain[i] * (b * a) / d;
         }

@@ -39,16 +39,13 @@ private:
         float level = 0, stringRef = 0, glassRef = 0;
         StringBank<kStrings> str;      // the strings' partials
         StringBank<kGlass> glass;      // the glass bloom's partials
-        int noiseLeft = 0, noiseAge = 0, noiseAttack = 1;
-        float noiseAmp = 0, noiseDecay = 0, noiseHz = 300, noteRms = 0;
-        Biquad noiseFilter;
-        OnePole noiseLowpass;
+        FeltNoise noise;               // the felt's contact thump, then the damper's touch
+        float noiseHz = 300, noteRms = 0;
     };
 
     void startVoice(Voice &v, int note, int pitch, int velocity);
     Voice &allocate();
     void damp(Voice &v);
-    void startNoise(Voice &v, float seconds, float hz, float rms);
     void beginFade(Voice &v);
     void retune();
     void setSympDecay(float t60) { symp.setDecay(t60, fineRatio); }
@@ -68,7 +65,8 @@ private:
     Smoothed fine, glassGain, warmth, space, wet, sympGain;
     float fineRatio = 1, appliedCents = 0, appliedWarmth = -1, appliedSpace = -1;
 
-    Biquad body[4][2], lowShelf[2], highShelf[2];
+    SoundBoard board;
+    Biquad lowShelf[2], highShelf[2];
     SympBank symp;
     bool sympActive = false;
 

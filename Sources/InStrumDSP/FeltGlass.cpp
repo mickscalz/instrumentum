@@ -24,9 +24,7 @@ FeltGlass::FeltGlass(double sampleRate) : sr(sampleRate), rng(0x5EED1234ABCDULL)
     limiter.init(sr);
     fine.init(sr); glassGain.init(sr); warmth.init(sr); space.init(sr); wet.init(sr); sympGain.init(sr, 50.0);
     fine.snap(0); glassGain.snap(0.35f); warmth.snap(0.60f); space.snap(0.45f); wet.snap(0); sympGain.snap(0);
-    const double peaks[4][3] = {{110, 1.0, 3.0}, {250, 1.2, 2.0}, {1200, 0.9, -2.0}, {3500, 1.0, 1.5}};
-    for (int b = 0; b < 4; ++b)
-        for (int c = 0; c < 2; ++c) body[b][c].setPeak(peaks[b][0], peaks[b][1], peaks[b][2], sr);
+    board.configure(sr);
     symp.init(sr);
     setSympDecay(0.08f);
 }
@@ -95,59 +93,21 @@ void FeltGlass::startVoice(Voice &v, int note, int pitch, int velocity) {
     const float fsr = (float)sr, nyq = 0.45f * fsr;
     const float vp = (float)std::clamp(velocity, 1, 127) / 127.f;
     const float vb = clamp01(vp + 0.3f * (mBright - 0.5f));
-    const float felt = clamp01(pFelt), ring = clamp01(pRing);
+    const float felt = clamp01(pFelt);
     const float f0 = midiHz((float)pitch);
     const float A = std::pow(vp, 1.7f);
 
     v.active = true; v.keyDown = true; v.damped = false; v.fading = false;
     v.note = note; v.pitch = pitch; v.amp = A;
     v.fadeGain = 1; v.fadeStep = 0;
-    v.str.clear();
     v.glass.clear();
 
-    // Strings: inharmonic partials shaped by the felt hammer; the lower twelve as beating unison pairs.
-    const float B = inharmonicity(pitch), s1 = std::sqrt(1.f + B);
-    const int N = partialCount(pitch);
-    // The felt hammer's cutoff follows the string's pitch (treble hammers are smaller and harder) and opens with velocity.
-    const float hammer = 360.f * std::pow(f0 / 261.63f, 0.6f);
-    const float fc = hammer * (1.f - 0.6f * felt) * std::exp2(4.5f * vb), fcRef = hammer * std::exp2(4.5f);
-    const float t0 = 18.f * std::pow(10.f, -(float)(pitch - 21) / 87.f) * (0.45f + 1.4f * ring) * (1.f - 0.35f * felt);
-    float refE = 0, actE = 0;
-    int k = 0;
-    // Each partial starts at a fixed quasi-random phase (the contact ramp hides the start), which keeps
-    // the crest factor of chords and bass notes musical instead of one coherent spike.
-    float phase = 0;
-    auto add = [&](float hz, float a, float t60) {
-        v.str.hz[k] = hz; v.str.re[k] = a * std::cos(phase); v.str.im[k] = a * std::sin(phase); v.str.dr[k] = decayR(t60, sr); ++k;
-    };
-    for (int n = 1; n <= N && k < kStrings; ++n) {
-        float nf = (float)n, fn = nf * f0 * std::sqrt(1.f + B * nf * nf) / s1;
-        if (fn > nyq) break;
-        float pos = std::sin(nf * kPi / 8.f);
-        if (std::fabs(pos) < 1e-3f) continue;
-        // The top quarter of the partials tapers off, so the partial cap never leaves a spectral edge.
-        float edge = nf > 0.75f * (float)N ? 0.5f + 0.5f * std::cos(kPi * (nf - 0.75f * (float)N) / (0.25f * (float)N + 1.f)) : 1.f;
-        float aRef = edge * pos / (1.f + std::pow(fn / fcRef, 3.f));
-        float a = edge * pos / (1.f + std::pow(fn / fc, 3.f));
-        float t60 = t0 / (1.f + fn / 2500.f);
-        phase = kTwoPi * (0.381966f * nf + 0.137f * (float)pitch - std::floor(0.381966f * nf + 0.137f * (float)pitch));
-        if (n <= 12 && k + 2 <= kStrings) {
-            float d = 0.15f + 0.35f * nf / 12.f;
-            add(fn * std::exp2(-d / 1200.f), a, t60);
-            add(fn * std::exp2(d / 1200.f), 0.25f * a, 2.6f * t60);
-            refE += aRef * aRef * 1.0625f; actE += a * a * 1.0625f;
-        } else {
-            add(fn, a, t60);
-            refE += aRef * aRef; actE += a * a;
-        }
-    }
-    const float norm = refE > 0 ? A * kStringGain / std::sqrt(refE) : 0.f;
-    v.stringRef = 0;
-    for (int i = 0; i < k; ++i) {
-        v.str.re[i] *= norm; v.str.im[i] *= norm;
-        v.stringRef += v.str.re[i] * v.str.re[i] + v.str.im[i] * v.str.im[i];
-    }
-    v.str.setUsed(k);
+    // Strings: the shared grand string (PianoStrings.hpp), its felt and ring from the dials.
+    GrandTouch touch;
+    touch.pitch = pitch; touch.vb = vb; touch.felt = pFelt; touch.ring = pRing; touch.level = A * kStringGain;
+    const GrandString built = grandString(v.str, touch, sr);
+    const float refE = built.refE, actE = built.actE;
+    v.stringRef = built.energy;
 
     // Glass: inharmonic bell partials an octave up, each a swell (difference of two decays).
     const float tau = 0.3f + 1.2f * (1.f - clamp01(mEnergy));
@@ -184,10 +144,10 @@ void FeltGlass::startVoice(Voice &v, int note, int pitch, int velocity) {
     v.attackPos = 0;
     v.attackLen = std::max(1, (int)((4.f - 3.f * vp) * 0.001f * fsr));
     v.noteRms = std::sqrt(0.5f * v.stringRef);
-    v.noiseFilter.clear(); v.noiseLowpass.clear();
+    v.noise.clear();
     v.noiseHz = 180.f + 220.f * (float)(pitch - 21) / 87.f;
     const float td = (25.f - 17.f * vp) * 0.001f;
-    startNoise(v, td, v.noiseHz, v.noteRms * std::pow(10.f, (-18.f + 10.f * felt) / 20.f));
+    v.noise.start(td, v.noiseHz, v.noteRms * std::pow(10.f, (-18.f + 10.f * felt) / 20.f), sr);
     const float pan = std::clamp(clamp01(pWidth) * (float)(pitch - 64) / 44.f, -1.f, 1.f), th = (pan + 1.f) * kPi / 4.f;
     v.panL = std::cos(th); v.panR = std::sin(th);
     v.level = v.stringRef + v.glassRef;
@@ -199,19 +159,7 @@ void FeltGlass::damp(Voice &v) {
     const float rd = decayR(0.15f, sr), rgd = decayR(0.6f, sr);
     v.str.damp(rd);
     v.glass.damp(rgd);
-    startNoise(v, 0.01f, 2.f * v.noiseHz, v.noteRms * 0.0316f * kDamperNoiseGain);
-}
-
-/// A short band-limited noise burst whose RMS starts at `rms`.
-void FeltGlass::startNoise(Voice &v, float seconds, float hz, float rms) {
-    const float fsr = (float)sr;
-    v.noiseLeft = (int)(seconds * fsr); v.noiseAge = 0; v.noiseAttack = std::max(1, (int)(0.001f * fsr));
-    // Uniform noise (RMS 0.577) through the band-pass and its low-pass keeps ≈ sqrt(π·f/(Q·sr))·0.8 of its RMS.
-    const float keep = 0.577f * std::sqrt(kPi * hz / (1.2f * fsr)) * 0.8f;
-    v.noiseAmp = rms / keep;
-    v.noiseDecay = std::exp(-1.f / (seconds / 3.f * fsr));
-    v.noiseFilter.setBandpass(hz, 1.2, sr);
-    v.noiseLowpass.setCutoff(2.f * hz, sr);
+    v.noise.start(0.01f, 2.f * v.noiseHz, v.noteRms * 0.0316f * kDamperNoiseGain, sr);
 }
 
 void FeltGlass::noteOff(int note) {
@@ -273,14 +221,7 @@ void FeltGlass::renderVoice(Voice &v, float *sL, float *sR, float *gL, float *gR
         for (int t = 0; t < n && v.attackPos < v.attackLen; ++t, ++v.attackPos)
             vs[t] *= 0.5f - 0.5f * std::cos(kPi * (float)v.attackPos / (float)v.attackLen);
     }
-    if (v.noiseLeft > 0) {
-        for (int t = 0; t < n && v.noiseLeft > 0; ++t, --v.noiseLeft, ++v.noiseAge) {
-            float env = v.noiseAge < v.noiseAttack ? (float)v.noiseAge / (float)v.noiseAttack : 1.f;
-            float x = rng.bipolar() * v.noiseAmp * env;
-            v.noiseAmp *= v.noiseDecay;
-            vs[t] += v.noiseLowpass.process(v.noiseFilter.process(x));
-        }
-    }
+    if (v.noise.left > 0) v.noise.add(vs, n, rng);
     for (int t = 0; t < n; ++t) lane[t] = v8{};
     v.glass.render(lane, n);
     for (int t = 0; t < n; ++t) vg[t] = hsum(lane[t]);
@@ -310,7 +251,7 @@ void FeltGlass::housekeeping() {
         const bool any = e > 0 || eg > 0;
         float g = glassGain.value;
         v.level = e + eg * g * g;
-        if (!any && v.noiseLeft <= 0) v.active = false;
+        if (!any && v.noise.left <= 0) v.active = false;
     }
     if (sympActive && sympGain.target == 0.f && sympGain.value < 1e-4f && symp.pruneIfSilent()) sympActive = false;
 }
@@ -357,7 +298,7 @@ void FeltGlass::processBlock(float *left, float *right, int n) {
         float peakAbs = 0;
         for (int t = 0; t < n; ++t) {
             float l = sL[t], r = sR[t];
-            for (int b = 0; b < 4; ++b) { l = body[b][0].process(l); r = body[b][1].process(r); }
+            board.process(l, r);
             float g = glassGain.next();
             l += g * gL[t]; r += g * gR[t];
             l = highShelf[0].process(lowShelf[0].process(l));
@@ -370,7 +311,7 @@ void FeltGlass::processBlock(float *left, float *right, int n) {
             if (idleSamples >= (int)(0.25f * fsr)) {
                 idle = true;
                 idleSamples = 0;
-                for (auto &bq : body) { bq[0].clear(); bq[1].clear(); }
+                board.clear();
                 for (int c = 0; c < 2; ++c) { highShelf[c].clear(); lowShelf[c].clear(); }
             }
         } else {
