@@ -350,7 +350,11 @@ void handleMidi(isd::Engine &e, const MidiEvent &m) {
         case 1: e.controller(1, (float)(m.bytes[2] & 0x7F) / 127.f); break;   // the mod wheel
         case 64: e.setSustain(m.bytes[2] >= 64); break;
         case 120: e.allSoundOff(); break;
-        case 121: e.setSustain(false); e.pitchBend(0.f); e.aftertouch(-1, 0.f); e.controller(1, 0.f); break;   // reset all controllers
+        case 121:   // reset all controllers: the pedal, the wheel, channel and every key's pressure, the mod wheel
+            e.setSustain(false); e.pitchBend(0.f); e.aftertouch(-1, 0.f);
+            for (int n = 0; n < 128; ++n) e.aftertouch(n, 0.f);   // poly pressure too: no note stays in yuri or meri
+            e.controller(1, 0.f);
+            break;
         case 123: e.allNotesOff(); break;
         default: break;
         }
