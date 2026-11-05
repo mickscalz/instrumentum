@@ -81,6 +81,12 @@ public struct SkyState: Equatable {
     /// The Sun's ecliptic longitude λ⊙ on the sky's calendar (degrees, J2000; spec §6.3): it walks a day with each
     /// quick-mode cycle and keeps today's date when frozen.
     public var solarLongitude: Double = 0
+    /// The instant (UT) the sky's calendar shows: now in real time; in quick and frozen modes the shown day at the shown
+    /// local hour (the meteor calendar's date). The reef's spawning nights are counted on it.
+    public var calendar = Date(timeIntervalSince1970: 0)
+    /// The moon is the real one at `calendar` (real time), so its full moons can be found with `Lunar`; otherwise it is
+    /// placed by `moonPhase` alone (quick and frozen modes, and any sky made by hand).
+    public var realMoon = false
 
     public init() {}
 }
@@ -154,6 +160,8 @@ public final class LivingSky {
         s.sun = Solar.direction(at: t, from: clock.location)
         if let altitude = hold.altitude { s.sun.altitude = altitude }
         s.moonPhase = reading.moonPhase
+        s.calendar = reading.calendar
+        s.realMoon = !reading.virtualMoon
         if reading.virtualMoon {
             s.moon = clock.virtualMoon(at: t, phase: reading.moonPhase)
             s.moonLit = (1 - cos(2 * .pi * reading.moonPhase)) / 2

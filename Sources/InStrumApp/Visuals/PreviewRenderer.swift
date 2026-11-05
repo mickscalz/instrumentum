@@ -58,6 +58,7 @@ final class PreviewRenderer {
         var teaHouse: TeaHouseSnowRenderer?
         var zenGarden: ZenRockGardenRenderer?
         var submarine: SubmarineWindowRenderer?
+        var reef: GreatBarrierReefRenderer?
         var images: [CGImage] = []
         for t in times.sorted() {
             var current: ThemeRenderer?
@@ -136,6 +137,10 @@ final class PreviewRenderer {
                     if submarine == nil { submarine = SubmarineWindowRenderer(device: device) }
                     submarine?.update(w, params: director.parameters, quality: quality, gentle: gentle, dt: dt, size: size)
                     current = submarine
+                } else if let f = frame as? ReefFrame {
+                    if reef == nil { reef = GreatBarrierReefRenderer(device: device) }
+                    reef?.update(f, params: director.parameters, quality: quality, gentle: gentle, dt: dt, size: size)
+                    current = reef
                 }
                 if time + frameStep > t { break }
             }
@@ -158,6 +163,7 @@ final class PreviewRenderer {
         case var f as TeaHouseFrame: edit(&f.sky); return f
         case var f as ZenGardenFrame: edit(&f.sky); return f
         case var f as SubFrame: edit(&f.sky); return f
+        case var f as ReefFrame: edit(&f.sky); return f
         default: return frame
         }
     }

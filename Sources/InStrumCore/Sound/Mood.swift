@@ -27,6 +27,8 @@ public struct Mood: Codable, Equatable {
     public static let orderedCalm = Mood(energy: 0.15, warmth: 0.45, brightness: 0.55, space: 0.5, motion: 0.15)
     /// Submarine Window: pressure, hush.
     public static let deepHush = Mood(energy: 0.3, warmth: 0.3, brightness: 0.15, space: 0.9, motion: 0.45)
+    /// Great Barrier Reef: colourful, alive.
+    public static let reefAlive = Mood(energy: 0.65, warmth: 0.75, brightness: 0.85, space: 0.45, motion: 0.75)
     /// Aurora Fjord: awe-struck, cold, electric.
     public static let electricAwe = Mood(energy: 0.45, warmth: 0.25, brightness: 0.45, space: 0.95, motion: 0.6)
 

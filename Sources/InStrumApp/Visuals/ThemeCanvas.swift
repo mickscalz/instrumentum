@@ -23,6 +23,7 @@ final class ThemeCanvas: NSObject, MTKViewDelegate {
     private var teaHouse: TeaHouseSnowRenderer?
     private var zenGarden: ZenRockGardenRenderer?
     private var submarine: SubmarineWindowRenderer?
+    private var reef: GreatBarrierReefRenderer?
     private var autoQuality: AutoQuality
     private var lastTime: CFTimeInterval = 0
     private var seenVersion = -1
@@ -161,6 +162,10 @@ final class ThemeCanvas: NSObject, MTKViewDelegate {
             if submarine == nil { submarine = SubmarineWindowRenderer(device: device) }
             submarine?.update(w, params: director.parameters, quality: level, gentle: gentle, dt: dt, size: size)
             renderer = submarine
+        } else if let f = frame as? ReefFrame {
+            if reef == nil { reef = GreatBarrierReefRenderer(device: device) }
+            reef?.update(f, params: director.parameters, quality: level, gentle: gentle, dt: dt, size: size)
+            renderer = reef
         } else {
             renderer = nil
         }

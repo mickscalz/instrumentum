@@ -2203,3 +2203,391 @@ extension WorldTests {
         }
     }
 }
+
+// MARK: - Great Barrier Reef
+
+extension WorldTests {
+    private func reefStep(_ model: inout GreatBarrierReefModel, seconds: Double, dt: Double = 1.0 / 30,
+                          state: ThemeState = ThemeState(), quality: QualityLevel = .high) -> ReefFrame {
+        let p = ThemeRegistry.parameterSet(for: GreatBarrierReefModel.id, state: state)
+        var frame: ReefFrame?
+        for _ in 0..<max(1, Int((seconds / dt).rounded())) {
+            frame = model.step(dt: dt, params: p, roles: RoleValues(), inputs: InputFrame(), quality: quality)
+        }
+        return frame!
+    }
+
+    /// A sky over the reef at Cairns's latitude: the sun's altitude (rising in the east before noon, setting in the west
+    /// after), the local hour and the day of the year (320: mid-November).
+    private func reefSky(sun altitude: Double, hour: Double, day: Int = 320) -> SkyState {
+        var s = SkyState()
+        s.sun = SkyDirection(azimuth: hour < 12 ? 100 : 260, altitude: altitude)
+        s.hourOfDay = hour
+        s.dayOfYear = day
+        s.latitude = -16.92
+        s.hemisphere = -1
+        s.subsolar = GeoPoint(latitude: -19, longitude: 0)
+        return s
+    }
+
+    func testReefDefaults() throws {
+        XCTAssertEqual(GreatBarrierReefModel.id, "great-barrier-reef")
+        XCTAssertEqual(GreatBarrierReefModel.displayName, "Great Barrier Reef")
+        XCTAssertEqual(ThemeRegistry.resolve(GreatBarrierReefModel.id), GreatBarrierReefModel.id)
+        XCTAssertTrue(ThemeRegistry.all.contains { $0.id == GreatBarrierReefModel.id && $0.name == "Great Barrier Reef" })
+        XCTAssertTrue(ThemeRegistry.isWorld(GreatBarrierReefModel.id))
+        let ids = ThemeRegistry.all.map(\.id)
+        XCTAssertGreaterThan(try XCTUnwrap(ids.firstIndex(of: GreatBarrierReefModel.id)),
+                             try XCTUnwrap(ids.firstIndex(of: ZenRockGardenModel.id)), "after the garden")
+        assertValidParameters(GreatBarrierReefModel.parameters)
+        let params = ThemeRegistry.parameterSet(for: GreatBarrierReefModel.id, state: ThemeState())
+        XCTAssertEqual(GreatBarrierReefModel.visuals, ["Coral Pulse", "Galaxy Warp"])
+        XCTAssertEqual(params.choice("visual"), "Coral Pulse")
+        XCTAssertEqual(params.choice("light.hold"), "Follow the sky")
+        XCTAssertEqual(params.choice("aurora.mode"), "Follow the sky")
+        XCTAssertEqual(params.choice("meteors.mode"), "Follow the calendar")
+        XCTAssertEqual(params.number("fish"), 0.6, accuracy: 1e-9)
+        XCTAssertEqual(params.number("waterline"), 0.5, accuracy: 1e-9)
+        XCTAssertEqual(params.choice("spawning"), "Follow the calendar")
+        XCTAssertEqual(CoralSpawningSetting.allCases.map(\.rawValue), ["Follow the calendar", "Tonight", "Off"])
+        XCTAssertEqual(params.number("keys.show"), 1)
+        XCTAssertEqual(params.number("keys.height"), 0.12, accuracy: 1e-9)
+        let fish = try XCTUnwrap(GreatBarrierReefModel.parameters.first { $0.id == "fish" })
+        XCTAssertTrue(fish.hero)
+        XCTAssertEqual(fish.name, "Fish")
+        let waterline = try XCTUnwrap(GreatBarrierReefModel.parameters.first { $0.id == "waterline" })
+        XCTAssertEqual(waterline.name, "Waterline")
+        XCTAssertEqual(try XCTUnwrap(ThemeRegistry.parameters(for: GreatBarrierReefModel.id).first { $0.id == "meteors.mode" }).group, "Sky")
+        XCTAssertEqual(Mood.reefAlive, Mood(energy: 0.65, warmth: 0.75, brightness: 0.85, space: 0.45, motion: 0.75))
+        // A reef saved before the spawning setting (or with one from a later build) follows the calendar.
+        let older = ThemeRegistry.parameterSet(for: GreatBarrierReefModel.id, state: ThemeState(values: ["fish": .number(0.9)]))
+        XCTAssertEqual(older.choice("spawning"), "Follow the calendar")
+        XCTAssertEqual(older.number("fish"), 0.9, accuracy: 1e-9)
+        let odd = ThemeRegistry.parameterSet(for: GreatBarrierReefModel.id, state: ThemeState(values: ["spawning": .choice("Sometimes")]))
+        XCTAssertEqual(odd.choice("spawning"), "Follow the calendar")
+        let tonight = ThemeRegistry.parameterSet(for: GreatBarrierReefModel.id, state: ThemeState(values: ["spawning": .choice("Tonight")]))
+        XCTAssertEqual(tonight.choice("spawning"), "Tonight")
+
+        // A still day on the reef: seven corals resting in their own colours, the school cruising, the camera east.
+        var model = GreatBarrierReefModel()
+        model.mood = .reefAlive
+        model.setSky(reefSky(sun: 50, hour: 11))
+        let still = reefStep(&model, seconds: 1)
+        XCTAssertEqual(still.corals.count, 7)
+        XCTAssertEqual(still.corals.map(\.kind), CoralPulse.kinds)
+        XCTAssertTrue(still.corals.allSatisfy { $0.glow == 0 })
+        XCTAssertEqual(still.corals.map(\.hue), CoralPulse.hues)
+        XCTAssertTrue(still.patches.isEmpty)
+        XCTAssertNil(still.colourWave)
+        XCTAssertEqual(still.school.positions.count, 56)
+        XCTAssertEqual(still.waterlineY, 0.45, accuracy: 1e-6)
+        XCTAssertEqual(still.cameraAzimuth, 90, accuracy: 1e-9)
+        XCTAssertEqual(still.keys.count, 88)
+        XCTAssertNil(still.warp)
+        XCTAssertEqual(still.spawn, CoralSpawn.none)
+        XCTAssertEqual(still.polypsOpen, 0)
+        XCTAssertEqual(still.mood, .reefAlive)
+        XCTAssertLessThanOrEqual(abs(still.swellLift), 0.012 + 1e-6, "a calm lagoon's gentle roll")
+        XCTAssertEqual(still.lensUnder, 0)
+        XCTAssertEqual(still.swellScale, 1, accuracy: 1e-6)
+        // A note lights its coral and its key; the dials move the waterline and size the school.
+        model.handle(.noteOn(note: 60, velocity: 0.8))
+        let lit = reefStep(&model, seconds: 0.1, state: ThemeState(values: ["waterline": .number(0), "fish": .number(1)]))
+        XCTAssertEqual(lit.patches.count, 1)
+        XCTAssertEqual(lit.corals[3].glow, min(1, 0.88 * MoodLook.reactionScale(.reefAlive)), accuracy: 1e-5)
+        XCTAssertEqual(lit.corals.filter { $0.glow > 0 }.count, 1)
+        XCTAssertTrue(lit.keys.contains { $0.key.note == 60 && $0.pressed })
+        XCTAssertEqual(lit.waterlineY, 0.6, accuracy: 1e-6, "more reef")
+        XCTAssertEqual(lit.school.positions.count, 80)
+        XCTAssertEqual(reefStep(&model, seconds: 0.1, state: ThemeState(values: ["waterline": .number(1)])).waterlineY, 0.3,
+                       accuracy: 1e-6, "more sky")
+        // A chord sends its colour wave.
+        for n: UInt8 in [72, 76, 79] { model.handle(.noteOn(note: n, velocity: 0.8)) }
+        let chord = reefStep(&model, seconds: 0.2)
+        XCTAssertEqual(chord.colourWave?.quality, .major)
+        // Galaxy Warp streaks instead; the reef rests and the school swims on.
+        model.handle(.noteOn(note: 84, velocity: 0.8))
+        let warped = reefStep(&model, seconds: 0.5, state: ThemeState(values: ["visual": .choice("Galaxy Warp")]))
+        XCTAssertNotNil(warped.warp)
+        XCTAssertTrue(warped.patches.isEmpty)
+        XCTAssertTrue(warped.corals.allSatisfy { $0.glow == 0 })
+        XCTAssertNil(warped.colourWave)
+        XCTAssertEqual(warped.school.positions.count, 56)
+        // At night the polyps open to feed (and the renderer has them glow softly).
+        var night = GreatBarrierReefModel()
+        night.setSky(reefSky(sun: -20, hour: 21))
+        XCTAssertEqual(reefStep(&night, seconds: 0.1).polypsOpen, 1)
+        var dusk = GreatBarrierReefModel()
+        dusk.setSky(reefSky(sun: -6, hour: 19))
+        XCTAssertEqual(reefStep(&dusk, seconds: 0.1).polypsOpen, 0.5, accuracy: 1e-6)
+    }
+
+    /// Spec §9.1 and §7.5: it's warm here. Snow falls as rain, blizzards are squalls; never sea smoke (a light morning
+    /// haze instead), frost, rime, diamond dust or pillars; and no fireflies, because a cay has none.
+    func testReefIsWarm() throws {
+        func reef(_ edit: (inout SkyState) -> Void) -> ReefFrame {
+            var s = reefSky(sun: 10, hour: 7)
+            edit(&s)
+            var model = GreatBarrierReefModel()
+            model.setSky(s)
+            return reefStep(&model, seconds: 0.1)
+        }
+        let snow = reef { $0.weather = .snow; $0.nextWeather = .snow; $0.snow = 0.7; $0.frost = 0.6 }.sky
+        XCTAssertEqual(snow.weather, .rain)
+        XCTAssertEqual(snow.rain, 0.7, accuracy: 1e-6, "snow falls as rain")
+        XCTAssertEqual([snow.snow, snow.frost], [0, 0])
+        let blizzard = reef { $0.weather = .blizzard; $0.nextWeather = .blizzard; $0.snow = 1; $0.wind = 1; $0.gust = 1 }.sky
+        XCTAssertEqual(blizzard.weather, .squall)
+        XCTAssertEqual(blizzard.rain, 1)
+        XCTAssertEqual(blizzard.snow, 0)
+        let smoke = reef { $0.weather = .seaSmoke; $0.nextWeather = .seaSmoke; $0.steam = 1; $0.mist = 0.35; $0.frost = 0.9 }
+        XCTAssertEqual(smoke.sky.steam, 0, "never sea smoke")
+        XCTAssertEqual(smoke.sky.mist, 0.25, accuracy: 1e-6, "a light morning haze")
+        XCTAssertEqual(smoke.sky.frost, 0)
+        XCTAssertEqual(smoke.sky.weather, .clear)
+        XCTAssertEqual(smoke.ambience.indoors, 0, "and none of sea smoke's hush")
+        XCTAssertEqual(smoke.swellScale, 1, accuracy: 1e-6, "nor its stillness")
+        let rime = reef { $0.weather = .rime; $0.nextWeather = .rime; $0.rime = 0.8; $0.frost = 1; $0.mist = 0.85 }.sky
+        XCTAssertEqual([rime.rime, rime.frost], [0, 0])
+        XCTAssertEqual(rime.weather, .mist, "fog that never freezes")
+        let dust = reef { $0.weather = .diamondDust; $0.nextWeather = .diamondDust; $0.diamondDust = 1; $0.pillar = 1 }.sky
+        XCTAssertEqual([dust.diamondDust, dust.pillar], [0, 0])
+        // The warm rule leaves fireflies alone; the reef has none (so no humid night's crickets either).
+        var humidSky = reefSky(sun: -20, hour: 22)
+        humidSky.weather = .humid; humidSky.nextWeather = .humid; humidSky.fireflies = 0.9
+        XCTAssertEqual(WorldWeather.warm(humidSky).fireflies, 0.9)
+        let humid = reef { $0 = humidSky }
+        XCTAssertEqual(humid.sky.fireflies, 0)
+        XCTAssertEqual(humid.sky.weather, .humid)
+        XCTAssertEqual(humid.ambience.level(.crickets), 0)
+        // Rain stays rain, and pocks the lagoon.
+        let rain = reef { $0.weather = .rain; $0.nextWeather = .rain; $0.rain = 0.6 }
+        XCTAssertEqual(rain.sky.rain, 0.6, accuracy: 1e-6)
+        XCTAssertEqual(rain.ambience.level(.rainOnWater), 0.45, accuracy: 1e-6)
+
+        // Through the director: a sea-smoke morning over Cairns is a light haze on the reef.
+        var state = ThemeState()
+        state.values["light.hold"] = .choice(SkyHold.follow.rawValue)
+        let d = SceneDirector(themeID: GreatBarrierReefModel.id, state: state, reaction: ReactionPresets.expressivePianist)
+        var s = SkySettings(); s.timeMode = .frozen; s.frozenHour = 7; s.cityID = "cairns"; s.weatherMode = .pick; s.weather = .seaSmoke
+        d.sky.reset(settings: s)
+        var frame: ReefFrame?
+        for i in 0..<30 { frame = d.step(dt: 1.0 / 30, t: Double(i) / 30, quality: .high) as? ReefFrame }
+        let f = try XCTUnwrap(frame)
+        XCTAssertEqual(d.lastSky?.steam ?? 0, 1, accuracy: 1e-6, "the sky's own sea smoke")
+        XCTAssertEqual(f.sky.steam, 0)
+        XCTAssertEqual(f.sky.mist, 0.25, accuracy: 1e-6)
+        XCTAssertEqual(f.sky.frost, 0)
+    }
+
+    /// Spec §9.1: the camera faces east over the reef crest; on a shower night it turns (τ 8 s) to face 60° of azimuth
+    /// away from the radiant, where the meteors run long, and back east when the night is over.
+    func testReefCameraTurnsAwayFromTheRadiant() throws {
+        func showerSky(radiant azimuth: Double, altitude: Double = 40, zhr: Double = 120, sun: Double = -30) -> SkyState {
+            var s = reefSky(sun: sun, hour: 1)
+            s.shower = ShowerNow(code: "GEM", name: "Geminids", zhr: zhr, radiantAltitude: altitude, radiantAzimuth: azimuth,
+                                 daysToPeak: 0, radiantRises: nil, radiantHighest: 50)
+            return s
+        }
+        for radiant in [20.0, 150.0, 200.0, 300.0, 359.0] {
+            var model = GreatBarrierReefModel()
+            model.setSky(reefSky(sun: -30, hour: 1))
+            XCTAssertEqual(reefStep(&model, seconds: 1).cameraAzimuth, 90, accuracy: 1e-9, "east, with no shower")
+            model.setSky(showerSky(radiant: radiant))
+            var previous = 90.0
+            for _ in 0..<(60 * 30) {   // a minute
+                let az = reefStep(&model, seconds: 1.0 / 30).cameraAzimuth
+                XCTAssertTrue(az >= 0 && az < 360)
+                XCTAssertLessThan(abs(GreatBarrierReefModel.turn(from: previous, to: az)), 1, "it turns, it never jumps")
+                previous = az
+            }
+            XCTAssertEqual(abs(GreatBarrierReefModel.turn(from: radiant, to: previous)), 60, accuracy: 5,
+                           "the radiant at \(radiant)°: 60° of azimuth from it")
+            XCTAssertEqual(abs(GreatBarrierReefModel.turn(from: GreatBarrierReefModel.cameraTarget(showerSky(radiant: radiant)), to: previous)),
+                           0, accuracy: 0.5)
+            // The night ends: back to the east.
+            model.setSky(reefSky(sun: 10, hour: 7))
+            XCTAssertEqual(reefStep(&model, seconds: 60).cameraAzimuth, 90, accuracy: 0.5)
+        }
+        // The side nearer the east: a radiant in the west turns the camera north of east, one in the north-east south of it.
+        XCTAssertEqual(GreatBarrierReefModel.cameraTarget(showerSky(radiant: 300)), 0, accuracy: 1e-9)
+        XCTAssertEqual(GreatBarrierReefModel.cameraTarget(showerSky(radiant: 20)), 80, accuracy: 1e-9)
+        XCTAssertEqual(GreatBarrierReefModel.cameraTarget(showerSky(radiant: 200)), 140, accuracy: 1e-9)
+        // τ 8 s: after 8 s a turn is 63% done.
+        var model = GreatBarrierReefModel()
+        model.setSky(reefSky(sun: -30, hour: 1))
+        _ = reefStep(&model, seconds: 1)
+        model.setSky(showerSky(radiant: 300))
+        XCTAssertEqual(reefStep(&model, seconds: 8).cameraAzimuth, 90 - 90 * (1 - exp(-1)), accuracy: 1)
+        // No turn by day, with the radiant below the horizon, or for a shower too weak to matter (ZHR under 10).
+        for sky in [showerSky(radiant: 300, sun: 20), showerSky(radiant: 300, altitude: -10), showerSky(radiant: 300, zhr: 5)] {
+            XCTAssertEqual(GreatBarrierReefModel.cameraTarget(sky), 90, accuracy: 1e-9)
+        }
+
+        // Through the director: "Always a shower" over Cairns has its radiant 80° up in the south, so the camera faces
+        // 120° (east-south-east); "Never" leaves it east.
+        func director(_ mode: MeteorMode) throws -> ReefFrame {
+            var state = ThemeState()
+            state.values["meteors.mode"] = .choice(mode.rawValue)
+            let d = SceneDirector(themeID: GreatBarrierReefModel.id, state: state, reaction: ReactionPresets.expressivePianist)
+            var s = SkySettings(); s.timeMode = .frozen; s.frozenHour = 23; s.cityID = "cairns"; s.weatherMode = .pick; s.weather = .clear
+            d.sky.reset(settings: s)
+            var frame: ReefFrame?
+            for i in 0..<30 { frame = d.step(dt: 1.0 / 30, t: Double(i) / 30, quality: .high) as? ReefFrame }
+            return try XCTUnwrap(frame)
+        }
+        let always = try director(.always)
+        let shower = try XCTUnwrap(always.sky.shower)
+        XCTAssertEqual(shower.code, "ALW")
+        XCTAssertEqual(shower.radiantAzimuth, 180, accuracy: 1e-6)
+        XCTAssertEqual(always.cameraAzimuth, 120, accuracy: 1e-6)
+        XCTAssertEqual(abs(GreatBarrierReefModel.turn(from: shower.radiantAzimuth, to: always.cameraAzimuth)), 60, accuracy: 5)
+        let never = try director(.never)
+        XCTAssertNil(never.sky.shower)
+        XCTAssertEqual(never.cameraAzimuth, 90, accuracy: 1e-9)
+    }
+
+    /// Spec §5 and §9.1: the reef's soundscape. Above the water the far surf on the reef crest, the lapping at the
+    /// waterline, the breeze, terns and gulls by day; below it the snapping shrimp by the hour (day 1.0, dusk and dawn
+    /// 1.6, night 1.25, through their level), the fish chorus (silent at noon, the dusk drumming building through the late
+    /// afternoon and stopping after dusk, a dawn chorus, a few calls at night), the humpbacks from June to October and
+    /// the bubbles; rain both above and below; then the weather's. The swell carrying the lens under crossfades the two
+    /// by at most 30%.
+    func testReefAmbience() throws {
+        func scene(_ sky: SkyState, mood: Mood = .neutral) -> AmbienceScene {
+            var model = GreatBarrierReefModel()
+            model.mood = mood
+            model.setSky(sky)
+            return reefStep(&model, seconds: 0.1).ambience
+        }
+        let day = scene(reefSky(sun: 40, hour: 13), mood: .reefAlive)
+        XCTAssertEqual(day.level(.surf), 0.3, accuracy: 1e-9)
+        XCTAssertEqual(day.level(.lapping), 0.45, accuracy: 1e-9)
+        XCTAssertEqual(day.level(.breeze), 0.25, accuracy: 1e-9)
+        XCTAssertEqual(day.level(.gulls), 0.15, accuracy: 1e-9)
+        XCTAssertEqual(day.level(.snappingShrimp), 0.55, accuracy: 1e-9)
+        XCTAssertEqual(day.level(.bubbles), 0.15, accuracy: 1e-9)
+        XCTAssertEqual(day.level(.fishChorus), 0)
+        XCTAssertEqual(day.level(.whaleSong), 0, "November: the humpbacks have gone south")
+        XCTAssertEqual(day.level(.rainOnWater), 0)
+        XCTAssertEqual(day.level(.crickets), 0)
+        XCTAssertEqual(day.surfDistance, 0.9, accuracy: 1e-9, "the reef crest is far off")
+        XCTAssertEqual(day.closeness, MoodLook.ambienceCloseness(base: 0.55, .reefAlive), accuracy: 1e-9)
+        XCTAssertEqual(day.density, MoodLook.ambienceDensity(.reefAlive), accuracy: 1e-9)
+        XCTAssertEqual(day.indoors, 0)
+        XCTAssertNil(day.bubbleBurst)
+        XCTAssertNil(day.thunder)
+        XCTAssertEqual(scene(reefSky(sun: 80, hour: 12.2)).level(.fishChorus), 0, "silent at noon")
+
+        // The shrimp follow the hour's factors through their level.
+        XCTAssertEqual(GreatBarrierReefModel.shrimpFactor(reefSky(sun: 40, hour: 13)), 1, accuracy: 1e-12)
+        XCTAssertEqual(GreatBarrierReefModel.shrimpFactor(reefSky(sun: -3, hour: 18.7)), 1.6, accuracy: 1e-12)
+        XCTAssertEqual(GreatBarrierReefModel.shrimpFactor(reefSky(sun: -30, hour: 23)), 1.25, accuracy: 1e-12)
+        XCTAssertEqual(scene(reefSky(sun: -3, hour: 18.7)).level(.snappingShrimp), 0.88, accuracy: 1e-9, "dusk")
+        XCTAssertEqual(scene(reefSky(sun: -3, hour: 5.6)).level(.snappingShrimp), 0.88, accuracy: 1e-9, "dawn")
+        XCTAssertEqual(scene(reefSky(sun: -30, hour: 23)).level(.snappingShrimp), 0.6875, accuracy: 1e-9, "night")
+        XCTAssertEqual(scene(reefSky(sun: 8, hour: 17.5)).level(.snappingShrimp), 0.55 * 1.3, accuracy: 1e-9, "gliding into dusk")
+        for alt in stride(from: -40.0, through: 60, by: 2.5) {
+            let f = GreatBarrierReefModel.shrimpFactor(reefSky(sun: alt, hour: 18))
+            XCTAssertTrue(f >= 1 - 1e-12 && f <= 1.6 + 1e-12, "\(alt)°: \(f)")
+            XCTAssertLessThanOrEqual(GreatBarrierReefModel.shrimpLevel * f, 1, "the level stays within 0…1")
+        }
+
+        // The fish chorus: the dusk drumming builds through the late afternoon, sounds at dusk and stops after it; the
+        // dawn chorus; a few calls through the night.
+        let afternoon = scene(reefSky(sun: 25, hour: 16)).level(.fishChorus)
+        let evening = scene(reefSky(sun: 10, hour: 17.3)).level(.fishChorus)
+        let dusk = scene(reefSky(sun: -4, hour: 18.8)).level(.fishChorus)
+        XCTAssertTrue(afternoon > 0.05 && afternoon < evening && evening < dusk, "\(afternoon) < \(evening) < \(dusk)")
+        XCTAssertEqual(dusk, 0.4, accuracy: 1e-9)
+        XCTAssertLessThan(scene(reefSky(sun: -11, hour: 19.6)).level(.fishChorus), 0.05, "it stops abruptly after dusk")
+        XCTAssertEqual(scene(reefSky(sun: -30, hour: 23)).level(.fishChorus), 0.15, accuracy: 1e-9, "the night's few calls")
+        XCTAssertEqual(scene(reefSky(sun: -2, hour: 5.7)).level(.fishChorus), 0.4, accuracy: 1e-9, "the dawn chorus")
+        XCTAssertEqual(scene(reefSky(sun: 20, hour: 8)).level(.fishChorus), 0)
+
+        // The humpbacks: only June to October.
+        let season: [(day: Int, singing: Bool)] = [(15, false), (151, false), (152, true), (196, true), (304, true), (305, false), (335, false)]
+        for (dayOfYear, singing) in season {
+            XCTAssertEqual(scene(reefSky(sun: 30, hour: 14, day: dayOfYear)).level(.whaleSong), singing ? 0.3 : 0, accuracy: 1e-9,
+                           "day \(dayOfYear)")
+        }
+        var leap = reefSky(sun: 30, hour: 14, day: 152)
+        leap.calendar = try XCTUnwrap(ISO8601DateFormatter().date(from: "2028-05-31T04:00:00Z"))
+        XCTAssertEqual(scene(leap).level(.whaleSong), 0, "the 152nd day of a leap year is still May")
+
+        // Rain pocks the lagoon above and hisses softly below: the one rain-on-water source, 0.5 + 0.25 × rain.
+        var rain = reefSky(sun: 30, hour: 14)
+        rain.rain = 0.4
+        XCTAssertEqual(scene(rain).level(.rainOnWater), 0.3, accuracy: 1e-6)
+        // Drips after the rain (the weather's own), and a stiff wind of its own.
+        var after = reefSky(sun: 30, hour: 14)
+        after.wetness = 0.6
+        XCTAssertEqual(scene(after).level(.drips), 0.6, accuracy: 1e-6)
+        var windy = reefSky(sun: 30, hour: 14)
+        windy.wind = 0.8
+        let w = scene(windy)
+        XCTAssertEqual(w.level(.breeze), 1, accuracy: 1e-6)
+        XCTAssertEqual(w.level(.wind), 0.4, accuracy: 1e-6)
+        let night = scene(reefSky(sun: -30, hour: 23))
+        XCTAssertEqual(night.level(.gulls), 0)
+        XCTAssertGreaterThan(night.nightCool, 0)
+
+        // The lens under: the sources above dip by 30%, those below rise by 30% (at most 1); the rain's two halves
+        // crossfade with their sides.
+        let base = GreatBarrierReefModel.levels(rain, under: 0), dipped = GreatBarrierReefModel.levels(rain, under: 1)
+        XCTAssertEqual(GreatBarrierReefModel.below, [.snappingShrimp, .fishChorus, .whaleSong, .bubbles])
+        for (source, level) in base where source != .rainOnWater {
+            let expected = GreatBarrierReefModel.below.contains(source) ? min(1, level * 1.3) : level * 0.7
+            XCTAssertEqual(dipped[source] ?? -1, expected, accuracy: 1e-9, "\(source)")
+        }
+        XCTAssertEqual(dipped[.rainOnWater] ?? -1, 0.4 * (0.5 * 0.7 + 0.25 * 1.3), accuracy: 1e-6)
+        XCTAssertEqual(GreatBarrierReefModel.levels(reefSky(sun: -3, hour: 18.7), under: 1)[.snappingShrimp] ?? -1, 1,
+                       accuracy: 1e-12, "capped at 1")
+
+        // In a storm the swell carries the lens under now and then; every frame's mix stays within those bounds and glides.
+        var storm = reefSky(sun: 30, hour: 14)
+        storm.weather = .storm; storm.nextWeather = .storm; storm.rain = 0.9; storm.wind = 0.7; storm.cloudCover = 1
+        var model = GreatBarrierReefModel()
+        model.setSky(storm)
+        let p = ThemeRegistry.parameterSet(for: GreatBarrierReefModel.id, state: ThemeState())
+        var deepest: Float = 0, underFrames = 0, waves = 0, biggestStep: Float = 0, previous: Float = 0
+        var bursts: [Double] = []
+        for i in 0..<(60 * 30) {
+            let f = model.step(dt: 1.0 / 30, params: p, roles: RoleValues(), inputs: InputFrame(), quality: .high)
+            deepest = max(deepest, f.lensUnder)
+            if f.lensUnder > 0.5 { underFrames += 1 }
+            biggestStep = max(biggestStep, abs(f.lensUnder - previous))
+            previous = f.lensUnder
+            if f.ambience.bubbleBurst != nil { bursts.append(Double(i) / 30) }
+            if f.ambience.wave != nil { waves += 1 }
+            XCTAssertLessThanOrEqual(abs(f.swellLift), 0.09 + 1e-5)
+            let calm = GreatBarrierReefModel.levels(f.sky, under: 0)
+            for (source, level) in calm where level > 0 && source != .rainOnWater {
+                let ratio = f.ambience.level(source) / level
+                if GreatBarrierReefModel.below.contains(source) {
+                    XCTAssertTrue(ratio >= 1 - 1e-9 && ratio <= 1.3 + 1e-9, "\(source): \(ratio)")
+                } else {
+                    XCTAssertTrue(ratio >= 0.7 - 1e-9 && ratio <= 1 + 1e-9, "\(source): \(ratio)")
+                }
+            }
+            let mixed = GreatBarrierReefModel.levels(f.sky, under: Double(f.lensUnder))
+            XCTAssertEqual(f.ambience.level(.surf), mixed[.surf] ?? -1, accuracy: 1e-5)
+        }
+        XCTAssertGreaterThan(deepest, 0.9, "the lens dips under")
+        XCTAssertGreaterThan(underFrames, 0)
+        XCTAssertLessThan(underFrames, 60 * 30 / 2, "now and then")
+        XCTAssertLessThan(biggestStep, 0.1, "the crossfade glides")
+        XCTAssertFalse(bursts.isEmpty, "a burst of bubbles as it goes under")
+        for (a, b) in zip(bursts, bursts.dropFirst()) { XCTAssertGreaterThanOrEqual(b - a, 4 - 1e-9) }
+        XCTAssertGreaterThan(waves, 0, "the swell breaks on the reef crest, far off")
+        // In calm weather the lens never goes under, and nothing crossfades.
+        var calmReef = GreatBarrierReefModel()
+        calmReef.setSky(reefSky(sun: 30, hour: 14))
+        for _ in 0..<(60 * 30) {
+            let f = calmReef.step(dt: 1.0 / 30, params: p, roles: RoleValues(), inputs: InputFrame(), quality: .high)
+            XCTAssertEqual(f.lensUnder, 0)
+            XCTAssertNil(f.ambience.bubbleBurst)
+            XCTAssertEqual(f.ambience.levels, GreatBarrierReefModel.levels(f.sky, under: 0))
+        }
+    }
+}
