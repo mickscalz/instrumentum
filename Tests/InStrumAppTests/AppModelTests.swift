@@ -69,6 +69,37 @@ final class FakeMIDI: MIDIControlling {
     func lastActivity(_ name: String) -> Double? { activity[name] }
 }
 
+/// A world that plays along with the grand, as Strike Lines will (Storms spec §9.2): it keeps the instrument's pressure
+/// and repeat as the director hands them over, and when the storm arrives (here, a C8 the director hears) it forces the
+/// voice's morph to .8 for 150 steps (2.5 s at 60 a second), then lets go.
+struct GrandProbe: ThemeModel, InstrumentAware {
+    static let id = "grand-probe", displayName = "Grand probe"
+    static let parameters: [ParamSpec] = []
+    static let macroTargets: [Macro: [(id: String, weight: Double)]] = [:]
+    var instrumentPressure: Float = 0
+    var instrumentRepeat = false
+    var forcedMorph: Float?
+    var storm = 0
+    init() {}
+    mutating func handle(_ e: PerformanceEvent) {
+        if case let .noteOn(note, _) = e, note == 108 {
+            storm = 150
+            forcedMorph = 0.8
+        }
+    }
+    mutating func step(dt: Double, params: ParameterSet, roles: RoleValues, inputs: InputFrame, quality: QualityLevel) -> GrandSeen {
+        if storm > 0 { storm -= 1 } else { forcedMorph = nil }
+        return GrandSeen(pressure: instrumentPressure, repeating: instrumentRepeat, forced: forcedMorph)
+    }
+}
+
+/// What the grand probe saw on a step, and the morph it forced.
+struct GrandSeen {
+    var pressure: Float
+    var repeating: Bool
+    var forced: Float?
+}
+
 @MainActor
 final class AppModelTests: XCTestCase {
     var dir: URL!
@@ -1460,6 +1491,216 @@ final class AppModelTests: XCTestCase {
         await m.choose(info("One", 1))
         m.setTheme(BioluminescentBayModel.id)
         XCTAssertTrue(engine.sent.isEmpty, "Orbit Pad's and a plugin's tails are left alone")
+    }
+
+    // MARK: - Single Note Grand: its pressure and repeats reach the director, the world's forced morph reaches the engine
+    // (Storms spec §3, §4.2, §9.2)
+
+    /// The model in front of a real Sound Core (offline rendering, 48 kHz), an instrument chosen as a player chooses it,
+    /// and a director over the grand probe's world, standing in for the canvas.
+    private func grandRig(_ name: String = "Single Note Grand") async throws -> (AppModel, AudioEngine, SceneDirector) {
+        let audio = AudioEngine(manualRendering: true, manualSampleRate: 48_000)
+        try audio.start()
+        let m = AppModel(engine: audio, store: store, launchGuard: LaunchGuard(directory: dir),
+                         presets: PresetStore(directory: dir.appendingPathComponent("Presets")))
+        let instrument = try XCTUnwrap(BuiltInCatalog.instruments.first { $0.name == name })
+        await m.choose(instrument)
+        let director = SceneDirector(entry: ThemeEntry.make(GrandProbe.self), state: ThemeState(), reaction: ReactionPresets.expressivePianist)
+        return (m, audio, director)
+    }
+
+    /// Frame `n` as the canvas runs it (1/60 s): what the keys played since the last frame reaches the director, the
+    /// grand's read-backs reach it before it steps, the world's forced morph reaches the instrument after, and the frame's
+    /// audio renders (800 samples). Returns what the world saw.
+    @discardableResult
+    private func grandFrame(_ m: AppModel, _ audio: AudioEngine, _ d: SceneDirector, _ n: Int) throws -> GrandSeen {
+        let t = Double(n) / 60
+        d.handle(m.drainEvents(), at: t)
+        d.instrumentPressure = m.instrumentPressure
+        d.instrumentRepeat = m.instrumentRepeat
+        let seen = try XCTUnwrap(d.step(dt: 1.0 / 60, t: t, quality: .lite) as? GrandSeen)
+        m.forceMorph(d.forcedMorph)
+        _ = try audio.renderOffline(frames: 800)
+        return seen
+    }
+
+    /// The grand's pressure reaches the director (Storms spec §3, §4.2): the morph Single Note Grand sings at, as the
+    /// engine reads it back, handed to the director before every step and on to a world that plays along, so the strike
+    /// distance and the voice's distortion are one number. A held A3 and a full press: the director reads .63 or more five
+    /// frames after the press (the engine's 80 ms rise; 5 on the g++ mirror, which follows these frames); let go, .37 or
+    /// less fifteen frames after (its 250 ms fall; 15). It is the player's pressure over the Morph floor: Broken Voice's .6
+    /// reads .6 with no pressure and 1 with full pressure. Every other instrument, and a plugin, reads 0.
+    func testPressureReachesTheDirector() async throws {
+        let (m, audio, d) = try await grandRig()
+        XCTAssertEqual(m.status, .playing(instrumentName: "Single Note Grand"))
+        let unit = try XCTUnwrap(audio.loadedBuiltIn)
+        XCTAssertEqual(unit.engine, .singleNoteGrand)
+        XCTAssertEqual(m.builtInPatch?.id, "single-note-grand", "Runaway, the default")
+        var n = 0
+        m.handleMIDI(bytes: [0x90, 57, 90], time: 0)
+        for _ in 0..<30 { try grandFrame(m, audio, d, n); n += 1 }
+        XCTAssertEqual(d.instrumentPressure, 0, accuracy: 1e-6, "no pressure, no morph")
+        // A full press.
+        m.handleMIDI(bytes: [0xD0, 127], time: Double(n) / 60)
+        let pressed = n
+        var up: Int?
+        for _ in 0..<60 {
+            let seen = try grandFrame(m, audio, d, n)
+            XCTAssertEqual(seen.pressure, d.instrumentPressure, "handed on to the world before its step")
+            if up == nil, d.instrumentPressure >= 0.63 { up = n - pressed }
+            n += 1
+        }
+        let rise = try XCTUnwrap(up, "the press reaches the director")
+        XCTAssertTrue((4...6).contains(rise), "at .63 \(rise) frames after the press")
+        XCTAssertGreaterThan(d.instrumentPressure, 0.99)
+        let read = m.instrumentPressure, engineSide = unit.morphInUse
+        XCTAssertEqual(read, engineSide, accuracy: 1e-6, "the model reads the engine's own read-back")
+        // Let go.
+        m.handleMIDI(bytes: [0xD0, 0], time: Double(n) / 60)
+        let released = n
+        var down: Int?
+        for _ in 0..<60 {
+            try grandFrame(m, audio, d, n)
+            if down == nil, d.instrumentPressure <= 0.37 { down = n - released }
+            n += 1
+        }
+        let fall = try XCTUnwrap(down, "letting go reaches the director")
+        XCTAssertTrue((13...17).contains(fall), "at .37 \(fall) frames after letting go")
+        XCTAssertLessThan(d.instrumentPressure, 0.03)
+        // The Morph dial is a floor under the pressure.
+        m.applyPatch(try XCTUnwrap(PatchLibrary.all.first { $0.id == "broken-voice" }))
+        for _ in 0..<60 { try grandFrame(m, audio, d, n); n += 1 }
+        XCTAssertEqual(d.instrumentPressure, 0.6, accuracy: 0.01, "Broken Voice's Morph .6, with no pressure")
+        m.handleMIDI(bytes: [0xD0, 127], time: Double(n) / 60)
+        for _ in 0..<60 { try grandFrame(m, audio, d, n); n += 1 }
+        XCTAssertEqual(d.instrumentPressure, 1, accuracy: 0.01, "and the pressure takes it the rest of the way")
+        // Every other instrument reads 0, pressed or not; so does a plugin.
+        let felt = try XCTUnwrap(BuiltInCatalog.instruments.first { $0.name == "Felt Glass" })
+        await m.choose(felt)
+        m.handleMIDI(bytes: [0x90, 57, 90], time: Double(n) / 60)
+        m.handleMIDI(bytes: [0xD0, 127], time: Double(n) / 60)
+        for _ in 0..<30 { try grandFrame(m, audio, d, n); n += 1 }
+        XCTAssertEqual(d.instrumentPressure, 0)
+        XCTAssertEqual(m.instrumentPressure, 0)
+        let plugin: InstrumentEngine = engine
+        XCTAssertEqual(plugin.morphInUse, 0)
+    }
+
+    /// The grand's repeats reach the director (Storms spec §4.2, §9.2): the same key struck four or more times at 2 a
+    /// second or faster, as the engine hears it, handed to the director before every step and on to a world that plays
+    /// along (Strike Lines lands a strike on the horizon for each). A3 struck four times at 2.5 a second (every 24
+    /// frames): the director reads it from the frame after the fourth strike (frame 73) until half a second has passed
+    /// with no strike (the last, frame 102: 30 frames on the g++ mirror, which follows these frames). Three strikes, or
+    /// four at 1.5 a second, never; a different key starts the count again (true from the frame after the fourth A3 after
+    /// a B3: 169). Felt Glass never repeats, and a plugin neither.
+    func testRepeatReachesTheDirector() async throws {
+        /// Plays the strikes (each let go 6 frames later) through `frames` frames; the frames the director reads a repeat.
+        func play(_ name: String, _ strikes: [(frame: Int, key: UInt8)], frames: Int) async throws -> [Int] {
+            let (m, audio, d) = try await grandRig(name)
+            var repeating: [Int] = []
+            for n in 0..<frames {
+                for s in strikes {
+                    if s.frame == n { m.handleMIDI(bytes: [0x90, s.key, 90], time: Double(n) / 60) }
+                    if s.frame + 6 == n { m.handleMIDI(bytes: [0x80, s.key, 0], time: Double(n) / 60) }
+                }
+                let seen = try grandFrame(m, audio, d, n)
+                let director = d.instrumentRepeat
+                XCTAssertEqual(seen.repeating, director, "handed on to the world before its step")
+                if director { repeating.append(n) }
+            }
+            return repeating
+        }
+        let four = try await play("Single Note Grand", [(0, 57), (24, 57), (48, 57), (72, 57)], frames: 140)
+        let first = four.first ?? -1, last = four.last ?? -1
+        XCTAssertTrue((73...74).contains(first), "from the frame after the fourth strike: \(first)")
+        XCTAssertTrue((102...103).contains(last), "until half a second has passed with no strike: \(last)")
+        XCTAssertEqual(four.count, last - first + 1, "throughout")
+        let three = try await play("Single Note Grand", [(0, 57), (24, 57), (48, 57)], frames: 120)
+        XCTAssertTrue(three.isEmpty, "three strikes are no repeat: \(three)")
+        let slow = try await play("Single Note Grand", [(0, 57), (40, 57), (80, 57), (120, 57)], frames: 180)
+        XCTAssertTrue(slow.isEmpty, "nor four at 1.5 a second: \(slow)")
+        let broken = try await play("Single Note Grand", [(0, 57), (24, 57), (48, 57), (72, 59), (96, 57), (120, 57), (144, 57), (168, 57)],
+                                    frames: 200)
+        let again = broken.first ?? -1
+        XCTAssertTrue((169...170).contains(again), "a different key starts the count again: \(broken)")
+        let felt = try await play("Felt Glass", [(0, 57), (24, 57), (48, 57), (72, 57)], frames: 110)
+        XCTAssertTrue(felt.isEmpty, "Felt Glass never repeats")
+        let plugin: InstrumentEngine = engine
+        XCTAssertFalse(plugin.isRepeating)
+    }
+
+    /// The world's forced morph reaches the engine (Storms spec §9.2, §17.7; review focus 3), as the canvas hands it over
+    /// after every step: the player holds A3 at a light pressure (25 of 127: the engine's morph .197); the storm arrives
+    /// (the probe world hears a C8) and forces Morph .8 for 150 steps (2.5 s), over the player's pressure (a full press
+    /// meanwhile changes nothing); then it lets go, and the morph returns to the player's pressure without a jump: 63% of
+    /// the way back fifteen frames later (250 ms; on the g++ mirror the 15th frame lands on it to the permille), no frame
+    /// moving it more than .05 (.039 on the mirror), and back within .01 by 1.5 s. The director reads the forced voice
+    /// back as the instrument's pressure. A negative value lets it go too (the C call's own rule); every other instrument
+    /// ignores it, and so does a plugin.
+    func testForcedMorphReachesTheEngine() async throws {
+        let (m, audio, d) = try await grandRig()
+        let unit = try XCTUnwrap(audio.loadedBuiltIn)
+        let light: Float = 25.0 / 127
+        var n = 0
+        m.handleMIDI(bytes: [0x90, 57, 90], time: 0)
+        m.handleMIDI(bytes: [0xD0, 25], time: 0)
+        for _ in 0..<30 { try grandFrame(m, audio, d, n); n += 1 }
+        XCTAssertNil(d.forcedMorph, "no storm yet")
+        XCTAssertEqual(unit.morphInUse, light, accuracy: 0.005, "the player's light pressure")
+        // The storm arrives: the world forces .8 for 150 steps.
+        d.handle([.noteOn(note: 108, velocity: 1)], at: Double(n) / 60)
+        var forcedSteps = 0
+        var halfSecond: Float = 0, pressedHard: Float = 0
+        for k in 0..<150 {
+            if k == 60 { m.handleMIDI(bytes: [0xD0, 127], time: Double(n) / 60) }
+            if k == 100 { m.handleMIDI(bytes: [0xD0, 25], time: Double(n) / 60) }
+            let seen = try grandFrame(m, audio, d, n)
+            let directorForced = d.forcedMorph
+            if seen.forced == 0.8, directorForced == 0.8 { forcedSteps += 1 }
+            if k == 30 { halfSecond = unit.morphInUse }
+            if k == 99 { pressedHard = unit.morphInUse }
+            n += 1
+        }
+        XCTAssertEqual(forcedSteps, 150, "forced for the storm's 2.5 s")
+        XCTAssertEqual(halfSecond, 0.8, accuracy: 0.01, "the morph rises to the world's .8")
+        XCTAssertEqual(pressedHard, 0.8, accuracy: 0.005, "over the player's full press")
+        XCTAssertEqual(d.instrumentPressure, 0.8, accuracy: 0.01, "the director reads the forced voice back as the pressure")
+        // It lets go: back to the player's light pressure, smoothly.
+        let from = unit.morphInUse
+        var back: [Float] = []
+        for _ in 0..<90 {
+            let seen = try grandFrame(m, audio, d, n)
+            XCTAssertNil(seen.forced)
+            back.append(unit.morphInUse)
+            n += 1
+        }
+        XCTAssertNil(d.forcedMorph, "the storm has passed")
+        var largest: Float = 0, previous = from
+        for v in back {
+            largest = max(largest, abs(v - previous))
+            previous = v
+        }
+        XCTAssertLessThanOrEqual(largest, 0.05, "never snapping: at most \(largest) a frame")
+        let mark: Float = from - 0.632 * (from - light) + 0.002
+        let crossing = (back.firstIndex { $0 <= mark } ?? 99) + 1
+        XCTAssertTrue((14...17).contains(crossing), "63% of the way back after \(crossing) frames")
+        XCTAssertEqual(back.last ?? 0, light, accuracy: 0.01, "at the player's pressure by 1.5 s")
+        // A negative value lets it go too.
+        m.forceMorph(0.8)
+        for _ in 0..<30 { _ = try audio.renderOffline(frames: 800) }
+        XCTAssertEqual(unit.morphInUse, 0.8, accuracy: 0.01)
+        m.forceMorph(-1)
+        for _ in 0..<90 { _ = try audio.renderOffline(frames: 800) }
+        XCTAssertEqual(unit.morphInUse, light, accuracy: 0.01)
+        // Every other instrument ignores it, and so does a plugin.
+        let felt = try XCTUnwrap(BuiltInCatalog.instruments.first { $0.name == "Felt Glass" })
+        await m.choose(felt)
+        m.forceMorph(0.8)
+        for _ in 0..<30 { _ = try audio.renderOffline(frames: 800) }
+        XCTAssertEqual(m.instrumentPressure, 0)
+        let plugin: InstrumentEngine = engine
+        plugin.setForcedMorph(0.8)
+        XCTAssertEqual(plugin.morphInUse, 0)
     }
 
     func testHoneyTapePresetsCarryTheirCredit() {

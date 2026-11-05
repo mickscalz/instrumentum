@@ -415,4 +415,196 @@ final class InspiredByCardTests: XCTestCase {
             if moved <= 0.001 { XCTFail("\(c.id) moved only \(moved)") }
         }
     }
+
+    /// The credit for "Runaway" (Storms spec §2, §12; brief single-note-grand.md), exactly: words and a link only. Its
+    /// track number, 9, is a verified fact, so the card states it; its key is disputed, so it states none, and the liner
+    /// notes leave it out: "TRACK 9 · 86 BPM". The felt pulse is 86.
+    func testRunawayCredit() {
+        let c = CreditLibrary.runaway
+        XCTAssertEqual(c.id, "runaway")
+        XCTAssertEqual(c.song, "Runaway")
+        XCTAssertEqual(c.artist, "Kanye West")
+        XCTAssertEqual(c.album, "My Beautiful Dark Twisted Fantasy")
+        XCTAssertEqual(c.year, 2010)
+        XCTAssertEqual(c.trackNumber, 9)
+        XCTAssertEqual(c.key, "", "no key claimed: it is disputed")
+        XCTAssertEqual(c.tempoBPM, 86)
+        XCTAssertEqual(c.line, "One piano note, repeated, and a voice that arrives distorted.")
+        XCTAssertEqual(CreditLibrary.credit(id: "runaway"), c)
+        XCTAssertTrue(CreditLibrary.all.contains(c))
+        XCTAssertEqual(c.pulsePeriod, 60.0 / 86, accuracy: 1e-12)
+        // Words and a link only: a credit holds its words and nothing else (no artwork, no images, no lyrics).
+        XCTAssertEqual(Mirror(reflecting: c).children.compactMap { $0.label },
+                       ["id", "song", "artist", "album", "year", "trackNumber", "key", "tempoBPM", "line"])
+        // Listen finds it with a Spotify search: nothing of the record is hosted or shown here.
+        XCTAssertEqual(ListenLink.spotifyApp(for: c).absoluteString, "spotify:search:Kanye%20West%20Runaway")
+        XCTAssertEqual(ListenLink.spotifyWeb(for: c).absoluteString, "https://open.spotify.com/search/Kanye%20West%20Runaway")
+        // Single Note Grand's presets carry it.
+        XCTAssertEqual(PatchLibrary.patches(for: .singleNoteGrand).count, 4)
+        for p in PatchLibrary.patches(for: .singleNoteGrand) { XCTAssertEqual(p.credit, c, p.id) }
+        // The card says it in words: the song, the artist, the album and its year, and the liner notes with its track and
+        // its tempo but no key.
+        let card = InspiredByCard(credit: c)
+        XCTAssertEqual(card.words.kicker, "INSPIRED BY")
+        XCTAssertEqual(card.words.title, "Runaway")
+        XCTAssertEqual(card.words.subtitle, "Kanye West · My Beautiful Dark Twisted Fantasy · 2010")
+        XCTAssertEqual(card.words.linerNotes, "TRACK 9 · 86 BPM")
+        XCTAssertEqual(card.words.line, c.line)
+        XCTAssertEqual(card.words.listen, c)
+        XCTAssertEqual(card.words.accessibility,
+                       "Inspired by Runaway by Kanye West, My Beautiful Dark Twisted Fantasy, 2010. One piano note, repeated, and a voice that arrives distorted.")
+        // A card whose credit states its key still shows it.
+        XCTAssertEqual(InspiredByCard(credit: CreditLibrary.underwater).words.linerNotes, "F♯ minor · TRACK 7 · 118 BPM")
+        XCTAssertEqual(InspiredByCard(credit: CreditLibrary.dunno).words.linerNotes, "C♯ major · TRACK 10 · 82 BPM")
+    }
+
+    /// The "Runaway" card is original abstract art (nothing from the record, its artwork or its film): an empty plain at
+    /// dusk, a line of storm towers on the horizon, and a fence running away across the plain. Its easter eggs: nine posts
+    /// (the track number), one of them lit, the note's post (the keys are fence posts on Lightning Plains), struck again on
+    /// every beat at 86 (the card's breath) and never quite dark between; and above it a forked line of five branches, its
+    /// main channel pointing down at the lit post's cap, brightening with each strike. The lit post and the fork keep off
+    /// the words; the whole picture repeats exactly once a bar, and looks like no other card.
+    func testRunawayCardEasterEggs() throws {
+        let credit = CreditLibrary.runaway
+        let art = try XCTUnwrap(CardArt.art(for: credit.id))
+        XCTAssertEqual(art, .runaway)
+        XCTAssertFalse(art.isPlace)
+        XCTAssertFalse(art.titleCase)
+        let beat = 60.0 / 86, bar = 4 * beat
+        XCTAssertEqual(art.pulse(for: credit), beat, accuracy: 1e-12, "it breathes at 86")
+        XCTAssertEqual(InspiredByCard(credit: credit).pulse, beat, accuracy: 1e-12)
+        for c in CreditLibrary.all where c.id != credit.id { XCTAssertNotEqual(CardArt.art(for: c.id), art, c.id) }
+
+        // Nine posts, the track number, running away across the plain: each further one smaller, nearer the vanishing
+        // point and its foot nearer the horizon, every one standing on the plain against the sky; one of them lit.
+        let posts = CardArt.runawayPosts
+        let horizon = CardArt.runawayHorizon
+        XCTAssertEqual(posts.count, 9)
+        XCTAssertEqual(posts.count, credit.trackNumber)
+        for (a, b) in zip(posts, posts.dropFirst()) {
+            XCTAssertLessThan(b.x, a.x)
+            XCTAssertLessThan(b.foot, a.foot)
+            XCTAssertLessThan(b.height, a.height)
+            XCTAssertLessThan(b.width, a.width)
+        }
+        for p in posts {
+            XCTAssertGreaterThan(p.foot, horizon, "on the plain")
+            XCTAssertLessThan(p.foot - p.height, horizon, "against the sky")
+        }
+        let lit = CardArt.runawayLitPost
+        XCTAssertTrue(posts.indices.contains(lit))
+        let post = posts[lit]
+        let postTop: CGFloat = post.foot - post.height
+
+        // A forked line of five branches: the main channel from the storm down to a tip just above the lit post's cap;
+        // the other four leave it on the way down, one below the other, and fork out into the air, each ending lower than
+        // it starts and shorter than the channel. The post stands under all of it.
+        let fork = CardArt.runawayFork
+        XCTAssertEqual(fork.count, 5, "five branches")
+        let channel = try XCTUnwrap(fork.first)
+        let top = try XCTUnwrap(channel.first), tip = try XCTUnwrap(channel.last)
+        XCTAssertLessThan(abs(tip.x - post.x), post.width / 2, "the channel points down at the lit post")
+        /// A branch's length in points on a 600 × 360 card.
+        func length(_ branch: [CGPoint]) -> CGFloat {
+            zip(branch, branch.dropFirst()).reduce(0) { sum, s in
+                let dx: CGFloat = 600 * (s.1.x - s.0.x), dy: CGFloat = 360 * (s.1.y - s.0.y)
+                return sum + (dx * dx + dy * dy).squareRoot()
+            }
+        }
+        let points: [CGPoint] = fork.flatMap { $0 }
+        for p in points {
+            XCTAssertLessThan(p.y, postTop, "the post stands under the fork")
+            XCTAssertGreaterThanOrEqual(p.y, top.y, "the channel starts highest")
+            XCTAssertLessThanOrEqual(p.y, tip.y, "and its tip is the lowest point")
+        }
+        var leaves: [Int] = []
+        for branch in fork.dropFirst() {
+            let start = try XCTUnwrap(branch.first), end = try XCTUnwrap(branch.last)
+            let at = try XCTUnwrap(channel.firstIndex(of: start), "each branch leaves the main channel")
+            leaves.append(at)
+            XCTAssertGreaterThan(end.y, start.y, "and goes down")
+            XCTAssertLessThan(length(branch), length(channel))
+        }
+        XCTAssertEqual(leaves, leaves.sorted(), "one below the other")
+        XCTAssertEqual(Set(leaves).count, 4)
+        XCTAssertFalse(leaves.contains(0), "below the storm")
+
+        // The lit post and the fork keep off the words: the liner notes (top right), the title block (bottom left) and the
+        // Listen button.
+        let w: CGFloat = 600, h: CGFloat = 360
+        let words = [CGRect(x: 0.6 * w, y: 0, width: 0.4 * w, height: 0.1 * h),          // TRACK 9 · 86 BPM
+                     CGRect(x: 0, y: 0.68 * h, width: 0.72 * w, height: 0.32 * h),        // Inspired by, title, credit, line
+                     CGRect(x: 0.82 * w, y: 0.86 * h, width: 0.18 * w, height: 0.14 * h)] // Listen
+        let body = CGRect(x: (post.x - post.width / 2) * w, y: postTop * h, width: post.width * w, height: post.height * h)
+        let xs: [CGFloat] = points.map { $0.x }, ys: [CGFloat] = points.map { $0.y }
+        let left: CGFloat = xs.min() ?? 0, right: CGFloat = xs.max() ?? 1, high: CGFloat = ys.min() ?? 0, low: CGFloat = ys.max() ?? 1
+        let span = CGRect(x: left * w, y: high * h, width: (right - left) * w, height: (low - high) * h)
+        for rect in words {
+            XCTAssertFalse(body.intersects(rect), "the lit post covers \(rect)")
+            XCTAssertFalse(span.intersects(rect), "the fork covers \(rect)")
+        }
+
+        // The note strikes the post on every beat: full just after the beat, lowest just before the next but never dark,
+        // and the same a beat later.
+        for b in 1...4 {
+            let on = Double(b) * beat
+            XCTAssertEqual(CardArt.runawayStrike(at: on + 0.06 * beat, pulse: beat), 1, accuracy: 1e-9, "struck on beat \(b)")
+            let before = CardArt.runawayStrike(at: on - 1e-6, pulse: beat)
+            XCTAssertLessThan(before, 0.15, "dying away before beat \(b)")
+            XCTAssertGreaterThan(before, 0.05, "never quite dark")
+        }
+        for t in [0.13, 1.0, 2.4, 7.77] {
+            let now = CardArt.runawayStrike(at: t, pulse: beat)
+            XCTAssertEqual(now, CardArt.runawayStrike(at: t + beat, pulse: beat), accuracy: 1e-9, "a beat later it is as it was")
+            XCTAssertTrue(now > 0.05 && now <= 1, "\(now)")
+        }
+
+        // The picture: it draws and moves, and repeats exactly once a bar.
+        let a = try XCTUnwrap(Self.render(credit, at: 0.4))
+        let stats = PreviewRenderer.stats(a)
+        XCTAssertGreaterThan(stats.meanLuminance, 0.05)
+        XCTAssertGreaterThan(stats.variance, 0.001)
+        let barLater = try XCTUnwrap(Self.render(credit, at: 0.4 + bar))
+        let again = PreviewRenderer.difference(a, barLater)
+        XCTAssertLessThan(again, 0.002, "a bar later the card is as it was")
+        let later = try XCTUnwrap(Self.render(credit, at: 0.4 + 1.5 * beat))
+        let moved = PreviewRenderer.difference(a, later)
+        if moved <= 0.002 { XCTFail("a beat and a half later the Runaway card moved only \(moved)") }
+
+        // One post lit, warm white, and the others dark, just after a strike and just before the next; the fork is lit.
+        /// A post's upper body (5–30% down from its top, the middle 60% of its width), in the card's NDC.
+        func upper(_ i: Int) -> (x: ClosedRange<Double>, y: ClosedRange<Double>) {
+            let p = posts[i]
+            let x0 = Double(p.x - 0.3 * p.width), x1 = Double(p.x + 0.3 * p.width)
+            let y0 = Double(p.foot - 0.95 * p.height), y1 = Double(p.foot - 0.70 * p.height)
+            return (x: (2 * x0 - 1)...(2 * x1 - 1), y: (1 - 2 * y1)...(1 - 2 * y0))
+        }
+        func luminance(_ c: SIMD3<Double>) -> Double { 0.2126 * c.x + 0.7152 * c.y + 0.0722 * c.z }
+        let struck = try XCTUnwrap(Self.render(credit, at: 2.07 * beat)), waiting = try XCTUnwrap(Self.render(credit, at: 3 * beat - 0.01))
+        for (moment, frame) in [("just struck", struck), ("before the next", waiting)] {
+            let litRGB = FramePatch.meanRGB(frame, x: upper(lit).x, y: upper(lit).y)
+            let litLuminance = luminance(litRGB)
+            XCTAssertGreaterThan(litLuminance, 0.45, "the lit post is lit \(moment): \(litRGB)")
+            XCTAssertGreaterThanOrEqual(litRGB.x, litRGB.z, "warm white \(moment): \(litRGB)")
+            for i in posts.indices where i != lit {
+                let other = FramePatch.meanRGB(frame, x: upper(i).x, y: upper(i).y)
+                XCTAssertLessThan(luminance(other), litLuminance - 0.25, "post \(i) is dark \(moment): \(other)")
+            }
+        }
+        let litStruck = luminance(FramePatch.meanRGB(struck, x: upper(lit).x, y: upper(lit).y))
+        let litWaiting = luminance(FramePatch.meanRGB(waiting, x: upper(lit).x, y: upper(lit).y))
+        XCTAssertGreaterThan(litStruck, litWaiting + 0.03, "brighter just after the strike")
+        let mid = channel[channel.count / 2]
+        let mx = 2 * Double(mid.x) - 1, my = 1 - 2 * Double(mid.y)
+        let bolt = FramePatch.brightest(struck, x: (mx - 0.02)...(mx + 0.02), y: (my - 0.03)...(my + 0.03), share: 0.1)
+        XCTAssertGreaterThan(bolt, 0.6, "the fork is lit")
+
+        // It looks like no other card.
+        let mine = try XCTUnwrap(Self.render(credit, at: 1.0))
+        for c in CreditLibrary.all where c.id != credit.id {
+            let other = try XCTUnwrap(Self.render(c, at: 1.0), c.id)
+            let d = PreviewRenderer.difference(mine, other)
+            if d <= 0.02 { XCTFail("the Runaway card and \(c.id) differ by only \(d)") }
+        }
+    }
 }

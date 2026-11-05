@@ -110,6 +110,41 @@ final class PresetsTests: XCTestCase {
         XCTAssertEqual(PatchLibrary.defaultPatch(for: .reefMarimba).id, "reef-marimba")
     }
 
+    /// Single Note Grand's four presets (Storms spec §4.2; brief single-note-grand.md), each after "Runaway": the dials in
+    /// the instrument's order (Hall, Felt, Morph, Octave Down, Break, Width, Space), Runaway first and the default (the
+    /// engine's own defaults). The spec lists only what differs from Runaway: Marble Hall (Hall 1), Broken Voice (Morph
+    /// .6, Break .9) and Dry Grand (Hall .1); Felt is .2 in every one; every other dial is Runaway's, but Width and Space,
+    /// which the spec leaves to the ear.
+    func testSingleNoteGrandPresets() {
+        let presets = PatchLibrary.patches(for: .singleNoteGrand)
+        XCTAssertEqual(presets.map(\.id), ["single-note-grand", "marble-hall", "broken-voice", "dry-grand"])
+        XCTAssertEqual(presets.map(\.name), ["Runaway", "Marble Hall", "Broken Voice", "Dry Grand"])
+        XCTAssertEqual(PatchLibrary.defaultPatch(for: .singleNoteGrand).id, "single-note-grand")
+        XCTAssertEqual(BuiltInEngine.singleNoteGrand.displayName, "Single Note Grand")
+        XCTAssertEqual(BuiltInEngine(rawValue: "singleNoteGrand"), .singleNoteGrand)
+        let dials = ["hall", "felt", "morph", "octaveDown", "break", "width", "space"]
+        let expected: [String: [Double]] = ["single-note-grand": [0.70, 0.20, 0.00, 0.50, 0.50, 0.50, 0.50],
+                                            "marble-hall": [1.00, 0.20, 0.00, 0.50, 0.50, 0.70, 0.70],
+                                            "broken-voice": [0.70, 0.20, 0.60, 0.50, 0.90, 0.40, 0.40],
+                                            "dry-grand": [0.10, 0.20, 0.00, 0.50, 0.50, 0.45, 0.25]]
+        for p in presets {
+            XCTAssertEqual(p.engine, .singleNoteGrand, p.id)
+            XCTAssertEqual(Set(p.values.keys), Set(dials), p.id)
+            XCTAssertEqual(dials.map { p.values[$0] ?? -1 }, expected[p.id], p.id)
+            XCTAssertEqual(p.values["felt"], 0.20, "Felt is .2 in every preset (\(p.id))")
+            XCTAssertEqual(p.creditID, "runaway", p.id)
+            XCTAssertEqual(p.credit, CreditLibrary.runaway, p.id)
+            XCTAssertEqual(p.displayName, "\(p.name) · after \"Runaway\"", p.id)
+        }
+        // What each differs from Runaway in, and nothing else but the room's width and space.
+        let runaway = PatchLibrary.defaultPatch(for: .singleNoteGrand).values
+        let differs: [String: Set<String>] = ["marble-hall": ["hall"], "broken-voice": ["morph", "break"], "dry-grand": ["hall"]]
+        for p in presets.dropFirst() {
+            let changed = Set(dials.filter { p.values[$0] != runaway[$0] }).subtracting(["width", "space"])
+            XCTAssertEqual(changed, differs[p.id], p.id)
+        }
+    }
+
     /// Blue Depth's four presets (spec §4.2), each after "Underwater": the dials in their order (Blink, Murk, Ghosts,
     /// Echo, Bass, Tempo, Space, Width) with the spec table's values, every one at the record's 118 BPM.
     func testBlueDepthPresets() {
