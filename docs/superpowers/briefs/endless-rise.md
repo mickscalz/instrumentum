@@ -17,7 +17,7 @@ The pad-and-riser instrument on the **analogue voice core** (`AnalogVoice.hpp`),
   - A **Pressure Pad**: the chord you hold, a slow, filtered, swelling pad on the saw and pulse oscillators with the ZDF ladder.
   - A **riser** over it: 8 voices per held note, each a band-limited saw one octave apart, pitched `f0 · 2^(k + φ)` for k = −4…3.
   - φ ∈ [0, 1) advances at `rate` octaves a second (default 0.08, range 0.02–0.5). When φ wraps, the voices re-index and nothing jumps, because the window has already silenced the top voice.
-- **The window:** `w(x) = 0.5 − 0.5·cos(2π·x)` over each voice's normalised log-frequency position x between 40 Hz and 12 kHz. Loudness is normalised so the sum stays constant as φ advances.
+- **The window:** `w(x) = 0.5 − 0.5·cos(2π·x)` over each voice's normalised log-frequency position x between 40 Hz and 12 kHz. Loudness is normalised so the sum stays constant as φ advances. As built: exactly eight octaves, 43.3 Hz–11.09 kHz (inside 40 Hz–12 kHz), so the wrap is at w = 0 at both ends; one stack per held pitch class.
 - **It never arrives:**
   - At Rise 0.08 with A3 held for 30 s, the spectral centroid is periodic with a period of **12.5 ± 0.5 s** and never monotone beyond one period.
   - Band energies at 1 s and 13.5 s match within **1 dB**.
@@ -30,13 +30,13 @@ The pad-and-riser instrument on the **analogue voice core** (`AnalogVoice.hpp`),
   - At tension 1 the 2–6 kHz energy is **≥ 6 dB** higher.
   - With Excitement on, tension comes from `ExcitementFrame.tension`. With it off, from aftertouch (Excitement on: aftertouch adds 0.3 to it).
 - **The drop:**
-  - When `ExcitementFrame.drop` jumps to 1, φ freezes and the window collapses to the fundamental octave over **120 ms**: the riser's energy above that octave falls by **≥ 20 dB**.
+  - When `ExcitementFrame.drop` jumps to 1, φ freezes and the window collapses to the fundamental octave over **120 ms**: the riser's energy above that octave falls by **≥ 20 dB**. As built, φ settles on the nearest whole octave in those 120 ms, so the riser lands on the held notes, in tune with the pad.
   - The pad's filter snaps open, and a one-shot **sub thump** fires: a 48 Hz decaying sine that appears within 10 ms and decays over **400 ± 50 ms**.
   - Over the next 2.5 s the riser fades out (−40 dB by 2.5 s) and the pad plays on alone.
   - **Once only:** a second drop within 2.5 s is ignored until the release envelope passes 0.2, with no second thump (48 Hz energy over 0.5–0.9 s below −30 dB relative to the first thump's peak).
   - Without Excitement the drop fires on a hard chord (three note-ons within 40 ms at mean velocity ≥ 0.78) after tension has been above 0.6.
 - **The pulse:** a tempo-locked tremolo on the pad. At Pulse 0.5 and Tempo 124 the amplitude dips every **483.9 ± 2 ms**. Pulse 0 is off. Tempo runs 70…170 BPM.
-- **Grit:** a soft drive before the ladder, 0–12 dB. At Grit 1 the 3rd-harmonic level is **≥ 10 dB** above Grit 0.
+- **Grit:** a soft drive before the ladder, 0–12 dB (as built, and the same on the ladder's output stage). At Grit 1 the 3rd-harmonic level is **≥ 10 dB** above Grit 0 (measured where the 3rd harmonic lies above the pad's filter, as on A4).
 - **The hold rule:** the riser runs only while a note is held or the pedal is down. On release the pad takes its release (0.6–3 s by Tail) and the riser is gone in 200 ms.
 - **Pitch bend ±2 semitones.**
 - **Tuning:** pad only, A2–A5 within **2 cents** with the DRY hook; slop ≤ 6 cents. Fine tune and transpose are exact.

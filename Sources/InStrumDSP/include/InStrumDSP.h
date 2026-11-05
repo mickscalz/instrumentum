@@ -22,8 +22,8 @@ void isd_reverb_process(ISDReverb *reverb, const float *inL, const float *inR, f
 typedef enum { ISD_ENGINE_FELT_GLASS = 0, ISD_ENGINE_ORBIT_PAD = 1, ISD_ENGINE_HONEY_TAPE = 2, ISD_ENGINE_HAZE_BELLS = 3, ISD_ENGINE_CABIN_FELT = 4, ISD_ENGINE_MORNING_BOX = 5, ISD_ENGINE_POLAR_CHOIR = 6, ISD_ENGINE_PLANKTON_KEYS = 7, ISD_ENGINE_TEA_HOUSE_KOTO = 8, ISD_ENGINE_ZEN_SHAKUHACHI = 9, ISD_ENGINE_BLUE_DEPTH = 10, ISD_ENGINE_REEF_MARIMBA = 11,
                ISD_ENGINE_MAGMA_BASS = 12, ISD_ENGINE_REPLICANT_BRASS = 13,
                /* 14 and 15 are Home Lights' (Sets 15 & 16). */
-               /* Storms (Sets 17 & 18), reserved: Endless Rise (spec 2026-11-05-storms-design.md §4.1) and Single Note
-                  Grand (§4.2). Not creatable until their tasks land: isd_synth_create returns NULL for them. */
+               /* Storms (Sets 17 & 18): Endless Rise (spec 2026-11-05-storms-design.md §4.1) and Single Note Grand
+                  (§4.2, reserved: not creatable until its task lands, so isd_synth_create returns NULL for it). */
                ISD_ENGINE_ENDLESS_RISE = 16, ISD_ENGINE_SINGLE_NOTE_GRAND = 17 } ISDEngine;
 
 /// Parameter addresses (stable: saved in presets and instrument state).
@@ -47,8 +47,8 @@ enum {
     /// Replicant Brass with Chrome Bass (Sets 13 & 14, reserved; spec §4.3). Tempo 70…170, default 120.
     ISD_P_SWELL_RB = 140, ISD_P_BLAZE = 141, ISD_P_UNISON_WIDTH = 142, ISD_P_HALL = 143, ISD_P_CHROME = 144,
     ISD_P_PUNCH = 145, ISD_P_ARP_MODE = 146, ISD_P_ARP_RATE = 147, ISD_P_SPLIT = 148, ISD_P_TEMPO_RB = 149,
-    /// Endless Rise (Storms, Sets 17 & 18, reserved; spec 2026-11-05-storms-design.md §4.1). Rise is the riser's climb
-    /// in octaves a second (0 switches the riser off, else 0.02…0.5; default 0.08); Tempo 70…170, default 124. Also
+    /// Endless Rise (Storms, Sets 17 & 18; spec 2026-11-05-storms-design.md §4.1). Rise is the riser's climb in
+    /// octaves a second (0 switches the riser off, else 0.02…0.5; default 0.08); Tempo 70…170, default 124. Also
     /// uses ISD_P_SPACE and ISD_P_WIDTH.
     ISD_P_RISE = 150, ISD_P_PRESSURE = 151, ISD_P_GRIT_ER = 152, ISD_P_PULSE = 153, ISD_P_TEMPO_ER = 154,
     ISD_P_TAIL = 155, ISD_P_SUB = 156,
@@ -80,8 +80,8 @@ enum {
     /// Test hooks (unit 3, never shown; reserved for Sets 13 & 14): Magma Bass dry (no fold, drive or spark);
     /// Replicant Brass without the Chrome arp; Replicant Brass dry (no chorus or hall).
     ISD_P_DEBUG_MB_DRY = 217, ISD_P_DEBUG_RB_NO_ARP = 218, ISD_P_DEBUG_RB_DRY = 219,
-    /// Test hooks (unit 3, never shown; Storms, Sets 17 & 18, reserved): Endless Rise's pad alone; its riser alone;
-    /// Endless Rise dry (no pulse, drive, reverb or slop).
+    /// Test hooks (unit 3, never shown; Storms, Sets 17 & 18): Endless Rise's pad alone (no riser or thump); its riser
+    /// alone (with the drop's thump); Endless Rise dry (no pulse, drive, reverb or slop). They combine.
     ISD_P_DEBUG_ER_PAD_ONLY = 220, ISD_P_DEBUG_ER_RISE_ONLY = 221, ISD_P_DEBUG_ER_DRY = 222,
     /// Test hooks (unit 3, never shown; Storms, Sets 17 & 18, reserved): Single Note Grand's piano alone; its voice
     /// alone; the grand dry (no hall).
@@ -116,16 +116,23 @@ int isd_synth_active_voices(const ISDSynth *synth);
 /// Internal counters for tests. Not real-time safe to rely on; read between renders.
 /// RETUNES: Felt Glass retunes. HORN_NOTE: Cabin Felt's horn note (folded into its range), or -1.
 /// BUILD_PERMILLE and WALL_UNISON: Morning Box's build level × 1000 and its wall's unison count.
+/// DROPS and TENSION_PERMILLE: Endless Rise's drops taken (a second one within 2.5 s is not) and the tension it is
+/// using × 1000 (the world's plus 0.3 × pressure, smoothed).
 typedef enum { ISD_DEBUG_RETUNES = 0, ISD_DEBUG_HORN_NOTE = 1, ISD_DEBUG_BUILD_PERMILLE = 2, ISD_DEBUG_WALL_UNISON = 3,
-               /* Magma Bass: how many eruption swells hard low chords have set off. */ ISD_DEBUG_ERUPTIONS = 4 } ISDDebugCount;
+               /* Magma Bass: how many eruption swells hard low chords have set off. */ ISD_DEBUG_ERUPTIONS = 4,
+               ISD_DEBUG_DROPS = 5, ISD_DEBUG_TENSION_PERMILLE = 6 } ISDDebugCount;
 int isd_synth_debug_count(const ISDSynth *synth, ISDDebugCount which);
 
-// ---------- Storms (Sets 17 & 18), reserved: declared here, defined by Tasks 2 and 4 of the Storms plan ----------
-/// Endless Rise. Any thread. Tension 0…1 from the Excitement step (or from aftertouch): it multiplies the riser's rate
-/// by 1 + 3·tension and opens the pad's filter. An atomic, read once per control block.
+// ---------- Storms (Sets 17 & 18): the riser's calls (Task 2); the grand's are declared here, defined by Task 4 ----------
+/// Endless Rise. Any thread. Tension 0…1 from the Excitement step: it multiplies the riser's rate by 1 + 3·tension,
+/// opens the pad's filter (600 Hz → 6 kHz at Pressure .4) and brings the riser forward. The engine adds 0.3 × the
+/// player's pressure to it (so with nothing set, a full press is tension 0.3); with Excitement off the host passes the
+/// pressure itself here. An atomic, read once per control block and smoothed over 50 ms, so it never steps. Other
+/// engines ignore it.
 void isd_synth_set_tension(ISDSynth *synth, float tension);
-/// Endless Rise. Any thread. The drop: the riser resolves, the pad's filter snaps open and a 48 Hz thump fires. A
-/// second drop within 2.5 s is ignored.
+/// Endless Rise. Any thread. The drop: the riser resolves onto the chord within 120 ms and fades out over 2.5 s, the
+/// pad's filter snaps open and a 48 Hz thump fires. A second drop is ignored until the first's release envelope has
+/// passed 0.2 and its 2.5 s have run. Taken at the next control block. Other engines ignore it.
 void isd_synth_trigger_drop(ISDSynth *synth);
 /// Single Note Grand. Any thread. Forces the morph (0…1) over aftertouch, for the storm's arrival; a negative value
 /// releases it, and the morph returns to the player's aftertouch over 250 ms.

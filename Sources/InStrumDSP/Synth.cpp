@@ -15,6 +15,7 @@
 #include "BlueDepth.hpp"
 #include "MagmaBass.hpp"
 #include "ReplicantBrass.hpp"
+#include "EndlessRise.hpp"
 #include <algorithm>
 #include <atomic>
 #include <cmath>
@@ -287,6 +288,29 @@ const ISDParamInfo kReplicantBrassParams[] = {
     {ISD_P_DEBUG_RB_NO_ARP, "debugBrassNoArp", "No arp (test)", 0.f, 1.f, 0.f, 3},
     {ISD_P_DEBUG_RB_DRY, "debugBrassDry", "Dry (test)", 0.f, 1.f, 0.f, 3},
 };
+/// The dials in the Swift order (Rise, Pressure, Grit, Pulse, Tempo, Tail, Sub, Space, Width). Rise is octaves a second
+/// (0 switches the riser off, else 0.02…0.5); Tempo is the Pulse's, in BPM. Defaults are the Supercell preset.
+const ISDParamInfo kEndlessRiseParams[] = {
+    {ISD_P_FINE_TUNE, "fineTune", "Fine tune", -50.f, 50.f, 0.f, 1},
+    {ISD_P_TRANSPOSE, "transpose", "Transpose", -12.f, 12.f, 0.f, 2},
+    {ISD_P_RISE, "rise", "Rise", 0.f, 0.5f, 0.08f, 0},
+    {ISD_P_PRESSURE, "pressure", "Pressure", 0.f, 1.f, 0.40f, 0},
+    {ISD_P_GRIT_ER, "grit", "Grit", 0.f, 1.f, 0.30f, 0},
+    {ISD_P_PULSE, "pulse", "Pulse", 0.f, 1.f, 0.50f, 0},
+    {ISD_P_TEMPO_ER, "tempo", "Tempo", 70.f, 170.f, 124.f, 0},
+    {ISD_P_TAIL, "tail", "Tail", 0.f, 1.f, 0.60f, 0},
+    {ISD_P_SUB, "sub", "Sub", 0.f, 1.f, 0.70f, 0},
+    {ISD_P_SPACE, "space", "Space", 0.f, 1.f, 0.50f, 0},
+    {ISD_P_WIDTH, "width", "Width", 0.f, 1.f, 0.60f, 0},
+    {ISD_P_MOOD_ENERGY, "moodEnergy", "Mood energy", 0.f, 1.f, 0.5f, 0},
+    {ISD_P_MOOD_WARMTH, "moodWarmth", "Mood warmth", 0.f, 1.f, 0.5f, 0},
+    {ISD_P_MOOD_BRIGHTNESS, "moodBrightness", "Mood brightness", 0.f, 1.f, 0.5f, 0},
+    {ISD_P_MOOD_SPACE, "moodSpace", "Mood space", 0.f, 1.f, 0.5f, 0},
+    {ISD_P_MOOD_MOTION, "moodMotion", "Mood motion", 0.f, 1.f, 0.5f, 0},
+    {ISD_P_DEBUG_ER_PAD_ONLY, "debugRisePadOnly", "Pad only (test)", 0.f, 1.f, 0.f, 3},
+    {ISD_P_DEBUG_ER_RISE_ONLY, "debugRiseOnly", "Rise only (test)", 0.f, 1.f, 0.f, 3},
+    {ISD_P_DEBUG_ER_DRY, "debugRiseDry", "Dry (test)", 0.f, 1.f, 0.f, 3},
+};
 
 
 
@@ -308,6 +332,7 @@ ParamTable table(ISDEngine engine) {
     case ISD_ENGINE_BLUE_DEPTH: return {kBlueDepthParams, (int)(sizeof kBlueDepthParams / sizeof kBlueDepthParams[0])};
     case ISD_ENGINE_MAGMA_BASS: return {kMagmaBassParams, (int)(sizeof kMagmaBassParams / sizeof kMagmaBassParams[0])};
     case ISD_ENGINE_REPLICANT_BRASS: return {kReplicantBrassParams, (int)(sizeof kReplicantBrassParams / sizeof kReplicantBrassParams[0])};
+    case ISD_ENGINE_ENDLESS_RISE: return {kEndlessRiseParams, (int)(sizeof kEndlessRiseParams / sizeof kEndlessRiseParams[0])};
     default: return {nullptr, 0};
     }
 }
@@ -416,6 +441,7 @@ ISDSynth *isd_synth_create(ISDEngine engine, double sampleRate, int maxFrames) {
     case ISD_ENGINE_BLUE_DEPTH: s->engine = std::make_unique<isd::BlueDepth>(sampleRate); break;
     case ISD_ENGINE_MAGMA_BASS: s->engine = std::make_unique<isd::MagmaBass>(sampleRate); break;
     case ISD_ENGINE_REPLICANT_BRASS: s->engine = std::make_unique<isd::ReplicantBrass>(sampleRate); break;
+    case ISD_ENGINE_ENDLESS_RISE: s->engine = std::make_unique<isd::EndlessRise>(sampleRate); break;
     default: delete s; return nullptr;
     }
     return s;
@@ -484,5 +510,10 @@ void isd_synth_all_notes_off(ISDSynth *s) { if (s) s->allOff.store(true); }
 int isd_synth_active_voices(const ISDSynth *s) { return s ? s->voices.load(std::memory_order_relaxed) : 0; }
 
 int isd_synth_debug_count(const ISDSynth *s, ISDDebugCount which) { return s && s->engine ? s->engine->debugCount((int)which) : 0; }
+
+// The engine keeps both in atomics and reads them once per control block, so any thread may call these.
+void isd_synth_set_tension(ISDSynth *s, float tension) { if (s && s->engine) s->engine->setTension(tension); }
+
+void isd_synth_trigger_drop(ISDSynth *s) { if (s && s->engine) s->engine->triggerDrop(); }
 
 } // extern "C"

@@ -27,6 +27,11 @@ public:
     virtual void aftertouch(int note, float pressure) { (void)note; (void)pressure; }
     /// A continuous controller, 0…1 (CC 1, the mod wheel, so far). Engines that don't use it ignore it.
     virtual void controller(int cc, float value) { (void)cc; (void)value; }
+    /// Any thread, unlike everything above (Endless Rise): the tension 0…1 from the world. The engine keeps it in an
+    /// atomic and reads it once per control block. Engines without a riser ignore it.
+    virtual void setTension(float tension) { (void)tension; }
+    /// Any thread (Endless Rise): the drop. The engine counts it in an atomic and takes it at its next control block.
+    virtual void triggerDrop() {}
 };
 
 } // namespace isd
