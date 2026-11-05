@@ -120,6 +120,14 @@ final class CoastRoadRenderer: ThemeRenderer {
         sky.horizonY = horizonY
         sky.roll = frame.roll
         sky.update(s, quality: quality, size: size, time: Float(frame.time))
+        // Sea smoke over the sea below the cliffs, inside the window: from the scrub's highest tops (the shader's scrub
+        // line, bottom + 0.34 + up to 0.116) to the horizon. It passes right to left with the car, like the sea about
+        // 480 m out at the band's middle (spec §6.4).
+        let steamCam = sky.camera(latitude: s.latitude, aspect: aspect)
+        weather.waterBand = SIMD4(-0.9, bottom + 0.44, 0.9, horizonY)
+        weather.steamCamera = steamCam
+        let metresPerSecond = (30 + 70 * Double(min(max(frame.speed.isFinite ? frame.speed : 0, 0), 1))) / 3.6
+        weather.steamDrift = -Float(metresPerSecond / 480) / max(steamCam.tanH, 0.1)
         weather.gentle = gentle
         weather.update(s, quality: quality, size: size, dt: dt, surface: .glass)
         showWarp = frame.warp != nil

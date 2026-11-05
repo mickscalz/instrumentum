@@ -88,6 +88,10 @@ final class GoldenHourBeachRenderer: ThemeRenderer {
         sky.viewAzimuth = viewAzimuth
         sky.horizonY = horizonY
         sky.update(s, quality: quality, size: size, time: Float(frame.time))
+        // Sea smoke over the sea, from the waterline out to the horizon (spec §6.4).
+        let shore = SkyLayer.waterY(out: Self.waterline, height: Self.cameraHeight, horizonY: horizonY, verticalFOV: sky.verticalFOV)
+        weather.waterBand = SIMD4(-1, shore, 1, horizonY)
+        weather.steamCamera = sky.camera(latitude: s.latitude, aspect: aspect)
         weather.gentle = gentle
         weather.update(s, quality: quality, size: size, dt: dt, surface: .water(horizonY: horizonY))
         let cam = sky.camera(latitude: s.latitude, aspect: aspect)

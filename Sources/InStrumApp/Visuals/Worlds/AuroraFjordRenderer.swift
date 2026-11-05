@@ -169,7 +169,11 @@ final class AuroraFjordRenderer: ThemeRenderer {
         sky.verticalFOV = Self.verticalFOV(aspect: aspect)
         sky.horizonY = horizonY
 
-        // Weather on the water: rings, snow and blizzards, diamond dust's crystals (the cold has no fireflies).
+        // Weather on the water: rings, snow and blizzards, diamond dust's crystals (the cold has no fireflies), and sea
+        // smoke over the fjord from the jetty out to the sea end (spec §6.4; the walls' feet stand within a few hundredths
+        // of the horizon, so the band runs the whole width).
+        weather.waterBand = SIMD4(-1, keyTop, 1, horizonY)
+        weather.steamCamera = sky.camera(latitude: s.latitude, aspect: aspect)
         weather.gentle = gentle
         weather.update(s, quality: quality, size: size, dt: dt, surface: .water(horizonY: horizonY))
 

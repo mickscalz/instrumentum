@@ -83,16 +83,51 @@ final class SkyLayer {
     var starTextureOverride: MTLTexture?
 
     nonisolated static let rippleCount = 8
-    /// SkyU's float4 count: 13 + night, aurora, dust, 8 ripples and still (the MSL struct's size / 16).
-    nonisolated static let uniformCount = 25
+    /// SkyU's float4 count: 13 + night, aurora, dust, 8 ripples, still, the 6 meteor slots' three rows and the flash
+    /// (the MSL struct's size / 16: 704 bytes, still one setFragmentBytes).
+    nonisolated static let uniformCount = 44
     /// The `still` row's index: iridescence, rime, and the wind on screen.
     nonisolated static let stillRow = 24
+    /// The shooting stars' slots (spec §7.2), after `still`: six of each row. A: start direction, head progress 0…1 (a
+    /// train: its drift, degrees). B: end direction, light on the stars' scale (0: the slot is empty). C: colour, 0 for
+    /// a head … the train's age 0.001…1.
+    nonisolated static let meteorSlots = 6
+    nonisolated static let meteorARow = 25, meteorBRow = 31, meteorCRow = 37
+    /// A fireball's sky brightening (meteorFlash, 0, 0, 0): the last row.
+    nonisolated static let flashRow = 43
 
     /// The wind on screen for rime's windward side (x right, y up: the way it blows, × the sky's wind 0…1). Every
     /// world already draws its weather blowing to the right (the weather layer's tilt and streamers, the chimney
     /// smoke, the diamond dust's drift), so rime gathers on the left-facing edges.
     nonisolated static func screenWind(_ s: SkyState) -> SIMD2<Float> {
         SIMD2(s.wind.isFinite ? min(1, max(0, s.wind)) : 0, 0)
+    }
+
+    /// A shooting star's three SkyU rows at `t` on the meteors' clock (`SkyState.meteorTime`), from Core's own light
+    /// curves: a head (start, progress; end, its light now; colour, 0) or a train (start, its drift in degrees; end, its
+    /// light now; the train's colour, its age, at least 0.001); nil when it is neither (not yet born, or gone), unlit, or
+    /// not a pair of unit directions.
+    nonisolated static func meteorRows(_ m: Meteor, at t: Double) -> (a: SIMD4<Float>, b: SIMD4<Float>, c: SIMD4<Float>)? {
+        func usable(_ v: SIMD3<Float>) -> Bool { v.x.isFinite && v.y.isFinite && v.z.isFinite && abs(simd_length(v) - 1) < 0.01 }
+        guard t.isFinite, usable(m.start), usable(m.end) else { return nil }
+        if m.isHead(at: t) {
+            let light = m.headBrightness(at: t)
+            guard light.isFinite, light > 0 else { return nil }
+            return (SIMD4(m.start, m.progress(at: t)), SIMD4(m.end, light), SIMD4(m.colour, 0))
+        }
+        guard let age = m.trainAge(at: t) else { return nil }
+        let light = m.trainBrightness(at: t)
+        guard light.isFinite, light > 0 else { return nil }
+        return (SIMD4(m.start, m.trainDrift), SIMD4(m.end, light), SIMD4(Meteor.trainColour, max(1e-3, age)))
+    }
+
+    /// The NDC y where flat water `out` metres ahead lies, seen from `height` metres above it by a level camera (no roll)
+    /// with the horizon at `horizonY` and a lens `verticalFOV` degrees tall: how a world finds its water's near edge.
+    nonisolated static func waterY(out: Float, height: Float, horizonY: Float, verticalFOV: Double) -> Float {
+        let tanV = Float(tan(verticalFOV * .pi / 360))
+        let pitch = -atan(horizonY * tanV)
+        let depression = atan(height / max(out, 1e-3))
+        return -tan(depression + pitch) / tanV
     }
 
     private let pipeline: MTLRenderPipelineState
@@ -164,6 +199,9 @@ final class SkyLayer {
         return (east, north, up)
     }
 
+    /// The camera `camera(latitude:aspect:)` gives (its basis in east-north-up and the half-view tangents).
+    typealias Camera = (right: SIMD3<Float>, up: SIMD3<Float>, forward: SIMD3<Float>, tanH: Float, tanV: Float)
+
     /// Camera basis in east-north-up.
     func camera(latitude: Double, aspect: Float) -> (right: SIMD3<Float>, up: SIMD3<Float>, forward: SIMD3<Float>, tanH: Float, tanV: Float) {
         let az = (viewAzimuth ?? Self.defaultViewAzimuth(latitude: latitude)) * .pi / 180
@@ -211,6 +249,17 @@ final class SkyLayer {
         func unit(_ v: Float) -> Float { v.isFinite ? min(1, max(0, v)) : 0 }
         let wind = Self.screenWind(s)
         u[Self.stillRow] = SIMD4(unit(s.iridescence), unit(s.rime), wind.x, wind.y)
+        // Shooting stars (spec §7.2): the sky's meteors at this frame's moment on their own clock, into the six slots in
+        // turn; the slots left over are emptied (B.w 0), and the fireball's brightening rides in the last row.
+        var slot = 0
+        for m in s.meteors where slot < Self.meteorSlots {
+            guard let rows = Self.meteorRows(m, at: s.meteorTime) else { continue }
+            u[Self.meteorARow + slot] = rows.a; u[Self.meteorBRow + slot] = rows.b; u[Self.meteorCRow + slot] = rows.c
+            slot += 1
+        }
+        for i in slot..<Self.meteorSlots { u[Self.meteorARow + i] = .zero; u[Self.meteorBRow + i] = .zero; u[Self.meteorCRow + i] = .zero }
+        let flash = s.meteorFlash.isFinite ? min(0.08, max(0, s.meteorFlash)) : 0
+        u[Self.flashRow] = SIMD4(flash, 0, 0, 0)
     }
 
     func draw(_ e: MTLRenderCommandEncoder) {
@@ -235,6 +284,10 @@ final class WeatherLayer {
     /// rounded to a whole number of cycles an hour, so the wrap never shows.
     static let clockWrap: Float = 3600
     static func wholeCycles(_ rate: Float) -> Float { max(1, (rate * clockWrap).rounded()) / clockWrap }
+    /// Sea smoke's wisps at most (spec §6.4): 40 on Smooth, 90, 150.
+    static func steamCap(_ q: QualityLevel) -> Int { q == .lite ? 40 : (q == .high ? 90 : 150) }
+    /// Sea smoke's flat mist: its half height (NDC y) about the band's far edge.
+    static let steamMistHalfHeight: Float = 0.05
 
     var gentle = false
     private(set) var particleCount = 0
@@ -283,6 +336,31 @@ final class WeatherLayer {
     private(set) var tilt: Float = 0
     private var aspect: Float = 16.0 / 9
     private var brightness: Float = 1
+
+    // Sea smoke (spec §6.4): wisps rising off the world's open water.
+    /// The world's open water on screen (NDC x0, y0, x1, y1: across, and from its near edge up to its far one). Each world
+    /// with water sets it every frame from its own geometry; nil (the default) is no open water, so no steam.
+    var waterBand: SIMD4<Float>?
+    /// The view the steam is seen through (the world's sky camera), for the low sun's glow ahead; nil: no glow.
+    var steamCamera: SkyLayer.Camera?
+    /// How fast the water passes across the view (NDC x per second at the band's middle, nearer wisps faster): the
+    /// road's sea as the car drives; 0 for still water.
+    var steamDrift: Float = 0
+    /// Sea smoke's wisps alive, and the blobs they drew this frame.
+    private(set) var steamCount = 0
+    private(set) var steamBlobCount = 0
+    /// A wisp: across and up the band (0…1; up is farther), its age and life (s), how far its column climbs (NDC y), its
+    /// first blob radius (NDC y), how much it widens, its turn round its axis (rad/s) and phase, its lean downwind (dx per
+    /// dy), and its blobs.
+    private struct Wisp { var u, v, age, life, rise, size, widen, spin, phase, lean: Float; var blobs: Int }
+    private var wisps: [Wisp] = []
+    private(set) var steamInstances: [SIMD4<Float>] = []
+    private var mistInstances: [SIMD4<Float>] = []
+    /// The steam's own stream, so it never shifts the rain's, the fireflies' or the crystals'.
+    private var steamRng = SeededRandom(seed: 0x57EA_5A0C)
+    /// The steam's light this frame (`steamLight`): tint (rgb, the sun's screen x) and the low sun's glow (rgb, width).
+    private(set) var steamTint = SIMD4<Float>(0, 0, 0, 0)
+    private(set) var steamGlow = SIMD4<Float>(0, 0, 0, 1)
 
     init?(device: MTLDevice) {
         guard let lib = try? device.makeLibrary(source: SkyShaders.source, options: nil) else { return nil }
@@ -397,6 +475,7 @@ final class WeatherLayer {
         pixelNDC = 2 / Float(max(1, size.height))
         updateFireflies(s, quality: quality, dt: fdt, ground: horizon != nil)
         updateCrystals(s, quality: quality, dt: fdt)
+        updateSteam(s, quality: quality, dt: fdt)
 
         limiter.gentle = gentle
         exposureBoost = limiter.limit(exposure: 1 + 1.2 * s.lightning, sparkle: 0, dt: dt).exposure
@@ -476,6 +555,134 @@ final class WeatherLayer {
         return (max(dust, fog), fog / max(dust + fog, 1e-6))
     }
 
+    /// Sea smoke's shapes: a wisp's column climbs 3% of the view's height far off … 12% near (NDC × 2), and its first blob
+    /// is 0.010 far … 0.048 near (NDC y, ± 20%), widening up to 3×, its top blob 1.3× its first.
+    private static let steamRiseFar: Float = 0.06, steamRiseNear: Float = 0.24
+    private static let steamSizeFar: Float = 0.010, steamSizeNear: Float = 0.048
+
+    private static func smooth(_ a: Float, _ b: Float, _ x: Float) -> Float {
+        let t = min(1, max(0, (x - a) / (b - a)))
+        return t * t * (3 - 2 * t)
+    }
+
+    /// A band with a little width and height, in order (left of right, its near edge below its far one).
+    static func usableBand(_ b: SIMD4<Float>) -> Bool {
+        b.x.isFinite && b.y.isFinite && b.z.isFinite && b.w.isFinite && b.z - b.x > 1e-3 && b.w - b.y > 1e-3
+    }
+
+    /// The highest NDC y any of this band's steam can reach: its far edge, plus the most a wisp's column (its climb and its
+    /// top blob, fully widened) can stand over it, or the flat mist's half height. Nothing of the steam draws higher.
+    static func steamTop(band: SIMD4<Float>) -> Float {
+        let height = max(0, band.w - band.y)
+        // A wisp n of the way down the band (0 far … 1 near) stands at most −n·height + its climb + its top blob over the
+        // far edge: piecewise linear in n, so the greatest is at an end or at the climb's knee (n · 1.15 = 1).
+        func over(_ n: Float) -> Float {
+            let climb = Self.steamRiseFar + (Self.steamRiseNear - Self.steamRiseFar) * min(1, n * 1.15)
+            let blob = (Self.steamSizeFar + (Self.steamSizeNear - Self.steamSizeFar) * n) * 1.2 * 3 * 1.3
+            return -n * height + climb + blob
+        }
+        return band.w + max(Self.steamMistHalfHeight, over(0), over(1 / 1.15), over(1))
+    }
+
+    /// Sea smoke (spec §6.4): up to `steamCap` wisps rising from the world's water band (none without one). Each is a soft
+    /// column of 4–6 blobs climbing 3–12% of the view over 6–14 s while widening 2–3×; its blobs turn slowly round its
+    /// axis, it leans downwind, it fades in over 1 s and out over its last 40%, and those low in the band (near) are
+    /// larger. Their number follows the sky's steam, and a wisp that dies is replaced only while there are fewer, so
+    /// thinning steam lets its wisps live out their lives. A thin flat mist lies along the band's far edge (0.25 × steam).
+    private func updateSteam(_ s: SkyState, quality: QualityLevel, dt: Float) {
+        steamInstances.removeAll(keepingCapacity: true)
+        mistInstances.removeAll(keepingCapacity: true)
+        guard let band = waterBand, Self.usableBand(band) else {
+            wisps.removeAll()
+            steamCount = 0; steamBlobCount = 0
+            return
+        }
+        let steam = s.steam.isFinite ? min(1, max(0, s.steam)) : 0
+        let wind = s.wind.isFinite ? min(1, max(0, s.wind)) : 0
+        let drift = steamDrift.isFinite ? steamDrift : 0
+        let wanted = Int((Float(Self.steamCap(quality)) * steam).rounded())
+        let width = band.z - band.x, height = band.w - band.y
+        for i in wisps.indices {
+            wisps[i].age += dt
+            let n = 1 - wisps[i].v
+            wisps[i].u += (drift * (0.5 + n) + (0.01 + 0.04 * wind) * (0.4 + 0.6 * n)) * dt / width
+        }
+        wisps.removeAll { $0.age >= $0.life || $0.u < -0.1 || $0.u > 1.1 }
+        // A fresh band (or a sudden thickening) starts mid-flow rather than with every wisp fading in at once.
+        let fill = wisps.count * 2 < wanted
+        while wisps.count < wanted { wisps.append(newWisp(midLife: fill, wind: wind)) }
+        steamCount = wisps.count
+        wisps.sort { $0.v > $1.v }   // far ones first, so the near ones lie over them
+        for w in wisps {
+            let k = min(1, w.age / w.life)
+            let fade = Self.smooth(0, 1, w.age) * (1 - Self.smooth(0.6, 1, k))
+            let climb = w.rise * (0.15 + 0.85 * (1 - (1 - k) * (1 - k)))
+            let grow = 1 + (w.widen - 1) * k
+            let baseX = band.x + w.u * width, baseY = band.y + w.v * height
+            for j in 0..<w.blobs {
+                let f = Float(j) / Float(w.blobs - 1)
+                let h = climb * f, r = w.size * grow * (0.7 + 0.6 * f)
+                let phi = w.phase + w.spin * w.age + 2.4 * Float(j)
+                let side = w.lean * h + 0.5 * r * sin(phi)   // NDC y units, so ÷ the aspect on screen
+                let shade = 0.85 + 0.15 * cos(phi)           // the far side of its turn a little dimmer
+                let y = baseY + h
+                let edge = Self.smooth(band.y - 0.3 * r, band.y + 0.6 * r, y)   // no spilling over the near shore
+                let alpha = 0.16 * fade * (1 - 0.45 * f) * shade * edge
+                guard alpha >= 0.002 else { continue }
+                steamInstances.append(SIMD4(baseX + side / aspect, y, r, alpha))
+            }
+        }
+        steamBlobCount = steamInstances.count
+        if steam > 0.001 { mistInstances.append(SIMD4((band.x + band.z) / 2, band.w, 0.55 * width, 0.25 * steam)) }
+        let light = Self.steamLight(s, camera: steamCamera)
+        steamTint = light.tint; steamGlow = light.glow
+    }
+
+    private func newWisp(midLife: Bool, wind: Float) -> Wisp {
+        let u = steamRng.unit()
+        let v = steamRng.unit().squareRoot()   // far wisps (small) outnumber near ones
+        let n = 1 - v
+        let life = steamRng.range(6, 14)
+        let age: Float = midLife ? steamRng.range(0, life) : 0
+        let rise = Self.steamRiseFar + (Self.steamRiseNear - Self.steamRiseFar) * min(1, n * steamRng.range(0.8, 1.15))
+        let size = (Self.steamSizeFar + (Self.steamSizeNear - Self.steamSizeFar) * n) * steamRng.range(0.8, 1.2)
+        let widen = steamRng.range(2, 3)
+        let sign: Float = steamRng.unit() < 0.5 ? -1 : 1
+        let spin = sign * steamRng.range(0.25, 0.7)
+        let phase = steamRng.range(0, 2 * .pi)
+        let lean = (0.25 + 2 * wind) * steamRng.range(0.7, 1.3)
+        let blobs = 4 + min(2, Int(steamRng.unit() * 3))
+        return Wisp(u: u, v: v, age: age, life: life, rise: rise, size: size, widen: widen, spin: spin, phase: phase,
+                    lean: lean, blobs: blobs)
+    }
+
+    /// Sea smoke's light (spec §6.4): the sky's horizon colour × 1.25, a moonlit blue-grey at night (and the aurora's faint
+    /// green under it), and the low sun's glow when it stands ahead of the view, gold-pink at sunrise. Returns the tint
+    /// (rgb, the sun's screen x in NDC) and the glow (rgb, its width in NDC x; zero without a camera or with the sun high,
+    /// down or behind).
+    static func steamLight(_ s: SkyState, camera: SkyLayer.Camera?) -> (tint: SIMD4<Float>, glow: SIMD4<Float>) {
+        func unit(_ v: Float) -> Float { v.isFinite ? min(1, max(0, v)) : 0 }
+        let sunAlt = Float(s.sun.altitude.isFinite ? s.sun.altitude : -90)
+        let moonAlt = Float(s.moon.altitude.isFinite ? s.moon.altitude : -90)
+        let night = 1 - smooth(-6, 2, sunAlt)
+        let moon = unit(Float(s.moonLit)) * smooth(-3, 8, moonAlt) * night
+        let horizon = s.horizon.x.isFinite && s.horizon.y.isFinite && s.horizon.z.isFinite ? s.horizon : SIMD3<Float>(repeating: 0)
+        let rgb = horizon * 1.25 + SIMD3<Float>(0.16, 0.18, 0.22) * moon + SIMD3<Float>(0.25, 1.0, 0.45) * (0.06 * unit(s.aurora))
+        var glow = SIMD3<Float>(repeating: 0), sunX: Float = 0
+        if let cam = camera {
+            let sun = SkyLayer.enu(s.sun)
+            let low = smooth(-7, -1, sunAlt) * (1 - smooth(6, 16, sunAlt))
+            let flat = SIMD2(sun.x, sun.y), view = SIMD2(cam.forward.x, cam.forward.y)
+            let lf = simd_length(flat), lv = simd_length(view)
+            let ahead = lf > 1e-4 && lv > 1e-4 ? simd_dot(flat, view) / (lf * lv) : 0
+            let g = low * smooth(0.25, 0.9, ahead) * (1 - 0.7 * unit(s.cloudCover))
+            let depth = simd_dot(sun, cam.forward)
+            if depth > 0.05, cam.tanH > 0 { sunX = min(4, max(-4, simd_dot(sun, cam.right) / (depth * cam.tanH))) }
+            if g.isFinite { glow = SIMD3<Float>(1.0, 0.66, 0.5) * (0.9 * g) }
+        }
+        return (SIMD4(rgb, sunX.isFinite ? sunX : 0), SIMD4(glow, 0.9))
+    }
+
     private func newFirefly() -> Firefly {
         Firefly(x: rng.range(-1, 1), y: rng.range(-0.95, Self.fireflyTop), heading: rng.range(0, 2 * .pi),
                 speed: rng.range(0.02, 0.06), rate: Self.wholeCycles(rng.range(0.4, 1.1)), onTime: rng.range(0.25, 0.5),
@@ -507,13 +714,15 @@ final class WeatherLayer {
     }
 
     func draw(_ e: MTLRenderCommandEncoder) {
-        // Fireflies make their own light; crystals catch what there is (a little even on a dark night).
+        // Fireflies make their own light; crystals catch what there is (a little even on a dark night). Sea smoke goes
+        // first, lowest over the water (its flat mist, then its wisps), and carries its own light (`steamTint`).
         let sets: [(MTLRenderPipelineState, [SIMD4<Float>], Float, Float)] = [
+            (particlePipeline, mistInstances, 7, 1), (particlePipeline, steamInstances, 6, 1),
             (particlePipeline, instances, kind, brightness), (ringPipeline, ringInstances, 0, brightness),
             (particlePipeline, beadInstances, 2, brightness), (particlePipeline, streamerInstances, 3, brightness),
             (particlePipeline, fireflyInstances, 4, 2.2), (particlePipeline, crystalInstances, 5, max(0.7, brightness) * 1.6),
         ]
-        // This frame's slot in the ring holds all six sets (256-byte aligned); it grows only when too small.
+        // This frame's slot in the ring holds all eight sets (256-byte aligned); it grows only when too small.
         func aligned(_ n: Int) -> Int { (n + 255) / 256 * 256 }
         let total = sets.reduce(0) { $0 + aligned($1.1.count * MemoryLayout<SIMD4<Float>>.stride) }
         guard total > 0 else { return }
@@ -527,11 +736,12 @@ final class WeatherLayer {
         for (pipeline, items, kind, light) in sets where !items.isEmpty {
             let bytes = items.count * MemoryLayout<SIMD4<Float>>.stride
             items.withUnsafeBytes { raw in (buf.contents() + offset).copyMemory(from: raw.baseAddress!, byteCount: bytes) }
-            var u = SIMD4<Float>(aspect, kind, tilt, light)
+            // WeatherU (48 bytes): the set's params (kind 7's z is the mist's half height), then the steam's light.
+            var u = (SIMD4<Float>(aspect, kind, kind > 6.5 ? Self.steamMistHalfHeight : tilt, light), steamTint, steamGlow)
             e.setRenderPipelineState(pipeline)
             e.setVertexBuffer(buf, offset: offset, index: 0)
-            e.setVertexBytes(&u, length: MemoryLayout<SIMD4<Float>>.size, index: 1)
-            e.setFragmentBytes(&u, length: MemoryLayout<SIMD4<Float>>.size, index: 0)
+            withUnsafeBytes(of: &u) { e.setVertexBytes($0.baseAddress!, length: $0.count, index: 1) }
+            withUnsafeBytes(of: &u) { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
             e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6, instanceCount: items.count)
             offset += aligned(bytes)
         }

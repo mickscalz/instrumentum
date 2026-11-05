@@ -63,6 +63,10 @@ struct SkyControls: View {
                 .labelsHidden()
             }
 
+            if let meteors = model.meteorsTonight {
+                Text(meteors).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+
             if hasWeather {
                 Picker("Weather", selection: Binding(get: { sky.weatherMode }, set: { m in update { $0.weatherMode = m } })) {
                     Text("Random, beautiful").tag(WeatherMode.randomBeautiful)
@@ -176,6 +180,44 @@ struct SkyControls: View {
         return String(format: "%02d:%02d", minutes / 60, minutes % 60)
     }
 
+    /// The Living Sky panel's "Meteors tonight" line (spec §6.3) for the strongest shower now, or nil with none active:
+    /// "Meteors: the Leonids — peak in 13 days; the radiant rises at 01:12".
+    /// - The days to the peak count whole days still to go (truncated, so 13.76 reads "13 days": the Leonids show it
+    ///   from about 06:30 UT on 4 November). Within a day either side of it they are "at their peak tonight"; then "peak
+    ///   tomorrow" or "peaked yesterday", and "peaked N days ago" after that.
+    /// - The radiant "stays below your horizon" (it never rises here: the Perseids from Melbourne), "is up now" (10° or
+    ///   more), "rises at HH:MM" (on the sky's clock, when it next climbs through 10°), "is up all night" (it never sinks
+    ///   below 10°) or "stays low" (it rises, but never clears 10°).
+    /// - "Always a shower" is "a steady shower all night".
+    nonisolated static func meteorsTonight(_ shower: ShowerNow?) -> String? {
+        guard let s = shower else { return nil }
+        if s.code == MeteorShowers.always.code { return "Meteors: a steady shower all night" }
+        let days = s.daysToPeak.isFinite ? Int(max(-9999, min(9999, s.daysToPeak))) : 0
+        let peak: String
+        switch days {
+        case 2...: peak = "peak in \(days) days"
+        case 1: peak = "peak tomorrow"
+        case 0: peak = "at their peak tonight"
+        case -1: peak = "peaked yesterday"
+        default: peak = "peaked \(-days) days ago"
+        }
+        let radiant: String
+        if s.radiantHighest < 0 {
+            radiant = "the radiant stays below your horizon"
+        } else if s.radiantAltitude >= 10 {
+            radiant = "the radiant is up now"
+        } else if let rises = s.radiantRises, rises.isFinite {
+            let day = 24 * 60
+            let minutes = (Int((min(max(rises, -48), 48) * 60).rounded()) % day + day) % day   // 24:00 reads 00:00
+            radiant = "the radiant rises at " + String(format: "%02d:%02d", minutes / 60, minutes % 60)
+        } else if s.radiantHighest >= 10 {
+            radiant = "the radiant is up all night"
+        } else {
+            radiant = "the radiant stays low"
+        }
+        return "Meteors: the \(s.name) — \(peak); \(radiant)"
+    }
+
     static func phaseName(_ p: Double) -> String {
         switch p {
         case ..<0.03, 0.97...: return "new"
@@ -221,3 +263,18 @@ struct SkyControls: View {
         }
     }
 }
+
+/// A world's frame, with the sky it draws (its own rules applied: the lounge's has no weather and no meteors), so the
+/// canvas can read "Meteors tonight" from whichever world is showing.
+protocol SkyBearing { var sky: SkyState { get } }
+extension LakeFrame: SkyBearing {}
+extension LoungeFrame: SkyBearing {}
+extension BeachFrame: SkyBearing {}
+extension RoadFrame: SkyBearing {}
+extension CabinFrame: SkyBearing {}
+extension BedroomFrame: SkyBearing {}
+extension FjordFrame: SkyBearing {}
+extension BayFrame: SkyBearing {}
+extension TeaHouseFrame: SkyBearing {}
+extension ZenGardenFrame: SkyBearing {}
+extension SubFrame: SkyBearing {}   // Snell's window shows the sky's own meteors

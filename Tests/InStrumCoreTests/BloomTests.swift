@@ -148,6 +148,55 @@ final class BloomTests: XCTestCase {
         XCTAssertEqual(again.blooms, f.blooms)
     }
 
+    /// Deep Lights (the submarine): while time is held a note's creature is lit at its peak at once, a run's lanternfish
+    /// shoal starts a fifth of the way across at full brightness, a chord's siphonophore at its full swell, an accent's
+    /// bubbles already climbing; one more held step changes none of them. With time running, a shoal and a stream set
+    /// off at age 0 and a siphonophore swells in.
+    func testDeepLightsBloomWhenTimeIsHeld() throws {
+        XCTAssertEqual(DeepLights.shoalBloomAge, 0.3)
+        XCTAssertEqual(DeepLights.streamBloomAge, 0.8)
+        var deep = DeepLights()
+        // A run (an accent at its end), then a chord, on the notes' own clock.
+        let run: [(UInt8, Double, Float)] = [(60, 0, 0.7), (62, 0.1, 0.7), (64, 0.2, 0.7), (65, 0.3, 0.95)]
+        for (n, t, v) in run {
+            deep.noteOn(n, velocity: v, at: t)
+            deep.step(dt: 0, roles: roles)
+        }
+        for (n, t) in zip([67, 71, 74] as [UInt8], [0.6, 0.62, 0.64]) { deep.noteOn(n, velocity: 0.8, at: t) }
+        deep.step(dt: 0, roles: roles)
+        XCTAssertEqual(deep.shoals.count, 1)
+        let shoal = try XCTUnwrap(deep.shoals.first)
+        XCTAssertEqual(shoal.contour.count, 4, "the run's last note joined it")
+        XCTAssertEqual(shoal.age, DeepLights.shoalBloomAge, "the shoal starts at its bloom")
+        XCTAssertEqual(shoal.brightness, shoal.strength, accuracy: 1e-6, "at full brightness")
+        let stream = try XCTUnwrap(deep.bubbleStreams.first)
+        XCTAssertEqual(stream.age, DeepLights.streamBloomAge, "the accent's bubbles are already rising")
+        let chain = try XCTUnwrap(deep.siphonophores.first)
+        XCTAssertEqual(chain.level, 1, "the chord's siphonophore at its full swell")
+        XCTAssertEqual(chain.brightness, chain.strength, accuracy: 1e-6)
+        XCTAssertEqual(deep.creatures.count, 7)
+        XCTAssertTrue(deep.creatures.allSatisfy { abs($0.glow - $0.peak) < 1e-6 }, "every creature lit at its peak")
+        let held = deep
+        for _ in 0..<60 { deep.step(dt: 0, roles: roles) }
+        XCTAssertEqual(deep.creatures, held.creatures, "and it all holds")
+        XCTAssertEqual(deep.shoals, held.shoals)
+        XCTAssertEqual(deep.siphonophores, held.siphonophores)
+        XCTAssertEqual(deep.bubbleStreams, held.bubbleStreams)
+
+        // With time running nothing blooms.
+        let dt = 1.0 / 60
+        var running = DeepLights()
+        for (n, t, v) in run {
+            running.noteOn(n, velocity: v, at: t)
+            running.step(dt: dt, roles: roles)
+        }
+        XCTAssertTrue(running.shoals.allSatisfy { $0.age < 0.05 }, "\(running.shoals.map(\.age))")
+        XCTAssertEqual(try XCTUnwrap(running.bubbleStreams.first).age, 0, "set off at the end of its step")
+        for (n, t) in zip([67, 71, 74] as [UInt8], [0.6, 0.62, 0.64]) { running.noteOn(n, velocity: 0.8, at: t) }
+        running.step(dt: dt, roles: roles)
+        XCTAssertLessThan(try XCTUnwrap(running.siphonophores.first).level, 0.05, "swelling in over a second")
+    }
+
     /// The rule covers the chords' swells too: Glow Wake's pool, Frost Grow's flare and Curtain Lights' tense pulse
     /// bloom at their full strength while time is held, but only for a chord since the last step.
     func testChordSwellsBloomWhenTimeIsHeld() {

@@ -99,6 +99,9 @@ final class MoonlitLakeRenderer: ThemeRenderer {
         sky.horizonY = horizonY
         sky.verticalFOV = 62 + 10 * Double(lift)
         sky.update(s, quality: quality, size: size, time: time)
+        // Sea smoke rises off the lake: the water from the keys (the near shore) up to the far shore's foot (spec §6.4).
+        weather.waterBand = SIMD4(-1, keyTop, 1, horizonY)
+        weather.steamCamera = sky.camera(latitude: s.latitude, aspect: aspect)
         weather.gentle = gentle
         weather.update(s, quality: quality, size: size, dt: dt, surface: .water(horizonY: horizonY))
         let cam = sky.camera(latitude: s.latitude, aspect: aspect)

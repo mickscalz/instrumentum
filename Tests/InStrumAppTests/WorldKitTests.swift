@@ -12,7 +12,7 @@ final class WorldKitTests: XCTestCase {
         for name in ["sky_dome_vertex", "sky_dome_fragment", "weather_vertex", "weather_fragment", "ring_vertex", "ring_fragment"] {
             XCTAssertNotNil(lib.makeFunction(name: name), name)
         }
-        // The Swift rows match the MSL SkyU byte for byte, the `still` row last (the pipeline's own reflection says so).
+        // The Swift rows match the MSL SkyU byte for byte, the flash row last (the pipeline's own reflection says so).
         let d = MTLRenderPipelineDescriptor()
         d.vertexFunction = lib.makeFunction(name: "sky_dome_vertex")
         d.fragmentFunction = lib.makeFunction(name: "sky_dome_fragment")
@@ -22,7 +22,27 @@ final class WorldKitTests: XCTestCase {
         _ = try device.makeRenderPipelineState(descriptor: d, options: [.bindingInfo, .bufferTypeInfo], reflection: &reflection)
         let skyU = (reflection?.fragmentBindings ?? []).compactMap { $0 as? MTLBufferBinding }.first { $0.index == 0 }
         XCTAssertEqual(skyU?.bufferDataSize, SkyLayer.uniformCount * MemoryLayout<SIMD4<Float>>.stride, "SkyU")
-        XCTAssertEqual(SkyLayer.stillRow, SkyLayer.uniformCount - 1)
+        // Sets 11 & 12 (spec §7.2): after `still`, the six meteor slots' A, B and C rows, then the flash: 44 rows, 704
+        // bytes, still one setFragmentBytes (4 KB at most).
+        XCTAssertEqual(SkyLayer.stillRow, 24)
+        XCTAssertEqual(SkyLayer.meteorSlots, 6)
+        XCTAssertEqual(SkyLayer.meteorARow, SkyLayer.stillRow + 1)
+        XCTAssertEqual(SkyLayer.meteorBRow, SkyLayer.meteorARow + SkyLayer.meteorSlots)
+        XCTAssertEqual(SkyLayer.meteorCRow, SkyLayer.meteorBRow + SkyLayer.meteorSlots)
+        XCTAssertEqual(SkyLayer.flashRow, SkyLayer.meteorCRow + SkyLayer.meteorSlots)
+        XCTAssertEqual(SkyLayer.flashRow, SkyLayer.uniformCount - 1)
+        XCTAssertEqual(SkyLayer.uniformCount * MemoryLayout<SIMD4<Float>>.stride, 704)
+        // WeatherU: the set's params, then sea smoke's tint and glow (48 bytes, bound for every weather set).
+        let w = MTLRenderPipelineDescriptor()
+        w.vertexFunction = lib.makeFunction(name: "weather_vertex")
+        w.fragmentFunction = lib.makeFunction(name: "weather_fragment")
+        w.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
+        w.colorAttachments[1].pixelFormat = RenderStack.depthFormat
+        var weatherReflection: MTLAutoreleasedRenderPipelineReflection?
+        _ = try device.makeRenderPipelineState(descriptor: w, options: [.bindingInfo, .bufferTypeInfo], reflection: &weatherReflection)
+        let weatherU = (weatherReflection?.fragmentBindings ?? []).compactMap { $0 as? MTLBufferBinding }.first { $0.index == 0 }
+        XCTAssertEqual(weatherU?.bufferDataSize, 3 * MemoryLayout<SIMD4<Float>>.stride, "WeatherU")
+        XCTAssertEqual(MemoryLayout<(SIMD4<Float>, SIMD4<Float>, SIMD4<Float>)>.size, 48, "the rows the weather layer binds")
     }
 
     private func render(_ state: SkyState, quality: QualityLevel = .high, weather: WeatherSurface = .none, frames: Int = 1) throws -> CGImage {
@@ -489,7 +509,7 @@ final class WorldKitTests: XCTestCase {
         defer { cache.withheld = false }
         let r = try XCTUnwrap(SkyOnlyRenderer(device: device))
         XCTAssertEqual(r.sky.uniforms.count, SkyLayer.uniformCount)
-        XCTAssertEqual(SkyLayer.uniformCount, 25)
+        XCTAssertEqual(SkyLayer.uniformCount, 44)
 
         cache.withheld = true
         XCTAssertNil(r.sky.starTexture)
@@ -605,6 +625,145 @@ final class WorldKitTests: XCTestCase {
         let lit = late.fireflyInstances.map(\.w).reduce(0, +), earlier = early.fireflyInstances.map(\.w).reduce(0, +)
         XCTAssertGreaterThan(earlier, 0, "some fireflies are lit")
         XCTAssertEqual(lit, earlier, accuracy: 0.05 + 0.002 * earlier, "and every firefly blinks alike (\(lit) against \(earlier))")
+    }
+
+    // MARK: - Shooting stars (Sets 11 & 12)
+
+    /// A forced meteor across the north-facing view (darkNight's): from 24° left and 40° up to 20° right and 23° up, born
+    /// at 0 on the meteors' clock and running 0.8 s.
+    static func crossing(magnitude: Float = -1) -> Meteor {
+        Meteor(start: SkyLayer.enu(SkyDirection(azimuth: -24, altitude: 40)), end: SkyLayer.enu(SkyDirection(azimuth: 20, altitude: 23)),
+               born: 0, duration: 0.8, magnitude: magnitude)
+    }
+
+    /// A point on a meteor's great circle `s` of the way from its start to its end, `off` radians to one side of it.
+    static func onPath(_ m: Meteor, _ s: Float, off: Float = 0) -> SIMD3<Float> {
+        let pole = simd_normalize(simd_cross(m.start, m.end)), arc = acos(min(1, max(-1, simd_dot(m.start, m.end))))
+        let d = m.start * cos(s * arc) + simd_cross(pole, m.start) * sin(s * arc)
+        return simd_normalize(d + pole * off)
+    }
+
+    /// The brightest pixel within a pixel of each of nine points along a meteor's visible streak (its tail, 35–60% of
+    /// the way, up to its head at 60%), summed; `off` moves the points that far to one side.
+    private func streakLight(_ image: CGImage, sky: SkyLayer, _ m: Meteor, off: Float = 0) -> Double {
+        let l = FramePatch.luminance(image), w = image.width, h = image.height
+        var sum = 0.0
+        for i in 0..<9 {
+            let p = screenPoint(Self.onPath(m, 0.36 + 0.24 * Float(i) / 8, off: off), sky: sky, latitude: -37.8)
+            let cx = Int((p.x + 1) / 2 * Double(w)), cy = Int((1 - p.y) / 2 * Double(h))
+            var best = 0.0
+            for y in max(0, cy - 1)...min(h - 1, cy + 1) { for x in max(0, cx - 1)...min(w - 1, cx + 1) { best = max(best, l[y * w + x]) } }
+            sum += best
+        }
+        return sum
+    }
+
+    /// Spec §6.3 and §7.2: a forced meteor in a slot draws a thin streak across the sky. With its head 60% along (0.48 s
+    /// of 0.8), the points along its tail and head are ≥ 30% brighter than the same points 3° off its path (the CPU
+    /// reference render measured about 40×); the rest of the frame is the sky's own. With every slot empty (the meteor
+    /// long gone, or none at all) the rows are zero and the frame is the sky's, unchanged.
+    func testMeteorDrawsAStreakInTheSky() throws {
+        let m = Self.crossing()
+        func shot(_ meteors: [Meteor], at t: Double) throws -> (image: CGImage, sky: SkyLayer) {
+            var s = darkNight(); s.meteors = meteors; s.meteorTime = t; s.meteorFlash = 0
+            return try renderConfigured(s) { r in r.sky.viewAzimuth = 0; r.sky.horizonY = -0.33 }
+        }
+        let lit = try shot([m], at: 0.48)
+        let rows = lit.sky.uniforms
+        XCTAssertEqual(rows[SkyLayer.meteorARow].w, 0.6, accuracy: 1e-4, "the head's progress")
+        XCTAssertEqual(rows[SkyLayer.meteorBRow].w, m.headBrightness(at: 0.48), accuracy: 1e-5, "its light from Core")
+        XCTAssertEqual(rows[SkyLayer.meteorCRow].w, 0, "a head, not a train")
+        let along = streakLight(lit.image, sky: lit.sky, m), beside = streakLight(lit.image, sky: lit.sky, m, off: 3 * .pi / 180)
+        XCTAssertGreaterThanOrEqual(along, 1.3 * beside, "along the streak \(along), beside it \(beside)")
+        let gone = try shot([m], at: 5), none = try shot([], at: 5)
+        for i in 0..<SkyLayer.meteorSlots {
+            for row in [SkyLayer.meteorARow, SkyLayer.meteorBRow, SkyLayer.meteorCRow] { XCTAssertEqual(gone.sky.uniforms[row + i], .zero) }
+        }
+        XCTAssertEqual(gone.sky.uniforms[SkyLayer.flashRow], .zero)
+        XCTAssertEqual(FramePatch.difference(gone.image, none.image, x: -1...1, y: -1...1), 0, "every slot empty: the sky as it was")
+        // Away from the streak (the lower half of the frame, well clear of its glow) the meteor changes nothing.
+        XCTAssertLessThan(FramePatch.difference(lit.image, none.image, x: -1...1, y: -1...0), 0.0005)
+    }
+
+    /// Spec §6.3: clouds hide the meteors (they burn 80–100 km up). The same streak, of magnitude 0, keeps under 10% of its
+    /// clear-sky contrast (the light it adds along its path) under overcast (the CPU reference render: 0.05%).
+    func testCloudsHideMeteors() throws {
+        let m = Self.crossing(magnitude: 0)
+        var overcast = frozen(2, weather: .overcast)
+        overcast.sun = SkyDirection(azimuth: 0, altitude: -40)
+        overcast.moon = SkyDirection(azimuth: 0, altitude: -30); overcast.moonLit = 0
+        let c = SkyPalette.colours(sunAltitude: -40, cloud: overcast.cloudCover, mist: overcast.mist, moonlight: 0)
+        overcast.zenith = c.zenith; overcast.horizon = c.horizon
+        overcast.aurora = 0; overcast.halo = 0; overcast.rainbow = 0
+        XCTAssertGreaterThan(overcast.cloudCover, 0.8, "overcast")
+        func contrast(_ sky: SkyState) throws -> Double {
+            func shot(_ meteors: [Meteor]) throws -> (image: CGImage, sky: SkyLayer) {
+                var s = sky; s.meteors = meteors; s.meteorTime = 0.48; s.meteorFlash = 0
+                return try renderConfigured(s) { r in r.sky.viewAzimuth = 0; r.sky.horizonY = -0.33 }
+            }
+            let with = try shot([m]), without = try shot([])
+            return streakLight(with.image, sky: with.sky, m) - streakLight(without.image, sky: without.sky, m)
+        }
+        let clear = try contrast(darkNight()), cloudy = try contrast(overcast)
+        XCTAssertGreaterThan(clear, 0.5, "a clear sky shows it: \(clear)")
+        XCTAssertLessThan(cloudy, 0.1 * clear, "overcast hides it: \(cloudy) of \(clear)")
+    }
+
+    /// Spec §6.4: every world with open water sets its band each frame from its own geometry, and under a sea-smoke sky
+    /// its steam fills to the cap: the lake (the keys to the far shore's foot), the beach (the waterline, 11 m out from
+    /// 2 m up, to the horizon), the road (the sea in the window, from the scrub to the horizon), the fjord (the keys to the
+    /// sea end) and the bay (its waterline where its own camera puts it, to the horizon).
+    func testEveryWaterWorldSetsItsBand() throws {
+        guard let device = MTLCreateSystemDefaultDevice() else { throw XCTSkip("No Metal device") }
+        let size = CGSize(width: 640, height: 360)
+        var smoke = SkySettings(); smoke.timeMode = .frozen; smoke.frozenHour = 7; smoke.cityID = "melbourne"
+        smoke.weatherMode = .pick; smoke.weather = .seaSmoke
+        func step(_ id: String) -> (frame: Any, params: ParameterSet) {
+            let d = SceneDirector(themeID: id, state: ThemeState(), reaction: ReactionPresets.expressivePianist)
+            d.clock = { Date(timeIntervalSince1970: 1_793_000_000) }
+            d.sky.reset(settings: smoke)
+            return (d.step(dt: 1.0 / 60, t: 1.0 / 60, quality: .high), d.parameters)
+        }
+        func check(_ name: String, _ weather: WeatherLayer, horizon: Float) throws -> SIMD4<Float> {
+            let band = try XCTUnwrap(weather.waterBand, name)
+            XCTAssertTrue(WeatherLayer.usableBand(band), "\(name): \(band)")
+            XCTAssertEqual(band.w, horizon, accuracy: 1e-5, "\(name): up to the horizon")
+            XCTAssertTrue(band.x >= -1 && band.z <= 1 && band.y >= -1, "\(name): on screen \(band)")
+            XCTAssertEqual(weather.steamCount, WeatherLayer.steamCap(.high), name)
+            return band
+        }
+        let lakeStep = step(MoonlitLakeModel.id)
+        let lake = try XCTUnwrap(MoonlitLakeRenderer(device: device))
+        lake.update(try XCTUnwrap(lakeStep.frame as? LakeFrame), params: lakeStep.params, quality: .high, gentle: false, dt: 1.0 / 60, size: size)
+        let lakeBand = try check("lake", lake.weather, horizon: lake.horizonY)
+        XCTAssertEqual(lakeBand.y, -1 + 2 * Float(lakeStep.params.number("keys.height")), accuracy: 1e-5, "from the keys")
+
+        let beachStep = step(GoldenHourBeachModel.id)
+        let beach = try XCTUnwrap(GoldenHourBeachRenderer(device: device))
+        beach.update(try XCTUnwrap(beachStep.frame as? BeachFrame), params: beachStep.params, quality: .high, gentle: false, dt: 1.0 / 60, size: size)
+        let beachKeys = -1 + 2 * Float(beachStep.params.number("keys.height"))
+        let beachBand = try check("beach", beach.weather, horizon: beachKeys + (1 - beachKeys) * 0.4)
+        XCTAssertGreaterThan(beachBand.y, beachKeys + 0.05, "the sand lies between the keys and the sea")
+
+        let roadStep = step(CoastRoadModel.id)
+        let road = try XCTUnwrap(CoastRoadRenderer(device: device))
+        road.update(try XCTUnwrap(roadStep.frame as? RoadFrame), params: roadStep.params, quality: .high, gentle: false, dt: 1.0 / 60, size: size)
+        let roadBottom = -1 + 2 * Float(roadStep.params.number("keys.height")) + 0.1
+        let roadBand = try check("road", road.weather, horizon: roadBottom + (0.9 - roadBottom) * 0.62)
+        XCTAssertTrue(roadBand.x > -0.93 && roadBand.z < 0.93, "inside the window")
+        XCTAssertGreaterThan(roadBand.y, roadBottom + 0.34 + 0.09, "above the scrub")
+        XCTAssertLessThan(road.weather.steamDrift, 0, "the sea passes right to left as the car drives")
+
+        let fjordStep = step(AuroraFjordModel.id)
+        let fjord = try XCTUnwrap(AuroraFjordRenderer(device: device))
+        fjord.update(try XCTUnwrap(fjordStep.frame as? FjordFrame), params: fjordStep.params, quality: .high, gentle: false, dt: 1.0 / 60, size: size)
+        _ = try check("fjord", fjord.weather, horizon: fjord.horizonY)
+
+        let bayStep = step(BioluminescentBayModel.id)
+        let bay = try XCTUnwrap(BioluminescentBayRenderer(device: device))
+        bay.update(try XCTUnwrap(bayStep.frame as? BayFrame), params: bayStep.params, quality: .high, gentle: false, dt: 1.0 / 60, size: size)
+        let bayBand = try check("bay", bay.weather, horizon: bay.horizonY)
+        XCTAssertEqual(bayBand.y, bay.waterlineY, accuracy: 1e-4, "from the waterline, as the bay's own camera has it")
     }
 }
 
@@ -738,6 +897,55 @@ final class MoonlitLakeRendererTests: XCTestCase {
         XCTAssertGreaterThan(n, 500, "the far shore's edge is in view")
         let before = sum0 / Double(max(1, n)), after = sum1 / Double(max(1, n))
         XCTAssertGreaterThanOrEqual(after, 1.15 * before, "the pines' edge: \(before) → \(after)")
+    }
+
+    /// Spec §6.3: the meteors are in skyRadiance, so the lake mirrors them. A bright forced meteor low over the far shore
+    /// on a moonless night (with no moon to face, the lake looks north): the brightest 1% of the water across the middle
+    /// half of the view, from the keys to the far shore, is ≥ 1.5× as bright with it as without (the CPU render: 5×).
+    func testMeteorsReflectInTheLake() throws {
+        let m = Meteor(start: SkyLayer.enu(SkyDirection(azimuth: -14, altitude: 19)), end: SkyLayer.enu(SkyDirection(azimuth: 10, altitude: 9)),
+                       born: 0, duration: 0.8, magnitude: -3)
+        func shot(_ meteors: [Meteor]) throws -> (image: CGImage, renderer: MoonlitLakeRenderer) {
+            try renderLake(at: 0.5, sky: Self.night, quality: .high, width: 640, height: 360) { s in
+                s.moon = SkyDirection(azimuth: 0, altitude: -30); s.moonLit = 0
+                s.meteors = meteors; s.meteorTime = 0.48; s.meteorFlash = 0
+            }
+        }
+        let with = try shot([m]), without = try shot([])
+        let water = try XCTUnwrap(with.renderer.weather.waterBand)
+        let x = -0.5...0.5, y = Double(water.y + 0.02)...Double(with.renderer.horizonY - 0.01)
+        let lit = FramePatch.brightest(with.image, x: x, y: y, share: 0.01), dark = FramePatch.brightest(without.image, x: x, y: y, share: 0.01)
+        XCTAssertGreaterThanOrEqual(lit, 1.5 * dark, "the meteor's reflection: \(dark) → \(lit)")
+    }
+
+    /// Spec §6.4: sea smoke rises from the water band. The lake's band is its water, from the keys up to the far shore's
+    /// foot. At dawn with the steam forced to 1, the frame changes inside the band (by 0.02 on average in the CPU render)
+    /// and nowhere else: not above the steam's reach (`steamTop`, with 0.1 more for the bloom), nor over the keys below.
+    /// The low sun ahead lights the steam gold-pink.
+    func testSteamRisesFromTheWaterBand() throws {
+        // Frozen skies keep the March equinox in the city's own zone: in Melbourne (AEDT) the sun rises at about 7:24,
+        // so at 7:45 it stands about 4° up, low and ahead of the lake's view.
+        var dawn = Self.night; dawn.frozenHour = 7.75
+        func shot(_ steam: Float) throws -> (image: CGImage, renderer: MoonlitLakeRenderer) {
+            try renderLake(at: 1, sky: dawn, quality: .high, width: 640, height: 360) { s in
+                s.steam = steam; s.moon = SkyDirection(azimuth: 0, altitude: -30); s.moonLit = 0
+            }
+        }
+        let smoke = try shot(1), still = try shot(0)
+        let band = try XCTUnwrap(smoke.renderer.weather.waterBand)
+        XCTAssertEqual(band.x, -1); XCTAssertEqual(band.z, 1)
+        XCTAssertEqual(band.w, smoke.renderer.horizonY, accuracy: 1e-6, "up to the far shore's foot")
+        XCTAssertLessThan(band.y, band.w)
+        XCTAssertEqual(smoke.renderer.weather.steamCount, WeatherLayer.steamCap(.high))
+        XCTAssertEqual(still.renderer.weather.steamCount, 0, "no steam in the sky, no wisps")
+        XCTAssertGreaterThan(smoke.renderer.weather.steamGlow.x, 0.1, "the low sun ahead glows through it")
+        let top = WeatherLayer.steamTop(band: band)
+        let inside = FramePatch.difference(smoke.image, still.image, x: -1...1, y: Double(band.y)...Double(band.w))
+        let above = FramePatch.difference(smoke.image, still.image, x: -1...1, y: Double(top + 0.1)...1)
+        let below = FramePatch.difference(smoke.image, still.image, x: -1...1, y: -1...Double(band.y - 0.02))
+        XCTAssertGreaterThan(inside, 0.005, "the band: \(inside)")
+        XCTAssertLessThan(above, 0.0005, "the sky over the steam's reach: \(above)")
+        XCTAssertLessThan(below, 0.0005, "the keys: \(below)")
     }
 }
 
@@ -1283,10 +1491,11 @@ final class CoastRoadRendererTests: XCTestCase {
             XCTAssertFalse(tail[..<end].contains("pow("), fn)
         }
         // Any pow() in the new sky code takes a base that cannot be negative: none at all in the aurora, the real stars,
-        // the pillars, iridescent cloud and the rime helpers every world calls.
+        // the pillars, iridescent cloud, the rime helpers every world calls and the shooting stars (Core computes their
+        // light curves).
         for fn in ["float3 realStars(", "float3 auroraLight(", "float lightPillar(", "float fbm3c(", "float3 iridescentCloud(",
                    "bool rimeNear(", "float rimeFringe(", "void rimeKeepDeepest(", "float rimeFeather(", "float rimeEdge(",
-                   "float3 rimeColor(", "float3 rimed("] {
+                   "float3 rimeColor(", "float3 rimed(", "float3 meteorLight("] {
             let start = try XCTUnwrap(SkyShaders.common.range(of: fn), fn)
             let tail = SkyShaders.common[start.lowerBound...]
             let end = tail.range(of: "\n}\n")?.upperBound ?? tail.endIndex   // the function's closing brace (column 0)
@@ -1348,6 +1557,7 @@ final class WorldPreviewTests: XCTestCase {
             ("lake-smooth-t5", sky(hour: 22, phase: 0.55), .lite, 5),
             ("lake-ripples-t2.5", sky(hour: 22, phase: 0.55), .high, 2.5),
             ("lake-after-rain", sky(hour: 22, phase: 0.55, weather: .afterRain), .high, 5),
+            ("lake-sea-smoke", sky(hour: 7.75, phase: 0.3, weather: .seaSmoke), .high, 5),   // the sun 4° up: steam lit gold-pink
         ]
         for (name, s, q, t) in cases {
             let image = try XCTUnwrap(preview.render(themeID: MoonlitLakeModel.id, at: [t], quality: q, sky: s, mood: .serene).first)
@@ -1386,6 +1596,23 @@ final class WorldPreviewTests: XCTestCase {
             let image = try XCTUnwrap(preview.render(themeID: GoldenHourBeachModel.id, at: [t], state: state, quality: q, sky: s).first)
             try PreviewRenderer.writePNG(image, to: url.appendingPathComponent("\(name).png"))
         }
+        // Shooting stars over the sea on a moonless night, mirrored in the water (forced: a bright green-white one with
+        // a train to come, two fainter ones), placed about the way the beach faces.
+        let meteors: (inout SkyState) -> Void = { s in
+            s.moon = SkyDirection(azimuth: 0, altitude: -30); s.moonLit = 0
+            let ahead = GoldenHourBeachRenderer.targetAzimuth(s)
+            func at(_ az: Double, _ alt: Double) -> SIMD3<Float> { SkyLayer.enu(SkyDirection(azimuth: ahead + az, altitude: alt)) }
+            s.meteors = [
+                Meteor(start: at(-14, 25), end: at(8, 12), born: 9.5, duration: 0.9, magnitude: -4,
+                       colour: SIMD3(0.85, 1.0, 0.9), train: 0.8),
+                Meteor(start: at(22, 21), end: at(30, 14), born: 9.7, duration: 0.5, magnitude: 0.5),
+                Meteor(start: at(-34, 15), end: at(-40, 9), born: 9.8, duration: 0.4, magnitude: 1.5),
+            ]
+            s.meteorTime = 10; s.meteorFlash = 0.03
+        }
+        let image = try XCTUnwrap(preview.render(themeID: GoldenHourBeachModel.id, at: [5], state: follow, quality: .high,
+                                                 sky: sky(hour: 1, phase: 0.05), skyEdit: meteors).first)
+        try PreviewRenderer.writePNG(image, to: url.appendingPathComponent("beach-meteors.png"))
     }
 
     func testWriteRoadPreviews() throws {
@@ -1569,6 +1796,37 @@ final class SkyPreviewTests: XCTestCase {
             try PreviewRenderer.writePNG(image, to: url.appendingPathComponent("\(name).png"))
         }
 
+        // A meteor shower, forced (six at once, far more than a real one shows), radiating from a point above the view:
+        // heads on their way, a green fireball in its terminal flare brightening the whole sky, a train drifting.
+        var shower = night
+        let radiant = SkyLayer.enu(SkyDirection(azimuth: 18, altitude: 62))
+        /// A meteor from (azimuth, altitude), running `length` degrees straight away from the radiant.
+        func streak(_ az: Double, _ alt: Double, length: Float, born: Double, duration: Float, magnitude: Float,
+                    colour: SIMD3<Float> = SIMD3(1.0, 0.97, 0.9), train: Float = 0, flare: Bool = false) -> Meteor {
+            let start = SkyLayer.enu(SkyDirection(azimuth: az, altitude: alt))
+            let axis = simd_normalize(simd_cross(radiant, start)), l = length * .pi / 180
+            let end = simd_normalize(start * cos(l) + simd_cross(axis, start) * sin(l))
+            return Meteor(start: start, end: end, born: born, duration: duration, magnitude: magnitude, colour: colour,
+                          train: train, flare: flare, radiant: radiant)
+        }
+        let now = 20.0
+        shower.meteors = [
+            streak(-22, 32, length: 18, born: now - 0.4, duration: 0.7, magnitude: -2),
+            streak(34, 27, length: 12, born: now - 0.2, duration: 0.5, magnitude: 1),
+            streak(4, 33, length: 24, born: now - 0.62, duration: 0.7, magnitude: -5, colour: SIMD3(0.8, 1.0, 0.9), train: 0.9,
+                   flare: true),
+            streak(-38, 20, length: 10, born: now - 0.1, duration: 0.3, magnitude: 0, colour: SIMD3(0.75, 1.0, 0.85)),
+            streak(24, 18, length: 14, born: now - 3.4, duration: 0.6, magnitude: -3, train: 0.6),
+            streak(-6, 16, length: 8, born: now - 0.25, duration: 0.4, magnitude: 2.5),
+        ]
+        shower.meteorTime = now; shower.meteorFlash = 0.05
+        let showerSky = try XCTUnwrap(SkyOnlyRenderer(device: device))
+        XCTAssertTrue(showerSky.sky.awaitStars())
+        for i in 0..<10 {
+            showerSky.update(shower, quality: .high, size: CGSize(width: 1280, height: 720), dt: 1.0 / 30, time: Float(i) / 30, surface: .none)
+        }
+        try PreviewRenderer.writePNG(try XCTUnwrap(preview.capture(showerSky)), to: url.appendingPathComponent("sky-meteor-shower.png"))
+
         // Iridescent cloud: a light-cloud spell's pastel bands with the sun 14° up ahead (low enough for a cap over the
         // cells), iridescence forced to 1.
         var iridescent = state(hour: 13, phase: 0.5, weather: .lightCloud)
@@ -1734,6 +1992,35 @@ final class SnowboundCabinRendererTests: XCTestCase {
             }
             XCTAssertLessThan(Date().timeIntervalSince(start), 4, "\(q)")
         }
+    }
+
+    /// Spec §6.4: steam rises only from a world's water band. A weather layer with none draws no steam however thick the
+    /// sky's sea smoke, and its steam goes when the band does; given one it fills to its cap (40 / 90 / 150), every blob
+    /// under `steamTop`. The cabin, under a sea-smoke sky, has no open water: it never sets a band.
+    func testNoSteamWithoutAWaterBand() throws {
+        guard let device = MTLCreateSystemDefaultDevice() else { throw XCTSkip("No Metal device") }
+        let w = try XCTUnwrap(WeatherLayer(device: device))
+        var s = SkyState(); s.steam = 1; s.sun = SkyDirection(azimuth: 90, altitude: 2); s.horizon = SIMD3(0.85, 0.48, 0.3)
+        let size = CGSize(width: 640, height: 360)
+        w.update(s, quality: .high, size: size, dt: 1.0 / 60, surface: .ground(horizonY: -0.3))
+        XCTAssertNil(w.waterBand)
+        XCTAssertEqual(w.steamCount, 0); XCTAssertEqual(w.steamBlobCount, 0)
+        let band = SIMD4<Float>(-1, -0.8, 1, -0.3)
+        w.waterBand = band
+        for _ in 0..<30 { w.update(s, quality: .high, size: size, dt: 1.0 / 60, surface: .water(horizonY: -0.3)) }
+        XCTAssertEqual(w.steamCount, WeatherLayer.steamCap(.high))
+        XCTAssertGreaterThan(w.steamBlobCount, 0)
+        let top = WeatherLayer.steamTop(band: band)
+        for p in w.steamInstances { XCTAssertLessThanOrEqual(p.y + p.z, top, "a blob reaching \(p.y + p.z)") }
+        w.waterBand = nil
+        w.update(s, quality: .high, size: size, dt: 1.0 / 60, surface: .water(horizonY: -0.3))
+        XCTAssertEqual(w.steamCount, 0, "the band gone, the steam goes")
+        XCTAssertEqual([QualityLevel.lite, .high, .ultra].map { WeatherLayer.steamCap($0) }, [40, 90, 150])
+
+        let shot = try renderCabin(notes: [], at: 0.5, sky: Self.sky(hour: 7, weather: .seaSmoke))
+        XCTAssertGreaterThan(shot.frame.sky.steam, 0.9, "sea smoke in the sky")
+        XCTAssertNil(shot.renderer.weather.waterBand, "the cabin has no open water")
+        XCTAssertEqual(shot.renderer.weather.steamCount, 0)
     }
 }
 
@@ -2315,6 +2602,7 @@ extension WorldPreviewTests {
             ("fjord-smooth", sky(22, .clear, 0.1), night, .lite, 5),
             ("fjord-ripples-t2", sky(22, .clear, 0.1), night, .high, 2),
             ("fjord-warp-t7", sky(22, .clear, 0.1), warp, .high, 7),
+            ("fjord-sea-smoke", sky(22, .seaSmoke, 0.5), night, .high, 5),   // steam off the fjord, moonlit blue-grey
         ]
         for (name, s, state, q, t) in cases {
             let image = try XCTUnwrap(preview.render(themeID: AuroraFjordModel.id, at: [t], state: state, quality: q, sky: s,

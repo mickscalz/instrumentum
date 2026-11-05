@@ -39,12 +39,37 @@ final class SettingsPanelTests: XCTestCase {
         let state = ThemeState(values: ["rays": .number(0.9)], macros: [.glow: 0.4], lookPresetName: "X")
         XCTAssertEqual(VisualSettings.reset(state), ThemeState())
     }
-    /// The Advanced group once called "Night sky" is "Sky extras", and searching finds it by any of its four dials.
+    /// The Advanced group once called "Night sky" is "Sky extras", and searching finds it by any of its five dials.
     func testSkyExtrasGroupIsFoundByItsDials() {
         XCTAssertEqual(SkyExtrasSection.title, "Sky extras")
-        for search in ["", "sky extras", "Constellation", "aurora", "Iridescence", "rime", "Rime speed", "night sky"] {
+        for search in ["", "sky extras", "Constellation", "aurora", "Iridescence", "rime", "Rime speed", "night sky", "Meteors"] {
             XCTAssertTrue(SkyExtrasSection.matches(search), search)
         }
         XCTAssertFalse(SkyExtrasSection.matches("ripples"))
+    }
+    /// Sky extras' Meteors dial (spec §6.5): how many shooting stars as a multiple of a real night, 0.5…10 and 2 by
+    /// default; searching finds it as meteors or shooting stars; Reset Advanced puts it back and the looks set it.
+    func testAdvancedMeteorsDefaults() {
+        let d = SkySettings()
+        XCTAssertEqual(d.meteorRate, 2)
+        XCTAssertEqual(SkyExtrasSection.meteorRange, 0.5...10)
+        XCTAssertTrue(SkyExtrasSection.meteorRange.contains(d.meteorRate))
+        XCTAssertEqual(SkyExtrasSection.meteorLabel(d.meteorRate), "Meteors 2.0×")
+        XCTAssertEqual(SkyExtrasSection.meteorLabel(0.5), "Meteors 0.5×")
+        XCTAssertEqual(SkyExtrasSection.meteorLabel(10), "Meteors 10.0×")
+        XCTAssertEqual(SkyExtrasSection.meteorHelp, "How many shooting stars, as a multiple of a real night")
+        for search in ["meteor", "Meteors", "shooting stars", "Shooting"] {
+            XCTAssertTrue(SkyExtrasSection.matches(search), search)
+        }
+        var s = SkySettings(); s.meteorRate = 9
+        s.resetAdvanced()
+        XCTAssertEqual(s.meteorRate, 2, "Reset Advanced")
+        s.applyAdvanced(.gentle); XCTAssertEqual(s.meteorRate, 1.5, "Gentle")
+        s.applyAdvanced(.dramatic); XCTAssertEqual(s.meteorRate, 4, "Dramatic")
+        s.applyAdvanced(.dreamy); XCTAssertEqual(s.meteorRate, 2.5, "Dreamy")
+        for look in SkySettings.AdvancedPreset.allCases {
+            var t = SkySettings(); t.applyAdvanced(look)
+            XCTAssertTrue(SkyExtrasSection.meteorRange.contains(t.meteorRate), look.rawValue)
+        }
     }
 }

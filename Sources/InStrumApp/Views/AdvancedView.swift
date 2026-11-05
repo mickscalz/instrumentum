@@ -97,17 +97,21 @@ struct AllSettingsView: View {
 }
 
 /// The Living Sky's extras (every world with a sky): the constellation lines, the aurora's brightness, iridescent
-/// cloud and how fast rime frost builds and melts. The Gentle / Dramatic / Dreamy looks and Reset Advanced
-/// (Visuals → World) set these too.
+/// cloud, how fast rime frost builds and melts, and how many shooting stars fall. The Gentle / Dramatic / Dreamy looks
+/// and Reset Advanced (Visuals → World) set these too.
 struct SkyExtrasSection: View {
     @ObservedObject var model: AppModel
 
     nonisolated static let title = "Sky extras"
     /// Searching the settings finds the group by its title or any of its dials.
     nonisolated static func matches(_ search: String) -> Bool {
-        search.isEmpty || "\(title) night sky constellation lines aurora stars iridescence iridescent clouds rime speed frost"
+        search.isEmpty || "\(title) night sky constellation lines aurora stars iridescence iridescent clouds rime speed frost meteors shooting stars"
             .localizedCaseInsensitiveContains(search)
     }
+    /// The Meteors dial (spec §6.5): SkySettings.meteorRate, 0.5…10 (2 by default).
+    nonisolated static let meteorRange: ClosedRange<Double> = 0.5...10
+    nonisolated static let meteorHelp = "How many shooting stars, as a multiple of a real night"
+    nonisolated static func meteorLabel(_ rate: Double) -> String { "Meteors \(String(format: "%.1f", rate))×" }
 
     private var sky: SkySettings { model.skySettings }
     private func update(_ change: (inout SkySettings) -> Void) {
@@ -137,6 +141,11 @@ struct SkyExtrasSection: View {
                 Slider(value: Binding(get: { sky.rimeSpeed }, set: { v in update { $0.rimeSpeed = v } }), in: 0.25...4)
                 Text("How fast rime frost feathers the world in freezing fog, and melts away after").font(.caption).foregroundStyle(.secondary)
             }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(Self.meteorLabel(sky.meteorRate)).font(.callout)
+                Slider(value: Binding(get: { sky.meteorRate }, set: { v in update { $0.meteorRate = v } }), in: Self.meteorRange)
+                Text(Self.meteorHelp).font(.caption).foregroundStyle(.secondary)
+            }
         } header: {
             HStack {
                 Text(Self.title)
@@ -146,6 +155,7 @@ struct SkyExtrasSection: View {
                         let d = SkySettings()
                         s.constellationLines = d.constellationLines; s.auroraScale = d.auroraScale
                         s.iridescence = d.iridescence; s.rimeSpeed = d.rimeSpeed
+                        s.meteorRate = d.meteorRate
                     }
                 }
                 .buttonStyle(.borderless).font(.caption)

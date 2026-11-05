@@ -182,6 +182,12 @@ public struct DeepLights {
     public static let accent: Float = 0.85
     public static let streamCap = 6
     public static let streamRise: Float = 2.5, streamLife: Float = 3.5
+    /// While time is held (a step of dt 0) what a note sends blooms at once (Small Wins §4), else it would never show: a
+    /// shoal that set off since the last step starts this far into its crossing (its head a fifth of the way over, at
+    /// full brightness), a bubble stream this far into its rise (a column already climbing the glass), and a chord's
+    /// siphonophore at its full swell.
+    public static let shoalBloomAge: Float = 0.3
+    public static let streamBloomAge: Float = 0.8
 
     /// The instrument's pulse (spec §7.6), set by the world each frame: nil swims at the creatures' own pace.
     public var pulse: InstrumentPulse?
@@ -397,6 +403,15 @@ public struct DeepLights {
             release(q.note, velocity: q.velocity, at: q.t, sounding: sounding, beat: beat, reaction: reaction)
         }
         queue.removeFirst(batch)
+
+        // Time held: what this step sent blooms at once (a running step's sit at age 0, as they set off).
+        if step == 0 {
+            for i in shoals.indices where shoals[i].age == 0 {
+                shoals[i].age = Self.shoalBloomAge
+                shoals[i].brightness = Self.shoalBrightness(shoals[i])
+            }
+            for i in bubbleStreams.indices where bubbleStreams[i].age == 0 { bubbleStreams[i].age = Self.streamBloomAge }
+        }
     }
 
     /// The arp's grid this step: it stops without a pulse or after `phraseGap` with nothing from C3 up sounding; starts
@@ -530,12 +545,18 @@ public struct DeepLights {
     private mutating func ageShoals(_ dt: Float) {
         for i in shoals.indices {
             shoals[i].age += dt
-            let p = shoals[i].progress, end = Self.shoalEnd(shoals[i])
-            let entering = Self.smoothstep(0, 0.1, p)
-            let leaving = 1 - Self.smoothstep(end - 0.2, end, p)
-            shoals[i].brightness = min(1, max(0, shoals[i].strength * entering * leaving))
+            shoals[i].brightness = Self.shoalBrightness(shoals[i])
         }
         shoals.removeAll { $0.progress >= Self.shoalEnd($0) }
+    }
+
+    /// A shoal's brightness at its age: its strength, coming in over its first tenth of the crossing and going out as its
+    /// tail leaves.
+    private static func shoalBrightness(_ s: LanternShoal) -> Float {
+        let p = s.progress, end = shoalEnd(s)
+        let entering = smoothstep(0, 0.1, p)
+        let leaving = 1 - smoothstep(end - 0.2, end, p)
+        return min(1, max(0, s.strength * entering * leaving))
     }
 
     // MARK: - Chords: the siphonophore
@@ -602,7 +623,9 @@ public struct DeepLights {
             var s = siphonophores[i]
             s.age += fdt
             s.position.x += Self.siphonophoreDrift * fdt
-            if s.age < Self.chordSwell || !s.notes.isDisjoint(with: sounding) {
+            if step == 0, s.age == 0 {
+                s.level = 1   // time held: a chord since the last step swells in at once
+            } else if s.age < Self.chordSwell || !s.notes.isDisjoint(with: sounding) {
                 s.level += (1 - s.level) * swell
             } else {
                 s.level *= fade

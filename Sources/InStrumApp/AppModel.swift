@@ -560,6 +560,11 @@ public final class AppModel: ObservableObject {
         scheduleSave()   // the day-length, time and moon sliders drag this
     }
 
+    /// The Living Sky panel's "Meteors tonight" line (spec §6.3; nil with no shower active), from the sky the canvas
+    /// last drew. It changes only when the line does, so the panel redraws only then.
+    @Published public private(set) var meteorsTonight: String?
+    public func setMeteorsTonight(_ line: String?) { if line != meteorsTonight { meteorsTonight = line } }
+
     // MARK: - Ambience
 
     /// At most this often (seconds) does a world's soundscape reach the engine.

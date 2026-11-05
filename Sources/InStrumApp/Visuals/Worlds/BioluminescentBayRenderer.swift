@@ -148,6 +148,10 @@ final class BioluminescentBayRenderer: ThemeRenderer {
         var shown = s
         shown.auroraAltitude = AuroraFjordRenderer.framedAltitude(s.auroraAltitude)
         sky.update(shown, quality: quality, size: size, time: Float(frame.time))
+        // Sea smoke over the bay, from the waterline out to the horizon (spec §6.4).
+        let shore = SkyLayer.waterY(out: Self.waterline, height: Self.cameraHeight, horizonY: horizon, verticalFOV: sky.verticalFOV)
+        weather.waterBand = SIMD4(-1, shore, 1, horizon)
+        weather.steamCamera = sky.camera(latitude: s.latitude, aspect: aspect)
         weather.gentle = gentle
         weather.update(s, quality: quality, size: size, dt: dt, surface: .water(horizonY: horizon))
         let cam = sky.camera(latitude: s.latitude, aspect: aspect)

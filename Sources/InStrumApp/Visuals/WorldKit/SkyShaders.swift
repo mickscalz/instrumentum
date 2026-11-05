@@ -1,6 +1,6 @@
 /// Metal source for the Living Sky (dome, sun, moon, real and procedural stars, constellation lines, the Milky Way,
-/// the aurora, light pillars, clouds) and the weather layer (rain, snow, splash rings, drops on glass, fireflies,
-/// diamond-dust crystals). Compiled at runtime.
+/// the aurora, shooting stars, light pillars, clouds) and the weather layer (rain, snow, splash rings, drops on glass,
+/// fireflies, diamond-dust crystals, sea smoke). Compiled at runtime.
 /// Smooth-quality rules: no ray marching, at most 3 noise octaves (2 on Smooth); the real stars are one texture sample.
 enum SkyShaders {
     /// Noise, the sky uniforms and skyRadiance(): shared by the dome and by anything that reflects the sky.
@@ -72,6 +72,10 @@ enum SkyShaders {
         float4 dust;        // diamond dust, pillar, aurora hue shift (−1 cool … +1 warm), aurora glow 0…1
         float4 ripples[8];  // along the band 0…1, age (s), strength, width
         float4 still;       // iridescence 0…1, rime 0…1, the wind on screen (x right, y up: the way it blows × its strength)
+        float4 meteorA[6];  // shooting stars (spec §7.2): start direction (east-north-up), head progress 0…1 (a train: drift, °)
+        float4 meteorB[6];  // end direction, light on the stars' scale (1 = Sirius, before kRealStarGain; 0: the slot is empty)
+        float4 meteorC[6];  // colour (linear, brightest channel 1), 0 for a head … the train's age 0.001…1
+        float4 flash;       // a fireball's sky brightening (the sky × 1 + x, x ≤ 0.08), unused…
     };
     // eq0.w is 1 when the real star texture is bound (0: a 1×1 placeholder, the procedural stars carry the sky).
 
@@ -294,6 +298,84 @@ enum SkyShaders {
         return max(iri, 0.0) * min(1.0, 1.2 * lc / max(li, 1e-5));
     }
 
+    // ---------------------------------------------------------------- shooting stars (spec §6.3)
+    // Six slots (SkyU's meteorA/B/C). A head runs from its start toward its end along their great circle (A.w how far):
+    // a bright point with a tail fading over the 25% of the path behind it. A train (C.w its age, > 0) glows along the
+    // whole path, widening 1 → 3× and drifting sideways by a one-octave noise as it ages (A.w: how far, degrees). B.w is
+    // the light on the stars' scale (1 = Sirius = the real-star texture's peak, before kRealStarGain); 0 leaves the slot
+    // empty. Core computes every light curve (the sin^0.7 rise and fall, the terminal flare, the train's fade), so there
+    // is no pow here.
+
+    /// A head's light at most (HDR; Sirius is 9): a fireball's head stays a hard point under the bloom, never a ball of
+    /// light the size of the moon. Brighter heads grow their faint halo instead (up to 3×).
+    constant float kMeteorPeak = 16.0;
+    /// A train's light at most (HDR): it eases toward this (x ↦ cap·(1 − e^(−x/cap)), so faint trains keep their light),
+    /// because a line as bright as a few percent of a fireball's head would read as a laser, not a faint glow.
+    constant float kTrainPeak = 0.25;
+
+    /// The shooting stars' light along `d` (altitude `alt` > 0), dimmed by mist and cloud like the stars and faded into
+    /// the haze over the last 2° above the horizon. A slot costs one dot product where it is rejected (nearly every pixel).
+    float3 meteorLight(float3 d, float alt, constant SkyU& u) {
+        float3 sum = float3(0);
+        float w = 0.75 * max(u.weather.w, 1e-5);       // the streak's half-width: about 1.25 px across at half its peak
+        for (int i = 0; i < 6; i++) {
+            float light = u.meteorB[i].w;
+            if (light <= 0.0) continue;                 // an empty slot
+            float3 S = u.meteorA[i].xyz, E = u.meteorB[i].xyz;
+            float age = u.meteorC[i].w;
+            bool train = age > 0.0;
+            // The bound: within half the arc (plus the widest glow) of its middle. |S + E| = 2 cos(half the arc).
+            float3 mid = S + E;
+            float ml = length(mid);
+            if (ml < 1e-4) continue;
+            float ch = 0.5 * ml, sh = sqrt(max(1.0 - ch * ch, 0.0));
+            float margin = train ? 0.04 : 10.0 * w;
+            if (dot(d, mid) < ml * (ch * (1.0 - 0.5 * margin * margin) - sh * margin)) continue;
+            // Across the path (radians off its great circle) and along it (0 at the start … 1 at the end).
+            float3 pole = cross(S, E);
+            float st = length(pole);
+            if (st < 1e-6) continue;
+            pole /= st;
+            float arc = atan2(st, dot(S, E));
+            float along = atan2(dot(d, cross(pole, S)), dot(d, S)) / arc;
+            float across = dot(d, pole);
+            float3 colour = u.meteorC[i].rgb;
+            if (!train) {
+                // The head: a hard point with a faint halo; the tail: the quarter of the path behind it, fading back.
+                float p = u.meteorA[i].w;
+                float peak = min(light * kRealStarGain, kMeteorPeak);
+                float halo = 0.12 * clamp(light * kRealStarGain / kMeteorPeak, 1.0, 3.0);
+                float ds = (along - p) * arc;
+                float r2 = across * across + ds * ds;
+                float rh = 1.3 * w;
+                float head = exp(-r2 / (rh * rh)) + halo * exp(-r2 / (16.0 * rh * rh));
+                float back = p - along;
+                float tail = 0.0;
+                if (back > 0.0 && back < 0.25 && along > 0.0) {
+                    float f = 1.0 - back * 4.0;
+                    tail = 0.55 * f * f * exp(-(across * across) / (w * w));
+                }
+                sum += colour * (peak * (head + tail));
+            } else {
+                if (along < 0.0 || along > 1.0) continue;
+                float widen = 1.0 + 2.0 * age;
+                float wt = max(1.5 * w, 0.002) * widen;  // a little softer than the streak (at least 0.11°), then 1 → 3×
+                float reach = u.meteorA[i].w * 0.0174533 * age;
+                float seed = dot(S, float3(37.1, 17.3, 23.9));
+                float x = across - (vnoise3(float3(along * 3.0, seed, age * 0.7)) - 0.5) * 2.0 * reach;
+                float taper = smoothstep(0.0, 0.12, along) * (1.0 - smoothstep(0.88, 1.0, along));
+                float rise = smoothstep(0.0, 0.03, age);  // it forms as the head goes out
+                float glow = kTrainPeak * (1.0 - exp(-light * kRealStarGain / kTrainPeak));
+                sum += colour * (glow / widen * exp(-(x * x) / (wt * wt)) * taper * rise);
+            }
+        }
+        // Mist dims them as it dims the stars (and thickest low down, as the sky's own mist band lies); a cloudy sky dims
+        // them everywhere, as it does the stars (skyRadiance's clouds hide them where they are thick).
+        float mist = u.weather.x;
+        float through = (1.0 - 0.5 * mist) * (1.0 - 0.6 * mist * exp(-alt / 0.12)) * (1.0 - 0.95 * u.horizon.w);
+        return sum * (through * smoothstep(0.0, 0.035, alt));
+    }
+
     /// The sky's light in direction `d` (alt ≥ 0): gradient, sunset band, stars, Milky Way, aurora, moon, pillars,
     /// clouds, sun. `moonMask` returns how much of the moon disc covers the ray. Shared by the dome and by reflections.
     /// `stars` is the real star texture (fragment texture 0; a 1×1 placeholder while it builds, with u.eq0.w = 0).
@@ -337,6 +419,10 @@ enum SkyShaders {
         if (u.night.x > 0.001 && alt > 0.0) {
             col += auroraLight(d, u, time, octaves) * above;
         }
+
+        // Shooting stars (spec §6.3): over the stars and the aurora, under the moon and the clouds (which hide them).
+        float3 meteors = alt > 0.0 ? meteorLight(d, alt, u) : float3(0);
+        col += meteors;
 
         // Moon: a lit sphere with its phase terminator toward the sun, plus earthshine.
         float moonR = u.moonInfo.z;
@@ -447,6 +533,10 @@ enum SkyShaders {
                 cover = max(density, veil * smoothstep(0.0, 0.08, alt));
             }
             col = mix(col, cloud, cover * (1.0 - moonMask * 0.0));
+            // Shooting stars burn 80–100 km up, far above any cloud: thin cloud hides them too ((1 − cover)⁴ comes
+            // through, not the 1 − cover the mix left).
+            float clear = 1.0 - cover;
+            col = max(col - meteors * ((1.0 - moonMask) * clear * (1.0 - clear * clear * clear)), float3(0.0));
         }
 
         // Rainbows: the primary bow 42° and the secondary 51° from the point opposite the sun, a little light
@@ -466,7 +556,8 @@ enum SkyShaders {
             col = mix(col, sunCol, disc * (1.0 - 0.85 * saturate(cloudCover - 0.4)));
         }
 
-        return col;
+        // A fireball's soft brightening of the whole sky (meteorFlash, already through the sky's flash limiter).
+        return col * (1.0 + u.flash.x);
     }
 
     // ---------------------------------------------------------------- rime frost on silhouettes (spec §6.4)
@@ -556,10 +647,13 @@ enum SkyShaders {
 
     // ---------------------------------------------------------------- weather
     // instance: pos.xy (NDC), size.x (length or radius), size.y (alpha); kind: 0 rain streak, 1 snow, 2 bead on glass,
-    // 3 a ground streamer (blowing snow), 4 a firefly (radius of its soft glow), 5 a diamond-dust crystal
+    // 3 a ground streamer (blowing snow), 4 a firefly (radius of its soft glow), 5 a diamond-dust crystal, 6 one blob of a
+    // sea-smoke wisp (its radius), 7 sea smoke's thin flat mist over the water's far edge (its half width in NDC x)
     struct Particle { float4 posSize; };
-    struct WeatherU { float4 params; };   // x aspect, y kind, z tilt (dx per dy), w brightness
-    struct WeatherOut { float4 pos [[position]]; float2 uv; float alpha; float kind; };
+    // params: x aspect, y kind, z tilt (dx per dy; kind 7: the mist's half height), w brightness. Sea smoke's light (kinds 6
+    // and 7; zero for the rest): tint rgb, the sun's screen x (NDC); glow rgb (the low sun's ahead, else 0), its width.
+    struct WeatherU { float4 params; float4 tint; float4 glow; };
+    struct WeatherOut { float4 pos [[position]]; float2 uv; float alpha; float kind; float2 ndc; };
 
     vertex WeatherOut weather_vertex(uint vid [[vertex_id]], uint iid [[instance_id]],
                                      constant Particle* ps [[buffer(0)]], constant WeatherU& u [[buffer(1)]]) {
@@ -576,6 +670,8 @@ enum SkyShaders {
             offset.x /= u.params.x;
         } else if (kind > 2.5 && kind < 3.5) {
             offset = float2(q.x * p.z * 0.5, q.y * 0.0035);
+        } else if (kind > 6.5) {         // sea smoke's flat mist: as wide as the water, a thin band high
+            offset = float2(q.x * p.z, q.y * u.params.z);
         } else {
             offset = q * p.z;
             offset.x /= u.params.x;
@@ -585,6 +681,7 @@ enum SkyShaders {
         o.uv = q;
         o.alpha = p.w;
         o.kind = kind;
+        o.ndc = p.xy + offset;
         return o;
     }
 
@@ -598,6 +695,17 @@ enum SkyShaders {
             float r = length(in.uv);
             a = smoothstep(1.0, 0.3, r) * in.alpha;
             col = float3(0.95, 0.97, 1.0);
+        } else if (in.kind > 5.5) {      // sea smoke: a wisp's soft blob (6), or the thin flat mist over the far water (7)
+            if (in.kind > 6.5) {
+                float v = 1.0 - in.uv.y * in.uv.y;
+                a = v * v * (1.0 - smoothstep(0.85, 1.0, abs(in.uv.x))) * in.alpha;
+            } else {
+                float r2 = dot(in.uv, in.uv);
+                a = exp(-r2 * 2.6) * (1.0 - smoothstep(0.7, 1.0, sqrt(r2))) * in.alpha;
+            }
+            // The horizon's light (moonlit blue-grey at night), and the low sun's glow when it is ahead.
+            float gx = (in.ndc.x - u.tint.w) / max(u.glow.w, 1e-3);
+            col = u.tint.rgb + u.glow.rgb * exp(-gx * gx);
         } else if (in.kind > 4.5) {      // a diamond-dust crystal: a hard glint with a faint cross
             float r2 = dot(in.uv, in.uv);
             float spikes = exp(-in.uv.x * in.uv.x * 40.0) * exp(-in.uv.y * in.uv.y * 2.0)

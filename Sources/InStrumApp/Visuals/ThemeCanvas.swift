@@ -22,9 +22,12 @@ final class ThemeCanvas: NSObject, MTKViewDelegate {
     private var bay: BioluminescentBayRenderer?
     private var teaHouse: TeaHouseSnowRenderer?
     private var zenGarden: ZenRockGardenRenderer?
+    private var submarine: SubmarineWindowRenderer?
     private var autoQuality: AutoQuality
     private var lastTime: CFTimeInterval = 0
     private var seenVersion = -1
+    /// When the "Meteors tonight" line was last read from the sky (once a second is plenty).
+    private var meteorLineTime: CFTimeInterval = -.infinity
     private var level: QualityLevel = .lite
 
     @MainActor
@@ -98,6 +101,12 @@ final class ThemeCanvas: NSObject, MTKViewDelegate {
         model.updateAmbience(director.ambience(for: frame, at: now), at: now)
         model.noteSceneReport(director.report)
         let gentle = model.effectiveGentleVisuals
+        // The Living Sky panel's "Meteors tonight" line, from the sky this world draws (its own rules applied: the lounge
+        // has none), once a second.
+        if now - meteorLineTime >= 1 || now < meteorLineTime {
+            meteorLineTime = now
+            model.setMeteorsTonight(SkyControls.meteorsTonight((frame as? SkyBearing)?.sky.shower))
+        }
 
         let renderer: ThemeRenderer?
         if let g = frame as? GardenFrame {
@@ -148,6 +157,10 @@ final class ThemeCanvas: NSObject, MTKViewDelegate {
             if zenGarden == nil { zenGarden = ZenRockGardenRenderer(device: device) }
             zenGarden?.update(z, params: director.parameters, quality: level, gentle: gentle, dt: dt, size: size)
             renderer = zenGarden
+        } else if let w = frame as? SubFrame {
+            if submarine == nil { submarine = SubmarineWindowRenderer(device: device) }
+            submarine?.update(w, params: director.parameters, quality: level, gentle: gentle, dt: dt, size: size)
+            renderer = submarine
         } else {
             renderer = nil
         }
