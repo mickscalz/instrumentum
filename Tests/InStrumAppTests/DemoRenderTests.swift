@@ -60,10 +60,14 @@ final class DemoRenderTests: XCTestCase {
             ("zen-shakuhachi", ISD_ENGINE_ZEN_SHAKUHACHI, DemoPhrases.zenShakuhachi),
             ("reef-marimba", ISD_ENGINE_REEF_MARIMBA, DemoPhrases.reefMarimba),
             ("blue-depth", ISD_ENGINE_BLUE_DEPTH, DemoPhrases.blueDepth),
+            ("endless-rise", ISD_ENGINE_ENDLESS_RISE, DemoPhrases.endlessRise),
         ]
         var written = 0
         for (name, engine, phrase) in demos {
-            guard let audio = Self.render(engine, phrase, tail: 6) else { continue }   // engine not built yet
+            // Endless Rise's drop is Excitement's: its demo is played as the app plays it.
+            let played: (l: [Float], r: [Float])? = engine == ISD_ENGINE_ENDLESS_RISE
+                ? Self.renderPlayed(engine, phrase, tail: 6).map { (l: $0.l, r: $0.r) } : nil
+            guard let audio = played ?? Self.render(engine, phrase, tail: 6) else { continue }   // engine not built yet
             let peak = max(audio.l.map(abs).max() ?? 0, audio.r.map(abs).max() ?? 0)
             XCTAssertLessThanOrEqual(peak, 1.0, name)
             let wav = url.appendingPathComponent("\(name)-demo.wav")
@@ -198,6 +202,154 @@ final class DemoRenderTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(Double(blinking), 0.6 * Double(rises.count), "only \(blinking) of \(rises.count) sixteenths re-attack")
         let median = rises.sorted()[rises.count / 2]
         XCTAssertGreaterThanOrEqual(median, 1.5, "the median sixteenth rises \(median) dB")
+    }
+
+    /// Renders a phrase as the app plays it (Storms spec §3): frames of 1/60 s (800 samples). At each frame's start a
+    /// SceneDirector hears what was played in the frame before (as the canvas drains the keys), steps, and its cue —
+    /// Excitement's tension and drop — reaches the engine through the two calls the app makes; then the frame's MIDI
+    /// reaches the engine at its offsets, in 256-sample renders. Nil for an engine not in the Sound Core.
+    nonisolated static func renderPlayed(_ engine: ISDEngine, _ phrase: [(time: Double, message: MIDIMessage)],
+                                         tail: Double = 4) -> PlayedDemo? {
+        guard let synth = isd_synth_create(engine, rate, 512) else { return nil }
+        defer { isd_synth_destroy(synth) }
+        let director = SceneDirector(themeID: MidnightSteinwayModel.id, state: ThemeState(), reaction: ReactionPresets.expressivePianist)
+        var state = PerformanceState()
+        var heard: [PerformanceEvent] = []
+        let total = Int(((phrase.last?.time ?? 0) + tail) * rate), frame = 800, block = 256
+        var l = [Float](repeating: 0, count: total), r = [Float](repeating: 0, count: total)
+        var drops: [Double] = [], tensions: [Float] = []
+        var e = 0, i = 0
+        while i < total {
+            let t0 = Double(i) / rate
+            director.handle(heard, at: t0)
+            heard.removeAll()
+            _ = director.step(dt: 1.0 / 60, t: t0, quality: .lite)
+            let cue = director.instrumentCue
+            isd_synth_set_tension(synth, cue.tension)
+            if cue.drop { isd_synth_trigger_drop(synth); drops.append(t0) }
+            tensions.append(cue.tension)
+            let end = min(total, i + frame)
+            var j = i
+            while j < end {
+                let n = min(block, end - j)
+                while e < phrase.count, Int(phrase[e].time * rate) < j + n {
+                    let bytes = phrase[e].message.bytes
+                    bytes.withUnsafeBufferPointer { isd_synth_midi(synth, $0.baseAddress, Int32($0.count), Int32(max(0, Int(phrase[e].time * rate) - j))) }
+                    heard += state.apply(phrase[e].message, at: phrase[e].time)
+                    e += 1
+                }
+                l.withUnsafeMutableBufferPointer { lp in
+                    r.withUnsafeMutableBufferPointer { rp in isd_synth_render(synth, lp.baseAddress! + j, rp.baseAddress! + j, Int32(n)) }
+                }
+                j += n
+            }
+            i = end
+        }
+        return PlayedDemo(l: l, r: r, drops: drops, tensions: tensions, engineDrops: Int(isd_synth_debug_count(synth, ISD_DEBUG_DROPS)))
+    }
+
+    /// Endless Rise's demo, F minor at 124 (DemoPhrases.endlessRise): a minor chord held for eight bars, a figure, a
+    /// climbing line under a pressure swell, then a hard low chord, the drop, held for four bars. Played as the app plays
+    /// it, the phrase is the instrument's whole story: the pad pulses at 124 under the riser (the envelope over bars 2–4
+    /// is strongest at the beat, 124/60 Hz, between 1 and 4 Hz: 2.045 Hz on the g++ mirror); the climb gathers the
+    /// tension (the cue reaches .9 or more; 1 on the mirror) and the riser brightens (the share above 1.5 kHz up 3 dB or
+    /// more from bar 4 to bar 8; 6.1); the hard chord drops it exactly once (one cue, in the frame after the chord; the
+    /// engine takes one drop, its own hard chord, and lets the cue that follows pass); the 48 Hz thump lands with it
+    /// (25 dB or more over the half second before; 42); the riser resolves and goes (the high-passed level 2.6–3.6 s after
+    /// the drop 15 dB or more below the second before it; 24.6); and the pad pulses on alone. It renders finite and well
+    /// under full scale (0.75 on the mirror).
+    func testEndlessRiseDemoRenders() throws {
+        let phrase = DemoPhrases.endlessRise
+        let fMinor: Set<Int> = [5, 7, 8, 10, 0, 1, 3]   // F G A♭ B♭ C D♭ E♭
+        var held = Set<UInt8>(), pressure: UInt8 = 0, swell: UInt8 = 0, longest = 0.0, down: [UInt8: Double] = [:]
+        var onsets: [(t: Double, n: UInt8, v: UInt8)] = []
+        for (time, m) in phrase {
+            switch m {
+            case let .noteOn(_, n, v):
+                XCTAssertTrue(fMinor.contains(Int(n) % 12), "note \(n) is outside F minor")
+                held.insert(n); down[n] = time; onsets.append((t: time, n: n, v: v))
+            case let .noteOff(_, n, _):
+                held.remove(n)
+                if let on = down[n] { longest = max(longest, time - on) }
+            case let .channelPressure(_, p): swell = max(swell, p); pressure = p
+            case .pitchBend: XCTFail("the wheel isn't used")
+            default: break
+            }
+        }
+        XCTAssertTrue(held.isEmpty, "everything let go")
+        XCTAssertEqual(pressure, 0)
+        XCTAssertGreaterThan(swell, 80, "a real pressure swell")
+        let beat = 60.0 / 124
+        XCTAssertGreaterThan(longest, 15 * beat, "a chord held for bars")
+        XCTAssertGreaterThan(phrase.last?.time ?? 0, 20)
+        // Exactly one hard chord (three or more note-ons within 40 ms at a mean velocity of 100 or more): the drop, after
+        // the climb.
+        var hard: [Double] = []
+        for (k, o) in onsets.enumerated() {
+            let chord = onsets[k...].prefix { $0.t - o.t <= 0.040 }
+            let loud = chord.map { Double($0.v) }.reduce(0, +) / Double(chord.count)
+            if chord.count >= 3, loud >= 100, !hard.contains(where: { abs($0 - o.t) <= 0.040 }) { hard.append(o.t) }
+        }
+        XCTAssertEqual(hard.count, 1, "one hard chord: \(hard)")
+        let chordAt = hard.first ?? 0
+        let climb = onsets.filter { $0.t < chordAt && $0.t > chordAt - 8 * beat - 0.01 }.map(\.n)
+        XCTAssertGreaterThanOrEqual(Int(climb.max() ?? 0) - Int(climb.first ?? 0), 12, "a line that climbs into it")
+
+        let played = try XCTUnwrap(Self.renderPlayed(ISD_ENGINE_ENDLESS_RISE, phrase, tail: 6))
+        let l = played.l, r = played.r
+        XCTAssertTrue(l.allSatisfy { $0.isFinite } && r.allSatisfy { $0.isFinite })
+        let peak = max(l.map(abs).max() ?? 0, r.map(abs).max() ?? 0)
+        XCTAssertLessThan(peak, 0.85, "well under full scale and the limiter's 0.9")
+        XCTAssertGreaterThan(peak, 0.1)
+        let mono = zip(l, r).map { $0.0 + $0.1 }
+        func t(_ beats: Double) -> Double { (phrase.first?.time ?? 0) + beats * beat }
+        /// Mean power (dB) of `x` between two times.
+        func power(_ x: [Float], _ a: Double, _ b: Double) -> Double {
+            let i0 = max(0, Int(a * Self.rate)), i1 = min(x.count, Int(b * Self.rate))
+            var sum = 0.0
+            for k in i0..<max(i0, i1) { sum += Double(x[k]) * Double(x[k]) }
+            return 10 * log10(max(sum / Double(max(1, i1 - i0)), 1e-30))
+        }
+
+        // The pulse: the envelope (RMS every 10 ms) over bars 2–4 is strongest at the beat between 1 and 4 Hz.
+        let hop = 480
+        var envelope: [Double] = []
+        var k = Int(t(4) * Self.rate)
+        while k + hop <= Int(t(16) * Self.rate) {
+            envelope.append((mono[k..<(k + hop)].reduce(0.0) { $0 + Double($1) * Double($1) } / Double(hop)).squareRoot())
+            k += hop
+        }
+        let mean = envelope.reduce(0, +) / Double(max(1, envelope.count))
+        func strength(_ hz: Double) -> Double {
+            var re = 0.0, im = 0.0
+            for (n, v) in envelope.enumerated() {
+                let phase = 2 * Double.pi * hz * Double(n * hop) / Self.rate
+                re += (v - mean) * cos(phase); im -= (v - mean) * sin(phase)
+            }
+            return (re * re + im * im).squareRoot()
+        }
+        let strongest = stride(from: 1.0, through: 4.0, by: 0.005).max { strength($0) < strength($1) } ?? 0
+        XCTAssertEqual(strongest, 124.0 / 60, accuracy: 0.1, "the pad's pulse at 124")
+
+        // The build: the cue's tension gathers to .9 or more before the drop, and the riser brightens with it.
+        let cuedBefore = played.tensions.prefix(Int(chordAt * 60)).max() ?? 0
+        XCTAssertGreaterThanOrEqual(cuedBefore, 0.9, "the climb gathers the tension")
+        var a = DemoHighPass(1500), b = DemoHighPass(1500)
+        let high = mono.map { Float(b.process(a.process(Double($0)))) }
+        let brighter = (power(high, t(28), t(32)) - power(mono, t(28), t(32))) - (power(high, t(12), t(16)) - power(mono, t(12), t(16)))
+        XCTAssertGreaterThanOrEqual(brighter, 3, "the gathering opens the pad and leans the riser up")
+
+        // The drop, exactly once: one cue, in the frame after the chord, and one drop taken.
+        XCTAssertEqual(played.drops.count, 1, "cued \(played.drops)")
+        XCTAssertEqual(played.drops.first ?? 0, chordAt, accuracy: 2.0 / 60)
+        XCTAssertGreaterThanOrEqual(played.drops.first ?? 0, chordAt)
+        XCTAssertEqual(played.engineDrops, 1, "the riser drops once")
+        // The thump lands with it; the riser resolves and goes; the pad pulses on.
+        let thump = Self.toneDB(mono, hz: 48, from: chordAt, to: chordAt + 0.25) - Self.toneDB(mono, hz: 48, from: chordAt - 0.6, to: chordAt - 0.1)
+        XCTAssertGreaterThanOrEqual(thump, 25, "the 48 Hz thump")
+        let resolved = power(high, chordAt - 1, chordAt) - power(high, chordAt + 2.6, chordAt + 3.6)
+        XCTAssertGreaterThanOrEqual(resolved, 15, "the riser resolves and fades")
+        XCTAssertGreaterThan(power(mono, chordAt + 3, chordAt + 6), -30, "the pad plays on alone")
     }
 
     /// Renders the ambience alone (levels glide in over 2.5 s, as in the app).
@@ -410,5 +562,30 @@ final class DemoRenderTests: XCTestCase {
         XCTAssertEqual(image.width, 200)
         XCTAssertEqual(image.height, 100)
         XCTAssertGreaterThan(PreviewRenderer.stats(image).variance, 0.0005)
+    }
+}
+
+/// What `renderPlayed` hands back: the audio, when the director cued a drop (seconds), the tension it cued every
+/// frame, and how many drops the engine took.
+struct PlayedDemo {
+    var l: [Float], r: [Float]
+    var drops: [Double]
+    var tensions: [Float]
+    var engineDrops: Int
+}
+
+/// An RBJ high-pass biquad (Q 0.7071), for the demo tests' brightness.
+struct DemoHighPass {
+    var b0 = 1.0, b1 = 0.0, b2 = 0.0, a1 = 0.0, a2 = 0.0, z1 = 0.0, z2 = 0.0
+    init(_ hz: Double, q: Double = 0.7071) {
+        let w: Double = 2 * Double.pi * hz / DemoRenderTests.rate
+        let al: Double = sin(w) / (2 * q), c: Double = cos(w), a0: Double = 1 + al
+        b0 = (1 + c) / 2 / a0; b1 = -(1 + c) / a0; b2 = b0; a1 = -2 * c / a0; a2 = (1 - al) / a0
+    }
+    mutating func process(_ x: Double) -> Double {
+        let y = b0 * x + z1
+        z1 = b1 * x - a1 * y + z2
+        z2 = b2 * x - a2 * y
+        return y
     }
 }

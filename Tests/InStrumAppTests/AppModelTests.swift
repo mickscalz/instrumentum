@@ -1543,4 +1543,172 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(PatchLibrary.defaultPatch(for: .feltGlass).displayName, "Felt Glass · after \"Come Back to Earth\"")
         XCTAssertEqual(Patch(id: "x", name: "Plain", engine: .feltGlass, values: [:]).displayName, "Plain")
     }
+
+    // MARK: - Endless Rise: Excitement's tension and drop reach the engine (Storms spec §3, §4.1)
+
+    /// The model in front of a real Sound Core (offline rendering, 48 kHz), Endless Rise chosen as a player chooses it,
+    /// and a director standing in for the canvas.
+    private func endlessRiseRig() async throws -> (AppModel, AudioEngine, SceneDirector) {
+        let audio = AudioEngine(manualRendering: true, manualSampleRate: 48_000)
+        try audio.start()
+        let m = AppModel(engine: audio, store: store, launchGuard: LaunchGuard(directory: dir),
+                         presets: PresetStore(directory: dir.appendingPathComponent("Presets")))
+        let rise = try XCTUnwrap(BuiltInCatalog.instruments.first { $0.name == "Endless Rise" })
+        await m.choose(rise)
+        let director = SceneDirector(themeID: MidnightSteinwayModel.id, state: ThemeState(), reaction: ReactionPresets.expressivePianist)
+        return (m, audio, director)
+    }
+
+    /// Frame `n` as the canvas runs it (1/60 s): what the keys played since the last frame reaches the director, it steps,
+    /// its cue reaches the instrument through the model, and the frame's audio renders (800 samples). Returns the cue.
+    @discardableResult
+    private func frame(_ m: AppModel, _ audio: AudioEngine, _ d: SceneDirector, _ n: Int) throws -> InstrumentCue {
+        let t = Double(n) / 60
+        d.handle(m.drainEvents(), at: t)
+        _ = d.step(dt: 1.0 / 60, t: t, quality: .lite)
+        m.cueInstrument(d.instrumentCue)
+        _ = try audio.renderOffline(frames: 800)
+        return d.instrumentCue
+    }
+
+    /// The seeded performance both tests play: a line climbing a semitone every eighth of a second from C3 (alternately 7
+    /// and 8 frames apart), each note let go 0.1 s later. The notes due at frame `i` of it.
+    private func climb(at i: Int) -> (on: [UInt8], off: [UInt8]) {
+        var on: [UInt8] = [], off: [UInt8] = []
+        for k in 0..<80 {
+            let start = Int(Double(k) * 7.5)
+            if start == i { on.append(UInt8(48 + k)) }
+            if start + 6 == i { off.append(UInt8(48 + k)) }
+        }
+        return (on, off)
+    }
+
+    /// Excitement's tension reaches the engine (Storms spec §3, §4.1; the plan's ruling: atomics set from the step, read
+    /// once per control block), through the model, as the canvas hands it over every frame:
+    /// - with build and drop on (the default), the player's pressure only adds its 0.3: aftertouch .5 reads back .15, and
+    ///   the director's tension for the instrument and the world says the same;
+    /// - with it off, aftertouch is the tension: the model hands the engine 0.7 of it and the engine adds its own 0.3, so
+    ///   .5 reads back .5;
+    /// - with it on again, the seeded climb (mf, no big moment) builds tension to .9 (2.6 s in on the mirror), and within
+    ///   two steps of the director reporting .9 the engine's read-back is at least .85 (.889 on that very step on the
+    ///   g++ mirror, which follows these frames exactly).
+    func testTensionReachesTheEngine() async throws {
+        let (m, audio, d) = try await endlessRiseRig()
+        XCTAssertEqual(m.status, .playing(instrumentName: "Endless Rise"))
+        let unit = try XCTUnwrap(audio.loadedBuiltIn)
+        XCTAssertEqual(unit.engine, .endlessRise)
+        XCTAssertEqual(m.builtInPatch?.id, "endless-rise", "Supercell, the default")
+        var n = 0
+        // Build and drop on: the pressure adds its 0.3.
+        m.handleMIDI(bytes: [0xD0, 64], time: 0)
+        for _ in 0..<30 { try frame(m, audio, d, n); n += 1 }
+        let p: Float = 64.0 / 127
+        XCTAssertTrue(d.excitementSettings.buildAndDrop)
+        XCTAssertEqual(d.pressure, p, accuracy: 1e-6)
+        XCTAssertEqual(d.instrumentCue.tension, 0, accuracy: 1e-6, "no tension of Excitement's own yet")
+        XCTAssertEqual(d.instrumentTension, 0.3 * p, accuracy: 1e-4)
+        XCTAssertEqual(unit.tensionInUse, 0.3 * p, accuracy: 0.02, "the engine adds 0.3 × the pressure itself")
+        // Build and drop off: aftertouch is the tension.
+        d.excitementSettings.buildAndDrop = false
+        for _ in 0..<30 { try frame(m, audio, d, n); n += 1 }
+        XCTAssertEqual(d.instrumentCue.tension, 0.7 * p, accuracy: 1e-4, "0.7 of it from the host…")
+        XCTAssertEqual(d.instrumentTension, p, accuracy: 1e-4)
+        XCTAssertEqual(unit.tensionInUse, p, accuracy: 0.02, "…and the engine's own 0.3 make the pressure itself")
+        XCTAssertFalse(d.instrumentCue.drop)
+        // Let go, build and drop on again: nothing.
+        m.handleMIDI(bytes: [0xD0, 0], time: Double(n) / 60)
+        d.excitementSettings.buildAndDrop = true
+        for _ in 0..<30 { try frame(m, audio, d, n); n += 1 }
+        XCTAssertLessThan(unit.tensionInUse, 0.01)
+        // The climb: the tension gathers, and the engine follows within two steps of the director.
+        var reached: Int?, followed: Int?, moments = 0
+        for i in 0..<480 {
+            let due = climb(at: i)
+            for note in due.off { m.handleMIDI(bytes: [0x80, note, 0], time: Double(n) / 60) }
+            for note in due.on { m.handleMIDI(bytes: [0x90, note, 76], time: Double(n) / 60) }
+            try frame(m, audio, d, n); n += 1
+            if d.excitementFrame.moment != nil { moments += 1 }
+            if reached == nil, d.excitementFrame.tension >= 0.9 { reached = i }
+            if let r = reached, unit.tensionInUse >= 0.85 { followed = i - r; break }
+        }
+        let r = try XCTUnwrap(reached, "the climb gathers the tension to .9")
+        XCTAssertLessThan(Double(r) / 60, 5, "within 5 s of climbing (2.6 s on the mirror)")
+        let steps = try XCTUnwrap(followed, "the engine follows")
+        XCTAssertLessThanOrEqual(steps, 2, "within two steps")
+        XCTAssertEqual(moments, 0, "a climb at mf is no big moment")
+        XCTAssertEqual(d.instrumentCue.tension, d.excitementFrame.tension, accuracy: 1e-6, "the cue is Excitement's tension")
+        XCTAssertEqual(d.instrumentTension, d.excitementFrame.tension, accuracy: 1e-6, "with no pressure the world's number is the same")
+    }
+
+    /// Excitement's drop reaches the engine, once (Storms spec §4.1; review focus 2), as the canvas hands it over:
+    /// - heard by the director alone, so the engine's own hard-chord rule can't take it: the climb gathers tension past .7,
+    ///   then a hard chord is the drop. The director cues it on that one step, the world's frame carries it (a drop moment,
+    ///   drop 1), and the engine has taken it by the end of the step (one drop). A second hard chord 1 s later (inside
+    ///   Excitement's cooldown) cues nothing, and a forced second trigger 0.5 s after the first is ignored by the engine:
+    ///   still one drop 4 s later.
+    /// - played on the keys, heard by both: the engine takes the hard chord itself, at once, and the cue in the same step
+    ///   is ignored: one drop.
+    func testDropReachesTheEngine() async throws {
+        do {
+            let (m, audio, d) = try await endlessRiseRig()
+            let unit = try XCTUnwrap(audio.loadedBuiltIn)
+            var n = 0, cued = 0
+            for i in 0..<480 {
+                let due = climb(at: i)
+                let offs = due.off.map { PerformanceEvent.noteOff(note: $0) }
+                let ons = due.on.map { PerformanceEvent.noteOn(note: $0, velocity: 0.6) }
+                d.handle(offs + ons, at: Double(n) / 60)
+                if try frame(m, audio, d, n).drop { cued += 1 }
+                n += 1
+                if d.excitementFrame.tension >= 0.7 { break }
+            }
+            XCTAssertGreaterThanOrEqual(d.excitementFrame.tension, 0.7, "the climb gathers the tension")
+            XCTAssertEqual(cued, 0)
+            XCTAssertEqual(unit.dropsTaken, 0)
+            // The hard chord, heard by the director alone.
+            d.handle([.noteOn(note: 41, velocity: 1), .noteOn(note: 48, velocity: 1), .noteOn(note: 53, velocity: 1)], at: Double(n) / 60)
+            let cue = try frame(m, audio, d, n)
+            n += 1
+            XCTAssertTrue(cue.drop, "the director cues the drop on the step it lands")
+            if cue.drop { cued += 1 }
+            XCTAssertEqual(d.excitementFrame.moment?.isDrop, true)
+            XCTAssertGreaterThan(d.excitementFrame.drop, 0.99, "the world's frame carries it")
+            XCTAssertEqual(unit.dropsTaken, 1, "the engine has taken it by the end of the step")
+            for j in 1...240 {
+                if j == 60 {
+                    d.handle([.noteOn(note: 43, velocity: 1), .noteOn(note: 50, velocity: 1), .noteOn(note: 55, velocity: 1)], at: Double(n) / 60)
+                }
+                if try frame(m, audio, d, n).drop { cued += 1 }
+                n += 1
+                if j == 30 { m.cueInstrument(InstrumentCue(tension: 0, drop: true)) }   // a forced second drop, 0.5 s after
+            }
+            XCTAssertEqual(cued, 1, "Excitement's cooldown holds the second chord back")
+            XCTAssertEqual(unit.dropsTaken, 1, "and the engine ignores a second drop within its 2.5 s")
+        }
+        do {
+            let (m, audio, d) = try await endlessRiseRig()
+            let unit = try XCTUnwrap(audio.loadedBuiltIn)
+            var n = 0, cued = 0
+            for i in 0..<480 {
+                let due = climb(at: i)
+                for note in due.off { m.handleMIDI(bytes: [0x80, note, 0], time: Double(n) / 60) }
+                for note in due.on { m.handleMIDI(bytes: [0x90, note, 76], time: Double(n) / 60) }
+                if try frame(m, audio, d, n).drop { cued += 1 }
+                n += 1
+                if d.excitementFrame.tension >= 0.7 { break }
+            }
+            XCTAssertEqual(unit.dropsTaken, 0)
+            for note: UInt8 in [41, 48, 53] { m.handleMIDI(bytes: [0x90, note, 127], time: Double(n) / 60) }
+            if try frame(m, audio, d, n).drop { cued += 1 }
+            n += 1
+            XCTAssertEqual(cued, 1, "the director cues it")
+            XCTAssertEqual(unit.dropsTaken, 1, "the engine takes its own hard chord and lets the cue pass")
+            for _ in 0..<180 {
+                if try frame(m, audio, d, n).drop { cued += 1 }
+                n += 1
+            }
+            XCTAssertEqual(cued, 1)
+            XCTAssertEqual(unit.dropsTaken, 1, "one drop")
+        }
+    }
 }

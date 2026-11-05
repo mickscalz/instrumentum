@@ -327,6 +327,149 @@ final class InspiredByCardTests: XCTestCase {
         }
     }
 
+    /// The credit for "FADE" (Storms spec §2, §12), exactly: words and a link only. Its tempo is the felt pulse, 124,
+    /// until Michael taps it; it claims no key until one is heard, so the liner notes leave the key out.
+    func testFadeCredit() {
+        let c = CreditLibrary.fade
+        XCTAssertEqual(c.id, "fade")
+        XCTAssertEqual(c.song, "FADE")
+        XCTAssertEqual(c.artist, "Kanye West")
+        XCTAssertEqual(c.album, "The Life of Pablo")
+        XCTAssertEqual(c.year, 2016)
+        XCTAssertEqual(c.trackNumber, 18)
+        XCTAssertEqual(c.key, "", "no key claimed until it is heard")
+        XCTAssertEqual(c.tempoBPM, 124)
+        XCTAssertEqual(c.line, "A relentless pulse under a rise that never resolves.")
+        XCTAssertEqual(CreditLibrary.credit(id: "fade"), c)
+        XCTAssertTrue(CreditLibrary.all.contains(c))
+        XCTAssertEqual(c.pulsePeriod, 60.0 / 124, accuracy: 1e-12)
+        // Words and a link only: a credit holds its words and nothing else (no artwork, no images, no lyrics).
+        XCTAssertEqual(Mirror(reflecting: c).children.compactMap(\.label),
+                       ["id", "song", "artist", "album", "year", "trackNumber", "key", "tempoBPM", "line"])
+        // Listen finds it with a Spotify search: nothing of the record is hosted or shown here.
+        XCTAssertEqual(ListenLink.spotifyApp(for: c).absoluteString, "spotify:search:Kanye%20West%20FADE")
+        XCTAssertEqual(ListenLink.spotifyWeb(for: c).absoluteString, "https://open.spotify.com/search/Kanye%20West%20FADE")
+        // Endless Rise's presets carry it.
+        for p in PatchLibrary.patches(for: .endlessRise) { XCTAssertEqual(p.credit, c, p.id) }
+        // The card says it in words: the song, the artist, the album and its year, and the liner notes without a key.
+        let card = InspiredByCard(credit: c)
+        XCTAssertEqual(card.words.kicker, "INSPIRED BY")
+        XCTAssertEqual(card.words.title, "FADE")
+        XCTAssertEqual(card.words.subtitle, "Kanye West · The Life of Pablo · 2016")
+        XCTAssertEqual(card.words.linerNotes, "TRACK 18 · 124 BPM")
+        XCTAssertEqual(card.words.line, c.line)
+        XCTAssertEqual(card.words.listen, c)
+        XCTAssertEqual(card.words.accessibility,
+                       "Inspired by FADE by Kanye West, The Life of Pablo, 2016. A relentless pulse under a rise that never resolves.")
+        // Every other card keeps its key in its liner notes.
+        XCTAssertEqual(InspiredByCard(credit: CreditLibrary.underwater).words.linerNotes, "F♯ minor · TRACK 7 · 118 BPM")
+        for other in CreditLibrary.all where other.id != c.id {
+            XCTAssertTrue(InspiredByCard(credit: other).words.linerNotes?.hasPrefix(other.key + " · TRACK") ?? false, other.id)
+        }
+    }
+
+    /// The circular distance between two turns (0…0.5).
+    private func turnDistance(_ a: Double, _ b: Double) -> Double {
+        let d = abs(a - b).truncatingRemainder(dividingBy: 1)
+        return min(d, 1 - d)
+    }
+
+    /// The "FADE" card is original abstract art (nothing from the record, its artwork or its video): a ring of storm cloud
+    /// seen from beneath and afar, turning round a green core over a dark plain, a lit hail shaft falling from it. Its
+    /// easter eggs: the ring turns once a bar at 124 (four beats of 60/124 s, the card's breath); the core is green,
+    /// (0.35, 0.55, 0.40), and swells once a bar; the pad's pulse dims the ring's lit edge on every beat, as the engine
+    /// ducks the pad; and eight bands of inflow (the riser's eight octaves) close in on the core for ever, one band's
+    /// place a bar, fading in at the ring and out at the core on the riser's window, so they never arrive. The whole
+    /// picture repeats exactly once a bar, and looks like no other card.
+    func testFadeCardEasterEggs() throws {
+        let credit = CreditLibrary.fade
+        let art = try XCTUnwrap(CardArt.art(for: credit.id))
+        XCTAssertEqual(art, .fade)
+        XCTAssertFalse(art.isPlace)
+        XCTAssertFalse(art.titleCase, "FADE is set in capitals already")
+        let beat = 60.0 / 124, bar = 4 * beat
+        XCTAssertEqual(art.pulse(for: credit), beat, accuracy: 1e-12)
+        XCTAssertEqual(InspiredByCard(credit: credit).pulse, beat, accuracy: 1e-12)
+        for c in CreditLibrary.all where c.id != credit.id { XCTAssertNotEqual(CardArt.art(for: c.id), art, c.id) }
+
+        // The ring turns once a bar: a whole turn in four beats, half in two, a quarter in one.
+        XCTAssertEqual(CardArt.fadeBeatsPerTurn, 4)
+        for t in [0.0, 0.37, 1.9, 7.77] {
+            let a = CardArt.fadeTurn(at: t, pulse: beat)
+            XCTAssertTrue(a >= 0 && a < 1, "\(a)")
+            XCTAssertEqual(turnDistance(a, CardArt.fadeTurn(at: t + bar, pulse: beat)), 0, accuracy: 1e-9, "a bar later it is where it was")
+            XCTAssertEqual(turnDistance(a, CardArt.fadeTurn(at: t + bar / 2, pulse: beat)), 0.5, accuracy: 1e-9)
+            XCTAssertEqual(turnDistance(a, CardArt.fadeTurn(at: t + beat, pulse: beat)), 0.25, accuracy: 1e-9)
+        }
+
+        // The core is green, and swells once a bar: full on the downbeat, settled at the half bar.
+        XCTAssertEqual(CardArt.fadeCore.red, 0.35)
+        XCTAssertEqual(CardArt.fadeCore.green, 0.55)
+        XCTAssertEqual(CardArt.fadeCore.blue, 0.40)
+        XCTAssertEqual(CardArt.fadeBreath(at: 0, pulse: beat), 1, accuracy: 1e-9)
+        XCTAssertEqual(CardArt.fadeBreath(at: bar / 2, pulse: beat), 0, accuracy: 1e-9)
+        for t in [0.2, 1.1, 5.0] {
+            XCTAssertEqual(CardArt.fadeBreath(at: t, pulse: beat), CardArt.fadeBreath(at: t + bar, pulse: beat), accuracy: 1e-9)
+        }
+
+        // The pad's pulse: the lit edge dims straight down on every beat and is back by 60% of it.
+        for b in 1...4 {
+            let on = Double(b) * beat
+            XCTAssertEqual(CardArt.fadePump(at: on + 1e-6, pulse: beat), 0.55, accuracy: 1e-3, "down on beat \(b)")
+            XCTAssertEqual(CardArt.fadePump(at: on - 1e-6, pulse: beat), 1, accuracy: 1e-9, "full just before it")
+            XCTAssertEqual(CardArt.fadePump(at: on + 0.6 * beat, pulse: beat), 1, accuracy: 1e-9, "back by 60% of the beat")
+            XCTAssertEqual(CardArt.fadePump(at: on + 0.3 * beat, pulse: beat), 1 - 0.45 * 0.25, accuracy: 1e-9)
+        }
+
+        // Eight bands close in on the core for ever: a bar later the eight are where they were; a moment later each is
+        // further in; they fade in at the ring and out at the core.
+        XCTAssertEqual(CardArt.fadeBandCount, 8)
+        for t in [0.1, 3.3] {
+            let now = CardArt.fadeBands(at: t, pulse: beat)
+            let later = CardArt.fadeBands(at: t + bar, pulse: beat)
+            let soon = CardArt.fadeBands(at: t + bar / 8, pulse: beat)
+            XCTAssertEqual(now.count, 8)
+            XCTAssertEqual(later.count, 8)
+            XCTAssertEqual(soon.count, 8)
+            guard now.count == 8, later.count == 8, soon.count == 8 else { continue }
+            for j in 0..<8 {
+                XCTAssertEqual(now[j].radius, later[j].radius, accuracy: 1e-9)
+                XCTAssertEqual(now[j].opacity, later[j].opacity, accuracy: 1e-9)
+                XCTAssertEqual(turnDistance(now[j].turn, later[j].turn), 0, accuracy: 1e-9)
+                XCTAssertLessThan(soon[j].radius, now[j].radius, "band \(j) closes in")
+                XCTAssertTrue(now[j].radius > 0 && now[j].radius <= 1 && now[j].opacity >= 0 && now[j].opacity <= 1)
+            }
+            XCTAssertTrue(zip(now, now.dropFirst()).allSatisfy { $0.radius > $1.radius }, "outermost first")
+        }
+        let start = CardArt.fadeBands(at: 0, pulse: beat)
+        XCTAssertEqual(start.first?.opacity ?? 1, 0, accuracy: 1e-9, "a band fades in at the ring")
+        XCTAssertEqual(start[4].opacity, 1, accuracy: 1e-9, "full half way in")
+
+        // The picture: it draws and moves; it repeats exactly once a bar; its core is green; it looks like no other card.
+        let a = try XCTUnwrap(Self.render(credit, at: 0.4))
+        let stats = PreviewRenderer.stats(a)
+        XCTAssertGreaterThan(stats.meanLuminance, 0.05)
+        XCTAssertGreaterThan(stats.variance, 0.001)
+        let barLater = try XCTUnwrap(Self.render(credit, at: 0.4 + bar))
+        let again = PreviewRenderer.difference(a, barLater)
+        XCTAssertLessThan(again, 0.002, "a bar later the card is as it was")
+        let halfBar = try XCTUnwrap(Self.render(credit, at: 0.4 + bar / 2))
+        let moved = PreviewRenderer.difference(a, halfBar)
+        if moved <= 0.003 { XCTFail("half a bar later the FADE card moved only \(moved)") }
+        let ring = CardArt.fadeRing
+        let cx = 2 * Double(ring.x) - 1, cy = 1 - 2 * Double(ring.y)
+        let core = FramePatch.meanRGB(a, x: (cx - 0.04)...(cx + 0.04), y: (cy - 0.04)...(cy + 0.04))
+        XCTAssertGreaterThan(core.y - core.x, 0.08, "the core is green: \(core)")
+        XCTAssertGreaterThan(core.y - core.z, 0.05, "the core is green: \(core)")
+        XCTAssertGreaterThan(core.y, 0.4, "and lit: \(core)")
+        let mine = try XCTUnwrap(Self.render(credit, at: 1.0))
+        for c in CreditLibrary.all where c.id != credit.id {
+            let other = try XCTUnwrap(Self.render(c, at: 1.0), c.id)
+            let d = PreviewRenderer.difference(mine, other)
+            if d <= 0.02 { XCTFail("the FADE card and \(c.id) differ by only \(d)") }
+        }
+    }
+
     /// "Stay" is felt in half time, so its card breathes at 67, not 134.
     func testStayCardBreathesAtHalfTempo() throws {
         let art = try XCTUnwrap(CardArt.art(for: CreditLibrary.stay.id))
