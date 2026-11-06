@@ -502,7 +502,7 @@ final class LightningPlainsRenderer: ThemeRenderer {
             }
             let spacing = max(0.02, z * pixelAngle * 6)
             propList.append(Prop(depth: z, a: SIMD4(-1.05, y0, 1.05, y1), b: SIMD4(0, z, grassH, Float(k) * 7.31),
-                                 c: lean, d: SIMD4(spacing, 0, sway, z < 4 ? 0.14 : 0.05)))
+                                 c: lean, d: SIMD4(spacing, 0, sway, z < 4 ? 0.07 : 0.04)))
             grassRowCount += 1
         }
 

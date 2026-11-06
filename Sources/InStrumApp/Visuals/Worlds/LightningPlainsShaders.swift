@@ -159,16 +159,15 @@ enum LightningPlainsShaders {
                 turret = pl_dmin(turret, pl_circle(at, float2(-0.3 * w, crown - (0.15 + 0.2 * hh.x) * w), 0.72 * w), 0.2 * w);
                 turret = pl_dmin(turret, pl_circle(at, float2(0.23 * w, crown + 0.05 * w), (0.88 + 0.15 * hh.z) * w), 0.2 * w);
                 turret = pl_dmin(turret, pl_circle(at, float2(0.78 * w, crown - (0.25 + 0.2 * hh.y) * w), 0.64 * w), 0.2 * w);
-                // The flanking line: a younger turret stepping down beside the grown towers, upwind (a column with a
-                // dome on top).
+                // The flanking line: a younger turret stepping down beside the grown towers, upwind: a dome on a
+                // broader, lower one.
                 if (anvilled) {
                     float3 h = hash33(float3(b.z, 2.0, 6.3));
                     float cx = -w * (0.95 + 0.2 * h.x) + 0.5 * lean;
                     float top = base + (crown - base) * (0.5 + 0.12 * h.y);
                     float r = w * (0.38 + 0.08 * h.z);
-                    float2 v = at - float2(cx, clamp(alt, base, top - 0.3 * r));
-                    float l = max(length(v), 1e-5);
-                    turret = pl_dmin(turret, float3(l - r, v / l), 0.3 * w);
+                    turret = pl_dmin(turret, pl_circle(at, float2(cx + 0.1 * w, base + 0.35 * (top - base)), 1.25 * r), 0.3 * w);
+                    turret = pl_dmin(turret, pl_circle(at, float2(cx - 0.05 * w, top - r), r), 0.3 * w);
                 }
             }
             float3 tower = turret;
@@ -268,25 +267,30 @@ enum LightningPlainsShaders {
         float2 nb, ns = float2(0.0), nt = float2(0.0);
         float hb = pl_billow(q + float2(drift, 0.0), 1.5 * s, 3.1, nb);
         float hs = pl_billow(pl_turn(q, 0.866, 0.5) + 17.3, 0.55 * s, 8.7, ns);
-        float ht = octaves > 2 ? pl_billow(pl_turn(q, 0.906, -0.423) + 5.1, 0.22 * s, 2.9, nt) : 0.6;
         // Knobbly crowns, softer rain-washed flanks, a gentle anvil and a low, lumpy shelf.
         float crisp = smoothstep(0.3, 0.8, rel) * (1.0 - anvil) * (1.0 - shelf);
         float amp = mix(1.0, 0.25, anvil) * mix(0.8, 1.2, crisp) * mix(1.0, 0.6, shelf);
+        // Clear of the cloud whatever the finest billows, wisps and fibres do: done.
+        if (-e + amp * s * (0.75 * (hb - 0.45) + 0.36 * (hs - 0.45) + 0.1) + 0.6 * s < 0.0) { st.d = e; return st; }
+        float ht = octaves > 2 ? pl_billow(pl_turn(q, 0.906, -0.423) + 5.1, 0.22 * s, 2.9, nt) : 0.6;
         float bump = 0.75 * (hb - 0.45) + 0.36 * (hs - 0.45) + 0.18 * (ht - 0.45);
         float wisp = vnoise3(float3((q.x - drift) / (0.5 * s), q.y / (0.5 * s), 1.9)) - 0.5;
-        float fibre = vnoise3(float3((q.x - 2.5 * drift) / (3.2 * s), q.y / (0.2 * s) + 0.12 * q.x / s, 5.3)) - 0.5;
+        float fibre = vnoise3(float3((q.x - 2.5 * drift) / (3.2 * s), q.y / (0.13 * s) + 0.12 * q.x / s, 5.3)) - 0.5;
         // The base's dark underside (seen in depth from its near edge back), its far edge ragged with scud.
         float front = p.storm.w;
         float scud = vnoise3(float3(q.x / (0.7 * s), q.y / (0.2 * s), 7.7)) - 0.5;
         st.under = smoothstep(front + 0.1 * s, front - 0.3 * s, alt + 0.5 * s * scud) * (1.0 - anvil);
-        float depth = -e + amp * s * bump + s * (mix(0.22, 0.12, crisp) * (1.0 - anvil) * wisp + 0.38 * anvil * fibre)
+        float ends = abs(outward.x);
+        float depth = -e + amp * s * bump + s * (mix(0.22, 0.12, crisp) * (1.0 - anvil) * wisp
+                                                 + mix(0.22, 0.55, ends) * anvil * fibre)
                       + st.under * s * 0.5 * scud;
         float aa = toDeg(p.view.y);
-        float feather = s * mix(mix(0.2, 0.07, crisp), 0.6, anvil) * mix(1.0, 0.55, near) + 0.6 * aa;
+        float feather = s * mix(mix(0.2, 0.07, crisp), mix(0.22, 0.75, ends), anvil) * mix(1.0, 0.55, near) + 0.6 * aa;
         st.a = smoothstep(-0.5 * aa, feather, depth);
         st.d = -depth;
         st.thick = saturate(depth / (1.3 * s));
         float t = 1.0 - saturate(depth / (mix(1.6, 1.0, anvil) * s));
+        t *= 1.0 - 0.55 * anvil;
         float3 mass = float3(outward * t, sqrt(saturate(1.0 - t * t)));
         float2 lobes = (nb * 0.75 + pl_turn(ns, 0.866, -0.5) * 0.32 + pl_turn(nt, 0.906, 0.423) * 0.16) * amp;
         st.n = normalize(mass + float3(lobes, 0.0));
@@ -345,8 +349,10 @@ enum LightningPlainsShaders {
         float3 col = sun * (1.25 * direct * fibres + (1.0 - 0.7 * st.anvil) * rim + 1.2 * lining);
         float sunLum = dot(col, float3(0.2126, 0.7152, 0.0722));
         float skyward = 0.5 + 0.5 * st.n.y;
-        float shaded = mix(0.45, 1.0, smoothstep(0.0, 0.6, st.rel)) * mix(1.0, 0.75, st.shelf) * mix(1.0, 0.3, st.under);
-        col += p.ambient.rgb * (0.9 * skyward * st.ao * shaded * (0.85 + 0.3 * patch) * (1.0 - 0.5 * saturate(2.0 * sunLum)));
+        skyward = 0.25 + 0.85 * skyward * skyward;
+        float shaded = mix(0.45, 1.0, smoothstep(0.0, 0.6, st.rel)) * mix(1.0, 0.75, st.shelf) * mix(1.0, 0.15, st.under);
+        float3 skyLight = mix(p.ambient.rgb, u.zenith.rgb * 1.15, 0.5 * saturate(-st.n.x));   // the far side sees the dark east
+        col += skyLight * (0.9 * skyward * st.ao * shaded * (0.85 + 0.3 * patch) * (1.0 - 0.5 * saturate(2.0 * sunLum)));
         float3 Lg = normalize(float3(L.x, 0.12, max(L.z, 0.2)));
         col += pl_frontLight(u, p) * (0.55 * saturate(dot(st.n, Lg)) * st.ao * shaded);
         col += p.glow.rgb * (0.08 * saturate(-st.n.y) + 0.06 * st.under);
@@ -356,15 +362,16 @@ enum LightningPlainsShaders {
             if (l.w <= 0.0) continue;
             float2 dd = float2(pl_wrap(th - l.x) * squeeze, alt - l.y) / max(l.z, 0.05);
             float r2 = dot(dd, dd);
-            glow += p.lightC[i].rgb * (l.w * (0.65 * exp(-r2) + 0.35 * exp(-2.0 * sqrt(r2))));
+            glow += p.lightC[i].rgb * (l.w * (0.45 * exp(-0.6 * r2) + 0.5 * exp(-1.3 * sqrt(r2))));
         }
         glow += float3(0.8, 0.82, 1.0) * p.shake.z * 0.6;
-        float through = (0.15 + 0.85 * thin * thin) * (1.35 - 0.7 * st.dome) * (0.7 + 0.6 * patch);
+        float through = (0.3 + 0.7 * thin * thin) * (1.45 - 0.9 * st.dome) * mix(0.75, 1.0, st.ao) * (0.7 + 0.6 * patch);
         col += glow * through * 0.85;
         // The air between: thick near the plain, thin up at the crowns.
         float dense = 0.2 + 0.8 * exp(-max(heightKm, 0.0) / 2.5);
         float clear = exp(-st.km * dense / 45.0);
-        col = mix(pl_air(d, alt, u), col, clear);
+        // (the air in the storm's shadow, under its base, is dim)
+        col = mix(pl_air(d, alt, u) * (1.0 - 0.5 * st.under), col, clear);
         return col;
     }
 
@@ -538,9 +545,9 @@ enum LightningPlainsShaders {
         float shaft = pl_shafts(th, alt, p, time);
         if (shaft > 0.001) {
             float3 front = pl_frontLight(u, p);
-            float3 rain = p.ambient.rgb * 0.36 + p.glow.rgb * 0.14 + front * 0.1 + p.flash.rgb * 0.3;
+            float3 rain = p.ambient.rgb * 0.42 + p.glow.rgb * 0.18 + front * 0.3 + p.flash.rgb * 0.3;
             rain = mix(pl_air(d, alt, u), rain, 0.4 + 0.6 * exp(-p.shake.w / 60.0));
-            shaft = min(0.85, 1.5 * shaft);
+            shaft = min(0.9, 2.0 * shaft);
             o = float4(rain * shaft, shaft) + o * (1.0 - shaft);
         }
         if (p.ridge.w < p.shake.w) o *= 1.0 - pl_ridge(th, alt, p);
@@ -644,7 +651,7 @@ enum LightningPlainsShaders {
         // them (blade by blade only a little, so the near grass leans together).
         float wave = vnoise3(float3((X - wind * time * 0.9) * 0.09, z * 0.09, 9.1));
         float sway = d.z * sin(time * 1.7 + X * 0.35 + 2.0 * wave);
-        float lean0 = clamp(wind / 9.0 * (0.7 + 0.6 * wave) + sway, -1.2, 1.2);
+        float lean0 = clamp(wind / 12.0 * (0.7 + 0.6 * wave) + sway, -0.9, 0.9);
         // The tussocks' rolling, ragged top.
         float sb = max(d.x, 1e-3);
         float roll = pl_noise1(X / 0.9, b.w) * 0.65 + pl_noise1(X / 0.23, b.w + 7.7) * 0.35;
@@ -660,7 +667,7 @@ enum LightningPlainsShaders {
             float cj = cell + float(j);
             float3 h = hash33(float3(cj, b.w, 3.7));
             bool tall = h.z > 1.0 - d.w;
-            float hgt = H * (0.6 + 0.35 * h.y) * (tall ? 1.4 : 1.0);
+            float hgt = H * (0.6 + 0.35 * h.y) * (tall ? 1.25 : 1.0);
             if (Y > hgt * 1.08 || Y < g * 0.6) continue;
             float k = saturate(Y / hgt);
             float lean = lean0 + (h.z - 0.5) * 2.0 * jitter;
@@ -678,7 +685,7 @@ enum LightningPlainsShaders {
                     tip = max(tip, head);
                 }
             }
-            if (blade > spike) tone = 0.8 + 0.4 * h.x;
+            if (blade > spike) tone = (0.75 + 0.45 * h.x) * (0.45 + 0.55 * k);
             spike = max(spike, blade);
             tip = max(tip, blade * smoothstep(0.5, 1.0, k));
         }
@@ -695,7 +702,7 @@ enum LightningPlainsShaders {
         float bent = 0.85 + 0.3 * wave;
         float shade = mix(depthShade, tone, spike * (1.0 - body));
         float3 col = straw * (p.ambient.rgb * (0.42 * shade) + front * (0.38 * shade + 0.9 * lit)) * bent
-                   + p.flash.rgb * (0.08 + 0.3 * lit);
+                   + p.flash.rgb * (0.07 + 0.14 * lit);
         float fog = 1.0 - exp(-z / 900.0);
         col = mix(col, p.glow.rgb * 0.8, fog);
         return float4(col * cover, cover);
