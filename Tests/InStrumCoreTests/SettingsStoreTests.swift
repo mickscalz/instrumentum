@@ -112,6 +112,51 @@ final class SettingsStoreTests: XCTestCase {
         breath.depth = 2
         XCTAssertEqual(breath.depth, 1.5, "clamped as it's set, too")
     }
+
+    /// "Opens on what's new" (Storms Review focus 6): a file from before the rule has no record of the gallery it saw, so
+    /// it opens on the newest set once; one from a build with fewer sets, or an older newest, does too; once marked seen
+    /// it round-trips and opens as before. A first install (no file) has nothing it hasn't seen.
+    func testOlderSettingsOpenOnWhatsNewOnce() throws {
+        try Data(#"{"themeID":"great-barrier-reef","activeSetID":"great-barrier-reef"}"#.utf8).write(to: settingsURL)
+        let store = SettingsStore(directory: dir)
+        var old = store.load()
+        XCTAssertEqual(old.activeSetID, "great-barrier-reef", "the rest of the file still loads")
+        XCTAssertNil(old.lastNewestSetID)
+        XCTAssertNil(old.lastSetCount)
+        XCTAssertTrue(old.opensOnWhatsNew)
+        old.markSetsSeen()
+        let newestID = old.lastNewestSetID
+        let count = old.lastSetCount
+        XCTAssertEqual(newestID, "lightning-plains")
+        XCTAssertEqual(count, 14)
+        XCTAssertFalse(old.opensOnWhatsNew)
+        try store.save(old)
+        let again = store.load()
+        XCTAssertEqual(again, old)
+        XCTAssertFalse(again.opensOnWhatsNew)
+
+        // The twelve-set build's gallery, had it kept one: its newest was the reef.
+        var twelve = AppSettings.default
+        twelve.lastNewestSetID = "great-barrier-reef"
+        twelve.lastSetCount = 12
+        XCTAssertTrue(twelve.opensOnWhatsNew)
+        // The same newest but more sets than it counted, or a newer newest at the same count, is new too.
+        var fewer = AppSettings.default
+        fewer.lastSetCount = 13
+        XCTAssertTrue(fewer.opensOnWhatsNew)
+        var other = AppSettings.default
+        other.lastNewestSetID = "supercell-sky"
+        XCTAssertTrue(other.opensOnWhatsNew)
+
+        // A first install (no file) starts with this build's own record.
+        let fresh = AppSettings.default
+        XCTAssertFalse(fresh.opensOnWhatsNew)
+        let freshNewest = fresh.lastNewestSetID
+        XCTAssertEqual(freshNewest, SetLibrary.newest.id)
+        try FileManager.default.removeItem(at: settingsURL)
+        let missing = SettingsStore(directory: dir).load()
+        XCTAssertFalse(missing.opensOnWhatsNew)
+    }
 }
 
 final class LaunchGuardTests: XCTestCase {

@@ -57,9 +57,22 @@ public enum SetLibrary {
     public static let greatBarrierReef = InStrumSet(id: "great-barrier-reef", name: "Great Barrier Reef", moodName: "Colourful, alive",
                                                     mood: .reefAlive, worldID: GreatBarrierReefModel.id, visual: "Coral Pulse",
                                                     patchID: "reef-marimba", ambience: AmbienceSettings(), creditID: nil)
+    /// Sets 17 and 18 ("Storms", built before Sets 13 to 16, so they come next in the gallery): the supercell after "FADE",
+    /// the plains after "Runaway".
+    public static let supercellSky = InStrumSet(id: "supercell-sky", name: "Supercell Sky", moodName: "Tense, thrilling",
+                                                mood: .stormTense, worldID: SupercellSkyModel.id, visual: "Wall Cloud",
+                                                patchID: "endless-rise", ambience: AmbienceSettings(), creditID: CreditLibrary.fade.id)
+    public static let lightningPlains = InStrumSet(id: "lightning-plains", name: "Lightning Plains", moodName: "Dramatic, vast",
+                                                   mood: .plainsVast, worldID: LightningPlainsModel.id, visual: "Strike Lines",
+                                                   patchID: "single-note-grand", ambience: AmbienceSettings(),
+                                                   creditID: CreditLibrary.runaway.id)
     public static let all: [InStrumSet] = [moonlitLake, spaceshipLounge, goldenHourBeach, coastRoad, snowboundCabin, bedroomDawn,
                                            auroraFjord, bioluminescentBay, teaHouseSnow, zenRockGarden, submarineWindow,
-                                           greatBarrierReef]
+                                           greatBarrierReef, supercellSky, lightningPlains]
+
+    /// The newest set, the last in the gallery: the first launch of a build that adds sets opens on it ("opens on what's
+    /// new", `AppSettings.opensOnWhatsNew`).
+    public static var newest: InStrumSet { all[all.count - 1] }
 
     public static func set(id: String) -> InStrumSet? { all.first { $0.id == id } }
 }

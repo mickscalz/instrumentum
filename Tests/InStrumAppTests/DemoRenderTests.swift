@@ -538,6 +538,125 @@ final class DemoRenderTests: XCTestCase {
     }
     nonisolated static let deepWaterScenes = ["submarine-window-ambience", "great-barrier-reef-ambience"]
 
+    /// Something a demo does to the ambience at `time` (seconds), at the start of the block that holds it: a level, a
+    /// queued roll, a source's next event, or a look at its counters.
+    typealias AmbienceAction = (time: Double, apply: (OpaquePointer) -> Void)
+
+    /// Renders the ambience alone, doing `actions` as they fall due (levels glide in over 2.5 s, as in the app); actions
+    /// due at or after the end happen once the render is done (a look then sees all of it).
+    nonisolated static func renderTimedAmbience(seconds: Double, key: (root: Int32, major: Int32)? = nil,
+                                                actions: [AmbienceAction]) -> (l: [Float], r: [Float]) {
+        guard let a = isd_ambience_create(rate, 512, 7) else { return ([], []) }
+        defer { isd_ambience_destroy(a) }
+        if let key { isd_ambience_set_key(a, key.root, key.major) }
+        let pending = actions.sorted { $0.time < $1.time }
+        let total = Int(seconds * rate), block = 256
+        var l = [Float](repeating: 0, count: total), r = [Float](repeating: 0, count: total)
+        var i = 0, next = 0
+        while i < total {
+            let n = min(block, total - i)
+            while next < pending.count, Int(pending[next].time * rate) < i + n { pending[next].apply(a); next += 1 }
+            l.withUnsafeMutableBufferPointer { lp in
+                r.withUnsafeMutableBufferPointer { rp in isd_ambience_render(a, lp.baseAddress! + i, rp.baseAddress! + i, Int32(n)) }
+            }
+            i += n
+        }
+        while next < pending.count { pending[next].apply(a); next += 1 }
+        return (l, r)
+    }
+
+    /// The storm demos (Storms spec §8.3, §9.3).
+    nonisolated static let stormScenes = ["supercell-sky-ambience", "lightning-plains-ambience"]
+    /// Supercell Sky's strike: 3 s in, 2 km off, so its thunder arrives 6 s late (3 s a kilometre), at 9 s.
+    nonisolated static let supercellStrike: (at: Double, km: Double) = (3, 2)
+    /// Lightning Plains' far fork: 2 s in, 20 km out on the horizon, so its thunder (capped at 12 s) arrives at 14 s.
+    nonisolated static let plainsFork: (at: Double, km: Double) = (2, 20)
+
+    /// The storm ambience demos, mixed as the worlds mix them (`SupercellSkyModel.levels` with the gust front's sound from
+    /// `WeatherAmbience`, and `LightningPlainsModel.levels`), from the start, `seconds` long, with a look at the counters
+    /// at each of `looks` (seconds).
+    /// - `supercell-sky-ambience`: the field at the Core stage in the late afternoon, the storm 2 km off (closeness 1): the
+    ///   grass in a wind of .5 (0.25 + 0.5 × .5), hail on the tin roof (.35), the thunder roll up (0.85), the inflow's
+    ///   roar at Energy .6 and tension .4 (0.12 + 0.6 × .6 + 0.2 × .4, a fifth below F, Endless Rise's demo's key), the
+    ///   storm's rain on its way (rain on dust 0.5 × .6), the breeze, and the gust front's Approach on the wind (0.2).
+    ///   At 3 s a strike 2 km off (a big moment): its thunder queued 6 s late, the flock lifting and fleeing (0.6 × its
+    ///   alarm). At 14 s the drop, the gust front's Hit: the grass flattens (to 1), the roar rises with Energy .9 and
+    ///   tension .8, the hail shaft comes in, and the gust's roar on the wind climbs 12 dB (0.2 → 0.8) evenly in decibels
+    ///   as the dust wall crosses over 10 s, the petrichor rising before the rain (to 0.7). At 30 s a close strike (1 km:
+    ///   3 s late, a crack first); at 40 s the rain sets in (the roar on the wind eases to 0.5, the petrichor to 0.3, the
+    ///   hail thins); at 44 s a strike 3 km off, behind the rain.
+    /// - `lightning-plains-ambience`: the plain at civil dusk (the sun 3° down): the dusk chorus at its full 0.6, the
+    ///   windmill at a light breeze's drive (0.35), the grass (0.12 + 4 m/s ÷ 18), grit on the wire (0.12 + 0.5 × .3), no
+    ///   heat shimmer after sunset, the cattle grid and the far truck on their own schedules, no crickets yet, and the
+    ///   thunder roll up so the queue plays. At 2 s a far fork on the horizon, 20 km out (a repeated note's strike, 0.85
+    ///   × 0.75 beyond 5 km), its thunder capped at 12 s; a road train passes on the far highway from 20 s; at 34 s a
+    ///   nearer fork, 8 km out, rolls in 12 s later.
+    nonisolated static func stormAmbience(_ name: String, seconds: Double, looks: [Double] = []) -> StormDemo {
+        var actions: [AmbienceAction] = []
+        func level(_ source: ISDAmbienceSource, _ value: Double, at t: Double = 0) {
+            let v = Float(value)
+            actions.append((t, { isd_ambience_set_level($0, source, v) }))
+        }
+        func strike(at t: Double, km: Double, strength: Double) {
+            let thunder = QueuedThunder.strike(km: km, strength: strength)
+            let delay = Float(thunder.delay), power = Float(thunder.strength)
+            actions.append((t, { isd_ambience_queue_thunder($0, delay, power) }))
+        }
+        func trigger(_ source: ISDAmbienceSource, at t: Double) {
+            actions.append((t, { isd_ambience_debug_trigger($0, source) }))
+        }
+        var key: (root: Int32, major: Int32)?
+        switch name {
+        case "supercell-sky-ambience":
+            key = (root: 5, major: 0)
+            level(ISD_AMB_GRASS_WIND, 0.5)
+            level(ISD_AMB_HAIL_TIN, 0.35)
+            level(ISD_AMB_THUNDER_ROLL, 0.85)
+            level(ISD_AMB_INFLOW_ROAR, 0.56)
+            level(ISD_AMB_RAIN_ON_DUST, 0.3)
+            level(ISD_AMB_BREEZE, 0.2)
+            level(ISD_AMB_WIND, 0.2)
+            strike(at: supercellStrike.at, km: supercellStrike.km, strength: 0.9)
+            level(ISD_AMB_BIRDS_FLEE, 0.6, at: supercellStrike.at)
+            level(ISD_AMB_GRASS_WIND, 1, at: 14)
+            level(ISD_AMB_INFLOW_ROAR, 0.82, at: 14)
+            level(ISD_AMB_HAIL_TIN, 0.7, at: 16)
+            level(ISD_AMB_RAIN_ON_DUST, 0.7, at: 18)
+            for k in 0...5 {
+                let roar: Double = 0.2 * pow(4.0, Double(k) / 5)
+                level(ISD_AMB_WIND, roar, at: 14 + 2 * Double(k))
+            }
+            strike(at: 30, km: 1, strength: 1)
+            level(ISD_AMB_WIND, 0.5, at: 40)
+            level(ISD_AMB_RAIN_ON_DUST, 0.3, at: 40)
+            level(ISD_AMB_HAIL_TIN, 0.3, at: 40)
+            level(ISD_AMB_GRASS_WIND, 0.75, at: 40)
+            strike(at: 44, km: 3, strength: 0.7)
+        case "lightning-plains-ambience":
+            level(ISD_AMB_DRY_CICADAS, 0.6)
+            level(ISD_AMB_WINDMILL, 0.35)
+            level(ISD_AMB_GRASS_WIND, 0.12 + 4.0 / 18)
+            level(ISD_AMB_DUST_TICKS, 0.12 + 0.5 * 0.3)
+            level(ISD_AMB_CATTLE_GRID, 0.3)
+            level(ISD_AMB_FAR_TRUCK, 0.25)
+            level(ISD_AMB_THUNDER_ROLL, 1)
+            strike(at: plainsFork.at, km: plainsFork.km, strength: 0.85 * 0.75)
+            trigger(ISD_AMB_FAR_TRUCK, at: 20)
+            strike(at: 34, km: 8, strength: 0.85 * 0.75)
+        default:
+            return StormDemo(l: [], r: [], rolls: [], cicadaPhrases: [])
+        }
+        var rolls = [Int32](repeating: -1, count: looks.count), phrases = [Int32](repeating: -1, count: looks.count)
+        for (k, t) in looks.enumerated() {
+            actions.append((t, { a in
+                rolls[k] = isd_ambience_debug_events(a, ISD_AMB_THUNDER_ROLL)
+                phrases[k] = isd_ambience_debug_events(a, ISD_AMB_DRY_CICADAS)
+            }))
+        }
+        let audio = renderTimedAmbience(seconds: seconds, key: key, actions: actions)
+        return StormDemo(l: audio.l, r: audio.r, rolls: rolls, cicadaPhrases: phrases)
+    }
+
     /// The power (dB) of `x` at `hz` between `t0` and `t1` seconds (a Goertzel bin).
     nonisolated static func toneDB(_ x: [Float], hz: Double, from t0: Double, to t1: Double) -> Double {
         let a = max(0, Int(t0 * rate)), b = min(x.count, Int(t1 * rate))
@@ -573,6 +692,46 @@ final class DemoRenderTests: XCTestCase {
         let ping = Self.toneDB(sub.l, hz: fSharp6, from: 3.0, to: 3.3)
         XCTAssertGreaterThan(ping - Self.toneDB(sub.l, hz: e6, from: 3.0, to: 3.3), 10, "the ping is in F♯, not E")
         XCTAssertGreaterThan(ping - Self.toneDB(sub.l, hz: fSharp6, from: 2.5, to: 2.8), 10, "the ping lands at 3 s")
+    }
+
+    /// The storm demos render as the release renders them (here their first 12 s): finite, under full scale and audible.
+    /// Supercell Sky's strike, 3 s in and 2 km off, is heard late: no roll has started a moment before 9 s (6 s after
+    /// it), and one has just after. On the plains the dusk chorus sings from the first seconds (each of its six singers
+    /// starts within 1.7 s of waking), and the far fork's thunder, capped at 12 s, is still on its way at the end (it
+    /// rolls in at 14 s).
+    func testStormAmbienceDemosRender() {
+        let strike = Self.supercellStrike
+        let heard = strike.at + 3 * strike.km
+        let fork = Self.plainsFork
+        let forkHeard = fork.at + min(12, 3 * fork.km)
+        for name in Self.stormScenes {
+            let looks = name == "supercell-sky-ambience" ? [heard - 0.2, heard + 0.3] : [11.9]
+            let demo = Self.stormAmbience(name, seconds: 12, looks: looks)
+            let frames = demo.l.count
+            XCTAssertEqual(frames, Int(12 * Self.rate), name)
+            let finite = demo.l.allSatisfy(\.isFinite) && demo.r.allSatisfy(\.isFinite)
+            XCTAssertTrue(finite, name)
+            let peakLeft = demo.l.map(abs).max() ?? 0
+            let peakRight = demo.r.map(abs).max() ?? 0
+            let peak = max(peakLeft, peakRight)
+            XCTAssertLessThan(peak, 1.0, name)
+            let power = demo.l.reduce(0) { $0 + Double($1) * Double($1) } / Double(max(1, frames))
+            let rmsDB = 10 * log10(max(power, 1e-20))
+            XCTAssertGreaterThan(rmsDB, -50, name)
+            if name == "supercell-sky-ambience" {
+                let before = demo.rolls[0]
+                let after = demo.rolls[1]
+                XCTAssertEqual(before, 0, "nothing arrives early")
+                XCTAssertEqual(after, 1, "the strike's thunder arrives at \(heard) s")
+            } else {
+                let rolls = demo.rolls[0]
+                let phrases = demo.cicadaPhrases[0]
+                XCTAssertEqual(rolls, 0, "the far fork's thunder is still on its way (it arrives at \(forkHeard) s)")
+                XCTAssertGreaterThanOrEqual(phrases, 6, "the dusk chorus sings")
+            }
+        }
+        XCTAssertEqual(heard, 9, accuracy: 1e-9)
+        XCTAssertEqual(forkHeard, 14, accuracy: 1e-9)
     }
 
     func testWriteAmbienceDemos() throws {
@@ -655,6 +814,21 @@ final class DemoRenderTests: XCTestCase {
             try PreviewRenderer.writePNG(Spectrogram.image(left: audio.l, sampleRate: Self.rate, width: 1400, height: 500),
                                          to: url.appendingPathComponent("\(name)-spectrogram.png"))
         }
+        // The storms: a strike on the field with its thunder late and the gust front's roar; the plain at dusk, its
+        // cicadas and a far fork.
+        for name in Self.stormScenes {
+            let demo = Self.stormAmbience(name, seconds: 60)
+            let peakLeft = demo.l.map(abs).max() ?? 0
+            let peakRight = demo.r.map(abs).max() ?? 0
+            let peak = max(peakLeft, peakRight)
+            XCTAssertLessThanOrEqual(peak, 1.0, name)
+            let power = demo.l.reduce(0) { $0 + Double($1) * Double($1) } / Double(max(1, demo.l.count))
+            let rmsDB = 10 * log10(max(power, 1e-20))
+            XCTAssertGreaterThan(rmsDB, -60, name)
+            try Self.writeWAV((l: demo.l, r: demo.r), to: url.appendingPathComponent("\(name).wav"))
+            try PreviewRenderer.writePNG(Spectrogram.image(left: demo.l, sampleRate: Self.rate, width: 1400, height: 500),
+                                         to: url.appendingPathComponent("\(name)-spectrogram.png"))
+        }
         for (name, levels, cool, waves, speed, distance) in scenes {
             let audio = Self.renderAmbience(levels, seconds: 60, nightCool: cool, waves: waves, speed: speed, surfDistance: distance)
             let peak = max(audio.l.map(abs).max() ?? 0, audio.r.map(abs).max() ?? 0)
@@ -674,6 +848,14 @@ final class DemoRenderTests: XCTestCase {
         XCTAssertEqual(image.height, 100)
         XCTAssertGreaterThan(PreviewRenderer.stats(image).variance, 0.0005)
     }
+}
+
+/// A storm demo (`DemoRenderTests.stormAmbience`): its audio, and at each look how many thunder rolls had started and how
+/// many phrases the cicadas had begun.
+struct StormDemo {
+    var l: [Float], r: [Float]
+    var rolls: [Int32]
+    var cicadaPhrases: [Int32]
 }
 
 /// What `renderPlayed` hands back: the audio, when the director cued a drop (seconds), the tension it cued every
