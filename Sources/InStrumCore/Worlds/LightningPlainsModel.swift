@@ -6,7 +6,8 @@ public struct PlainsFrame: AmbienceProviding {
     /// The Living Sky over the plain: warm (no snow, frost or sea smoke), with the storm's heat lightning added to its
     /// sheet slots, the storm on the horizon (`farStorm` 1) and the storm's own rain (never under virga).
     public var sky: SkyState
-    /// Which way the camera looks (degrees from north): west, turned toward the sunset, where the storm stands.
+    /// Which way the camera looks (degrees from north): away from the low sun, which stands behind your right shoulder;
+    /// the storm stands ahead.
     public var cameraAzimuth: Double
     public var stormBearing: Double
     /// The storm's distance: 0 (40 km out) … 1 (overhead), and in kilometres.
@@ -48,9 +49,10 @@ public struct PlainsFrame: AmbienceProviding {
 }
 
 /// Set 18's world: a dry grass plain at dusk under a vast sky. A windmill and a water tank on the left, a fence line
-/// running away from you (its 88 posts are the keys), a far ridge on the right; on the western horizon a line of storm
-/// towers lit from inside, which walks closer as you play and back out when you rest. Its visual, Strike Lines, lands a
-/// strike for every repeat of the same key.
+/// running away from you (its 88 posts are the keys), a far ridge on the right; on the horizon ahead, away from the
+/// sunset, a line of storm towers lit rose and gold by the last sun above Earth's shadow and from inside by their own
+/// lightning, which walks closer as you play and back out when you rest. Its visual, Strike Lines, lands a strike for
+/// every repeat of the same key.
 public struct LightningPlainsModel: ThemeModel, MoodAware, SkyAware, ExcitementAware, InstrumentAware, SurpriseListing {
     public typealias Frame = PlainsFrame
     public static let id = "lightning-plains"
@@ -58,11 +60,12 @@ public struct LightningPlainsModel: ThemeModel, MoodAware, SkyAware, ExcitementA
     public static let visuals = ["Strike Lines", "Galaxy Warp"]
     public static var surpriseCount: Int { StrikeLines.surpriseCount }
 
-    /// The camera looks west (the storm on the western horizon); toward the sunset, so the afterglow stands behind the
-    /// towers: wholly while the light is held, and while it follows the sky as the low sun nears the west.
-    public static let west = 270.0
-    /// The sunset sits this far left of the middle (degrees), behind the windmill's side of the storm.
-    public static let sunsetOffset = 15.0
+    /// The camera looks east while the sun is high; as it comes down (and wholly while the light is held) it turns away
+    /// from it, so the last sun lights the storm ahead from over your right shoulder: the towers' faces rose and gold,
+    /// their left sides in shade, Earth's shadow climbing them, the Belt of Venus behind.
+    public static let home = 90.0
+    /// Where the low sun stands from the way you look (degrees, clockwise): behind you and to your right.
+    public static let sunBehind = 125.0
     public static let cameraTau = 30.0
 
     public var mood = Mood.neutral
@@ -102,17 +105,15 @@ public struct LightningPlainsModel: ThemeModel, MoodAware, SkyAware, ExcitementA
 
     // MARK: - The camera
 
-    /// Where the camera wants to look (degrees from north): west; toward the sunset (15° right of the sun, so the glow
-    /// is behind the towers' left) wholly while the light is held, and while following the sky as the sun comes down
-    /// within 60° of west.
+    /// Where the camera wants to look (degrees from north): east while the sun is high; away from it (the sun
+    /// `sunBehind` round to your right) as it comes below 12°, and wholly while the light is held.
     public static func cameraTarget(_ s: SkyState, held: Bool) -> Double {
         let alt = s.sun.altitude, az = s.sun.azimuth
-        guard alt.isFinite, az.isFinite else { return west }
-        let toward = turn(from: west, to: az + sunsetOffset)
-        let near = 1 - StrikeLines.smooth(45, 60, abs(turn(from: west, to: az)))
+        guard alt.isFinite, az.isFinite else { return home }
+        let toward = turn(from: home, to: az - sunBehind)
         let low = 1 - StrikeLines.smooth(4, 12, alt)
-        let w = held ? 1 : near * low
-        return norm(west + toward * w)
+        let w = held ? 1 : low
+        return norm(home + toward * w)
     }
 
     static func turn(from a: Double, to b: Double) -> Double {
@@ -171,7 +172,7 @@ public struct LightningPlainsModel: ThemeModel, MoodAware, SkyAware, ExcitementA
         } else {
             camera = target
         }
-        let bearing = camera ?? Self.west
+        let bearing = camera ?? Self.home
 
         // The storm.
         let cicadas = Self.cicadaBase(sky, rain: lines.rain)

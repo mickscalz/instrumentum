@@ -196,13 +196,14 @@ public struct StrikeLines {
     /// The windmill's surprise: a gust spins it up for 9 s, then the tail furls it to a stop until 19 s.
     public static let windmillSpin = 9.0, windmillFurled = 19.0
 
-    /// The storm's line: five towers 10–16.5 km tall across 40 km of horizon, the tallest just right of the middle.
+    /// The storm's line across 45 km of horizon: the mature storm in the middle (16.5 km, its anvil streaming 17 km
+    /// downwind over the others), a younger storm on its left, and three towers still building (no anvil yet) at the ends.
     public static let towers: [StormTower] = [
-        StormTower(across: -20, depth: 6, heightKm: 11, widthKm: 3.8, anvilKm: 6.5),
-        StormTower(across: -8.5, depth: -3, heightKm: 15, widthKm: 5, anvilKm: 11),
-        StormTower(across: 1, depth: 0, heightKm: 13, widthKm: 4.2, anvilKm: 8.5),
-        StormTower(across: 10, depth: 2, heightKm: 16.5, widthKm: 5.4, anvilKm: 13),
-        StormTower(across: 21, depth: 8, heightKm: 10, widthKm: 3.5, anvilKm: 5.5),
+        StormTower(across: -22, depth: 7, heightKm: 8.5, widthKm: 2.6, anvilKm: 0),
+        StormTower(across: -11, depth: -2, heightKm: 12.5, widthKm: 3, anvilKm: 6.5),
+        StormTower(across: 1, depth: 0, heightKm: 16.5, widthKm: 3.8, anvilKm: 17),
+        StormTower(across: 13, depth: 5, heightKm: 10.5, widthKm: 2.8, anvilKm: 4.5),
+        StormTower(across: 23, depth: 10, heightKm: 7.5, widthKm: 2.3, anvilKm: 0),
     ]
 
     /// A tower seen with the storm `stormKm` away: the line's depth offsets close up as it comes (they shrink with the

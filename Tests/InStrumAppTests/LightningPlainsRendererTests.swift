@@ -196,14 +196,26 @@ final class LightningPlainsRendererTests: XCTestCase {
                 XCTAssertGreaterThan(forks, 10, "\(q) \(c.name): the chord's fork is drawn")
             }
         }
-        // The sky is nine-tenths of the frame, the storm on its western horizon and the glow there brighter than the zenith.
+        // The sky is nine-tenths of the frame; at dusk the last sun, behind you, lights the middle storm's head rose and
+        // gold above Earth's shadow, brighter than the darkening zenith, while its foot stands in the shadow.
         let dusk = try Self.renderPlains(seconds: 1, sky: Self.sky(hour: 19.75))
-        let low = FramePatch.meanRGB(dusk.image, x: -0.9 ... 0.9, y: -0.66 ... -0.55)
+        let hero = StrikeLines.view(StrikeLines.towers[2], stormKm: dusk.frame.distanceKm)
+        let headAt = dusk.renderer.skyPoint(azimuth: dusk.frame.stormBearing + hero.offset + 0.2 * hero.halfWidth,
+                                            altitude: hero.top * 0.85)
+        let footAt = dusk.renderer.skyPoint(azimuth: dusk.frame.stormBearing + hero.offset + 0.2 * hero.halfWidth,
+                                            altitude: hero.top * 0.3)
+        let hx = Double(headAt?.x ?? 0), hy = Double(headAt?.y ?? 0)
+        let fx = Double(footAt?.x ?? 0), fy = Double(footAt?.y ?? 0)
+        let head = FramePatch.meanRGB(dusk.image, x: (hx - 0.02) ... (hx + 0.02), y: (hy - 0.02) ... (hy + 0.02))
+        let foot = FramePatch.meanRGB(dusk.image, x: (fx - 0.02) ... (fx + 0.02), y: (fy - 0.02) ... (fy + 0.02))
         let high = FramePatch.meanRGB(dusk.image, x: -0.9 ... 0.9, y: 0.8 ... 0.95)
-        let lowLuma = 0.2126 * low.x + 0.7152 * low.y + 0.0722 * low.z
+        let headLuma = 0.2126 * head.x + 0.7152 * head.y + 0.0722 * head.z
+        let footLuma = 0.2126 * foot.x + 0.7152 * foot.y + 0.0722 * foot.z
         let highLuma = 0.2126 * high.x + 0.7152 * high.y + 0.0722 * high.z
-        XCTAssertGreaterThan(lowLuma, highLuma, "the western rim glows over a darkening zenith: \(low) vs \(high)")
-        XCTAssertGreaterThan(low.x, low.z, "a warm dusk rim: \(low)")
+        XCTAssertNotNil(headAt)
+        XCTAssertGreaterThan(headLuma, highLuma, "the sunlit head over a darkening zenith: \(head) vs \(high)")
+        XCTAssertGreaterThan(head.x, head.z * 1.2, "rose and gold: \(head)")
+        XCTAssertGreaterThan(headLuma, footLuma, "the foot in Earth's shadow: \(head) vs \(foot)")
         XCTAssertEqual(dusk.renderer.horizonY, -0.72, accuracy: 1e-6)
     }
 
@@ -456,7 +468,9 @@ extension WorldPreviewTests {
         for (name, s, q, t, script) in cases {
             let shot = try T.renderPlains(seconds: t, sky: s, quality: q, script: script, preview: preview)
             try PreviewRenderer.writePNG(shot.image, to: url.appendingPathComponent("\(name).png"))
-            print("PLAINS_PREVIEW \(name): \(shot.frame.distanceKm) km, \(shot.frame.strikes.count) forks, \(shot.renderer.segmentCount) segments")
+            let sunAlt = String(format: "%.1f", shot.frame.sky.sun.altitude)
+            let km = String(format: "%.1f", shot.frame.distanceKm)
+            print("PLAINS_PREVIEW \(name): sun \(sunAlt)°, camera \(Int(shot.frame.cameraAzimuth))°, storm \(km) km, \(shot.frame.strikes.count) forks, \(shot.renderer.segmentCount) segments")
         }
 
         // The frame time at 1 MP (1334 × 750), the world's own passes on the GPU, Smooth and High.
@@ -480,6 +494,32 @@ extension WorldPreviewTests {
             let median = times.isEmpty ? -1 : times[times.count / 2]
             let best = times.first ?? -1
             print("PLAINS_TIMING \(q.rawValue) 1334x750: median \(String(format: "%.2f", median)) ms, best \(String(format: "%.2f", best)) ms over \(times.count) frames")
+        }
+
+        // The same measure for the Spaceship Lounge on the same machine, for reference (the runner's GPU is virtual).
+        let director = SceneDirector(themeID: SpaceshipLoungeModel.id, state: ThemeState(), reaction: ReactionPresets.expressivePianist)
+        var loungeFrame: LoungeFrame?
+        for k in 0..<120 {
+            let t = Double(k) / 60
+            if let f = director.step(dt: 1.0 / 60, t: t, quality: .high) as? LoungeFrame { loungeFrame = f }
+        }
+        if let f = loungeFrame, let lounge = SpaceshipLoungeRenderer(device: device) {
+            for q in [QualityLevel.lite, .high] {
+                lounge.update(f, params: director.parameters, quality: q, gentle: false, dt: 1.0 / 60,
+                              size: CGSize(width: 1334, height: 750))
+                var times: [Double] = []
+                for _ in 0..<40 {
+                    guard let cb = queue.makeCommandBuffer() else { continue }
+                    lounge.render(stack: stack, commandBuffer: cb)
+                    cb.commit()
+                    cb.waitUntilCompleted()
+                    let gpu = cb.gpuEndTime - cb.gpuStartTime
+                    if gpu > 0 { times.append(gpu * 1000) }
+                }
+                times.sort()
+                let median = times.isEmpty ? -1 : times[times.count / 2]
+                print("PLAINS_TIMING lounge-reference \(q.rawValue) 1334x750: median \(String(format: "%.2f", median)) ms over \(times.count) frames")
+            }
         }
     }
 }

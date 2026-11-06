@@ -33,8 +33,8 @@ final class LightningPlainsRenderer: ThemeRenderer {
     nonisolated static let postHeight: Float = 1.45, postWidth: Float = 0.14
     nonisolated static let wireLow: Float = 0.42, wireHigh: Float = 1.14
     /// The windmill and the tank: where they stand across the view (NDC x) and how far out (m).
-    nonisolated static let windmillAt = SIMD2<Float>(-0.64, 44)
-    nonisolated static let tankAt = SIMD2<Float>(-0.43, 52)
+    nonisolated static let windmillAt = SIMD2<Float>(-0.7, 26)
+    nonisolated static let tankAt = SIMD2<Float>(-0.93, 30)
     nonisolated static let windmillHub: Float = 9.2, wheelRadius: Float = 1.7
     /// The far ridge: from 36% of the half-view right of the middle out past the right edge, 2.2° tall, 18 km away.
     nonisolated static let ridgeFrom: Float = 0.36, ridgeTo: Float = 1.3
@@ -48,7 +48,7 @@ final class LightningPlainsRenderer: ThemeRenderer {
     nonisolated static let calmRPM: Float = 30
     nonisolated static let channelColour = SIMD3<Float>(0.78, 0.86, 1.0)
     /// How much each tower drops a rain shaft.
-    nonisolated static let shaftWeights: [Float] = [0.5, 1, 0.7, 1, 0.4]
+    nonisolated static let shaftWeights: [Float] = [0.3, 0.7, 1, 0.6, 0.2]
 
     /// The uniform block (MSL `PlainsU`): 12 header rows, the five towers (two rows each), eight lights (two rows each),
     /// four rim slots.
@@ -206,14 +206,17 @@ final class LightningPlainsRenderer: ThemeRenderer {
     // MARK: - Update
 
     func update(_ frame: PlainsFrame, params p: ParameterSet, quality: QualityLevel, gentle: Bool, dt: Double, size: CGSize) {
-        let s = frame.sky
+        // The storm's own overcast: its rain curtain closes the sky as it comes (the stars go behind the rain).
+        var s = frame.sky
+        let overcast = Self.unit(frame.rainCurtain) * 0.85
+        if overcast > s.cloudCover { s.cloudCover = overcast }
         self.size = size
         aspect = Float(max(1, size.width) / max(1, size.height))
         let height = Float(max(1, size.height))
         let pixel = 2 / height
         let t = Float(frame.time.truncatingRemainder(dividingBy: 3600))
 
-        // The sky, facing the storm in the west; the weather falling on the plain.
+        // The sky, facing the storm (away from the low sun); the weather falling on the plain.
         sky.viewAzimuth = frame.cameraAzimuth
         sky.horizonY = Self.horizonY
         sky.verticalFOV = Self.verticalFOV
@@ -293,11 +296,11 @@ final class LightningPlainsRenderer: ThemeRenderer {
                 paths.append(line)
                 let main = bi == 0
                 let w = core * (main ? 1 : 0.6)
-                let reach = w * 7 + pixel * (main ? 12 : 6)
+                let reach = w * 5 + pixel * (main ? 4 + 8 * close : 2 + 4 * close)
                 guard line.count >= 2 else { continue }
                 for j in 0..<(line.count - 1) where segments.count / 3 < Self.segmentBudget {
                     appendSegment(line[j], line[j + 1], core: w, reach: reach, light: light * (main ? 1 : 0.55),
-                                  colour: Self.channelColour * 7)
+                                  colour: Self.channelColour * (3 + 4 * close))
                     forkSegmentCount += 1
                 }
             }
@@ -331,7 +334,15 @@ final class LightningPlainsRenderer: ThemeRenderer {
         let sunOffset = Float(Self.wrap(s.sun.azimuth - bearing))
         let facing = exp(-abs(sunOffset) / 50)
         let band = SIMD3<Float>(0.9, 0.42, 0.14) * (0.55 * low * facing)
-        let glow: SIMD3<Float> = s.horizon * 0.85 + band
+        // The low sky ahead (behind the silhouettes): the horizon's colour, greyed by Earth's shadow when it rises
+        // opposite the sun at twilight (as the sky draws it), and the sunset's band when the sun is ahead.
+        let belt = Self.smooth(-6, -4, sunAlt) * (1 - Self.smooth(0, 1, sunAlt))
+        let away = max(0, -cos(sunOffset * .pi / 180))
+        let shade = belt * away * away
+        let luma = 0.2126 * s.horizon.x + 0.7152 * s.horizon.y + 0.0722 * s.horizon.z
+        let grey = SIMD3<Float>(0.8, 0.86, 1.02) * luma
+        let shaded: SIMD3<Float> = (s.horizon + (grey - s.horizon) * (0.6 * shade)) * (1 - 0.25 * shade)
+        let glow: SIMD3<Float> = shaded * 0.85 + band
         let moonUp = Self.smooth(-2, 10, Float(s.moon.altitude)) * Float(s.moonLit)
         let moonLight = SIMD3<Float>(0.05, 0.06, 0.08) * moonUp
         let skyLight: SIMD3<Float> = s.zenith * 0.55 + s.horizon * 0.35
@@ -359,7 +370,7 @@ final class LightningPlainsRenderer: ThemeRenderer {
         plainsU[4] = SIMD4(ahead.x, ahead.y, side.x, side.y)
         plainsU[5] = SIMD4(ambient, night)
         plainsU[6] = SIMD4(glow, sunOffset)
-        plainsU[7] = SIMD4(sunlit, shadowKm, pixel, 0)
+        plainsU[7] = SIMD4(sunlit, shadowKm, pixel, sunAlt)
         plainsU[8] = SIMD4(flashLight, 0)
         let hfov = Float(atan(Double(cam.tanH)) * deg)
         let ridgeFrom = Self.ridgeFrom * hfov, ridgeTo = Self.ridgeTo * hfov
@@ -388,9 +399,9 @@ final class LightningPlainsRenderer: ThemeRenderer {
         var lights: [(SIMD4<Float>, SIMD3<Float>)] = []
         for f in frame.strikes where f.brightness > 0.02 && f.km > 0 {
             let alt = atan(Double(f.baseKm) / f.km) * deg
-            let radius = max(2.0, atan(4.0 / f.km) * deg)
+            let radius = max(1.2, atan(2.5 / f.km) * deg)
             lights.append((SIMD4(Float(Self.wrap(f.azimuth - bearing)), Float(alt) * 1.05, Float(radius),
-                                 Self.unit(f.brightness) * ratio * 1.6 * soft), SIMD3<Float>(0.82, 0.8, 1.0)))
+                                 Self.unit(f.brightness) * ratio * 0.9 * soft), SIMD3<Float>(0.82, 0.8, 1.0)))
         }
         for fl in frame.towerFlash where fl.level > 0.002 {
             lights.append((SIMD4(Float(Self.wrap(fl.azimuth - bearing)), Float(fl.altitude), Float(max(0.5, fl.radius)),
@@ -443,7 +454,7 @@ final class LightningPlainsRenderer: ThemeRenderer {
                 let x = (-1 + 2 * Float(j) / 3) * cam.tanH * z
                 lean[j] = frame.wind.sample(SIMD2(x, z)).x
             }
-            let spacing = max(0.012, z * pixelAngle * 3.2)
+            let spacing = max(0.02, z * pixelAngle * 6)
             propList.append(Prop(depth: z, a: SIMD4(-1.05, y0, 1.05, y1), b: SIMD4(0, z, grassH, Float(k) * 7.31),
                                  c: lean, d: SIMD4(spacing, 0, sway, z < 4 ? 0.14 : 0.05)))
             grassRowCount += 1

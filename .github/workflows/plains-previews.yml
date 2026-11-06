@@ -22,6 +22,16 @@ jobs:
           path: |
             previews/*.png
             preview.log
+      - name: Print the previews into the log (small JPEGs, base64)
+        if: always()
+        run: |
+          mkdir -p small
+          for f in previews/*.png; do
+            [ -f "$f" ] || continue
+            n=$(basename "$f" .png)
+            sips -s format jpeg -s formatOptions 80 -Z 800 "$f" --out "small/$n.jpg" >/dev/null
+            base64 -i "small/$n.jpg" | tr -d '\n' | fold -w 4000 | sed "s/^/PLAINS_IMG $n /"
+          done
       - name: Report
         if: always()
         run: |

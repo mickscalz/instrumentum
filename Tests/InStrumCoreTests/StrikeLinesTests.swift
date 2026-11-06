@@ -550,8 +550,10 @@ final class StrikeLinesTests: XCTestCase {
         XCTAssertNil(f.ballLightning)
         XCTAssertNil(m.forcedMorph)
         XCTAssertEqual(f.mood, .plainsVast)
-        let turn = abs(f.cameraAzimuth - 270)
-        XCTAssertLessThan(turn, 30, "facing the sunset in the west")
+        var sunFromView = (f.sky.sun.azimuth - f.cameraAzimuth).truncatingRemainder(dividingBy: 360)
+        if sunFromView < 0 { sunFromView += 360 }
+        XCTAssertGreaterThan(sunFromView, 100, "the low sun behind you, over your right shoulder")
+        XCTAssertLessThan(sunFromView, 150, "the low sun behind you, over your right shoulder")
         XCTAssertEqual(f.stormBearing, f.cameraAzimuth, accuracy: 1e-9, "the storm stands ahead")
         XCTAssertEqual(f.sky.farStorm, 1, "a storm on the horizon")
         XCTAssertEqual(StrikeLines.towers.count, 5)
