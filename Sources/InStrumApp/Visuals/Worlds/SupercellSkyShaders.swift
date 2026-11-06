@@ -372,8 +372,9 @@ enum SupercellSkyShaders {
         if (u.glowL.z > 0.0) {
             float dw = length(P.xy - u.wall.xy) - u.wall.z;
             float ringR = u.glowL.w * (Rb * 0.8);
-            float ringD = (dw - ringR) / (0.9 + 1.5 * u.glowL.w);
-            under += float3(1.0, 0.86, 0.66) * (u.glowL.z * (0.7 * exp(-ringD * ringD) + 0.4 * exp(-max(dw, 0.0) / 1.2)));
+            float ringD = (dw - ringR) / (0.7 + 1.1 * u.glowL.w);
+            float fadeOut = 1.0 - 0.6 * u.glowL.w;                     // dimmer as it spreads
+            under += float3(1.0, 0.8, 0.55) * (u.glowL.z * fadeOut * (0.16 * exp(-ringD * ringD) + 0.12 * exp(-max(dw, 0.0) / 1.0)));
         }
         under += flashOnCloud(ndc, u) * 0.5;
         L.a = cover;
@@ -446,7 +447,7 @@ enum SupercellSkyShaders {
         c = mix(c, l * float3(0.8, 1.12, 1.0), saturate(u.look.y * 4.0));
         // A chord's pulse lights it from inside, low down; a ripple brightens where it passes.
         float lowPart = 1.0 - hz;
-        c += float3(1.0, 0.86, 0.66) * (u.glowL.z * 1.4 * lowPart * lowPart);
+        c += float3(1.0, 0.8, 0.55) * (u.glowL.z * 0.5 * lowPart * lowPart);
         c += float3(0.95, 0.9, 0.8) * u.sunCol.rgb * (0.25 * bulge);
         c += flashOnCloud(ndc, u) * 0.6;
         L.a = cover;
@@ -713,7 +714,7 @@ enum SupercellSkyShaders {
                 float3 lit = u.sunCol.rgb * 0.62 * (0.55 + 0.45 * v) + u.amb.rgb * (0.55 + 0.3 * v);
                 float3 c = straw * lit * (0.55 + 0.45 * v);
                 c += u.sunCol.rgb * float3(1.0, 0.92, 0.75) * (0.6 * row.w * v);   // the sheen of flattened wheat
-                c += straw * flashOnCloud(float2(0.0, 0.3), u) * (0.35 + 0.35 * v);   // lightning lights the wheat
+                c += straw * flashOnCloud(float2(0.0, 0.3), u) * (0.6 + 0.6 * v);   // lightning lights the wheat
                 return float4(aerial(c, along * 0.001, u), cover);
             }
         }
@@ -735,7 +736,7 @@ enum SupercellSkyShaders {
         c *= 1.0 - 0.55 * under * u.look.x;
         float rain = exp(-length(P.xy - u.shaft.xy) / (u.shaft.z * 1.2));
         c = mix(c, float3(0.06, 0.08, 0.08) * (u.amb.rgb * 2.0 + 0.05), saturate(rain * (0.4 + u.look.z)));
-        c += straw * flashOnCloud(ndc, u) * 0.3;
+        c += straw * flashOnCloud(ndc, u) * 0.8;
         return aerial(c, ground, u);
     }
 
