@@ -393,7 +393,8 @@ enum SupercellSkyShaders {
         float zc = o.z + tc * d.z;
         float t = tc, z = zc;
         for (int k = 0; k < 3; k++) {
-            float R = Rw * (0.55 + 0.45 * saturate((z - bottom) / (hb - bottom)));
+            float down = saturate((hb - z) / (hb - bottom));
+            float R = Rw * sqrt(max(1.0 - 0.8 * down * down, 0.05));     // a rounded lowering, not a cone
             if (R <= bm) break;
             t = tc - sqrt((R * R - bb) / a);
             z = o.z + t * d.z;
@@ -416,10 +417,11 @@ enum SupercellSkyShaders {
         float hzc = saturate((zc - bottom) / (hb - bottom));
         float3 Ls = u.sunL.xyz;
         float3 Lr = float3(rot2(Ls.xy, -u.spin.x), Ls.z);
-        float3 pt = float3(ring * Rw * 1.4, z * 1.4);
+        float3 pt = float3(rot2(rel, -u.spin.x), z * 1.6);           // its own cloud, turning with it
         float dens;
-        float light = billows(pt, Lr, 2.0, 0.0, 0.0, octaves, dens);
-        float R = Rw * (0.55 + 0.45 * hzc) * (1.0 + 0.16 * bulge) + 0.7 * (dens - 0.5);
+        float light = billows(pt, Lr, 1.7, 0.0, 0.0, octaves, dens);
+        float downC = 1.0 - hzc;
+        float R = Rw * sqrt(max(1.0 - 0.8 * downC * downC, 0.05)) * (1.0 + 0.16 * bulge) + 0.8 * (dens - 0.5);
         // A ragged bottom: scud tags hanging below it.
         float bottomZ = bottom + 0.28 * (fbm2(ring * 3.0 + float2(z, 7.0), octaves) - 0.45) + 0.15 * (dens - 0.5);
         float side = smoothstep(0.12, -0.12, bm - R);
@@ -430,8 +432,9 @@ enum SupercellSkyShaders {
         float3 N = normalize(float3(rel / rr, 0.35));
         float facing = saturate(0.6 * dot(N, Ls) + 0.4);
         float3 c = u.sunCol.rgb * (0.22 * facing * light) + u.amb.rgb * (0.08 + 0.1 * dens) + float3(0.025, 0.028, 0.034);
-        // Darker into its top, where it is the base; lighter low down in the horizon's light.
+        // Darker into its top, where it is the base; lighter low down, in the bright horizon's light from beyond.
         c *= 0.75 + 0.45 * (1.0 - hz);
+        c += u.haze.rgb * (0.12 * (1.0 - hz) * (1.0 - hz));
         c *= 1.2 - 0.6 * u.look.x;
         float l = dot(c, float3(0.2126, 0.7152, 0.0722));
         c = mix(c, l * float3(0.8, 1.12, 1.0), saturate(u.look.y * 4.0));
