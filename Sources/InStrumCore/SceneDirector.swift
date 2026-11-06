@@ -128,8 +128,8 @@ public enum ThemeRegistry {
         .make(ZenRockGardenModel.self),
         .make(SubmarineWindowModel.self),
         .make(GreatBarrierReefModel.self),
-        .make(LightningPlainsModel.self),
         .make(SupercellSkyModel.self),
+        .make(LightningPlainsModel.self),
     ]
 
     public static var all: [(id: String, name: String)] { entries.map { ($0.id, $0.name) } }
