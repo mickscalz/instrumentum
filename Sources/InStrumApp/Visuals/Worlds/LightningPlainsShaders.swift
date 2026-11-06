@@ -281,14 +281,17 @@ enum LightningPlainsShaders {
         float scud = vnoise3(float3(q.x / (0.7 * s), q.y / (0.2 * s), 7.7)) - 0.5;
         st.under = smoothstep(front + 0.1 * s, front - 0.3 * s, alt + 0.5 * s * scud) * (1.0 - anvil);
         float ends = abs(outward.x);
-        float depth = -e + amp * s * bump + s * (mix(0.22, 0.12, crisp) * (1.0 - anvil) * wisp
-                                                 + mix(0.22, 0.55, ends) * anvil * fibre)
+        float depth = -e + amp * s * bump + s * (mix(0.22, 0.12, crisp) * mix(1.0, 0.5, near) * (1.0 - anvil) * wisp
+                                                 + mix(0.12, 0.25, ends) * anvil * fibre)
                       + st.under * s * 0.5 * scud;
         float aa = toDeg(p.view.y);
         float feather = s * mix(mix(0.2, 0.07, crisp), mix(0.22, 0.75, ends), anvil) * mix(1.0, 0.55, near) + 0.6 * aa;
         st.a = smoothstep(-0.5 * aa, feather, depth);
         st.d = -depth;
         st.thick = saturate(depth / (1.3 * s));
+        // The anvil's thin edges stream away in strands of ice, some denser, some all but gone.
+        float strands = saturate(0.5 + 1.7 * fibre);
+        st.a *= mix(1.0, strands, anvil * (1.0 - smoothstep(0.08, 0.45, st.thick)) * mix(0.5, 1.0, ends));
         float t = 1.0 - saturate(depth / (mix(1.6, 1.0, anvil) * s));
         t *= 1.0 - 0.55 * anvil;
         float3 mass = float3(outward * t, sqrt(saturate(1.0 - t * t)));
@@ -651,7 +654,7 @@ enum LightningPlainsShaders {
         // them (blade by blade only a little, so the near grass leans together).
         float wave = vnoise3(float3((X - wind * time * 0.9) * 0.09, z * 0.09, 9.1));
         float sway = d.z * sin(time * 1.7 + X * 0.35 + 2.0 * wave);
-        float lean0 = clamp(wind / 12.0 * (0.7 + 0.6 * wave) + sway, -0.9, 0.9);
+        float lean0 = clamp(wind / 16.0 * (0.7 + 0.6 * wave) + sway, -0.75, 0.75);
         // The tussocks' rolling, ragged top.
         float sb = max(d.x, 1e-3);
         float roll = pl_noise1(X / 0.9, b.w) * 0.65 + pl_noise1(X / 0.23, b.w + 7.7) * 0.35;
@@ -693,7 +696,7 @@ enum LightningPlainsShaders {
         if (cover <= 0.001) return float4(0.0);
         // Golden and greyer stubble in patches across the plain; the stems' streaks in the tussocks.
         float patch = vnoise3(float3(X * 0.11, z * 0.11, 3.3));
-        float3 straw = mix(float3(0.44, 0.38, 0.3), float3(0.64, 0.48, 0.26), smoothstep(0.25, 0.75, patch));
+        float3 straw = mix(float3(0.46, 0.41, 0.34), float3(0.62, 0.5, 0.32), smoothstep(0.25, 0.75, patch));
         float stems = pl_noise1((X - bow) / (0.45 * sb), b.w + 1.9);
         float rise = smoothstep(0.1 * H, g, Y);
         float depthShade = (0.55 + 0.45 * rise) * (0.7 + 0.5 * stems);
