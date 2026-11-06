@@ -133,4 +133,39 @@ final class PresetsTests: XCTestCase {
             XCTAssertEqual(p.displayName, "\(p.name) · after \"Underwater\"", p.id)
         }
     }
+
+    /// Endless Rise's four presets (Storms spec §4.1; brief endless-rise.md), each after "FADE": the dials in the
+    /// instrument's order (Rise, Pressure, Grit, Pulse, Tempo, Tail, Sub, Space, Width), Supercell first and the default
+    /// (the engine's own defaults). The spec lists only what differs from Supercell: Slow Front (Rise .03, Pulse 0, Tail 1),
+    /// Siren (Rise .3, Grit .6, Pulse .8 at 128) and Pad Only (Rise 0, the riser off); every other dial is Supercell's, but
+    /// Space and Width, which the spec leaves to the ear.
+    func testEndlessRisePresets() {
+        let presets = PatchLibrary.patches(for: .endlessRise)
+        XCTAssertEqual(presets.map(\.id), ["endless-rise", "slow-front", "siren", "pad-only"])
+        XCTAssertEqual(presets.map(\.name), ["Supercell", "Slow Front", "Siren", "Pad Only"])
+        XCTAssertEqual(PatchLibrary.defaultPatch(for: .endlessRise).id, "endless-rise")
+        XCTAssertEqual(BuiltInEngine.endlessRise.displayName, "Endless Rise")
+        XCTAssertEqual(BuiltInEngine(rawValue: "endlessRise"), .endlessRise)
+        let dials = ["rise", "pressure", "grit", "pulse", "tempo", "tail", "sub", "space", "width"]
+        let expected: [String: [Double]] = ["endless-rise": [0.08, 0.40, 0.30, 0.50, 124, 0.60, 0.70, 0.50, 0.60],
+                                            "slow-front": [0.03, 0.40, 0.30, 0.00, 124, 1.00, 0.70, 0.70, 0.75],
+                                            "siren": [0.30, 0.40, 0.60, 0.80, 128, 0.60, 0.70, 0.35, 0.50],
+                                            "pad-only": [0.00, 0.40, 0.30, 0.50, 124, 0.60, 0.70, 0.60, 0.70]]
+        for p in presets {
+            XCTAssertEqual(p.engine, .endlessRise, p.id)
+            XCTAssertEqual(Set(p.values.keys), Set(dials), p.id)
+            XCTAssertEqual(dials.map { p.values[$0] ?? -1 }, expected[p.id], p.id)
+            XCTAssertEqual(p.creditID, "fade", p.id)
+            XCTAssertEqual(p.credit, CreditLibrary.fade, p.id)
+            XCTAssertEqual(p.displayName, "\(p.name) · after \"FADE\"", p.id)
+        }
+        // What each differs from Supercell in, and nothing else but the room.
+        let supercell = PatchLibrary.defaultPatch(for: .endlessRise).values
+        let differs: [String: Set<String>] = ["slow-front": ["rise", "pulse", "tail"], "siren": ["rise", "grit", "pulse", "tempo"],
+                                              "pad-only": ["rise"]]
+        for p in presets.dropFirst() {
+            let changed = Set(dials.filter { p.values[$0] != supercell[$0] }).subtracting(["space", "width"])
+            XCTAssertEqual(changed, differs[p.id], p.id)
+        }
+    }
 }

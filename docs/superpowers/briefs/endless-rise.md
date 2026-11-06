@@ -58,11 +58,16 @@ The pad-and-riser instrument on the **analogue voice core** (`AnalogVoice.hpp`),
 - **Tuning:** concert pitch, Fine tune 0.
 
 ## Preset starting values
-Rise is in octaves a second (0 switches the riser off). Space and Width stay at the engine defaults; the spec doesn't set them, so Task 3 tunes them by ear. The spec lists only what differs from *Supercell*, so the other dials are taken from it.
+Rise is in octaves a second (0 switches the riser off). The spec lists only what differs from *Supercell*, so the other dials are taken from it. The spec doesn't set Space and Width: *Supercell* keeps the engine's defaults (.50, .60); as built in Task 3 the others lean with their character (*Slow Front* far and wide, *Siren* close so its pulse stays tight, *Pad Only* with air round it). Those four pairs were reasoned, not heard: **check them by ear.**
 
-| Preset | rise | pressure | grit | pulse | tempo | tail | sub |
-|---|---|---|---|---|---|---|---|
-| Supercell (default) | .08 | .40 | .30 | .50 | 124 | .60 | .70 |
-| Slow Front | .03 | .40 | .30 | 0 | 124 | 1.0 | .70 |
-| Siren | .30 | .40 | .60 | .80 | 128 | .60 | .70 |
-| Pad Only | 0 | .40 | .30 | .50 | 124 | .60 | .70 |
+| Preset | rise | pressure | grit | pulse | tempo | tail | sub | space | width |
+|---|---|---|---|---|---|---|---|---|---|
+| Supercell (default) | .08 | .40 | .30 | .50 | 124 | .60 | .70 | .50 | .60 |
+| Slow Front | .03 | .40 | .30 | 0 | 124 | 1.0 | .70 | .70 | .75 |
+| Siren | .30 | .40 | .60 | .80 | 128 | .60 | .70 | .35 | .50 |
+| Pad Only | 0 | .40 | .30 | .50 | 124 | .60 | .70 | .60 | .70 |
+
+## In the app (Task 3, as built)
+- **The credit:** "FADE", Kanye West, *The Life of Pablo*, 2016, 124 BPM (the felt pulse). Credits carry only verified facts, so it states no key (still to be heard) and no track number (not verified; `Credit.trackNumber` is optional for this), and the card's liner notes read `124 BPM` alone.
+- **Tension and the drop:** `SceneDirector` owns Excitement and steps it every frame from the notes; its `instrumentCue` (Excitement's tension, and the drop on the one step it lands) reaches the engine through `AppModel.cueInstrument` and the two C calls. With build and drop off, the cue is 0.7 × the pressure, so with the engine's own 0.3 the riser climbs at the pressure itself (aftertouch = Tension). `SceneDirector.instrumentTension` is the same number for the world.
+- **The demo** (`DemoPhrases.endlessRise`, F minor at 124) is rendered as the app plays it, through a director, because its drop is Excitement's.

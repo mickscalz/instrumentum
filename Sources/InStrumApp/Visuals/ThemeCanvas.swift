@@ -98,6 +98,7 @@ final class ThemeCanvas: NSObject, MTKViewDelegate {
         for (address, value) in model.drainDialChanges() { hub.set(.dial(address), value, at: now) }
         director.instrumentPulse = model.instrumentPulse   // Blue Depth's arp grid, for the visuals that blink with it
         let frame = director.step(dt: frameDt, t: now, quality: level)
+        model.cueInstrument(director.instrumentCue)   // Excitement's tension and drop (or the pressure) to the instrument
         let dt = director.visualDt   // the renderers' clock, as the director's controls shape it
         model.updateAmbience(director.ambience(for: frame, at: now), at: now)
         model.noteSceneReport(director.report)

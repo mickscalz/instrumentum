@@ -22,6 +22,10 @@ public protocol InstrumentEngine: AnyObject {
     /// Built-in instruments only.
     func applyPatch(_ patch: Patch)
     var builtInPatchID: String? { get }
+    /// Built-in instruments only (Endless Rise; every other engine ignores it): the scene's tension, 0…1, each step.
+    func setTension(_ tension: Float)
+    /// Built-in instruments only (Endless Rise): the drop.
+    func triggerDrop()
     /// Puts the ambience generator on its own bus (after `start`).
     func startAmbience() async
     func setAmbience(_ scene: AmbienceScene)
@@ -46,6 +50,8 @@ public extension InstrumentEngine {
     func setMood(_ mood: Mood) {}
     func applyPatch(_ patch: Patch) {}
     var builtInPatchID: String? { nil }
+    func setTension(_ tension: Float) {}
+    func triggerDrop() {}
     func startAmbience() async {}
     func setAmbience(_ scene: AmbienceScene) {}
     func clearAmbienceThunder() {}
@@ -71,4 +77,6 @@ extension MIDIInput: MIDIControlling {}
 extension AudioEngine: InstrumentEngine {
     public func applyPatch(_ patch: Patch) { loadedBuiltIn?.apply(patch) }
     public var builtInPatchID: String? { loadedBuiltIn?.patchID }
+    public func setTension(_ tension: Float) { loadedBuiltIn?.setTension(tension) }
+    public func triggerDrop() { loadedBuiltIn?.triggerDrop() }
 }

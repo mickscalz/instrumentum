@@ -68,6 +68,28 @@ public final class BuiltInInstrumentAU: AUAudioUnit {
         tree.allParameters.first { $0.identifier == identifier }
     }
 
+    // MARK: - The scene's tension and drop (Endless Rise; every other engine ignores them)
+
+    /// The scene's tension, 0…1 (Storms spec §3, §4.1): any thread. The engine keeps it in an atomic read once per control
+    /// block and smoothed over 50 ms, so calling it every frame is cheap and never steps.
+    public func setTension(_ tension: Float) {
+        if let synth = box.synth { isd_synth_set_tension(synth, tension) }
+    }
+
+    /// The drop, taken at the next control block; the engine ignores a second one within 2.5 s.
+    public func triggerDrop() {
+        if let synth = box.synth { isd_synth_trigger_drop(synth) }
+    }
+
+    /// Read-backs (tests): the tension the engine is using (the scene's plus 0.3 × the player's pressure, smoothed) and the
+    /// drops it has taken. Read between renders.
+    public var tensionInUse: Float {
+        box.synth.map { Float(isd_synth_debug_count($0, ISD_DEBUG_TENSION_PERMILLE)) / 1000 } ?? 0
+    }
+    public var dropsTaken: Int {
+        box.synth.map { Int(isd_synth_debug_count($0, ISD_DEBUG_DROPS)) } ?? 0
+    }
+
     public override var fullState: [String: Any]? {
         get {
             var values: [String: NSNumber] = [:]

@@ -8,6 +8,7 @@ import InStrumCore
 enum CardArt {
     case comeBackToEarth, innerbloom, musicToWatchBoysTo, highByTheBeach, stay, dunno, wings, happinessIsAButterfly
     case underwater
+    case fade
     /// Place cards (see `place(for:)`).
     case teaHouseSnow, zenRockGarden
     case greatBarrierReef
@@ -123,6 +124,56 @@ enum CardArt {
         }
     }
 
+    /// The FADE card's wall cloud: its centre (fractions of the card), its radius (a fraction of the width) and how flat
+    /// it lies (its height over its width, seen from beneath and afar), right of the words and under the liner notes.
+    static let fadeRing: (x: CGFloat, y: CGFloat, radius: CGFloat, tilt: CGFloat) = (0.64, 0.40, 0.29, 0.42)
+
+    /// The FADE card's core: the green a storm's core pulls the light to.
+    static let fadeCore: (red: Double, green: Double, blue: Double) = (0.35, 0.55, 0.40)
+
+    /// The FADE card's ring turns once a bar: four beats of the felt pulse.
+    static let fadeBeatsPerTurn = 4.0
+
+    /// The FADE card's inflow bands: eight, the riser's eight octaves, each this fraction of the radius of the one
+    /// outside it.
+    static let fadeBandCount = 8
+    static let fadeBandRatio = 0.78
+
+    /// How far round the FADE card's ring has turned at `t` (0…1): once a bar.
+    static func fadeTurn(at t: Double, pulse: Double) -> Double {
+        let turns: Double = t / (fadeBeatsPerTurn * pulse)
+        return turns - floor(turns)
+    }
+
+    /// The FADE card's breath at `t` (0…1): the core swells in on the downbeat and settles by the half bar, once a bar.
+    static func fadeBreath(at t: Double, pulse: Double) -> Double {
+        let bars: Double = t / (fadeBeatsPerTurn * pulse)
+        return 0.5 + 0.5 * cos(2 * Double.pi * bars)
+    }
+
+    /// The pad's pulse on the FADE card at `t` (0.55…1): the ring's lit edge dims straight down on every beat and comes
+    /// back over 60% of it ((1 − s)², the engine's own duck), so the light pumps as the pad does.
+    static func fadePump(at t: Double, pulse: Double) -> Double {
+        let beats: Double = t / pulse
+        let s: Double = min(1, (beats - floor(beats)) / 0.6)
+        return 1 - 0.45 * (1 - s) * (1 - s)
+    }
+
+    /// The FADE card's eight inflow bands at `t`, outermost first: each one's radius (a fraction of the ring's), its
+    /// opacity and how far round its two arms have turned. They close in on the core one band's place a bar, fading in at
+    /// the ring and out at the core on the riser's own window (0.5 − 0.5·cos 2πx), turning as they go, so a bar later the
+    /// eight are exactly where they were: the climb that never arrives.
+    static func fadeBands(at t: Double, pulse: Double) -> [(radius: Double, opacity: Double, turn: Double)] {
+        let bars: Double = t / (fadeBeatsPerTurn * pulse)
+        let f: Double = bars - floor(bars)
+        return (0..<fadeBandCount).map { (k: Int) -> (radius: Double, opacity: Double, turn: Double) in
+            let place: Double = Double(k) + f
+            let x: Double = place / Double(fadeBandCount)
+            let turn: Double = 0.25 * place + bars
+            return (radius: 0.96 * pow(fadeBandRatio, place), opacity: 0.5 - 0.5 * cos(2 * Double.pi * x), turn: turn - floor(turn))
+        }
+    }
+
     static func art(for creditID: String) -> CardArt? {
         switch creditID {
         case CreditLibrary.comeBackToEarth.id: return .comeBackToEarth
@@ -134,6 +185,7 @@ enum CardArt {
         case CreditLibrary.wings.id: return .wings
         case CreditLibrary.happinessIsAButterfly.id: return .happinessIsAButterfly
         case CreditLibrary.underwater.id: return .underwater
+        case CreditLibrary.fade.id: return .fade
         default: return nil
         }
     }
@@ -155,7 +207,7 @@ enum CardArt {
         switch self {
         case .comeBackToEarth, .innerbloom, .musicToWatchBoysTo, .highByTheBeach, .stay, .dunno, .wings, .happinessIsAButterfly:
             return false
-        case .underwater:
+        case .underwater, .fade:
             return false
         case .teaHouseSnow, .zenRockGarden:
             return true
@@ -180,6 +232,7 @@ enum CardArt {
         case .wings: return .system(size: 28, weight: .light, design: .rounded)
         case .happinessIsAButterfly: return .system(size: 26, weight: .regular, design: .serif)
         case .underwater: return .system(size: 27, weight: .light, design: .monospaced)
+        case .fade: return .system(size: 30, weight: .ultraLight, design: .default)
         case .teaHouseSnow: return .system(size: 28, weight: .light, design: .serif)
         case .zenRockGarden: return .system(size: 27, weight: .light, design: .default)
         case .greatBarrierReef: return .system(size: 27, weight: .medium, design: .rounded)
@@ -197,6 +250,7 @@ enum CardArt {
         case .wings: return 2
         case .happinessIsAButterfly: return 1
         case .underwater: return 2
+        case .fade: return 12
         case .teaHouseSnow: return 2.5
         case .zenRockGarden: return 4
         case .greatBarrierReef: return 1.5
@@ -212,6 +266,7 @@ enum CardArt {
         case .wings: return 60.0 / 60
         case .happinessIsAButterfly: return credit.pulsePeriod   // 68 BPM: the motes blink at 60/68 s
         case .underwater: return credit.pulsePeriod   // 118 BPM: a sonar ring leaves every 60/118 s
+        case .fade: return credit.pulsePeriod   // 124 BPM, the felt pulse: the ring turns once a bar of four of these
         case .teaHouseSnow, .zenRockGarden: return Self.placePulse
         case .greatBarrierReef: return Self.reefPulse
         default: return credit.pulsePeriod
@@ -230,6 +285,7 @@ enum CardArt {
         case .wings: Self.auroraWater(ctx, size, t, pulse)
         case .happinessIsAButterfly: Self.moonlitCove(ctx, size, t, pulse)
         case .underwater: Self.deepBlue(ctx, size, t, pulse)
+        case .fade: Self.wallCloud(ctx, size, t, pulse)
         case .teaHouseSnow: Self.teaHouse(ctx, size, t, pulse)
         case .zenRockGarden: Self.rockGarden(ctx, size, t, pulse)
         case .greatBarrierReef: Self.reef(ctx, size, t, pulse)
@@ -952,6 +1008,194 @@ enum CardArt {
             ctx.fill(Path(ellipseIn: CGRect(x: x - 0.38 * r - glint, y: y - 0.38 * r - glint, width: 2 * glint, height: 2 * glint)),
                      with: .color(.white.opacity(0.85 * a)))
         }
+    }
+
+    // MARK: - FADE: a ring of storm cloud turning round a green core over a dark plain, once a bar at 124; eight bands of
+    // inflow closing in on the core for ever; the pad's pulse in its lit edge. Abstract, and nothing from the record.
+
+    private static func wallCloud(_ ctx: GraphicsContext, _ size: CGSize, _ t: Double, _ pulse: Double) {
+        let w = size.width, h = size.height
+        let k: CGFloat = w / 600
+        let bar: Double = fadeBeatsPerTurn * pulse
+        let breath: Double = fadeBreath(at: t, pulse: pulse)
+        let pump: Double = fadePump(at: t, pulse: pulse)
+        let turn: Double = fadeTurn(at: t, pulse: pulse)
+        let swell: CGFloat = 0.97 + 0.04 * CGFloat(breath)   // the ring breathes with the core
+        let centre = CGPoint(x: w * fadeRing.x, y: h * fadeRing.y)
+        let rx: CGFloat = w * fadeRing.radius * swell
+        let ry: CGFloat = rx * fadeRing.tilt
+        let horizon: CGFloat = h * 0.80
+        let core = Color(red: fadeCore.red, green: fadeCore.green, blue: fadeCore.blue)
+        let lit = Color(red: 0.58, green: 0.84, blue: 0.64)
+        let warm = Color(red: 0.45, green: 0.36, blue: 0.20)
+
+        // The sky under the storm: near black under its base, storm green-grey lower down, lighter at the far horizon.
+        ctx.fill(Path(CGRect(x: 0, y: 0, width: w, height: horizon)), with: .linearGradient(
+            Gradient(stops: [.init(color: Color(red: 0.035, green: 0.045, blue: 0.045), location: 0),
+                             .init(color: Color(red: 0.10, green: 0.13, blue: 0.12), location: 0.30),
+                             .init(color: Color(red: 0.20, green: 0.25, blue: 0.22), location: 0.62),
+                             .init(color: Color(red: 0.30, green: 0.33, blue: 0.25), location: 1)]),
+            startPoint: .zero, endPoint: CGPoint(x: 0, y: horizon)))
+        var light = ctx
+        light.blendMode = .plusLighter
+        // The end of a hot afternoon, low on the left where the storm hasn't reached: a flat glow along the horizon.
+        let reach: CGFloat = w * 0.45
+        var afternoon = light
+        afternoon.translateBy(x: w * 0.10, y: horizon)
+        afternoon.scaleBy(x: 1, y: 0.22)
+        afternoon.fill(Path(ellipseIn: CGRect(x: -reach, y: -reach, width: 2 * reach, height: 2 * reach)),
+                       with: .radialGradient(Gradient(colors: [warm.opacity(0.35), warm.opacity(0)]),
+                                             center: .zero, startRadius: 0, endRadius: reach))
+        // The core's light pulls the storm green round it, breathing once a bar.
+        let cast: CGFloat = 1.5 * rx
+        light.fill(Path(ellipseIn: CGRect(x: centre.x - cast, y: centre.y - cast, width: 2 * cast, height: 2 * cast)),
+                   with: .radialGradient(Gradient(colors: [core.opacity(0.08 + 0.05 * breath), core.opacity(0)]),
+                                         center: centre, startRadius: 0, endRadius: cast))
+
+        // The shelf: the storm's dark base across the top, still, its lumps lit faintly green from beneath near the ring.
+        let shelfLumps: [(x: CGFloat, y: CGFloat, r: CGFloat)] = (0..<15).map { (j: Int) -> (x: CGFloat, y: CGFloat, r: CGFloat) in
+            let x: CGFloat = w * CGFloat(j) / 14 + 10 * k * CGFloat(hash(j, 301) - 0.5)
+            let r: CGFloat = (20 + 16 * CGFloat(hash(j, 302))) * k
+            return (x: x, y: h * (0.09 + 0.06 * CGFloat(hash(j, 303))), r: r)
+        }
+        var shelf = ctx
+        shelf.addFilter(.blur(radius: 5 * k))
+        shelf.drawLayer { layer in
+            layer.fill(Path(CGRect(x: -20 * k, y: -20 * k, width: w + 40 * k, height: h * 0.07 + 20 * k)),
+                       with: .color(Color(red: 0.035, green: 0.045, blue: 0.045)))
+            for lump in shelfLumps {
+                layer.fill(Path(ellipseIn: CGRect(x: lump.x - 1.3 * lump.r, y: lump.y - lump.r, width: 2.6 * lump.r, height: 2 * lump.r)),
+                           with: .color(Color(red: 0.040, green: 0.050, blue: 0.050)))
+            }
+        }
+        var underside = light
+        underside.addFilter(.blur(radius: 4 * k))
+        underside.drawLayer { layer in
+            for lump in shelfLumps {
+                let near: Double = max(0, 1 - Double(abs(lump.x - centre.x) / (1.4 * rx)))
+                guard near > 0 else { continue }
+                layer.fill(Path(ellipseIn: CGRect(x: lump.x - 0.9 * lump.r, y: lump.y + 0.40 * lump.r, width: 1.8 * lump.r, height: 0.7 * lump.r)),
+                           with: .color(core.opacity(0.16 * near * (0.6 + 0.4 * breath))))
+            }
+        }
+
+        // The ring, turning once a bar: forty dark puffs drawn far side first, each stretched along the ring and bigger
+        // the nearer it is, and the lit inner edge, brightest on the far side where it faces us, dimmed on every beat.
+        let puffs: [(a: Double, i: Int)] = (0..<40).map { (i: Int) -> (a: Double, i: Int) in
+            let spread: Double = 0.4 * (hash(i, 311) - 0.5) / 40
+            return (a: 2 * Double.pi * (Double(i) / 40 + spread + turn), i: i)
+        }.sorted { sin($0.a) < sin($1.a) }
+        func ring(_ layer: GraphicsContext, near: Bool) {
+            for puff in puffs {
+                let depth: Double = sin(puff.a)   // −1 at the far side … 1 at the near side
+                if (depth >= 0) != near { continue }
+                let out: CGFloat = 1 + 0.12 * CGFloat(hash(puff.i, 312) - 0.5)
+                let p = CGPoint(x: centre.x + rx * out * CGFloat(cos(puff.a)), y: centre.y + ry * out * CGFloat(depth))
+                let s: CGFloat = (15 + 13 * CGFloat(hash(puff.i, 313))) * k * (1 + 0.35 * CGFloat(depth))
+                let along: Double = atan2(Double(ry) * cos(puff.a), -Double(rx) * sin(puff.a))
+                let shade: Double = 0.085 + 0.04 * hash(puff.i, 314) - 0.02 * depth
+                var body = layer
+                body.translateBy(x: p.x, y: p.y)
+                body.rotate(by: .radians(along))
+                body.fill(Path(ellipseIn: CGRect(x: -1.6 * s, y: -s, width: 3.2 * s, height: 2 * s)),
+                          with: .color(Color(red: 0.92 * shade, green: 1.12 * shade, blue: 1.05 * shade)))
+            }
+            var edge = layer
+            edge.blendMode = .plusLighter
+            let step: Double = 2 * Double.pi / 48
+            for j in 0..<48 {
+                let a0: Double = step * Double(j) + 2 * Double.pi * turn
+                let depth: Double = sin(a0 + step / 2)
+                if (depth >= 0) != near { continue }
+                var arc = Path()
+                for q in 0...4 {
+                    let a: Double = a0 + 1.15 * step * Double(q) / 4
+                    let pt = CGPoint(x: centre.x + 0.84 * rx * CGFloat(cos(a)), y: centre.y + 0.84 * ry * CGFloat(sin(a)))
+                    if q == 0 { arc.move(to: pt) } else { arc.addLine(to: pt) }
+                }
+                let glow: Double = 0.30 * pump * (0.5 + 0.5 * breath) * (0.65 - 0.35 * depth) * (0.35 + 0.65 * hash(j, 331))
+                edge.stroke(arc, with: .color(lit.opacity(glow)),
+                            style: StrokeStyle(lineWidth: (5 + 6 * CGFloat(hash(j, 332))) * k, lineCap: .round))
+            }
+        }
+        var far = ctx
+        far.addFilter(.blur(radius: 4 * k))
+        far.drawLayer { layer in ring(layer, near: false) }
+
+        // Eight bands of inflow closing in on the core, two arms each: the riser's eight octaves, climbing for ever.
+        var bands = light
+        bands.addFilter(.blur(radius: 2.5 * k))
+        bands.drawLayer { layer in
+            for band in fadeBands(at: t, pulse: pulse) where band.opacity > 0.01 {
+                let r: CGFloat = CGFloat(band.radius)
+                for arm in 0..<2 {
+                    let from: Double = 2 * Double.pi * (band.turn + Double(arm) / 2)
+                    var path = Path()
+                    for q in 0...16 {
+                        let a: Double = from + Double(q) / 16
+                        let pt = CGPoint(x: centre.x + rx * r * CGFloat(cos(a)), y: centre.y + ry * r * CGFloat(sin(a)))
+                        if q == 0 { path.move(to: pt) } else { path.addLine(to: pt) }
+                    }
+                    layer.stroke(path, with: .color(Color(red: 0.55, green: 0.70, blue: 0.62).opacity(0.24 * band.opacity)),
+                                 style: StrokeStyle(lineWidth: (1.2 + 4 * r) * k, lineCap: .round))
+                }
+            }
+        }
+
+        // The core: green, breathing once a bar, lying as flat as the ring a little less so.
+        var heart = light
+        heart.translateBy(x: centre.x, y: centre.y)
+        heart.scaleBy(x: 1, y: 0.75)
+        let glow: CGFloat = 0.62 * ry * CGFloat(0.85 + 0.3 * breath)
+        heart.fill(Path(ellipseIn: CGRect(x: -glow, y: -glow, width: 2 * glow, height: 2 * glow)),
+                   with: .radialGradient(Gradient(colors: [core.opacity(0.45 + 0.30 * breath), core.opacity(0)]),
+                                         center: .zero, startRadius: 0, endRadius: glow))
+        let inner: CGFloat = 0.20 * ry
+        heart.fill(Path(ellipseIn: CGRect(x: -inner, y: -inner, width: 2 * inner, height: 2 * inner)),
+                   with: .radialGradient(Gradient(colors: [lit.opacity(0.15 + 0.15 * breath), lit.opacity(0)]),
+                                         center: .zero, startRadius: 0, endRadius: inner))
+
+        // The hail shaft: a lit column falling from the core to the plain, leaning with the wind, its stones falling
+        // once a bar.
+        let top: CGFloat = centre.y + 0.15 * ry, span: CGFloat = 0.55 * rx
+        let lean: CGFloat = 0.12 * (horizon - top)
+        let stone = Color(red: 0.36, green: 0.50, blue: 0.42)
+        var shaft = light
+        shaft.addFilter(.blur(radius: 6 * k))
+        shaft.drawLayer { layer in
+            var column = Path()
+            column.move(to: CGPoint(x: centre.x - 0.35 * span, y: top))
+            column.addLine(to: CGPoint(x: centre.x + 0.35 * span, y: top))
+            column.addLine(to: CGPoint(x: centre.x + 0.5 * span + lean, y: horizon))
+            column.addLine(to: CGPoint(x: centre.x - 0.5 * span + lean, y: horizon))
+            column.closeSubpath()
+            layer.fill(column, with: .linearGradient(Gradient(colors: [stone.opacity(0.30), stone.opacity(0.08)]),
+                                                     startPoint: CGPoint(x: 0, y: top), endPoint: CGPoint(x: 0, y: horizon)))
+        }
+        for i in 0..<18 {
+            let fall: Double = t / bar + hash(i, 321)
+            let u: Double = fall - floor(fall)   // 0 at the core … 1 at the plain
+            let y: CGFloat = top + (horizon - top) * CGFloat(u)
+            let x: CGFloat = centre.x + span * (CGFloat(hash(i, 322)) - 0.5) * (0.7 + 0.3 * CGFloat(u)) + 0.12 * (y - top)
+            let length: CGFloat = (8 + 8 * CGFloat(hash(i, 323))) * k
+            var streak = Path()
+            streak.move(to: CGPoint(x: x, y: y))
+            streak.addLine(to: CGPoint(x: x + 0.12 * length, y: y + length))
+            ctx.stroke(streak, with: .color(Color(red: 0.70, green: 0.82, blue: 0.74).opacity(0.28 * sin(Double.pi * u))), lineWidth: k)
+        }
+
+        // The ring's near side, in front of the shaft and the core's lower half.
+        var near = ctx
+        near.addFilter(.blur(radius: 3 * k))
+        near.drawLayer { layer in ring(layer, near: true) }
+
+        // The plain, dark under the storm, and its horizon lit warm at the left and green under the core.
+        ctx.fill(Path(CGRect(x: 0, y: horizon, width: w, height: h - horizon)), with: .linearGradient(
+            Gradient(colors: [Color(red: 0.050, green: 0.056, blue: 0.044), Color(red: 0.018, green: 0.020, blue: 0.017)]),
+            startPoint: CGPoint(x: 0, y: horizon), endPoint: CGPoint(x: 0, y: h)))
+        light.fill(Path(CGRect(x: 0, y: horizon - 0.6 * k, width: w, height: 1.2 * k)), with: .linearGradient(
+            Gradient(colors: [warm.opacity(0.30), Color(red: 0.30, green: 0.42, blue: 0.34).opacity(0.30)]),
+            startPoint: CGPoint(x: 0, y: horizon), endPoint: CGPoint(x: w, y: horizon)))
     }
 
     // MARK: - Tea House Snow (a place card): a snow garden at dusk through a snow-viewing screen, the tea's steam

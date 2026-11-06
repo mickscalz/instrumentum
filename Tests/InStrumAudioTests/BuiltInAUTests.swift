@@ -108,6 +108,10 @@ final class BuiltInAUTests: XCTestCase {
         // ±2 cents at Width 0, centred on the note.
         if engine == .magmaBass { setParam(e, Int(ISD_P_MOOD_MOTION), 0) }
         if engine == .replicantBrass { setParam(e, Int(ISD_P_MOOD_MOTION), 0); setParam(e, Int(ISD_P_UNISON_WIDTH), 0); setParam(e, Int(ISD_P_HALL), 0) }
+        // Endless Rise's riser climbs through every pitch (Rise 0 switches it off) and its pulse ducks the pad, so both go;
+        // the pad's pair is centred on the note and drifts like Blue Depth's (+0.12 cents at 44.1, 48 and 96 kHz on the
+        // mirror).
+        if engine == .endlessRise { setParam(e, Int(ISD_P_RISE), 0); setParam(e, Int(ISD_P_PULSE), 0); setParam(e, Int(ISD_P_MOOD_MOTION), 0) }
     }
 
     func testTuningHoldsAt44_1And96k() async throws {

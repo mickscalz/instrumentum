@@ -364,6 +364,31 @@ final class SceneDirectorTests: XCTestCase {
         XCTAssertEqual(probe.lastSky?.supercell, 0)
         XCTAssertGreaterThan(probe.sky.crawlerSky.spawned, before)
         XCTAssertEqual(probe.sky.randomExtras, [.gustFront: 0.3, .virga: 0.5])
+
+    /// Endless Rise's pulse (Storms spec §3): its Pulse's Tempo with the Pulse as the gate, while the Pulse is up, so the
+    /// world turns on the beat the pad ducks on. Pulse .5 at 124 is (124, .5); Pulse 0 has none; so does a set of dials
+    /// with no Pulse; the Tempo keeps to its dial's 70…170 and is 124 when not named. Each preset's pulse follows from its
+    /// dials (Slow Front has none), no other engine takes Endless Rise's dials for a pulse, and the director carries it as
+    /// the canvas hands it over.
+    func testInstrumentPulseForER() {
+        XCTAssertEqual(InstrumentPulse(engine: .endlessRise, values: ["pulse": 0.5, "tempo": 124]), InstrumentPulse(bpm: 124, gate: 0.5))
+        XCTAssertNil(InstrumentPulse(engine: .endlessRise, values: ["pulse": 0, "tempo": 124]), "Pulse 0: the pad doesn't duck")
+        XCTAssertNil(InstrumentPulse(engine: .endlessRise, values: ["tempo": 124]), "no Pulse dial named")
+        XCTAssertNil(InstrumentPulse(engine: .endlessRise, values: ["blink": 1, "tempo": 120]), "Blue Depth's dials mean nothing here")
+        XCTAssertEqual(InstrumentPulse(engine: .endlessRise, values: ["pulse": 0.8]), InstrumentPulse(bpm: 124, gate: 0.8))
+        XCTAssertEqual(InstrumentPulse(engine: .endlessRise, values: ["pulse": 1, "tempo": 200]), InstrumentPulse(bpm: 170, gate: 1))
+        XCTAssertEqual(InstrumentPulse(engine: .endlessRise, values: ["pulse": 0.3, "tempo": 40]), InstrumentPulse(bpm: 70, gate: 0.3))
+        let pulses = PatchLibrary.patches(for: .endlessRise).map { InstrumentPulse(engine: .endlessRise, values: $0.values) }
+        XCTAssertEqual(pulses, [InstrumentPulse(bpm: 124, gate: 0.5), nil, InstrumentPulse(bpm: 128, gate: 0.8),
+                                InstrumentPulse(bpm: 124, gate: 0.5)], "Supercell, Slow Front, Siren, Pad Only")
+        for kind in BuiltInEngine.allCases where kind != .endlessRise {
+            XCTAssertNil(InstrumentPulse(engine: kind, values: ["pulse": 0.5, "tempo": 124]), kind.rawValue)
+        }
+        XCTAssertNil(InstrumentPulse(engine: nil, values: ["pulse": 0.5, "tempo": 124]))
+        let d = director(MoonlitLakeModel.id)
+        d.instrumentPulse = InstrumentPulse(engine: .endlessRise, values: PatchLibrary.defaultPatch(for: .endlessRise).values)
+        d.switchTheme(to: SubmarineWindowModel.id, state: ThemeState())
+        XCTAssertEqual(d.instrumentPulse, InstrumentPulse(bpm: 124, gate: 0.5), "the instrument's, so it carries over a switch")
     }
 
     func testMoodLookIsNeutralAtHalf() {
