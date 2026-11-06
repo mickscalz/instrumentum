@@ -606,7 +606,8 @@ final class StormSkyTests: XCTestCase {
     func testRandomBeautifulTables() {
         let storms: Set<String> = [MoonlitLakeModel.id, GoldenHourBeachModel.id, CoastRoadModel.id]
         let dry: Set<String> = [CoastRoadModel.id]
-        for (id, _) in ThemeRegistry.all {
+        let registered: Set<String> = [LightningPlainsModel.id]   // Storms' worlds as they are registered (Task 11)
+        for (id, _) in ThemeRegistry.all where !registered.contains(id) {
             let extras = WorldWeather.randomExtras(for: id)
             XCTAssertEqual(extras[.gustFront] != nil, storms.contains(id), id)
             XCTAssertEqual(extras[.virga] != nil, dry.contains(id), id)
