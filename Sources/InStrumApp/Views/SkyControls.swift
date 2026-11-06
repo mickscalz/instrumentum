@@ -280,3 +280,4 @@ extension BayFrame: SkyBearing {}
 extension TeaHouseFrame: SkyBearing {}
 extension ZenGardenFrame: SkyBearing {}
 extension SubFrame: SkyBearing {}   // Snell's window shows the sky's own meteors
+extension SupercellFrame: SkyBearing {}

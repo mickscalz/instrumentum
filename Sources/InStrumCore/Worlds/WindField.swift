@@ -39,6 +39,9 @@ public struct WindField: Equatable {
         public internal(set) var strength: Float
         /// Its reach side to side (metres, raised-cosine), or infinite for a front.
         public internal(set) var span: Float
+        /// How far behind its crest it blows on at full strength (metres; 0: a plain wave): a gust front's outflow,
+        /// which keeps the grass flat behind the wave until its tail has passed, then eases off over half the width.
+        public internal(set) var tail: Float = 0
         /// Seconds since it set out.
         public internal(set) var age: Float
         var serial: UInt32
@@ -54,7 +57,8 @@ public struct WindField: Equatable {
         public func velocity(at p: SIMD2<Float>) -> SIMD2<Float> {
             let d = p - origin
             let half = 0.5 * width
-            let ahead = simd_dot(d, direction) - travelled   // > 0 ahead of the crest, < 0 behind it
+            var ahead = simd_dot(d, direction) - travelled   // > 0 ahead of the crest, < 0 behind it
+            if ahead < 0 { ahead = min(0, ahead + tail) }       // the outflow behind a front holds at the crest's strength
             guard abs(ahead) < half else { return .zero }
             var k = 0.5 + 0.5 * cos(Float.pi * ahead / half)
             if span.isFinite {
@@ -151,14 +155,16 @@ public struct WindField: Equatable {
 
     /// Sends a gust from `origin`, travelling `direction` (by default towards the field's centre) at `speed` m/s,
     /// `width` metres front to back, `strength` m/s at its crest, and `span` metres side to side (infinite: a front).
+    /// A `tail` (metres) keeps it blowing at full strength that far behind its crest: a gust front's outflow.
     public mutating func addGust(from origin: SIMD2<Float>, direction: SIMD2<Float>? = nil, speed: Float,
-                                 width: Float, strength: Float, span: Float = .infinity) {
+                                 width: Float, strength: Float, span: Float = .infinity, tail: Float = 0) {
         let o = Self.clampPoint(origin)
         var heading = direction.map(Self.clampPoint) ?? -o
         if simd_length(heading) < 1e-6 { heading = simd_length(steady) > 1e-6 ? steady : SIMD2(1, 0) }
         let gust = Gust(origin: o, direction: simd_normalize(heading), speed: Self.clamp(speed, 0.5, 200, 10),
                         width: Self.clamp(width, 1, 10_000, 30), strength: Self.clamp(strength, -100, 100, 0),
-                        span: span.isNaN ? .infinity : max(span, 1), age: 0, serial: nextSerial)
+                        span: span.isNaN ? .infinity : max(span, 1), tail: Self.clamp(tail, 0, 10_000, 0), age: 0,
+                        serial: nextSerial)
         nextSerial &+= 1
         let slot = slotToFill(Self.maxGusts) { self.gust(at: $0)?.serial }
         setGust(gust, at: slot)
@@ -192,7 +198,7 @@ public struct WindField: Equatable {
             g.age += s
             // Gone once its crest is past twice the extent downwind and none of it is left in the field.
             let crestAlong = simd_dot(g.origin, g.direction) + g.travelled
-            let gone = (crestAlong > 2 * extent && crestAlong - 0.5 * g.width > extent) || g.age > 3600
+            let gone = (crestAlong > 2 * extent && crestAlong - 0.5 * g.width - g.tail > extent) || g.age > 3600
             setGust(gone ? nil : g, at: slot)
         }
         for slot in 0..<Self.maxVortices {
