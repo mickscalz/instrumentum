@@ -118,7 +118,7 @@ enum LightningPlainsShaders {
                        thread float& rel, thread float& shelfShare) {
         float3 d = float3(1e4, 0.0, 1.0);
         float anvilBest = 1e4, turretBest = 1e4;
-        float wsum = 1e-6, kmSum = 0.0, relSum = 0.0;
+        float wsum = 1e-6, kmSum = 0.0, relSum = 0.0, raining = 0.0;
         float squeeze = cos(toRad(clamp(alt, 0.0, 85.0)));
         for (int i = 0; i < 5; i++) {
             float4 a = p.towerA[i];
@@ -126,6 +126,8 @@ enum LightningPlainsShaders {
             if (a.z <= 0.0) continue;
             float c = a.x * squeeze, w = a.y, T = a.z, A = a.w, Ab = b.x;
             float dx = x - c;
+            float under = dx / (1.6 * w);
+            raining += b.w * exp(-under * under);
             if (dx < -0.45 * A - 2.0 * w || dx > A + 2.0 * w || alt > T + w || alt < -1.0) continue;
             float base = toDeg(atan(1.6 / max(b.y, 0.1)));
             float k = 0.3 * w;
@@ -176,7 +178,7 @@ enum LightningPlainsShaders {
                 float2 ov = float2((dx - 0.1 * w) * 0.75, alt - (T - 0.35 * w));
                 float lo = max(length(ov), 1e-5);
                 turret = pl_dmin(turret, float3(lo - 0.6 * w, 0.75 * ov.x / lo, ov.y / lo), 0.6 * k);
-                float reach = dx > 0.0 ? A : 0.3 * A;
+                float reach = dx > 0.0 ? A : 0.2 * A;
                 float ax = dx / max(reach, 1e-3);
                 float sa = ax >= 0.0 ? 1.0 : -1.0;
                 float topE = T + 0.05 * thick - thick * 0.12 * ax * ax + 0.06 * thick * sin(dx / max(w, 1e-3) * 1.7 + b.z);
@@ -203,7 +205,9 @@ enum LightningPlainsShaders {
         float base = p.storm.w;
         float roll = 0.5 + 0.5 * sin(x * 0.21 + 1.3) * sin(x * 0.067 + 0.4);
         float shelfTop = base + (0.45 + 0.55 * roll) * max(p.towerA[2].z - base, 0.5) * 0.11;
-        float3 shelf = pl_dmax(pl_dmax(float3(alt - shelfTop, 0.0, 1.0), float3(p.shafts.w - alt, 0.0, -1.0)),
+        // Its underside reaches furthest (deepest, darkest) under the grown, raining towers and lifts between them.
+        float bottom = mix(p.storm.w, p.shafts.w, saturate(1.3 * raining - 0.25));
+        float3 shelf = pl_dmax(pl_dmax(float3(alt - shelfTop, 0.0, 1.0), float3(bottom - alt, 0.0, -1.0)),
                                float3(abs(x) - lineHalf, x >= 0.0 ? 1.0 : -1.0, 0.0));
         km = wsum > 1e-5 ? kmSum / wsum : p.shake.w;
         rel = wsum > 1e-5 ? relSum / wsum : 0.0;
@@ -269,7 +273,9 @@ enum LightningPlainsShaders {
         float hs = pl_billow(pl_turn(q, 0.866, 0.5) + 17.3, 0.55 * s, 8.7, ns);
         // Knobbly crowns, softer rain-washed flanks, a gentle anvil and a low, lumpy shelf.
         float crisp = smoothstep(0.3, 0.8, rel) * (1.0 - anvil) * (1.0 - shelf);
-        float amp = mix(1.0, 0.25, anvil) * mix(0.8, 1.2, crisp) * mix(1.0, 0.6, shelf);
+        // (the anvil's underside sags into pouches: mammatus)
+        float belly = anvil * smoothstep(0.2, 0.8, -outward.y);
+        float amp = mix(1.0, mix(0.25, 0.8, belly), anvil) * mix(0.8, 1.2, crisp) * mix(1.0, 0.6, shelf);
         // Clear of the cloud whatever the finest billows, wisps and fibres do: done.
         if (-e + amp * s * (0.75 * (hb - 0.45) + 0.36 * (hs - 0.45) + 0.1) + 0.6 * s < 0.0) { st.d = e; return st; }
         float ht = octaves > 2 ? pl_billow(pl_turn(q, 0.906, -0.423) + 5.1, 0.22 * s, 2.9, nt) : 0.6;
@@ -296,7 +302,7 @@ enum LightningPlainsShaders {
         t *= 1.0 - 0.55 * anvil;
         float3 mass = float3(outward * t, sqrt(saturate(1.0 - t * t)));
         float2 lobes = (nb * 0.75 + pl_turn(ns, 0.866, -0.5) * 0.32 + pl_turn(nt, 0.906, 0.423) * 0.16) * amp;
-        st.n = normalize(mass + float3(lobes, 0.0));
+        st.n = normalize(mass + float3(lobes, 1e-3));
         st.ao = (0.5 + 0.5 * smoothstep(0.0, 0.8, hb)) * (0.78 + 0.22 * smoothstep(0.0, 0.7, hs))
               * (0.9 + 0.1 * smoothstep(0.0, 0.6, ht));
         st.ao = mix(st.ao, 1.0, 0.65 * anvil);
