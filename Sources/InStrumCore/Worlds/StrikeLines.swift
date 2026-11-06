@@ -196,13 +196,13 @@ public struct StrikeLines {
     /// The windmill's surprise: a gust spins it up for 9 s, then the tail furls it to a stop until 19 s.
     public static let windmillSpin = 9.0, windmillFurled = 19.0
 
-    /// The storm's line: five towers, the tallest just right of the middle.
+    /// The storm's line: five towers 10–16.5 km tall across 40 km of horizon, the tallest just right of the middle.
     public static let towers: [StormTower] = [
-        StormTower(across: -15, depth: 6, heightKm: 9.5, widthKm: 3.2, anvilKm: 5.5),
-        StormTower(across: -6.5, depth: -3, heightKm: 13, widthKm: 4.2, anvilKm: 9),
-        StormTower(across: 1, depth: 0, heightKm: 11.5, widthKm: 3.6, anvilKm: 7.5),
-        StormTower(across: 8.5, depth: 2, heightKm: 14, widthKm: 4.6, anvilKm: 10.5),
-        StormTower(across: 17, depth: 8, heightKm: 8.5, widthKm: 3, anvilKm: 4.5),
+        StormTower(across: -20, depth: 6, heightKm: 11, widthKm: 3.8, anvilKm: 6.5),
+        StormTower(across: -8.5, depth: -3, heightKm: 15, widthKm: 5, anvilKm: 11),
+        StormTower(across: 1, depth: 0, heightKm: 13, widthKm: 4.2, anvilKm: 8.5),
+        StormTower(across: 10, depth: 2, heightKm: 16.5, widthKm: 5.4, anvilKm: 13),
+        StormTower(across: 21, depth: 8, heightKm: 10, widthKm: 3.5, anvilKm: 5.5),
     ]
 
     /// A tower seen with the storm `stormKm` away: the line's depth offsets close up as it comes (they shrink with the
@@ -697,7 +697,10 @@ public struct StrikeLines {
             curtainAge = age
             let p = min(1, age / curtainSpan)
             rainCurtain = Float(p)
-            curtainKm = curtainFrom * (1 - p)
+            // At one pace it would sit on the horizon until the last instant; eased (cubic), it climbs the sky over the
+            // first half and sweeps the plain toward you over the second, as a crossing reads.
+            let left = 1 - p
+            curtainKm = curtainFrom * left * left * left
             if p < 1 {
                 rain = rainPeak * Float(Self.smooth(0.85, 1, p))
             } else {
@@ -761,7 +764,7 @@ public struct StrikeLines {
     private mutating func stepCrawlers(_ e: ExcitementFrame, _ input: Inputs) {
         let dc = max(km, 4)
         let deg = 180 / Double.pi
-        let band = (atan2(6.5, dc) * deg)...(atan2(10.5, dc) * deg)
+        let band = (atan2(8, dc) * deg)...(atan2(13, dc) * deg)
         // A run sends a crawler across the towers the way it went.
         if let run = runPending {
             runPending = nil
