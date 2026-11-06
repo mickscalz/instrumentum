@@ -815,6 +815,110 @@ final class AppModelTests: XCTestCase {
         XCTAssertFalse(m.isSetModified)
     }
 
+    /// Set 17: Supercell Sky loads Endless Rise on its Supercell preset under Wall Cloud, with its mood, and the preset's
+    /// pulse (Pulse .5 at Tempo 124) reaches the director, so the storm and the pad keep one clock (Storms spec §3);
+    /// changing the visual or the preset marks it modified, and Restore brings it back, pulse and all.
+    func testApplyingSupercellLoadsEndlessRise() async throws {
+        let m = makeModel()
+        await m.launch(skipPluginInSafeMode: false)
+        m.setAmbienceEnabled(false)
+        m.setAmbienceVolume(0.6)
+        await m.applySet("supercell-sky")
+        let loaded = engine.loaded.last.flatMap { BuiltInCatalog.engine(for: $0) }
+        XCTAssertEqual(loaded, .endlessRise)
+        let applied = engine.applied.last?.id
+        XCTAssertEqual(applied, "endless-rise")
+        let patch = try XCTUnwrap(m.builtInPatch)
+        XCTAssertEqual(patch.id, "endless-rise")
+        XCTAssertEqual(patch.name, "Supercell")
+        XCTAssertEqual(patch.creditID, CreditLibrary.fade.id, "the preset carries the set's credit")
+        XCTAssertEqual(engine.moods.last, .stormTense)
+        XCTAssertEqual(m.mood, .stormTense)
+        XCTAssertEqual(m.themeID, SupercellSkyModel.id)
+        XCTAssertEqual(visual(m), "Wall Cloud")
+        let pulse = m.instrumentPulse
+        XCTAssertEqual(pulse, InstrumentPulse(bpm: 124, gate: 0.5), "the pad's pulse at 124")
+        XCTAssertTrue(engine.ambienceEnabled)
+        XCTAssertEqual(engine.ambienceVolume, Float(AmbienceSettings().volume), accuracy: 1e-6)
+        XCTAssertEqual(m.activeSetID, "supercell-sky")
+        XCTAssertFalse(m.isSetModified)
+        let saved = store.load().activeSetID
+        XCTAssertEqual(saved, "supercell-sky")
+        m.saveThemeState(ThemeState(values: ["visual": .choice("Galaxy Warp")]), for: SupercellSkyModel.id)
+        XCTAssertTrue(m.isSetModified)
+        await m.restoreSet()
+        XCTAssertFalse(m.isSetModified)
+        XCTAssertEqual(visual(m), "Wall Cloud")
+        let slowFront = try XCTUnwrap(PatchLibrary.all.first { $0.id == "slow-front" })   // another Endless Rise preset
+        m.applyPatch(slowFront)
+        XCTAssertTrue(m.isSetModified)
+        let noPulse = m.instrumentPulse
+        XCTAssertNil(noPulse, "Slow Front's Pulse is 0: the pad doesn't duck")
+        await m.restoreSet()
+        XCTAssertEqual(m.builtInPatch?.id, "endless-rise")
+        let pulseBack = m.instrumentPulse
+        XCTAssertEqual(pulseBack, InstrumentPulse(bpm: 124, gate: 0.5))
+        XCTAssertFalse(m.isSetModified)
+    }
+
+    /// Set 18: Lightning Plains loads Single Note Grand on its Runaway preset under Strike Lines, with its mood (no pulse);
+    /// changing the visual or the preset marks it modified, and Restore brings it back. Switching between the two storm
+    /// sets swaps the engine each way, the pulse coming and going with Endless Rise.
+    func testApplyingPlainsLoadsTheGrand() async throws {
+        let m = makeModel()
+        await m.launch(skipPluginInSafeMode: false)
+        m.setAmbienceEnabled(false)
+        m.setAmbienceVolume(0.6)
+        await m.applySet("lightning-plains")
+        let loaded = engine.loaded.last.flatMap { BuiltInCatalog.engine(for: $0) }
+        XCTAssertEqual(loaded, .singleNoteGrand)
+        let applied = engine.applied.last?.id
+        XCTAssertEqual(applied, "single-note-grand")
+        let patch = try XCTUnwrap(m.builtInPatch)
+        XCTAssertEqual(patch.id, "single-note-grand")
+        XCTAssertEqual(patch.name, "Runaway")
+        XCTAssertEqual(patch.creditID, CreditLibrary.runaway.id, "the preset carries the set's credit")
+        XCTAssertEqual(engine.moods.last, .plainsVast)
+        XCTAssertEqual(m.mood, .plainsVast)
+        XCTAssertEqual(m.themeID, LightningPlainsModel.id)
+        XCTAssertEqual(visual(m), "Strike Lines")
+        let pulse = m.instrumentPulse
+        XCTAssertNil(pulse, "the grand has no pulse")
+        XCTAssertTrue(engine.ambienceEnabled)
+        XCTAssertEqual(engine.ambienceVolume, Float(AmbienceSettings().volume), accuracy: 1e-6)
+        XCTAssertEqual(m.activeSetID, "lightning-plains")
+        XCTAssertFalse(m.isSetModified)
+        let saved = store.load().activeSetID
+        XCTAssertEqual(saved, "lightning-plains")
+        m.saveThemeState(ThemeState(values: ["visual": .choice("Galaxy Warp")]), for: LightningPlainsModel.id)
+        XCTAssertTrue(m.isSetModified)
+        await m.restoreSet()
+        XCTAssertFalse(m.isSetModified)
+        XCTAssertEqual(visual(m), "Strike Lines")
+        let marbleHall = try XCTUnwrap(PatchLibrary.all.first { $0.id == "marble-hall" })   // another Single Note Grand preset
+        m.applyPatch(marbleHall)
+        XCTAssertTrue(m.isSetModified)
+        await m.restoreSet()
+        XCTAssertEqual(m.builtInPatch?.id, "single-note-grand")
+        XCTAssertFalse(m.isSetModified)
+        // Over to the supercell and back to the plains.
+        await m.applySet("supercell-sky")
+        let riser = engine.loaded.last.flatMap { BuiltInCatalog.engine(for: $0) }
+        XCTAssertEqual(riser, .endlessRise)
+        XCTAssertEqual(m.themeID, SupercellSkyModel.id)
+        XCTAssertEqual(m.mood, .stormTense)
+        let supercellPulse = m.instrumentPulse
+        XCTAssertEqual(supercellPulse, InstrumentPulse(bpm: 124, gate: 0.5))
+        await m.applySet("lightning-plains")
+        let grand = engine.loaded.last.flatMap { BuiltInCatalog.engine(for: $0) }
+        XCTAssertEqual(grand, .singleNoteGrand)
+        XCTAssertEqual(m.themeID, LightningPlainsModel.id)
+        XCTAssertEqual(m.mood, .plainsVast)
+        let plainsPulse = m.instrumentPulse
+        XCTAssertNil(plainsPulse)
+        XCTAssertFalse(m.isSetModified)
+    }
+
     /// Review focus 4: settings saved by the eight-set build (Sets 7 & 8, with the bay applied and a sky from before rime
     /// frost and iridescent cloud) open on this build's ten-set gallery: the bay is still the active set, unmodified, with
     /// its mood; the sky's two new dials take their defaults; and the two still places apply from there and come back on
@@ -849,8 +953,11 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(visual(m), "Glow Wake")
         XCTAssertFalse(m.isSetModified, "the bay comes back as it was set")
         // The gallery: the eight it knew, in their places, then the two still places (and since Sets 11 & 12, the deep
-        // water after them: `testOldSetStoresStillLoad`).
-        XCTAssertEqual(SetLibrary.all.count, 12)
+        // water after them: `testTenSetStoresStillLoad`; since Storms, the storms: `testOldSetStoresStillLoad`). The file
+        // here was written by this build, so it holds this build's record of the gallery and restores the bay; a real
+        // eight-set file has none and opens on the newest set once (`testFreshBuildOpensOnTheNewestSet`).
+        let galleryCount = SetLibrary.all.count
+        XCTAssertEqual(galleryCount, 14)
         XCTAssertEqual(SetLibrary.all.firstIndex { $0.id == "bioluminescent-bay" }, 7)
         XCTAssertEqual(SetLibrary.all.dropFirst(8).prefix(2).map(\.id), ["tea-house-snow", "zen-rock-garden"])
         await m.applySet("tea-house-snow")
@@ -869,16 +976,17 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(again.mood, .orderedCalm)
     }
 
-    /// Review focus 4 (Sets 11 & 12): what the ten-set build stored still loads, on this build's twelve-set gallery.
+    /// Review focus 4 (Sets 11 & 12): what the ten-set build stored still loads, on this build's gallery.
     /// - The gallery that build wrote out (its ten sets; the still places with no credit key) decodes as this build's first
     ///   ten, in their places.
     /// - Settings it saved with the garden applied, a sky from before the meteors (no `meteorRate`) whose stored weather list
     ///   knows no sea smoke, and the garden's world state with no `meteors.mode`, load unmodified: the garden is still the
     ///   active set, with its mood; the meteors take their default rate, the stored list is kept, and the garden follows
-    ///   the calendar.
-    /// - The gallery shows twelve: the ten it knew, then the submarine and the reef, which apply from there, unmodified,
-    ///   and come back on the next launch.
-    func testOldSetStoresStillLoad() async throws {
+    ///   the calendar. (The file keeps this build's record of the gallery, so the garden is restored; a file with none
+    ///   opens on the newest set once: `testOldSetStoresStillLoad`.)
+    /// - The gallery shows the ten it knew, then the submarine and the reef (then the storms), which apply from there,
+    ///   unmodified, and come back on the next launch.
+    func testTenSetStoresStillLoad() async throws {
         // The ten-set gallery as that build wrote it: a place's set has no credit key; a song's set carries its credit.
         let tenSetGallery = ["moonlit-lake", "spaceship-lounge", "golden-hour-beach", "coast-road", "snowbound-cabin",
                              "bedroom-dawn", "aurora-fjord", "bioluminescent-bay", "tea-house-snow", "zen-rock-garden"]
@@ -935,10 +1043,13 @@ final class AppModelTests: XCTestCase {
                         .choice("meteors.mode"), MeteorMode.follow.rawValue, "the garden follows the calendar")
         XCTAssertFalse(m.isSetModified, "the garden comes back as it was set")
 
-        // The gallery: the ten it knew, in their places, then the deep water.
-        XCTAssertEqual(SetLibrary.all.count, 12)
-        XCTAssertEqual(SetLibrary.all.prefix(10).map(\.id), tenSetGallery)
-        XCTAssertEqual(SetLibrary.all.suffix(2).map(\.id), ["submarine-window", "great-barrier-reef"])
+        // The gallery: the ten it knew, in their places, then the deep water (then the storms).
+        let galleryCount = SetLibrary.all.count
+        XCTAssertEqual(galleryCount, 14)
+        let firstTen = SetLibrary.all.prefix(10).map(\.id)
+        XCTAssertEqual(firstTen, tenSetGallery)
+        let deepWater = SetLibrary.all.dropFirst(10).prefix(2).map(\.id)
+        XCTAssertEqual(deepWater, ["submarine-window", "great-barrier-reef"])
         await m.applySet("submarine-window")
         XCTAssertEqual(engine.loaded.last.flatMap { BuiltInCatalog.engine(for: $0) }, .blueDepth)
         XCTAssertEqual(m.activeSetID, "submarine-window")
@@ -953,6 +1064,226 @@ final class AppModelTests: XCTestCase {
         let again = makeModel()
         XCTAssertEqual(again.activeSetID, "great-barrier-reef")
         XCTAssertEqual(again.mood, .reefAlive)
+    }
+
+    // MARK: - Opens on what's new
+
+    /// The built-in engine the fake engine loaded last (nil for a plugin, or none).
+    private func lastLoadedEngine() -> BuiltInEngine? { engine.loaded.last.flatMap { BuiltInCatalog.engine(for: $0) } }
+
+    /// Storms Review focus 6: what the twelve-set build stored still loads on this build's fourteen-set gallery, and as
+    /// that build kept no record of the gallery it saw, the first launch opens on what's new, once.
+    /// - The gallery it wrote out (its twelve sets) decodes as this build's first twelve, in their places; the storms follow.
+    /// - Settings it saved with the reef applied (no `lastNewestSetID` or `lastSetCount`) load with the reef still the
+    ///   active set, with its mood; the launch opens on Lightning Plains instead, the grand loaded (and nothing else)
+    ///   under Strike Lines, unmodified, and records the gallery as seen.
+    /// - The player goes back to the reef, and from then on it comes back as before.
+    func testOldSetStoresStillLoad() async throws {
+        let twelveSetGallery = ["moonlit-lake", "spaceship-lounge", "golden-hour-beach", "coast-road", "snowbound-cabin",
+                                "bedroom-dawn", "aurora-fjord", "bioluminescent-bay", "tea-house-snow", "zen-rock-garden",
+                                "submarine-window", "great-barrier-reef"]
+        let twelve = Array(SetLibrary.all.prefix(12))
+        let twelveIDs = twelve.map(\.id)
+        XCTAssertEqual(twelveIDs, twelveSetGallery, "the older sets keep their places")
+        let stored = try JSONEncoder().encode(twelve)
+        let parsed = try JSONSerialization.jsonObject(with: stored)
+        let objects = try XCTUnwrap(parsed as? [[String: Any]])
+        XCTAssertEqual(objects.count, 12)
+        let decoded = try JSONDecoder().decode([InStrumSet].self, from: stored)
+        XCTAssertEqual(decoded, twelve)
+        let added = SetLibrary.all.suffix(2).map(\.id)
+        XCTAssertEqual(added, ["supercell-sky", "lightning-plains"])
+
+        // Settings as the twelve-set build saved them: the reef applied, and no record of the gallery.
+        let older = makeModel()
+        await older.launch(skipPluginInSafeMode: false)
+        await older.applySet("great-barrier-reef")
+        // Let its debounced save land first (half a second), so nothing of the older build's writes after the edit below.
+        try await Task.sleep(nanoseconds: 700_000_000)
+        let url = dir.appendingPathComponent("settings.json")
+        let saved = try JSONSerialization.jsonObject(with: Data(contentsOf: url))
+        var json = try XCTUnwrap(saved as? [String: Any])
+        XCTAssertNotNil(json["lastNewestSetID"])
+        XCTAssertNotNil(json["lastSetCount"])
+        json.removeValue(forKey: "lastNewestSetID")
+        json.removeValue(forKey: "lastSetCount")
+        try JSONSerialization.data(withJSONObject: json).write(to: url)
+        let written = try String(contentsOf: url, encoding: .utf8)
+        for key in ["lastNewestSetID", "lastSetCount", "lightning-plains", "supercell-sky"] {
+            XCTAssertFalse(written.contains(key), key)
+        }
+        XCTAssertTrue(written.contains("great-barrier-reef"))
+
+        engine = FakeEngine()
+        let m = makeModel()
+        XCTAssertEqual(m.activeSetID, "great-barrier-reef", "the settings decode as saved")
+        XCTAssertEqual(m.mood, .reefAlive)
+        await m.launch(skipPluginInSafeMode: false)
+        // Opened on what's new: Lightning Plains, not the reef.
+        XCTAssertEqual(lastLoadedEngine(), .singleNoteGrand)
+        let loads = engine.loaded.count
+        XCTAssertEqual(loads, 1, "the grand, and nothing before it")
+        XCTAssertEqual(m.activeSetID, "lightning-plains")
+        XCTAssertEqual(m.themeID, LightningPlainsModel.id)
+        XCTAssertEqual(visual(m), "Strike Lines")
+        XCTAssertEqual(m.builtInPatch?.id, "single-note-grand")
+        XCTAssertEqual(m.mood, .plainsVast)
+        XCTAssertFalse(m.isSetModified)
+        let recorded = store.load()
+        XCTAssertEqual(recorded.activeSetID, "lightning-plains")
+        XCTAssertEqual(recorded.lastNewestSetID, "lightning-plains")
+        XCTAssertEqual(recorded.lastSetCount, 14)
+        // The player goes back to the reef.
+        await m.applySet("great-barrier-reef")
+        XCTAssertEqual(lastLoadedEngine(), .reefMarimba)
+        XCTAssertFalse(m.isSetModified)
+        try await Task.sleep(nanoseconds: 700_000_000)
+
+        // From then on the reef comes back, as before.
+        engine = FakeEngine()
+        let again = makeModel()
+        XCTAssertEqual(again.activeSetID, "great-barrier-reef")
+        await again.launch(skipPluginInSafeMode: false)
+        XCTAssertEqual(lastLoadedEngine(), .reefMarimba)
+        XCTAssertEqual(again.activeSetID, "great-barrier-reef")
+        XCTAssertEqual(again.themeID, GreatBarrierReefModel.id)
+        XCTAssertEqual(visual(again), "Coral Pulse")
+        XCTAssertEqual(again.mood, .reefAlive)
+        XCTAssertFalse(again.isSetModified)
+    }
+
+    /// "Opens on what's new" (the owner's standing rule): the first launch of a build whose newest set is newer than the
+    /// last launch saw opens on it, Lightning Plains, with its world, visual and the grand loaded, instead of the reef the
+    /// player last used (whose marimba never loads), and records the gallery as seen. A build with the same newest set but
+    /// more sets than the last launch counted opens on it too. And when the saved instrument is already the grand, it
+    /// loads once, with its saved state, and the set's preset goes on it.
+    func testFreshBuildOpensOnTheNewestSet() async throws {
+        // As the twelve-set build would have saved it, had it kept the record: the reef, on the reef's marimba.
+        var s = AppSettings.default
+        s.instrument = AppModel.builtInChoice(.reefMarimba)
+        s.themeID = GreatBarrierReefModel.id
+        s.activeSetID = "great-barrier-reef"
+        s.lastNewestSetID = "great-barrier-reef"
+        s.lastSetCount = 12
+        try store.save(s)
+        let m = makeModel()
+        XCTAssertEqual(m.activeSetID, "great-barrier-reef", "the settings load as saved")
+        XCTAssertEqual(m.mood, .reefAlive)
+        await m.launch(skipPluginInSafeMode: false)
+        let newest = SetLibrary.newest
+        XCTAssertEqual(newest.id, "lightning-plains")
+        let loads = engine.loaded.count
+        XCTAssertEqual(loads, 1, "straight to the grand: the reef's marimba never loads")
+        XCTAssertEqual(lastLoadedEngine(), .singleNoteGrand)
+        XCTAssertEqual(m.status, .playing(instrumentName: "Single Note Grand"))
+        XCTAssertEqual(m.activeSetID, newest.id)
+        XCTAssertEqual(m.themeID, LightningPlainsModel.id)
+        XCTAssertEqual(visual(m), "Strike Lines")
+        XCTAssertEqual(m.builtInPatch?.id, "single-note-grand")
+        XCTAssertEqual(engine.applied.last?.id, "single-note-grand")
+        XCTAssertEqual(m.mood, .plainsVast)
+        XCTAssertEqual(engine.moods.last, .plainsVast)
+        XCTAssertFalse(m.isSetModified)
+        let recorded = store.load()
+        XCTAssertEqual(recorded.activeSetID, newest.id)
+        XCTAssertEqual(recorded.lastNewestSetID, newest.id)
+        XCTAssertEqual(recorded.lastSetCount, 14)
+        XCTAssertFalse(recorded.opensOnWhatsNew)
+        try await Task.sleep(nanoseconds: 700_000_000)   // its debounced save lands before the next file is written
+
+        // The same newest but fewer sets than this build holds: something new all the same, so the plains, from the lake.
+        var fewer = AppSettings.default
+        fewer.instrument = AppModel.builtInChoice(.feltGlass)
+        fewer.themeID = MoonlitLakeModel.id
+        fewer.activeSetID = "moonlit-lake"
+        fewer.lastSetCount = 13
+        try store.save(fewer)
+        engine = FakeEngine()
+        let lake = makeModel()
+        await lake.launch(skipPluginInSafeMode: false)
+        XCTAssertEqual(lastLoadedEngine(), .singleNoteGrand)
+        XCTAssertEqual(lake.activeSetID, newest.id)
+        XCTAssertEqual(lake.themeID, LightningPlainsModel.id)
+        let counted = store.load().lastSetCount
+        XCTAssertEqual(counted, 14)
+        try await Task.sleep(nanoseconds: 700_000_000)
+
+        // Saved on the grand already, before the rule (no record): it loads once, with its state, under the set's preset.
+        var grand = AppSettings.default
+        grand.instrument = AppModel.builtInChoice(.singleNoteGrand)
+        grand.instrument?.stateData = Data([9, 9, 9])
+        grand.themeID = LightningPlainsModel.id
+        grand.lastNewestSetID = nil
+        grand.lastSetCount = nil
+        try store.save(grand)
+        engine = FakeEngine()
+        let plains = makeModel()
+        await plains.launch(skipPluginInSafeMode: false)
+        let grandLoads = engine.loaded.count
+        XCTAssertEqual(grandLoads, 1, "the grand loads once")
+        let restoredState = engine.loaded.first?.stateData
+        XCTAssertEqual(restoredState, Data([9, 9, 9]), "with its saved state")
+        XCTAssertEqual(engine.applied.last?.id, "single-note-grand")
+        XCTAssertEqual(plains.status, .playing(instrumentName: "Single Note Grand"))
+        XCTAssertEqual(plains.activeSetID, newest.id)
+        XCTAssertEqual(visual(plains), "Strike Lines")
+        XCTAssertFalse(plains.isSetModified)
+    }
+
+    /// After that one launch, every later launch restores the player's own last set as before: the plains opened once,
+    /// the player went to the fjord, and the fjord comes back, launch after launch. A first install has no last launch:
+    /// it asks for an instrument as it always has, and the set chosen then comes back too.
+    func testLaterLaunchesRestoreTheLastSet() async throws {
+        // A first install: nothing it hasn't seen.
+        let first = makeModel()
+        await first.launch(skipPluginInSafeMode: false)
+        XCTAssertEqual(first.status, .needsInstrument(message: nil))
+        XCTAssertNil(first.activeSetID)
+        let nothingLoaded = engine.loaded.count
+        XCTAssertEqual(nothingLoaded, 0)
+        await first.applySet("moonlit-lake")
+        let firstSaved = store.load()
+        XCTAssertEqual(firstSaved.lastNewestSetID, SetLibrary.newest.id, "a first install has seen the whole gallery")
+        XCTAssertFalse(firstSaved.opensOnWhatsNew)
+        try await Task.sleep(nanoseconds: 700_000_000)   // its debounced save lands before the edit below
+        engine = FakeEngine()
+        let second = makeModel()
+        await second.launch(skipPluginInSafeMode: false)
+        XCTAssertEqual(lastLoadedEngine(), .feltGlass)
+        XCTAssertEqual(second.activeSetID, "moonlit-lake", "the lake, not the plains")
+        XCTAssertEqual(second.themeID, MoonlitLakeModel.id)
+
+        // The same file as a build before the rule would have kept it opens on the plains, once...
+        let url = dir.appendingPathComponent("settings.json")
+        let saved = try JSONSerialization.jsonObject(with: Data(contentsOf: url))
+        var json = try XCTUnwrap(saved as? [String: Any])
+        json.removeValue(forKey: "lastNewestSetID")
+        json.removeValue(forKey: "lastSetCount")
+        try JSONSerialization.data(withJSONObject: json).write(to: url)
+        engine = FakeEngine()
+        let upgraded = makeModel()
+        await upgraded.launch(skipPluginInSafeMode: false)
+        XCTAssertEqual(lastLoadedEngine(), .singleNoteGrand)
+        XCTAssertEqual(upgraded.activeSetID, "lightning-plains")
+        // ...then the player goes to the fjord, and the fjord comes back on every launch after.
+        await upgraded.applySet("aurora-fjord")
+        try await Task.sleep(nanoseconds: 700_000_000)
+        for launch in 1...2 {
+            engine = FakeEngine()
+            let later = makeModel()
+            XCTAssertEqual(later.activeSetID, "aurora-fjord", "launch \(launch)")
+            await later.launch(skipPluginInSafeMode: false)
+            XCTAssertEqual(lastLoadedEngine(), .polarChoir, "launch \(launch)")
+            let loads = engine.loaded.count
+            XCTAssertEqual(loads, 1, "launch \(launch)")
+            XCTAssertEqual(later.activeSetID, "aurora-fjord", "launch \(launch)")
+            XCTAssertEqual(later.themeID, AuroraFjordModel.id, "launch \(launch)")
+            XCTAssertEqual(later.mood, .electricAwe, "launch \(launch)")
+            XCTAssertFalse(later.isSetModified, "launch \(launch)")
+            let record = store.load()
+            XCTAssertEqual(record.lastNewestSetID, "lightning-plains", "launch \(launch)")
+            XCTAssertEqual(record.activeSetID, "aurora-fjord", "launch \(launch)")
+        }
     }
 
     func testChangingAPartMarksModifiedAndRestoreReverts() async {

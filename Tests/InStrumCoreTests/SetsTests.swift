@@ -4,13 +4,20 @@ import XCTest
 final class SetsTests: XCTestCase {
     /// Every set is whole: its world, visual and preset exist, and it carries a song's credit or, born from its place, none
     /// (the App's `InspiredByCardTests.testEverySetHasACardOrPlaceArt` checks that each one then has its card). Sets 11 and
-    /// 12 ("Deep Water") come last, the submarine then the reef (spec §2).
-    func testTwelveSetsAreComplete() throws {
-        XCTAssertEqual(SetLibrary.all.map(\.id), ["moonlit-lake", "spaceship-lounge", "golden-hour-beach", "coast-road",
-                                                  "snowbound-cabin", "bedroom-dawn", "aurora-fjord", "bioluminescent-bay",
-                                                  "tea-house-snow", "zen-rock-garden", "submarine-window", "great-barrier-reef"])
-        XCTAssertEqual(Set(SetLibrary.all.map(\.id)).count, 12, "ids are unique")
-        XCTAssertEqual(Set(SetLibrary.all.map(\.worldID)).count, 12, "one world each")
+    /// 12 ("Deep Water") come after the still places, the submarine then the reef; Sets 17 and 18 ("Storms", built before
+    /// Sets 13 to 16) come last, the supercell then the plains (Storms spec §12), so the plains are the newest.
+    func testStormSetsAreComplete() throws {
+        let ids = SetLibrary.all.map(\.id)
+        let expected = ["moonlit-lake", "spaceship-lounge", "golden-hour-beach", "coast-road", "snowbound-cabin", "bedroom-dawn",
+                        "aurora-fjord", "bioluminescent-bay", "tea-house-snow", "zen-rock-garden", "submarine-window",
+                        "great-barrier-reef", "supercell-sky", "lightning-plains"]
+        XCTAssertEqual(ids, expected)
+        XCTAssertEqual(ids.count, 14)
+        let uniqueIDs = Set(ids).count
+        XCTAssertEqual(uniqueIDs, 14, "ids are unique")
+        let worlds = Set(SetLibrary.all.map(\.worldID)).count
+        XCTAssertEqual(worlds, 14, "one world each")
+        XCTAssertEqual(SetLibrary.newest, SetLibrary.lightningPlains, "the newest is the last in the gallery")
         for s in SetLibrary.all {
             XCTAssertEqual(ThemeRegistry.resolve(s.worldID), s.worldID, s.id)
             let visual = try XCTUnwrap(ThemeRegistry.parameters(for: s.worldID).first { $0.id == "visual" }, s.id)
@@ -144,6 +151,39 @@ final class SetsTests: XCTestCase {
         XCTAssertEqual(reef.patchID, "reef-marimba")
         XCTAssertEqual(reef.ambience, AmbienceSettings())
         XCTAssertNil(reef.creditID, "born from its place, not a song")
+        // The storms (Storms spec §2, §11, §12): the supercell after "FADE", the plains after "Runaway".
+        let supercell = try XCTUnwrap(SetLibrary.set(id: "supercell-sky"))
+        XCTAssertEqual(supercell, SetLibrary.supercellSky)
+        XCTAssertEqual(supercell.name, "Supercell Sky")
+        XCTAssertEqual(supercell.moodName, "Tense, thrilling")
+        XCTAssertEqual(supercell.mood, .stormTense)
+        XCTAssertEqual(supercell.worldID, SupercellSkyModel.id)
+        XCTAssertEqual(supercell.worldID, "supercell-sky")
+        XCTAssertEqual(supercell.visual, "Wall Cloud")
+        let supercellVisuals = SupercellSkyModel.visuals
+        XCTAssertTrue(supercellVisuals.contains(supercell.visual))
+        XCTAssertEqual(supercell.patchID, "endless-rise")
+        let supercellPatch = try XCTUnwrap(PatchLibrary.all.first { $0.id == "endless-rise" })
+        XCTAssertEqual(supercellPatch.engine, .endlessRise)
+        XCTAssertEqual(supercell.ambience, AmbienceSettings())
+        XCTAssertEqual(supercell.creditID, CreditLibrary.fade.id)
+        XCTAssertEqual(supercell.creditID, "fade")
+        let plains = try XCTUnwrap(SetLibrary.set(id: "lightning-plains"))
+        XCTAssertEqual(plains, SetLibrary.lightningPlains)
+        XCTAssertEqual(plains.name, "Lightning Plains")
+        XCTAssertEqual(plains.moodName, "Dramatic, vast")
+        XCTAssertEqual(plains.mood, .plainsVast)
+        XCTAssertEqual(plains.worldID, LightningPlainsModel.id)
+        XCTAssertEqual(plains.worldID, "lightning-plains")
+        XCTAssertEqual(plains.visual, "Strike Lines")
+        let plainsVisuals = LightningPlainsModel.visuals
+        XCTAssertTrue(plainsVisuals.contains(plains.visual))
+        XCTAssertEqual(plains.patchID, "single-note-grand")
+        let plainsPatch = try XCTUnwrap(PatchLibrary.all.first { $0.id == "single-note-grand" })
+        XCTAssertEqual(plainsPatch.engine, .singleNoteGrand)
+        XCTAssertEqual(plains.ambience, AmbienceSettings())
+        XCTAssertEqual(plains.creditID, CreditLibrary.runaway.id)
+        XCTAssertEqual(plains.creditID, "runaway")
         // Only the two still places and the reef go without a song.
         XCTAssertEqual(SetLibrary.all.filter { $0.creditID == nil }.map(\.id), ["tea-house-snow", "zen-rock-garden", "great-barrier-reef"])
         // Every set's mood is its own.
@@ -157,8 +197,8 @@ final class SetsTests: XCTestCase {
     /// Sets saved by older builds always carried a credit; they still decode now it is optional. A set born from its
     /// place (no credit) is written without the key and reads back as nil, as does an explicit null. And the gallery an
     /// eight-set build stored (Review focus 4) reads back as this build's first eight, in their places, with their credits;
-    /// the two still places come after them, then the deep water (the App's `testOldSetStoresStillLoad` opens a ten-set
-    /// build's store on the twelve-set gallery).
+    /// the two still places come after them, then the deep water, then the storms (the App's `testTenSetStoresStillLoad`
+    /// opens a ten-set build's store on this gallery, and `testOldSetStoresStillLoad` a twelve-set build's).
     func testOldSetsWithACreditStillDecode() throws {
         let old = #"{"id":"moonlit-lake","name":"Moonlit Lake","moodName":"Serene","#
             + #""mood":{"energy":0.2,"warmth":0.45,"brightness":0.3,"space":0.85,"motion":0.25},"#
@@ -191,8 +231,10 @@ final class SetsTests: XCTestCase {
         XCTAssertEqual(objects.compactMap { $0["creditID"] as? String }, eight.compactMap(\.creditID), "every older set carries its credit")
         XCTAssertEqual(objects.count, 8)
         XCTAssertEqual(try JSONDecoder().decode([InStrumSet].self, from: stored), eight)
-        XCTAssertEqual(Array(SetLibrary.all.dropFirst(8)), [SetLibrary.teaHouseSnow, SetLibrary.zenRockGarden,
-                                                            SetLibrary.submarineWindow, SetLibrary.greatBarrierReef])
+        let after = Array(SetLibrary.all.dropFirst(8))
+        let laterSets = [SetLibrary.teaHouseSnow, SetLibrary.zenRockGarden, SetLibrary.submarineWindow, SetLibrary.greatBarrierReef,
+                         SetLibrary.supercellSky, SetLibrary.lightningPlains]
+        XCTAssertEqual(after, laterSets)
     }
 
     func testNewMoods() {
@@ -209,9 +251,18 @@ final class SetsTests: XCTestCase {
         // The deep water (Sets 11 & 12 spec §8.1, §9.1, §10): pressure and hush; colourful and alive.
         XCTAssertEqual(Mood.deepHush, Mood(energy: 0.3, warmth: 0.3, brightness: 0.15, space: 0.9, motion: 0.45))
         XCTAssertEqual(Mood.reefAlive, Mood(energy: 0.65, warmth: 0.75, brightness: 0.85, space: 0.45, motion: 0.75))
+        // The storms (Storms spec §2, §11): tense and thrilling; dramatic, vast and lonely.
+        let stormTense = Mood(energy: 0.7, warmth: 0.35, brightness: 0.5, space: 0.8, motion: 0.9)
+        XCTAssertEqual(Mood.stormTense, stormTense)
+        let plainsVast = Mood(energy: 0.45, warmth: 0.3, brightness: 0.4, space: 1.0, motion: 0.4)
+        XCTAssertEqual(Mood.plainsVast, plainsVast)
         let moods = [Mood.serene, .dreamy, .warmHaze, .restless, .hushedWarm, .softWaking, .electricAwe, .secretGlow,
-                     .delicate, .orderedCalm, .deepHush, .reefAlive]
+                     .delicate, .orderedCalm, .deepHush, .reefAlive, .stormTense, .plainsVast]
         for i in 0..<moods.count { for j in (i + 1)..<moods.count { XCTAssertNotEqual(moods[i], moods[j]) } }
+        // A mood saved by a set decodes as itself.
+        let stored = try? JSONEncoder().encode(Mood.plainsVast)
+        let decoded = stored.flatMap { try? JSONDecoder().decode(Mood.self, from: $0) }
+        XCTAssertEqual(decoded, .plainsVast)
     }
 
     // MARK: - Inspired-by cards

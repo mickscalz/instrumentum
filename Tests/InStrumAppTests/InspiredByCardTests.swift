@@ -13,7 +13,8 @@ final class InspiredByCardTests: XCTestCase {
     }
 
     func testEverySetHasItsOwnCardColours() {
-        XCTAssertEqual(SetLibrary.all.count, 12)
+        let count = SetLibrary.all.count
+        XCTAssertEqual(count, 14)
         let fallback = SetsGallery.tint(for: "no-such-set")
         var seen: [[Color]] = []
         for set in SetLibrary.all {
@@ -32,6 +33,14 @@ final class InspiredByCardTests: XCTestCase {
                        [Color(red: 0.02, green: 0.05, blue: 0.10), Color(red: 0.10, green: 0.45, blue: 0.62)])
         XCTAssertEqual(SetsGallery.tint(for: SetLibrary.greatBarrierReef.id),
                        [Color(red: 0.05, green: 0.22, blue: 0.30), Color(red: 0.55, green: 0.90, blue: 0.85)])
+        // The storms (Storms spec §12): the dark under the base to the storm's green-grey; the plain's dusk to its amber.
+        let supercell = SetsGallery.tint(for: SetLibrary.supercellSky.id)
+        let stormGreenGrey = [Color(red: 0.06, green: 0.08, blue: 0.07), Color(red: 0.35, green: 0.42, blue: 0.38)]
+        XCTAssertEqual(supercell, stormGreenGrey)
+        let plains = SetsGallery.tint(for: SetLibrary.lightningPlains.id)
+        let duskAmber = [Color(red: 0.10, green: 0.09, blue: 0.18), Color(red: 0.55, green: 0.40, blue: 0.25)]
+        XCTAssertEqual(plains, duskAmber)
+        XCTAssertNotEqual(supercell, plains)
     }
 
     /// No two cards look alike.
