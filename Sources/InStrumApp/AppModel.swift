@@ -155,6 +155,12 @@ public final class AppModel: ObservableObject {
             launchGuard.markStable()
             return
         }
+        // "Opens on what's new" (the owner's standing rule): a build with sets the last launch didn't see opens on the
+        // newest of them, once, instead of restoring the last set.
+        if settings.opensOnWhatsNew {
+            await openOnWhatsNew()
+            return
+        }
         guard let choice = settings.instrument else {
             status = .needsInstrument(message: nil)
             return
@@ -572,6 +578,23 @@ public final class AppModel: ObservableObject {
     public func restoreSet() async {
         guard let id = activeSetID else { return }
         await applySet(id)
+    }
+
+    /// The first launch of a build whose gallery holds a newer newest set, or more sets, than the last launch saw (or of
+    /// settings saved before the rule, once): the newest set, its world, visual, instrument and preset loaded, instead of
+    /// the set and instrument last used. The gallery is then recorded as seen, so later launches restore the player's
+    /// last set as before. A first install (no settings) has seen everything and starts as it always has.
+    private func openOnWhatsNew() async {
+        let newest = SetLibrary.newest
+        settings.markSetsSeen()
+        // The saved instrument may already be the newest set's engine: load it first, with its saved state, as the set
+        // only loads an engine that differs from the saved one (and nothing is loaded yet).
+        let newestEngine: BuiltInEngine? = PatchLibrary.all.first { $0.id == newest.patchID }?.engine
+        if let choice = settings.instrument, let kind = BuiltInCatalog.engine(for: choice), kind == newestEngine {
+            await load(choice)
+        }
+        await applySet(newest.id)
+        if activeSetID != newest.id { autosave() }   // it didn't apply: the gallery is still seen
     }
 
     static func builtInChoice(_ kind: BuiltInEngine) -> InstrumentChoice {

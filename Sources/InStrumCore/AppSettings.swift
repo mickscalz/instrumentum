@@ -53,6 +53,12 @@ public struct AppSettings: Codable, Equatable {
     public var breath = AmbienceBreathSettings()
     /// Follow the Mac's Reduce Motion (spec §6).
     public var followReduceMotion = true
+    /// The gallery the last launch saw ("opens on what's new", the owner's standing rule): its newest set and how many
+    /// sets it held. A build with a newer newest set, or more sets, opens on its newest once (`opensOnWhatsNew`). Settings
+    /// saved before the rule have neither (nil), so they open on it once too; a first install starts with this build's
+    /// own, as it has nothing it hasn't seen.
+    public var lastNewestSetID: String? = SetLibrary.newest.id
+    public var lastSetCount: Int? = SetLibrary.all.count
 
     public static let `default` = AppSettings()
 
@@ -62,6 +68,21 @@ public struct AppSettings: Codable, Equatable {
         case instrument, themeID, masterVolume, touchCurve, bufferFrames, themeStates, quality, gentleVisuals, reaction, reactionName,
              qualityVersion, sky, ambience, activeSetID, outputDeviceUID, midiChannel, disabledMIDISources
         case holdPedal, keyboardRange, breath, followReduceMotion
+        case lastNewestSetID, lastSetCount
+    }
+
+    /// True when this build's gallery holds something the last launch didn't see: a newer newest set, or more sets than
+    /// it counted; and, once, for settings saved before the rule (no `lastNewestSetID`).
+    public var opensOnWhatsNew: Bool {
+        let seenNewest = lastNewestSetID == SetLibrary.newest.id
+        let seenCount = lastSetCount ?? 0
+        return !seenNewest || seenCount < SetLibrary.all.count
+    }
+
+    /// Records this build's gallery as seen, so later launches restore the player's last set as before.
+    public mutating func markSetsSeen() {
+        lastNewestSetID = SetLibrary.newest.id
+        lastSetCount = SetLibrary.all.count
     }
 
     public init(from decoder: Decoder) throws {
@@ -89,6 +110,9 @@ public struct AppSettings: Codable, Equatable {
         keyboardRange = (try? c.decodeIfPresent(KeyboardRange.self, forKey: .keyboardRange)) ?? d.keyboardRange
         breath = (try? c.decodeIfPresent(AmbienceBreathSettings.self, forKey: .breath)) ?? d.breath
         followReduceMotion = (try? c.decodeIfPresent(Bool.self, forKey: .followReduceMotion)) ?? d.followReduceMotion
+        // Absent (saved before "opens on what's new"): nil, not this build's, so the next launch opens on the newest once.
+        lastNewestSetID = (try? c.decodeIfPresent(String.self, forKey: .lastNewestSetID)) ?? nil
+        lastSetCount = (try? c.decodeIfPresent(Int.self, forKey: .lastSetCount)) ?? nil
     }
 }
 

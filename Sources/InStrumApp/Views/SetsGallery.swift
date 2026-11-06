@@ -34,6 +34,9 @@ struct SetsGallery: View {
         case SetLibrary.zenRockGarden.id: return [Color(red: 0.08, green: 0.10, blue: 0.08), Color(red: 0.78, green: 0.76, blue: 0.66)]
         case SetLibrary.submarineWindow.id: return [Color(red: 0.02, green: 0.05, blue: 0.10), Color(red: 0.10, green: 0.45, blue: 0.62)]
         case SetLibrary.greatBarrierReef.id: return [Color(red: 0.05, green: 0.22, blue: 0.30), Color(red: 0.55, green: 0.90, blue: 0.85)]
+        // Storms (spec §12): the dark under the storm's base to its green-grey; the plain's dusk sky to its amber rim.
+        case SetLibrary.supercellSky.id: return [Color(red: 0.06, green: 0.08, blue: 0.07), Color(red: 0.35, green: 0.42, blue: 0.38)]
+        case SetLibrary.lightningPlains.id: return [Color(red: 0.10, green: 0.09, blue: 0.18), Color(red: 0.55, green: 0.40, blue: 0.25)]
         default: return [Color(white: 0.12), Color(white: 0.22)]
         }
     }
