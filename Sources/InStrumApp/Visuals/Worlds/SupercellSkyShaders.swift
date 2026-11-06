@@ -165,7 +165,7 @@ enum SupercellSkyShaders {
     float bellRadius(float z, float2 ring, constant CellU& u, thread float& lobes) {
         float hb = u.dims.x, Rb = u.dims.y, ha = u.dims.w;
         float s = saturate((z - hb) / (ha - hb));
-        float bell = Rb * (1.0 - 0.45 * s * sqrt(s)) + Rb * 0.1 * (1.0 - smoothstep(0.0, 0.2, s));
+        float bell = Rb * (1.0 - 0.58 * s * sqrt(s)) + Rb * 0.04 * (1.0 - smoothstep(0.0, 0.2, s));
         lobes = vnoise3(float3(ring * 1.5, z * 0.3 + 4.0)) * 0.6 + vnoise3(float3(ring * 3.1, z * 0.62 + 9.0)) * 0.4;
         return bell * (1.0 + (0.1 + 0.22 * smoothstep(0.15, 0.5, s)) * (lobes - 0.5));
     }
@@ -233,12 +233,14 @@ enum SupercellSkyShaders {
         float3 Ls = u.sunL.xyz;
         float3 Lr = float3(rot2(Ls.xy, -u.spin.x), Ls.z);
         // Striations on the skirt: helical (seamless: one band a turn), turning with the storm.
-        float k = (z - hb) / 0.78 + atan2(ring.y, ring.x) * 0.15915494 + 1.3 * (lobes - 0.5);
+        float k = (z - hb) / 0.5 + atan2(ring.y, ring.x) * 0.15915494 + 1.3 * (lobes - 0.5);
         float dens;
         float light = billows(pt, Lr, 1.15, 0.95 * skirtW, k, octaves, dens);
         // The edge: frayed by the density where the cloud thins, the billows' cauliflower above.
-        float fray = (0.4 + 1.6 * (1.0 - skirtW)) * (dens - 0.5);
-        float edge = Rc - bm + fray;
+        float rimT = 1.0 - smoothstep(0.4, 1.8, Rc - bm);
+        float turrets = 2.0 * fbm3(pt * 0.7 + 41.0, octaves) - 1.0;
+        float fray = (0.4 + 1.6 * (1.0 - skirtW)) * (dens - 0.5) + 0.9 * (1.0 - skirtW) * turrets;
+        float edge = Rc - bm + rimT * fray;
         float soft = 0.15 + 0.01 * t;
         float cover = smoothstep(-soft, soft, edge) * smoothstep(hb - 0.2, hb - 0.05, z);
         if (cover <= 0.002) return L;
@@ -258,7 +260,7 @@ enum SupercellSkyShaders {
         float3 warm = u.sunCol.rgb * sun * bandShade;
         float3 cool = u.amb.rgb * (0.28 + 0.3 * dens + 0.22 * N.z) * mix(1.0, 0.55 + 0.6 * bandLit, 0.7 * skirtW * bandOn)
                     + float3(0.55, 0.38, 0.2) * u.sunCol.rgb * 0.06;
-        float3 c = warm * 0.95 + cool * 0.6;
+        float3 c = warm * 0.85 + cool * (0.62 - 0.32 * facing);
         // Low down the cloud is in the base's own shade and the rain-cooled air: darker, greyer.
         float shade = 1.0 - smoothstep(0.0, 1.6, z - hb);
         c *= 1.0 - 0.6 * shade * (0.55 + 0.45 * u.look.x);
@@ -304,13 +306,18 @@ enum SupercellSkyShaders {
         float3 Ls = u.sunL.xyz;
         float dens;
         float light = billows(pt + 13.0, Ls, 1.0, 0.0, 0.0, octaves, dens);
-        float edge = bestInside + 1.1 * (dens - 0.5);
-        float cover = smoothstep(-0.15, 0.15, edge) * smoothstep(hb - 0.1, hb + 0.05, P.z);
+        // Cauliflower: big lumps on the sides, turrets on the tops.
+        float lumps = 2.0 * fbm3(pt * 0.8 + 31.0, octaves) - 1.0;
+        float upper = smoothstep(hb + 1.0, hb + 4.5, P.z);
+        // Only near the silhouette: deep inside, the tower stays whole (no holes through it).
+        float rim = 1.0 - smoothstep(0.4, 1.8, bestInside);
+        float edge = bestInside + rim * ((0.45 + 0.75 * upper) * lumps + 1.2 * (dens - 0.5));
+        float cover = smoothstep(-0.12, 0.12, edge) * smoothstep(hb - 0.1, hb + 0.05, P.z);
         if (cover <= 0.002) return L;
         float3 N = normalize((P - bestCentre) / (bestRadii * bestRadii));
         float facing = saturate(0.75 * dot(N, Ls) + 0.25);
         float sun = (0.12 + 0.88 * facing * facing) * (0.45 + 0.55 * light);
-        float3 c = u.sunCol.rgb * sun * 0.95 + u.amb.rgb * (0.28 + 0.3 * dens + 0.22 * N.z) * 0.6;
+        float3 c = u.sunCol.rgb * sun * 0.85 + u.amb.rgb * (0.28 + 0.3 * dens + 0.22 * N.z) * (0.62 - 0.32 * facing);
         float shade = 1.0 - smoothstep(0.0, 1.4, P.z - hb);
         c *= 1.0 - 0.55 * shade;
         c += flashOnCloud(ndc, u) * 0.3;
@@ -335,8 +342,10 @@ enum SupercellSkyShaders {
         // Its edge is the updraft's own foot, lumpy as it is.
         float lobes;
         float2 ring = rot2(rel / max(r, 1e-3), -u.spin.x);
-        float edge = bellRadius(hb, ring, u, lobes) - r;
-        float cover = smoothstep(-0.25, 0.25, edge);
+        // Ragged round its rim (lumps along the circumference, so seen edge-on they notch it rather than streak it).
+        float rag = fbm2(float2(atan2(ring.y, ring.x) * 4.0, 21.0), octaves);
+        float edge = 0.9 * bellRadius(hb, ring, u, lobes) - r + 1.6 * (rag - 0.5);
+        float cover = smoothstep(-0.4, 0.4, edge);
         // Beyond the storm's middle, on the rain's side, the base is lost in the rain.
         float rainSide = 1.0 - smoothstep(u.wall.x - 3.0, u.wall.x + 1.0, P.x);
         cover *= 1.0 - 0.85 * rainSide * smoothstep(C.y - 2.0, C.y + 2.0, P.y);
@@ -420,7 +429,7 @@ enum SupercellSkyShaders {
         float hz = saturate((z - bottom) / (hb - bottom));
         float3 N = normalize(float3(rel / rr, 0.35));
         float facing = saturate(0.6 * dot(N, Ls) + 0.4);
-        float3 c = u.sunCol.rgb * (0.1 * facing * light) + u.amb.rgb * (0.08 + 0.1 * dens) + float3(0.025, 0.028, 0.034);
+        float3 c = u.sunCol.rgb * (0.22 * facing * light) + u.amb.rgb * (0.08 + 0.1 * dens) + float3(0.025, 0.028, 0.034);
         // Darker into its top, where it is the base; lighter low down in the horizon's light.
         c *= 0.75 + 0.45 * (1.0 - hz);
         c *= 1.2 - 0.6 * u.look.x;
@@ -471,7 +480,7 @@ enum SupercellSkyShaders {
     /// in perspective; each a log spiral round it, its cloud carried inward along it.
     Layer inflow(float3 o, float3 d, constant CellU& u, int octaves, thread float& tHit) {
         Layer L; L.a = 0.0; L.c = float3(0); tHit = 1e9;
-        const float h = 0.9;
+        const float h = 0.75;
         if (d.z <= 1e-4) return L;
         float t = (h - o.z) / d.z;
         float3 P = o + d * t;
@@ -480,7 +489,7 @@ enum SupercellSkyShaders {
         float r = length(rel);
         float rMax = 15.0;
         if (r < u.wall.z * 0.8 || r > rMax) return L;
-        float centre = atan2(-0.6 * W.y, 11.0 - W.x);
+        float centre = atan2(-0.35 * W.y, 14.0 - W.x);
         float twist = -0.3 * u.spin.y * log(r / u.wall.z);
         float phi = atan2(rel.y, rel.x) - twist;
         float spacing = u.spin.z;
@@ -488,12 +497,12 @@ enum SupercellSkyShaders {
         float k = floor(bandsF + 0.5);
         if (k < -0.5 || k > 6.5) return L;
         float across = (bandsF - k) * spacing * r;                // km off the band's line
-        float width = 0.18 + 0.045 * r;
+        float width = 0.25 + 0.06 * r;
         float profile = exp(-across * across / (width * width));
         float flow = u.spin.w;
         float streak = fbm2(float2((r + flow) * 0.9, across * 6.0 + k * 3.7), octaves);
         float ends = smoothstep(u.wall.z * 0.9, u.wall.z * 2.0, r) * (1.0 - smoothstep(rMax * 0.55, rMax, r));
-        float dens = profile * ends * smoothstep(0.35, 0.8, streak) * (0.45 + 0.3 * u.play.x);
+        float dens = profile * ends * smoothstep(0.25, 0.65, streak) * (0.75 + 0.25 * u.play.x);
         // A note's glow running up this band into the wall cloud.
         float glow = 0.0;
         for (int i = 0; i < 8; i++) {
@@ -506,8 +515,8 @@ enum SupercellSkyShaders {
         glow *= profile * ends;
         float a = saturate(dens + 0.3 * glow);
         if (a <= 0.002) return L;
-        float3 c = (u.amb.rgb * 0.45 + float3(0.05, 0.05, 0.06)) * (0.8 + 0.4 * streak)
-                 + u.sunCol.rgb * float3(1.0, 0.8, 0.58) * (0.1 * u.sunCol.w * streak);
+        float3 c = (u.amb.rgb * 0.32 + float3(0.04, 0.04, 0.05)) * (0.8 + 0.4 * streak)
+                 + u.sunCol.rgb * float3(1.0, 0.86, 0.7) * ((0.22 + 0.2 * streak) * u.sunCol.w);
         c *= 1.15 - 0.5 * u.look.x;
         c += float3(1.0, 0.78, 0.42) * (2.6 * glow) / max(a, 0.05);
         L.a = a;
@@ -599,8 +608,8 @@ enum SupercellSkyShaders {
         // It spreads from the storm toward and past the camera; its far edge stands behind the storm.
         float reach = C.y + u.extra.w + 6.0 * (fbm2(float2(P.x * 0.09, 1.3), 2) - 0.5);
         float fringe = fbm2(P.xy * 0.35 + 4.0, octaves);
-        float edge = reach - P.y + 9.0 * (fringe - 0.5);
-        float cover = smoothstep(-1.0, 5.0, edge) * (1.0 - smoothstep(55.0, 70.0, abs(P.x - C.x)));
+        float edge = reach - P.y + 12.0 * (fringe - 0.5);
+        float cover = smoothstep(-0.5, 2.0, edge) * (1.0 - smoothstep(55.0, 70.0, abs(P.x - C.x)));
         if (cover <= 0.002) return L;
         int mo = int(u.extra.y + 0.5);
         // Mammatus: pouches hanging under it (the nearest of a jittered grid of centres), lit on the side facing the low

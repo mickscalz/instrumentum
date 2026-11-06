@@ -48,7 +48,7 @@ final class SupercellSkyRenderer: ThemeRenderer {
     nonisolated static let anvilReach: Float = 13
     nonisolated static let wallRadius: Float = 2.4
     nonisolated static let wallBottom: Float = 0.38
-    nonisolated static let shaftRadius: Float = 2.6
+    nonisolated static let shaftRadius: Float = 1.8
     /// The wheat: blades this tall (m); the rows from 6 m to 600 m out.
     nonisolated static let bladeHeight: Float = 0.75
     nonisolated static let nearestRow: Float = 6
@@ -142,16 +142,17 @@ final class SupercellSkyRenderer: ThemeRenderer {
         SIMD2(c.x + 2.3, max(c.y - 5.0, 2.5))
     }
 
-    /// The hail shaft's centre: left of the storm's centre, a little beyond it.
+    /// The hail shaft's centre: between the wall cloud and the rain core, in front of the core's curtain.
     nonisolated static func shaftCentre(storm c: SIMD2<Float>) -> SIMD2<Float> {
-        SIMD2(c.x - 5.0, max(c.y + 1.0, 1.0))
+        SIMD2(c.x - 2.4, max(c.y - 1.5, 1.0))
     }
 
     /// The light the low sun throws on the storm (linear rgb, HDR) at an altitude, and how much it is up (0…1).
     nonisolated static func sunlight(altitude: Double) -> (colour: SIMD3<Float>, up: Float) {
         let alt = Float(altitude.isFinite ? altitude : -90)
         let warm = SIMD3<Float>(1.0, 0.56, 0.32), white = SIMD3<Float>(1.0, 0.97, 0.92)
-        let k = min(1, max(0, alt / 22))
+        let rise: Float = min(1, max(0, alt / 25))
+        let k: Float = rise * rise
         let up = min(1, max(0, (alt + 2) / 8))
         let colour: SIMD3<Float> = (warm + (white - warm) * k) * (1.45 * up)
         return (colour, up)
