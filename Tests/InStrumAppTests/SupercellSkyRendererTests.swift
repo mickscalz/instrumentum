@@ -413,7 +413,7 @@ final class SupercellSkyRendererTests: XCTestCase {
     func testSupercellFramesAnyAspect() throws {
         let sizes: [(Int, Int)] = [(640, 360), (360, 640), (500, 500), (1280, 540)]
         for (w, h) in sizes {
-            let shot = try Self.renderCell(at: 1, width: w, height: h, notes: Self.playing)
+            let shot = try Self.renderCell(at: 1, notes: Self.playing, width: w, height: h)
             let image = try XCTUnwrap(shot.image)
             let s = PreviewRenderer.stats(image)
             XCTAssertGreaterThan(s.meanLuminance, 0.1, "\(w)×\(h)")
