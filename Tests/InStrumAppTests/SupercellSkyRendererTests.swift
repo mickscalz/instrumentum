@@ -512,6 +512,41 @@ final class SupercellFrameTimeTests: XCTestCase {
             XCTAssertGreaterThan(wholeMedian, 0)
         }
     }
+
+    /// The Lounge's frame on the same GPU, for scale (CI's virtual GPU is far from the target Mac's).
+    func testLoungeFrameTimeForScale() throws {
+        guard let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue() else {
+            throw XCTSkip("No Metal device")
+        }
+        let width = 1280, height = 720
+        let stack = try XCTUnwrap(RenderStack(device: device, pixelFormat: .bgra8Unorm))
+        stack.resize(width: width, height: height)
+        for q in [QualityLevel.lite, .high] {
+            let r = try XCTUnwrap(SpaceshipLoungeRenderer(device: device))
+            let d = SceneDirector(themeID: SpaceshipLoungeModel.id, state: ThemeState(), reaction: ReactionPresets.expressivePianist)
+            let size = CGSize(width: width, height: height)
+            for i in 1...60 {
+                let t = Double(i) / 60
+                if let f = d.step(dt: 1.0 / 60, t: t, quality: q) as? LoungeFrame {
+                    r.update(f, params: d.parameters, quality: q, gentle: false, dt: 1.0 / 60, size: size)
+                }
+            }
+            var scene: [Double] = []
+            for i in 0..<24 {
+                guard let cb = queue.makeCommandBuffer() else { continue }
+                r.render(stack: stack, commandBuffer: cb)
+                cb.commit()
+                cb.waitUntilCompleted()
+                let ms = (cb.gpuEndTime - cb.gpuStartTime) * 1000
+                if i >= 4 { scene.append(ms) }
+            }
+            scene.sort()
+            let median = scene.isEmpty ? 0 : scene[scene.count / 2]
+            let label = q == .lite ? "Smooth" : "High"
+            print(String(format: "FRAME TIME lounge %@ 1280x720: scene %.2f ms (median of %d)", label, median, scene.count))
+            XCTAssertGreaterThan(median, 0)
+        }
+    }
 }
 
 extension WorldPreviewTests {

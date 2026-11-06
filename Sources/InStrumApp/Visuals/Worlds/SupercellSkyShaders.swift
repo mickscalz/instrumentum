@@ -207,11 +207,17 @@ enum SupercellSkyShaders {
         if (tc <= 0.0 || bm > Rb * 1.3) return L;
         float lobes;
         float2 pc = (o.xy + d.xy * tc - C);
-        float2 ringC = rot2(pc / max(length(pc), 1e-3), -u.spin.x);
+        // The first guess at where the ray enters: facing us near the axis, round to the side near the silhouette (a
+        // blend, so it never flips across the axis).
+        float2 toward = -d.xy / sqrt(a);
+        float2 side = pc / max(length(pc), 1e-3);
+        float2 ringC = rot2(normalize(mix(toward, side, saturate(bm / (0.7 * Rb)))), -u.spin.x);
         float Rc = bellRadius(clamp(zc, hb, ha), ringC, u, lobes);
         float t = tc, z = zc;
         if (Rc > bm) {
+            int refine = octaves >= 3 ? 4 : 3;
             for (int k = 0; k < 4; k++) {
+                if (k >= refine) break;
                 float2 pk = o.xy + d.xy * t - C;
                 float2 rk = rot2(pk / max(length(pk), 1e-3), -u.spin.x);
                 float R = bellRadius(clamp(z, hb, ha), rk, u, lobes);
@@ -238,7 +244,7 @@ enum SupercellSkyShaders {
         float light = billows(pt, Lr, 1.15, 0.95 * skirtW, k, octaves, dens);
         // The edge: frayed by the density where the cloud thins, the billows' cauliflower above.
         float rimT = 1.0 - smoothstep(0.4, 1.8, Rc - bm);
-        float turrets = 2.0 * fbm3(pt * 0.7 + 41.0, octaves) - 1.0;
+        float turrets = octaves >= 3 ? 2.0 * fbm3(pt * 0.7 + 41.0, 2) - 1.0 : 0.0;
         float fray = (0.4 + 1.6 * (1.0 - skirtW)) * (dens - 0.5) + 0.9 * (1.0 - skirtW) * turrets;
         float edge = Rc - bm + rimT * fray;
         float soft = 0.15 + 0.01 * t;
@@ -254,7 +260,7 @@ enum SupercellSkyShaders {
         float sun = (0.06 + 0.94 * facing * facing * facing) * (0.45 + 0.55 * light);
         // The striations: each band's bulging face lit, the groove under the next band in deep shadow.
         float f = fract(k + 0.35 * (dens - 0.5));
-        float bandOn = smoothstep(0.3, 0.6, vnoise3(float3(ring * 2.2, floor(k) * 1.3 + 0.5)));   // some bands fade out
+        float bandOn = smoothstep(0.3, 0.6, vnoise3(float3(ring * 2.2, (z - hb) * 1.1 + 0.5)));   // patches fade out (no seam)
         float bandLit = smoothstep(0.0, 0.3, f) * (1.0 - smoothstep(0.55, 0.95, f));
         float bandShade = mix(1.0, 0.12 + 1.0 * bandLit, 0.85 * skirtW * bandOn);
         float3 warm = u.sunCol.rgb * sun * bandShade;
@@ -875,6 +881,9 @@ enum SupercellSkyShaders {
         float lt;
         Layer ly;
         for (int i = 0; i < 10; i++) {
+            // Looking down at the field, only the dust wall can stand in the way (the clouds, the rain's feet at the
+            // storm's distance, are all above a ray more than half a degree below the horizon).
+            if (i > 0 && dE.z < -0.01) break;
             switch (i) {
                 case 0: ly = dustWall(o, d, u, octaves, lt); break;
                 case 1: ly = funnelCloud(o, d, u, lt); break;
