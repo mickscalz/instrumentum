@@ -41,7 +41,9 @@ final class SkyControlsTests: XCTestCase {
         XCTAssertEqual(SkyControls.weatherName(.diamondDust), "Diamond dust")
         XCTAssertEqual(SkyControls.weatherName(.rime), "Rime frost")
         XCTAssertEqual(SkyControls.weatherName(.seaSmoke), "Sea smoke")
-        XCTAssertEqual(names.last, "Sea smoke")
+        XCTAssertEqual(SkyControls.weatherName(.gustFront), "Gust front")
+        XCTAssertEqual(SkyControls.weatherName(.virga), "Virga")
+        XCTAssertEqual(Array(names.suffix(3)), ["Sea smoke", "Gust front", "Virga"])
     }
 
     /// The Living Sky panel's "Meteors tonight" line (spec §6.3): the strongest shower now, the whole days still to go to

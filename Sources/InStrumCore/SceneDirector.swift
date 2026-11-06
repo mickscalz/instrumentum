@@ -262,7 +262,15 @@ public final class SceneDirector {
             let hold = SkyHold(rawValue: parameters.choice("light.hold")) ?? .follow
             let aurora = AuroraMode(rawValue: parameters.choice("aurora.mode")) ?? .follow
             let meteors = MeteorMode(rawValue: parameters.choice("meteors.mode")) ?? .follow
-            let s = sky.step(now: clock(), dt: dt, hold: hold, aurora: aurora, meteors: meteors)
+            // Storms (spec §6–§8): a world may choose its own anvil crawlers and sheet lightning (nil: the Sky extras
+            // settings) and hold a supercell's stage (Supercell Sky's picker; nil: no supercell), and its Random Beautiful
+            // adds a gust front where storms appear and virga in dry worlds. All are read every step, so they leave with
+            // the world.
+            let storm = StormInputs(crawlers: SkyExtraMode(rawValue: parameters.choice(SkyExtraMode.crawlersID)),
+                                    sheet: SkyExtraMode(rawValue: parameters.choice(SkyExtraMode.sheetID)),
+                                    supercell: SupercellStage(rawValue: parameters.choice(SupercellStage.id)),
+                                    randomExtras: WorldWeather.randomExtras(for: themeID))
+            let s = sky.step(now: clock(), dt: dt, hold: hold, aurora: aurora, meteors: meteors, storm: storm)
             lastSky = s
             box.setSky(s)
         }

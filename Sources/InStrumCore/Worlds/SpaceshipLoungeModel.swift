@@ -41,7 +41,8 @@ public struct SpaceshipLoungeModel: ThemeModel, MoodAware, SkyAware {
     public mutating func setSky(_ s: SkyState) { sky = Self.weatherless(s) }
 
     /// Space has no weather: the sky's clock, sun and moon without cloud (or its iridescence), rain, frost, rime,
-    /// halos, wetness, gusts or sea smoke; and no air for meteors to burn in (no meteors, fireball flash or shower).
+    /// halos, wetness, gusts or sea smoke; and no air for meteors to burn in (no meteors, fireball flash or shower); nor
+    /// any storm (no crawlers, sheet lightning, gust front, virga or supercell).
     static func weatherless(_ s: SkyState) -> SkyState {
         var s = s
         s.weather = .clear; s.nextWeather = .clear; s.weatherBlend = 0
@@ -50,6 +51,8 @@ public struct SpaceshipLoungeModel: ThemeModel, MoodAware, SkyAware {
         s.aurora = 0; s.auroraStorm = 0; s.fireflies = 0; s.diamondDust = 0; s.pillar = 0
         s.rime = 0; s.iridescence = 0
         s.steam = 0; s.meteors = []; s.meteorFlash = 0; s.shower = nil; s.meteorRate = 0
+        s.crawlers = []; s.sheet = []; s.stormFlash = 0; s.outflow = 0; s.gustFront = nil; s.warmthGrade = 0
+        s.virga = 0; s.farStorm = 0; s.supercell = 0; s.supercellPhase = 0
         s.starVisibility = 1
         return s
     }

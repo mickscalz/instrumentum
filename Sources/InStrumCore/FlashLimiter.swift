@@ -11,6 +11,9 @@ public struct FlashLimiter {
     private var time = 0.0
     private var history: [(t: Double, v: Float)] = []
     private var flashes: [Double] = []
+    /// What it has counted: every large jump since it began, and those within the last second (as of the last step).
+    public private(set) var total = 0
+    public var recent: Int { flashes.count }
 
     public init(gentle: Bool = false) { self.gentle = gentle }
 
@@ -32,6 +35,7 @@ public struct FlashLimiter {
         if let oldest = history.first, output - oldest.v > Self.flashRise,
            flashes.last.map({ time - $0 > Self.window }) ?? true {
             flashes.append(time)
+            total += 1
         }
         return (output, sparkle * Self.sparkleScale(gentle: gentle))
     }

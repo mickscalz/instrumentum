@@ -87,8 +87,51 @@ public struct SkyState: Equatable {
     /// The moon is the real one at `calendar` (real time), so its full moons can be found with `Lunar`; otherwise it is
     /// placed by `moonPhase` alone (quick and frozen modes, and any sky made by hand).
     public var realMoon = false
+    /// Storms (spec §6.1): the anvil crawlers creeping across a storm's cloud base now (at most 4, each up to 16
+    /// segments), lit for this instant after the sky's flash limiter. The cloud layer draws them.
+    public var crawlers: [CrawlerSlot] = []
+    /// Storms (spec §6.2): sheet lightning on the sky's rim now (at most 2), and the nearest cloud cell each one lights.
+    public var sheet: [SheetSlot] = []
+    /// The storm light's brightening of the scene, 0…0.4: the brighter of the crawlers and the sheet lightning, after the
+    /// sky's own `FlashLimiter` (a crawler above 0.25 costs a flash there; the sheet, at most 0.2, never does but is
+    /// counted).
+    public var stormFlash: Float = 0
+    /// A gust front's outflow, the cold air out of the storm, 0…1 (spec §7.1); and where the gust front is (its stage,
+    /// its shelf cloud and dust wall), nil without one.
+    public var outflow: Float = 0
+    public var gustFront: GustFrontNow?
+    /// The weather's grade on a world's warmth (added to its post warmth): the gust front's cold drop, 0 … −0.08.
+    public var warmthGrade: Float = 0
+    /// Virga: streaks of rain hanging under the cloud base that never reach the ground, 0…1 (spec §7.2).
+    public var virga: Float = 0
+    /// A far storm on the horizon, 0…1 (Fire & Neon spec §6.1): a world's or the far-storm machine's, and every supercell
+    /// is one. Sheet lightning and crawlers read it.
+    public var farStorm: Float = 0
+    /// The supercell over a world that has one (Supercell Sky's own weather), 0 or 1, and its event's phase (0…<1:
+    /// Approach to a third, Core to two thirds, Clearing after), mapped from the world's stage picker
+    /// (`WorldWeather.supercellStep`). The event's own drawing and weather come with Fire & Neon's Supercell.
+    public var supercell: Float = 0
+    public var supercellPhase: Float = 0
 
     public init() {}
+}
+
+/// What a world and the playing ask of the storm sky this step (Storms spec §6–§8): each Sky extras mode (nil: the
+/// settings'), the supercell's stage (nil: no supercell), a big moment (it calls a crawler and a sheet flash), a far
+/// storm the world has on its horizon, and the weathers its Random Beautiful adds (`WorldWeather.randomExtras`).
+public struct StormInputs: Equatable {
+    public var crawlers: SkyExtraMode?
+    public var sheet: SkyExtraMode?
+    public var supercell: SupercellStage?
+    public var moment: BigMoment?
+    public var farStorm: Float
+    public var randomExtras: [WeatherKind: Float]
+
+    public init(crawlers: SkyExtraMode? = nil, sheet: SkyExtraMode? = nil, supercell: SupercellStage? = nil,
+                moment: BigMoment? = nil, farStorm: Float = 0, randomExtras: [WeatherKind: Float] = [:]) {
+        self.crawlers = crawlers; self.sheet = sheet; self.supercell = supercell; self.moment = moment
+        self.farStorm = farStorm; self.randomExtras = randomExtras
+    }
 }
 
 /// The Living Sky: sun, moon, stars, colour and weather for a time mode and a city.
@@ -113,9 +156,22 @@ public final class LivingSky {
     private var auroraMachine: AuroraMachine
     private var rime: Float = 0
     /// The meteor calendar's machine, on its own stream (internal so tests can reach its tally and its
-    /// `forceMagnitude` seam), and the sky's own flash limiter for its fireballs.
+    /// `forceMagnitude` seam), and the sky's own flash limiter for its fireballs and its storm light (internal so tests
+    /// can read what it counted).
     var meteorSky: MeteorSky
-    private var meteorLimiter = FlashLimiter()
+    private(set) var flashLimiter = FlashLimiter()
+    /// Storms: the anvil crawlers and the sheet lightning, each on its own stream (internal for their seams and tallies);
+    /// the gust front's clock and seeded details; the supercell's phase.
+    var crawlerSky: AnvilCrawlers
+    var sheetSky: SheetLightning
+    private var frontRng: SeededRandom
+    private var gustOn = false
+    private var gustElapsed = 0.0
+    private var gustCross = 15.0, gustHeight: Float = 11, gustBearing: Float = 0
+    private var supercellOn = false
+    private var supercellPhase = 0.0
+    /// The weathers the current world's Random Beautiful adds (the last step's storm inputs), for tests.
+    var randomExtras: [WeatherKind: Float] { weather.extras }
 
     public init(settings: SkySettings, seed: UInt64 = 1, homeZone: TimeZone = .current) {
         self.settings = settings
@@ -126,6 +182,9 @@ public final class LivingSky {
         gustRng = SeededRandom(seed: seed &+ 0x6057)
         auroraMachine = AuroraMachine(seed: seed &+ 0xA0_7A)
         meteorSky = MeteorSky(seed: seed &+ 0x3E7E_0125)
+        crawlerSky = AnvilCrawlers(seed: seed &+ 0xC2A3_71E5)
+        sheetSky = SheetLightning(seed: seed &+ 0x5EE7_11E7)
+        frontRng = SeededRandom(seed: seed &+ 0x6F00_7F2E)
         clock.place(cityID: settings.cityID, homeZone: homeZone)
         nextGust = Double(gustRng.range(3, 8))
     }
@@ -145,14 +204,21 @@ public final class LivingSky {
         auroraMachine = AuroraMachine(seed: seed &+ 0xA0_7A)
         rime = 0
         meteorSky = MeteorSky(seed: seed &+ 0x3E7E_0125)
-        meteorLimiter = FlashLimiter()
+        flashLimiter = FlashLimiter()
+        crawlerSky = AnvilCrawlers(seed: seed &+ 0xC2A3_71E5)
+        sheetSky = SheetLightning(seed: seed &+ 0x5EE7_11E7)
+        frontRng = SeededRandom(seed: seed &+ 0x6F00_7F2E)
+        gustOn = false
+        gustElapsed = 0
+        supercellOn = false
+        supercellPhase = 0
     }
 
     /// `hold` keeps the sun at a chosen altitude for worlds that hold the light; everything else keeps running.
     /// `aurora` and `meteors` are the world's aurora and meteor modes for this step (world parameters, so they never
-    /// outlive the world).
+    /// outlive the world); `storm` is what the world and the playing ask of the storm sky (Storms spec §6–§8).
     public func step(now: Date, dt rawDt: Double, hold: SkyHold = .follow, aurora mode: AuroraMode = .follow,
-                     meteors meteorMode: MeteorMode = .follow) -> SkyState {
+                     meteors meteorMode: MeteorMode = .follow, storm inputs: StormInputs = StormInputs()) -> SkyState {
         let dt = min(1, max(0, rawDt))
         let reading = clock.read(now: now, dt: dt, settings: settings)
         var s = SkyState()
@@ -175,8 +241,38 @@ public final class LivingSky {
         s.dayOfYear = Self.dayOfYear(localDay: reading.day)
         s.subsolar = Solar.subsolarPoint(at: t)
 
+        weather.extras = inputs.randomExtras
         weather.step(dt: dt, settings: settings)
-        let w = weather.values
+        var w = weather.values
+        // A gust front plays its stages (spec §7.1) from the moment it starts arriving: its staged weather stands in for
+        // its nominal values by its share of the sky, and its clock runs on (holding the Rain) until it has gone. Each
+        // one draws its dust wall's crossing, its height and the storm's bearing from its own stream.
+        let front = weather.weight(of: .gustFront)
+        if front > 0 {
+            if !gustOn {
+                gustOn = true
+                gustElapsed = 0
+                gustCross = 10 + 10 * AnvilCrawlers.unit(&frontRng)
+                gustHeight = Float(8 + 7 * AnvilCrawlers.unit(&frontRng))
+                gustBearing = Float(360 * AnvilCrawlers.unit(&frontRng))
+            }
+            gustElapsed += dt
+            let g = WorldWeather.gustFront(elapsed: gustElapsed, duration: settings.gustFrontSeconds, cross: gustCross,
+                                           dustHeight: gustHeight, bearing: gustBearing, amount: front)
+            let n = WeatherKind.gustFront.values
+            w.cloud += front * (g.cloud - n.cloud)
+            w.rain += front * (g.rain - n.rain)
+            w.mist += front * (g.mist - n.mist)
+            w.wind += front * (g.wind - n.wind)
+            w.gust += front * (g.gust - n.gust)
+            w.outflow += front * (g.outflow - n.outflow)
+            s.gustFront = g
+            s.warmthGrade = front * g.warmth
+        } else {
+            gustOn = false
+        }
+        s.outflow = min(1, max(0, w.outflow))
+        s.virga = min(1, max(0, w.virga))
         s.weather = weather.current
         s.nextWeather = weather.transitioning ? weather.next : weather.current
         s.weatherBlend = weather.transitioning ? Float(weather.blend) : 0
@@ -281,8 +377,51 @@ public final class LivingSky {
         s.meteorRate = m.perHour
         s.meteorTime = meteorSky.time
         s.solarLongitude = meteorSky.lambda
-        let exposure = meteorLimiter.limit(exposure: 1 + m.flash, sparkle: 0, dt: dt).exposure
-        s.meteorFlash = min(MeteorSky.maxFlash, max(0, exposure - 1))
+
+        // Storms (spec §6, §8.1): the supercell's phase from the world's picker; the storms on and over the horizon; the
+        // anvil crawlers (under a storm's anvil with cloud 0.7 or more; a supercell's anvil is always there) and the
+        // sheet lightning (dusk or night, with a far storm or a dry one in this sky), a big moment calling one of each.
+        if let stage = inputs.supercell {
+            if supercellOn { supercellPhase = WorldWeather.supercellStep(supercellPhase, stage: stage, dt: dt) }
+            else { supercellOn = true; supercellPhase = WorldWeather.supercellPhase(held: stage) ?? 0 }
+            s.supercell = 1
+            let phase = Float(supercellPhase)
+            s.supercellPhase = phase < 1 ? phase : 0   // a hair short of 1 rounds to it in a Float: that is the wrap
+        } else {
+            supercellOn = false
+            supercellPhase = 0
+        }
+        let far = max(inputs.farStorm.isFinite ? min(1, max(0, inputs.farStorm)) : 0, s.supercell)
+        s.farStorm = far
+        let anvil = weather.weight(of: .thunderheads) + weather.weight(of: .storm) + weather.weight(of: .gustFront) + far
+        let base = s.supercell > 0 ? max(s.cloudCover, 0.85) : s.cloudCover
+        let core = s.supercell > 0 && SupercellStage.event(at: s.supercellPhase) == .core
+        let call = inputs.moment.map { $0.strength }
+        let bearing = s.gustFront.map { Double($0.bearing) }
+        let crawlers = crawlerSky.step(dt: dt, mode: inputs.crawlers ?? settings.crawlersMode,
+                                       eligible: anvil >= 0.5 && base >= 0.7, core: core, bearing: bearing, call: call)
+        let dry = weather.weight(of: .thunderheads) + weather.weight(of: .dryLightning) + weather.weight(of: .virga)
+        let dusk = s.sun.altitude < SheetLightning.darkBelow
+        let sheets = sheetSky.step(dt: dt, mode: inputs.sheet ?? settings.sheetMode, eligible: dusk && (far >= 0.5 || dry >= 0.5),
+                                   cloud: s.cloudCover, bearing: bearing, call: call)
+
+        // The sky's own flash limiter takes the fireballs' brightening and the storm light together (the brighter of the
+        // crawlers and the sheet: a crawler above 0.25 costs a flash, the sheet never can), and whatever it holds back
+        // it holds back from each of them alike.
+        let light = max(crawlers.reduce(Float(0)) { max($0, $1.brightness) }, sheets.reduce(Float(0)) { max($0, $1.brightness) })
+        let exposure = flashLimiter.limit(exposure: 1 + m.flash + light, sparkle: 0, dt: dt).exposure
+        if light > 0 {
+            let asked = m.flash + light
+            let share = min(1, min(asked, max(0, exposure - 1)) / asked)
+            s.meteorFlash = min(MeteorSky.maxFlash, max(0, m.flash * share))
+            s.stormFlash = light * share
+            s.crawlers = crawlers.map { c -> CrawlerSlot in var c = c; c.brightness *= share; return c }
+            s.sheet = sheets.map { f -> SheetSlot in var f = f; f.brightness *= share; return f }
+        } else {
+            s.meteorFlash = min(MeteorSky.maxFlash, max(0, exposure - 1))
+            s.crawlers = crawlers
+            s.sheet = sheets
+        }
         return s
     }
 

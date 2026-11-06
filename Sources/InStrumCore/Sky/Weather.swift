@@ -1,6 +1,6 @@
 import Foundation
 
-public enum WeatherKind: String, Codable, CaseIterable { case clear, lightCloud, overcast, mist, drizzle, rain, storm, snow, blizzard, afterRain, sunShower, fogBank, sleet, monsoon, hail, smokeHaze, iceFog, thunderheads, dustStorm, flurries, freezingDrizzle, squall, dryLightning, humid, diamondDust, rime, seaSmoke }
+public enum WeatherKind: String, Codable, CaseIterable { case clear, lightCloud, overcast, mist, drizzle, rain, storm, snow, blizzard, afterRain, sunShower, fogBank, sleet, monsoon, hail, smokeHaze, iceFog, thunderheads, dustStorm, flurries, freezingDrizzle, squall, dryLightning, humid, diamondDust, rime, seaSmoke, gustFront, virga }
 
 /// Pick one yourself, or let the sky wander through beautiful weathers. (`.real` comes later.)
 public enum WeatherMode: String, Codable, CaseIterable { case pick, randomBeautiful }
@@ -16,13 +16,16 @@ public struct WeatherValues: Equatable {
     public var rime: Float = 0
     /// Sea smoke: steam fog rising off open water in bitter, still air (`SkyState.steam`).
     public var steam: Float = 0
+    /// A gust front's outflow, the cold air out of a storm (`SkyState.outflow`), and virga's streaks of rain that never
+    /// land (`SkyState.virga`), 0…1 (Storms spec §7). Every other weather has none.
+    public var outflow: Float = 0, virga: Float = 0
 
     static func mix(_ a: WeatherValues, _ b: WeatherValues, _ t: Float) -> WeatherValues {
         func m(_ x: Float, _ y: Float) -> Float { x + (y - x) * t }
         return WeatherValues(cloud: m(a.cloud, b.cloud), rain: m(a.rain, b.rain), snow: m(a.snow, b.snow), mist: m(a.mist, b.mist),
                              wind: m(a.wind, b.wind), halo: m(a.halo, b.halo), frost: m(a.frost, b.frost), gust: m(a.gust, b.gust),
                              fireflies: m(a.fireflies, b.fireflies), pillar: m(a.pillar, b.pillar), rime: m(a.rime, b.rime),
-                             steam: m(a.steam, b.steam))
+                             steam: m(a.steam, b.steam), outflow: m(a.outflow, b.outflow), virga: m(a.virga, b.virga))
     }
 }
 
@@ -56,6 +59,10 @@ public extension WeatherKind {
         case .diamondDust: return WeatherValues(cloud: 0.05, rain: 0, snow: 0, mist: 0.2, wind: 0.02, halo: 1, frost: 0.9, pillar: 1)
         case .rime: return WeatherValues(cloud: 0.3, rain: 0, snow: 0, mist: 0.85, wind: 0.08, halo: 0.2, frost: 1, rime: 1)
         case .seaSmoke: return WeatherValues(cloud: 0.1, rain: 0, snow: 0, mist: 0.35, wind: 0.06, halo: 0.3, frost: 0.9, steam: 1)
+        // Storms (spec §7): a gust front's nominal values (staged over its Approach, Hit and Rain by `WorldWeather.gustFront`:
+        // the 0.2 rain is its first big drops), and virga's (no rain at all).
+        case .gustFront: return WeatherValues(cloud: 0.9, rain: 0.2, snow: 0, mist: 0.5, wind: 1, gust: 1, outflow: 1)
+        case .virga: return WeatherValues(cloud: 0.7, rain: 0, snow: 0, mist: 0.6, wind: 0.4, gust: 0.3, virga: 1)
         }
     }
 
@@ -69,16 +76,17 @@ public extension WeatherKind {
         }
     }
 
-    /// Drizzle, rain and storms: what "after the rain" follows.
-    var isWet: Bool { self == .drizzle || self == .rain || self == .storm || self == .sleet || self == .monsoon || self == .hail || self == .squall || self == .freezingDrizzle }
+    /// Drizzle, rain and storms: what "after the rain" follows (a gust front ends in rain; virga never lands).
+    var isWet: Bool { self == .drizzle || self == .rain || self == .storm || self == .sleet || self == .monsoon || self == .hail || self == .squall || self == .freezingDrizzle || self == .gustFront }
 
     /// Left out of random weather when "Calm random weather" is on.
-    var isRough: Bool { [.storm, .blizzard, .monsoon, .hail, .squall, .dustStorm, .dryLightning].contains(self) }
+    var isRough: Bool { [.storm, .blizzard, .monsoon, .hail, .squall, .dustStorm, .dryLightning, .gustFront].contains(self) }
 
     /// Weathers that throw lightning.
     var flashes: Bool { self == .storm || self == .squall || self == .monsoon || self == .dryLightning }
 
-    /// How often "random beautiful" picks it (overcast only when chosen).
+    /// How often "random beautiful" picks it (overcast only when chosen; a gust front and virga only in the worlds whose
+    /// tables add them, `WorldWeather.randomExtras`).
     var beautyWeight: Float {
         switch self {
         case .clear, .lightCloud: return 3
@@ -105,6 +113,7 @@ public extension WeatherKind {
         case .diamondDust: return 0.5
         case .rime: return 0.5
         case .seaSmoke: return 0.5
+        case .gustFront, .virga: return 0
         }
     }
 }
@@ -122,6 +131,9 @@ struct WeatherMachine {
     private var spellLeft: Double
     private var rng: SeededRandom
     private var mode: WeatherMode
+    /// The weathers this world's "Random, beautiful" adds, with their weights (`WorldWeather.randomExtras`): set each
+    /// step, read only when a spell ends, so a world without any picks exactly as before.
+    var extras: [WeatherKind: Float] = [:]
     /// Separate streams, so ice, iridescence and "after the rain" never shift the weather sequence itself.
     private var iceRng: SeededRandom
     private var afterRng: SeededRandom
@@ -171,7 +183,7 @@ struct WeatherMachine {
             mode = settings.weatherMode
             if mode == .pick { ice = WeatherKind.lightCloud.values.halo; iridescence = Self.pickedIridescence }
             spellLeft = Self.spell(&rng, minutes: sm)
-            if mode == .randomBeautiful { begin(Self.pick(excluding: transitioning ? next : current, calm: settings.calmRandom, excluded: settings.randomExcluded, &rng), seconds: rs) }
+            if mode == .randomBeautiful { begin(Self.pick(excluding: transitioning ? next : current, calm: settings.calmRandom, excluded: settings.randomExcluded, extras: extras, &rng), seconds: rs) }
         }
         switch mode {
         case .pick:
@@ -181,7 +193,7 @@ struct WeatherMachine {
             if spellLeft <= 0, !transitioning {
                 // After a wet spell, "after the rain" comes next 6 times in 10; otherwise the usual pick (without it).
                 if current.isWet && afterRng.unit() < 0.6 { begin(.afterRain, seconds: rs) }
-                else { begin(Self.pick(excluding: current, also: current.isWet ? .afterRain : nil, calm: settings.calmRandom, excluded: settings.randomExcluded, &rng), seconds: rs) }
+                else { begin(Self.pick(excluding: current, also: current.isWet ? .afterRain : nil, calm: settings.calmRandom, excluded: settings.randomExcluded, extras: extras, &rng), seconds: rs) }
                 spellLeft += Self.spell(&rng, minutes: sm)
             }
         }
@@ -213,12 +225,19 @@ struct WeatherMachine {
         return shows ? amount : 0
     }
 
-    private static func pick(excluding: WeatherKind?, also: WeatherKind? = nil, calm: Bool = false, excluded: [WeatherKind] = [], _ rng: inout SeededRandom) -> WeatherKind {
-        let choices = WeatherKind.allCases.filter { $0 != excluding && $0 != also && $0.beautyWeight > 0 && !(calm && $0.isRough) && !excluded.contains($0) }
-        let total = choices.reduce(0) { $0 + $1.beautyWeight }
+    /// A weight from a world's extras stands in for the kind's own (Storms: a gust front where storms appear, virga in dry
+    /// worlds); without extras every weight, and so every pick, is as it always was.
+    static func pick(excluding: WeatherKind?, also: WeatherKind? = nil, calm: Bool = false, excluded: [WeatherKind] = [],
+                     extras: [WeatherKind: Float] = [:], _ rng: inout SeededRandom) -> WeatherKind {
+        func weight(_ k: WeatherKind) -> Float {
+            guard let w = extras[k], w.isFinite else { return k.beautyWeight }
+            return max(0, w)
+        }
+        let choices = WeatherKind.allCases.filter { $0 != excluding && $0 != also && weight($0) > 0 && !(calm && $0.isRough) && !excluded.contains($0) }
+        let total = choices.reduce(0) { $0 + weight($1) }
         var x = rng.unit() * total
         for k in choices {
-            x -= k.beautyWeight
+            x -= weight(k)
             if x < 0 { return k }
         }
         return choices.last ?? .clear
