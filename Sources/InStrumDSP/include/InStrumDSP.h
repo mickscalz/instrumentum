@@ -23,7 +23,7 @@ typedef enum { ISD_ENGINE_FELT_GLASS = 0, ISD_ENGINE_ORBIT_PAD = 1, ISD_ENGINE_H
                ISD_ENGINE_MAGMA_BASS = 12, ISD_ENGINE_REPLICANT_BRASS = 13,
                /* 14 and 15 are Home Lights' (Sets 15 & 16). */
                /* Storms (Sets 17 & 18): Endless Rise (spec 2026-11-05-storms-design.md §4.1) and Single Note Grand
-                  (§4.2, reserved: not creatable until its task lands, so isd_synth_create returns NULL for it). */
+                  (§4.2). */
                ISD_ENGINE_ENDLESS_RISE = 16, ISD_ENGINE_SINGLE_NOTE_GRAND = 17 } ISDEngine;
 
 /// Parameter addresses (stable: saved in presets and instrument state).
@@ -52,7 +52,10 @@ enum {
     /// uses ISD_P_SPACE and ISD_P_WIDTH.
     ISD_P_RISE = 150, ISD_P_PRESSURE = 151, ISD_P_GRIT_ER = 152, ISD_P_PULSE = 153, ISD_P_TEMPO_ER = 154,
     ISD_P_TAIL = 155, ISD_P_SUB = 156,
-    /// Single Note Grand (Storms, Sets 17 & 18, reserved; spec §4.2). Also uses ISD_P_SPACE and ISD_P_WIDTH.
+    /// Single Note Grand (Storms, Sets 17 & 18; spec §4.2), each 0…1. Hall sets the room (its decay 2.8 s at .7, about
+    /// 4.6 s at 1 and 1 s at .1, and how much of it there is); Felt the hammer's felt (0.2 by default); Morph a floor under
+    /// the player's pressure; Octave Down the voice an octave below; Break the voice's clipper drive (0–30 dB). Also
+    /// uses ISD_P_SPACE and ISD_P_WIDTH.
     ISD_P_HALL_SNG = 160, ISD_P_FELT_SNG = 161, ISD_P_MORPH = 162, ISD_P_OCTAVE_DOWN = 163, ISD_P_BREAK = 164,
     ISD_P_MOOD_ENERGY = 100, ISD_P_MOOD_WARMTH = 101, ISD_P_MOOD_BRIGHTNESS = 102, ISD_P_MOOD_SPACE = 103, ISD_P_MOOD_MOTION = 104,
     /// Test hook (unit 3, never shown): Orbit Pad plays one plain saw, no detune, drift, motion or chorus.
@@ -83,8 +86,9 @@ enum {
     /// Test hooks (unit 3, never shown; Storms, Sets 17 & 18): Endless Rise's pad alone (no riser or thump); its riser
     /// alone (with the drop's thump); Endless Rise dry (no pulse, drive, reverb or slop). They combine.
     ISD_P_DEBUG_ER_PAD_ONLY = 220, ISD_P_DEBUG_ER_RISE_ONLY = 221, ISD_P_DEBUG_ER_DRY = 222,
-    /// Test hooks (unit 3, never shown; Storms, Sets 17 & 18, reserved): Single Note Grand's piano alone; its voice
-    /// alone; the grand dry (no hall).
+    /// Test hooks (unit 3, never shown; Storms, Sets 17 & 18): Single Note Grand's piano alone, at full weight whatever
+    /// the morph; its voice alone, at full weight whatever the morph (and running even at morph 0); the grand dry (no
+    /// hall). Dry combines with either.
     ISD_P_DEBUG_SNG_PIANO_ONLY = 223, ISD_P_DEBUG_SNG_VOICE_ONLY = 224, ISD_P_DEBUG_SNG_DRY = 225
 };
 
@@ -117,13 +121,15 @@ int isd_synth_active_voices(const ISDSynth *synth);
 /// RETUNES: Felt Glass retunes. HORN_NOTE: Cabin Felt's horn note (folded into its range), or -1.
 /// BUILD_PERMILLE and WALL_UNISON: Morning Box's build level × 1000 and its wall's unison count.
 /// DROPS and TENSION_PERMILLE: Endless Rise's drops taken (a second one within 2.5 s is not) and the tension it is
-/// using × 1000 (the world's plus 0.3 × pressure, smoothed).
+/// using × 1000 (the world's plus 0.3 × pressure, smoothed). MORPH_PERMILLE: the morph Single Note Grand is using × 1000
+/// (the player's pressure over the Morph floor, or the world's forced morph, smoothed 80 ms up and 250 ms down); any
+/// thread.
 typedef enum { ISD_DEBUG_RETUNES = 0, ISD_DEBUG_HORN_NOTE = 1, ISD_DEBUG_BUILD_PERMILLE = 2, ISD_DEBUG_WALL_UNISON = 3,
                /* Magma Bass: how many eruption swells hard low chords have set off. */ ISD_DEBUG_ERUPTIONS = 4,
-               ISD_DEBUG_DROPS = 5, ISD_DEBUG_TENSION_PERMILLE = 6 } ISDDebugCount;
+               ISD_DEBUG_DROPS = 5, ISD_DEBUG_TENSION_PERMILLE = 6, ISD_DEBUG_MORPH_PERMILLE = 7 } ISDDebugCount;
 int isd_synth_debug_count(const ISDSynth *synth, ISDDebugCount which);
 
-// ---------- Storms (Sets 17 & 18): the riser's calls (Task 2); the grand's are declared here, defined by Task 4 ----------
+// ---------- Storms (Sets 17 & 18): the riser's calls (Task 2) and the grand's (Task 4) ----------
 /// Endless Rise. Any thread. Tension 0…1 from the Excitement step: it multiplies the riser's rate by 1 + 3·tension,
 /// opens the pad's filter (600 Hz → 6 kHz at Pressure .4) and brings the riser forward. The engine adds 0.3 × the
 /// player's pressure to it (so with nothing set, a full press is tension 0.3); with Excitement off the host passes the
@@ -135,10 +141,13 @@ void isd_synth_set_tension(ISDSynth *synth, float tension);
 /// passed 0.2 and its 2.5 s have run. Taken at the next control block. Other engines ignore it.
 void isd_synth_trigger_drop(ISDSynth *synth);
 /// Single Note Grand. Any thread. Forces the morph (0…1) over aftertouch, for the storm's arrival; a negative value
-/// releases it, and the morph returns to the player's aftertouch over 250 ms.
+/// releases it, and the morph returns to the player's aftertouch over 250 ms. An atomic, read once per control block;
+/// the morph moves to it (or back) through its own smoothing (80 ms up, 250 ms down), so it never steps. A value that
+/// isn't finite releases it. Other engines ignore it.
 void isd_synth_set_forced_morph(ISDSynth *synth, float morph);
 /// Internal (tests) and the repeat detector's read-back (any thread): 1 while the same key has been struck four or more
-/// times at 2 a second or faster, else 0.
+/// times at 2 a second or faster (at most 0.5 s between strikes), else 0. A different key, or 0.5 s without a strike,
+/// clears it. Other engines: 0.
 int isd_synth_debug_is_repeating(const ISDSynth *synth);
 
 // ---------- Ambience (generated live, never loops) ----------

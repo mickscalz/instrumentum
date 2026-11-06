@@ -16,6 +16,7 @@
 #include "MagmaBass.hpp"
 #include "ReplicantBrass.hpp"
 #include "EndlessRise.hpp"
+#include "SingleNoteGrand.hpp"
 #include <algorithm>
 #include <atomic>
 #include <cmath>
@@ -311,6 +312,27 @@ const ISDParamInfo kEndlessRiseParams[] = {
     {ISD_P_DEBUG_ER_RISE_ONLY, "debugRiseOnly", "Rise only (test)", 0.f, 1.f, 0.f, 3},
     {ISD_P_DEBUG_ER_DRY, "debugRiseDry", "Dry (test)", 0.f, 1.f, 0.f, 3},
 };
+/// The dials in the Swift order (Hall, Felt, Morph, Octave Down, Break, Width, Space), each 0…1. Defaults are the
+/// Runaway preset (Hall .7, Felt .2, Morph 0, Octave Down .5, Break .5); Width and Space are the engine's own.
+const ISDParamInfo kSingleNoteGrandParams[] = {
+    {ISD_P_FINE_TUNE, "fineTune", "Fine tune", -50.f, 50.f, 0.f, 1},
+    {ISD_P_TRANSPOSE, "transpose", "Transpose", -12.f, 12.f, 0.f, 2},
+    {ISD_P_HALL_SNG, "hall", "Hall", 0.f, 1.f, 0.70f, 0},
+    {ISD_P_FELT_SNG, "felt", "Felt", 0.f, 1.f, 0.20f, 0},
+    {ISD_P_MORPH, "morph", "Morph", 0.f, 1.f, 0.f, 0},
+    {ISD_P_OCTAVE_DOWN, "octaveDown", "Octave Down", 0.f, 1.f, 0.50f, 0},
+    {ISD_P_BREAK, "break", "Break", 0.f, 1.f, 0.50f, 0},
+    {ISD_P_WIDTH, "width", "Width", 0.f, 1.f, 0.50f, 0},
+    {ISD_P_SPACE, "space", "Space", 0.f, 1.f, 0.50f, 0},
+    {ISD_P_MOOD_ENERGY, "moodEnergy", "Mood energy", 0.f, 1.f, 0.5f, 0},
+    {ISD_P_MOOD_WARMTH, "moodWarmth", "Mood warmth", 0.f, 1.f, 0.5f, 0},
+    {ISD_P_MOOD_BRIGHTNESS, "moodBrightness", "Mood brightness", 0.f, 1.f, 0.5f, 0},
+    {ISD_P_MOOD_SPACE, "moodSpace", "Mood space", 0.f, 1.f, 0.5f, 0},
+    {ISD_P_MOOD_MOTION, "moodMotion", "Mood motion", 0.f, 1.f, 0.5f, 0},
+    {ISD_P_DEBUG_SNG_PIANO_ONLY, "debugGrandPianoOnly", "Piano only (test)", 0.f, 1.f, 0.f, 3},
+    {ISD_P_DEBUG_SNG_VOICE_ONLY, "debugGrandVoiceOnly", "Voice only (test)", 0.f, 1.f, 0.f, 3},
+    {ISD_P_DEBUG_SNG_DRY, "debugGrandDry", "Dry (test)", 0.f, 1.f, 0.f, 3},
+};
 
 
 
@@ -333,6 +355,7 @@ ParamTable table(ISDEngine engine) {
     case ISD_ENGINE_MAGMA_BASS: return {kMagmaBassParams, (int)(sizeof kMagmaBassParams / sizeof kMagmaBassParams[0])};
     case ISD_ENGINE_REPLICANT_BRASS: return {kReplicantBrassParams, (int)(sizeof kReplicantBrassParams / sizeof kReplicantBrassParams[0])};
     case ISD_ENGINE_ENDLESS_RISE: return {kEndlessRiseParams, (int)(sizeof kEndlessRiseParams / sizeof kEndlessRiseParams[0])};
+    case ISD_ENGINE_SINGLE_NOTE_GRAND: return {kSingleNoteGrandParams, (int)(sizeof kSingleNoteGrandParams / sizeof kSingleNoteGrandParams[0])};
     default: return {nullptr, 0};
     }
 }
@@ -442,6 +465,7 @@ ISDSynth *isd_synth_create(ISDEngine engine, double sampleRate, int maxFrames) {
     case ISD_ENGINE_MAGMA_BASS: s->engine = std::make_unique<isd::MagmaBass>(sampleRate); break;
     case ISD_ENGINE_REPLICANT_BRASS: s->engine = std::make_unique<isd::ReplicantBrass>(sampleRate); break;
     case ISD_ENGINE_ENDLESS_RISE: s->engine = std::make_unique<isd::EndlessRise>(sampleRate); break;
+    case ISD_ENGINE_SINGLE_NOTE_GRAND: s->engine = std::make_unique<isd::SingleNoteGrand>(sampleRate); break;
     default: delete s; return nullptr;
     }
     return s;
@@ -511,9 +535,13 @@ int isd_synth_active_voices(const ISDSynth *s) { return s ? s->voices.load(std::
 
 int isd_synth_debug_count(const ISDSynth *s, ISDDebugCount which) { return s && s->engine ? s->engine->debugCount((int)which) : 0; }
 
-// The engine keeps both in atomics and reads them once per control block, so any thread may call these.
+// The engine keeps these in atomics and reads them once per control block, so any thread may call them.
 void isd_synth_set_tension(ISDSynth *s, float tension) { if (s && s->engine) s->engine->setTension(tension); }
 
 void isd_synth_trigger_drop(ISDSynth *s) { if (s && s->engine) s->engine->triggerDrop(); }
+
+void isd_synth_set_forced_morph(ISDSynth *s, float morph) { if (s && s->engine) s->engine->setForcedMorph(morph); }
+
+int isd_synth_debug_is_repeating(const ISDSynth *s) { return s && s->engine && s->engine->isRepeating() ? 1 : 0; }
 
 } // extern "C"
