@@ -54,12 +54,13 @@ jobs:
         run: |
           ls -la previews
           cd previews
-          git init -q && git checkout -q -b previews
+          TARGET=previews; case "$GITHUB_REF_NAME" in storms-*) TARGET="previews-$GITHUB_REF_NAME";; esac
+          git init -q && git checkout -q -b "$TARGET"
           git -c user.name=ci -c user.email=ci@localhost add -A
           git -c user.name=ci -c user.email=ci@localhost commit -qm "previews for $GITHUB_SHA"
           # The push has hung on GitHub's side now and then: give each try two minutes, three tries.
           for i in 1 2 3; do
-            perl -e 'alarm 120; exec @ARGV' git push -f -q "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" previews && exit 0
+            perl -e 'alarm 120; exec @ARGV' git push -f -q "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$TARGET" && exit 0
             echo "push attempt $i failed or timed out"; sleep 10
           done
           exit 1
