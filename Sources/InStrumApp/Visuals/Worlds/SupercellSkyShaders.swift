@@ -250,6 +250,10 @@ enum SupercellSkyShaders {
                 t = tc - sqrt((R * R - bb) / a);
                 z = o.z + t * d.z;
             }
+            // Toward the silhouette the hit eases into the ray's nearest pass, so the edge's noise is read at points
+            // that meet there (switching between them drew a hard line round the silhouette).
+            t = mix(tc, t, smoothstep(0.0, 0.5, Rc - bm));
+            z = o.z + t * d.z;
         }
         if (t <= 0.0 || z > ha + 0.4) return L;
         float3 P = o + d * t;
@@ -277,9 +281,12 @@ enum SupercellSkyShaders {
         // billows' cauliflower above; the sky shows through the thin parts, so it reads as vapour, not a cut-out.
         float upper = 1.0 - skirtW;
         float rimT = 1.0 - smoothstep(0.3, 2.4, Rc - bm);
-        float wisps = fbm3(pt * 1.9 + float3(0.0, 0.0, 19.0), octaves);
-        float turrets = octaves >= 3 ? 2.0 * fbm3(pt * 0.7 + 41.0, 2) - 1.0 : 2.0 * dens - 1.0;
-        float fray = (0.6 + 1.2 * upper) * (dens - 0.5) + 0.9 * upper * turrets + (0.9 + 0.5 * upper) * (wisps - 0.5);
+        // (The fraying is read where the ray passes nearest the axis, which moves evenly from pixel to pixel; read on
+        // the surface it crowded into ribbons along the silhouette, as surface texture does toward a limb.)
+        float3 pn = float3(rot2(pc, -u.spin.x), zc);
+        float wisps = fbm3(pn * 1.9 + float3(0.0, 0.0, 19.0), octaves);
+        float turrets = 2.0 * (octaves >= 3 ? fbm3(pn * 0.7 + 41.0, 2) : vnoise3(pn * 0.7 + 41.0)) - 1.0;
+        float fray = 0.9 * upper * turrets + (1.6 + 1.2 * upper) * (wisps - 0.5);
         float edge = Rc - bm + rimT * fray;
         float soft = 0.2 + 0.012 * t;
         float thin = 1.0 - smoothstep(0.0, 1.2, edge);
@@ -529,7 +536,8 @@ enum SupercellSkyShaders {
         float bottomZ = bottom + 0.5 * (fbm2(ring * 3.0 + float2(z, 7.0), octaves) - 0.45) + 0.25 * (dens - 0.5);
         float side = smoothstep(0.12, -0.12, bm - R);
         float low = smoothstep(bottomZ - 0.05, bottomZ + 0.12, zc);
-        float cover = side * low * (1.0 - smoothstep(hb + 0.02, hb + 0.12, zc));
+        // Its top melts into the base it hangs from (a cut there drew a lid).
+        float cover = side * low * (1.0 - smoothstep(hb - 0.35, hb + 0.05, zc + 0.15 * (dens - 0.5)));
         if (cover <= 0.002) return L;
         float hz = saturate((z - bottom) / (hb - bottom));
         float3 N = normalize(float3(rel / rr, 0.35));
@@ -548,8 +556,8 @@ enum SupercellSkyShaders {
         // A chord's pulse lights it from inside, low down (through its own cloud, so it glows, it does not paint);
         // a ripple brightens where it passes.
         float lowPart = 1.0 - hz;
-        c += float3(1.0, 0.58, 0.26) * (u.glowL.z * 0.14 * lowPart * lowPart * lowPart * (0.3 + 0.9 * dens));
-        c += float3(0.95, 0.8, 0.62) * u.sunCol.rgb * (0.09 * bulge * (0.5 + dens));
+        c += float3(1.0, 0.58, 0.26) * (u.glowL.z * 0.09 * lowPart * lowPart * lowPart * (0.3 + 0.9 * dens));
+        c += u.amb.rgb * float3(0.85, 0.92, 1.0) * (0.07 * min(bulge, 1.5) * (0.4 + dens));   // brighter cloud, not sunlight
         c += flashOnCloud(ndc, u) * 0.6;
         // Ragged where it thins at its sides and its foot.
         cover *= 1.0 - 0.6 * (1.0 - smoothstep(0.0, 0.5, R - bm)) * (1.0 - smoothstep(0.35, 0.7, scud));
