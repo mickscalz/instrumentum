@@ -60,7 +60,9 @@ final class LightningPlainsRenderer: ThemeRenderer {
     let weather: WeatherLayer
     let warp: WarpLayer
     private var showWarp = false
-    private let scene, bolts, props: MTLRenderPipelineState
+    private let scene, storm, bolts, props: MTLRenderPipelineState
+    /// The storm's screen bounds (NDC x0, y0, x1, y1) for its own pass; nil when it is out of view.
+    private(set) var stormBox: SIMD4<Float>?
     private var plainsU = [SIMD4<Float>](repeating: .zero, count: LightningPlainsRenderer.uniformCount)
     private var segments: [SIMD4<Float>] = []
     private var propInstances: [SIMD4<Float>] = []
@@ -113,13 +115,15 @@ final class LightningPlainsRenderer: ThemeRenderer {
                 c.isBlendingEnabled = true
                 c.sourceRGBBlendFactor = .one
                 c.sourceAlphaBlendFactor = .one
-                c.destinationRGBBlendFactor = blend == 1 ? .oneMinusSourceAlpha : .one
-                c.destinationAlphaBlendFactor = blend == 1 ? .oneMinusSourceAlpha : .one
+                c.destinationRGBBlendFactor = blend == 2 ? .one : .oneMinusSourceAlpha
+                c.destinationAlphaBlendFactor = blend == 2 ? .one : .oneMinusSourceAlpha
             }
-            if blend == 2 { d.colorAttachments[1].writeMask = [] }
+            if blend >= 2 { d.colorAttachments[1].writeMask = [] }
             return try? device.makeRenderPipelineState(descriptor: d)
         }
+        // Blend 1: premultiplied over (with depth); 2: additive (no depth); 3: premultiplied over (no depth).
         guard let sc = make("plains_vertex", "plains_scene_fragment", blend: 0),
+              let st = make("plains_box_vertex", "plains_storm_fragment", blend: 3),
               let bo = make("plains_bolt_vertex", "plains_bolt_fragment", blend: 2),
               let pr = make("plains_prop_vertex", "plains_prop_fragment", blend: 1) else { return nil }
         let row = MemoryLayout<SIMD4<Float>>.stride
@@ -129,7 +133,7 @@ final class LightningPlainsRenderer: ThemeRenderer {
             guard let buf = device.makeBuffer(length: bytes, options: .storageModeShared) else { return nil }
             buffers.append(buf)
         }
-        sky = s; weather = w; warp = gw; scene = sc; bolts = bo; props = pr
+        sky = s; weather = w; warp = gw; scene = sc; storm = st; bolts = bo; props = pr
         ring = buffers
         bufferAllocations = buffers.count
         segments.reserveCapacity(Self.segmentBudget * 3)
@@ -203,6 +207,39 @@ final class LightningPlainsRenderer: ThemeRenderer {
         segments.append(SIMD4(colour, 0))
     }
 
+    /// The storm's screen bounds (NDC x0, y0, x1, y1, a little wide, clamped to the frame) with it `km` away on
+    /// `bearing`: every tower with its puffs and anvil, the shelf, and the lobes' reach; the whole frame if any part of
+    /// that region is behind the camera, nil if it is all out of view.
+    func stormBounds(km: Double, bearing: Double) -> SIMD4<Float>? {
+        let deg = 180 / Double.pi
+        let lump = max(0.4, 0.28 * atan(4.5 / km) * deg)
+        var left = -atan(Self.lineKm / km) * deg, right = -left, top = 0.0
+        for t in StrikeLines.towers {
+            let v = StrikeLines.view(t, stormKm: km)
+            left = min(left, v.offset - 0.45 * v.anvilHalf - 2.6 * v.halfWidth)
+            right = max(right, v.offset + v.anvilHalf + 2.6 * v.halfWidth)
+            top = max(top, v.top + 1.2 * v.halfWidth)
+        }
+        top = min(89, top + 2 * lump)
+        let widen = 1 / max(0.05, cos(top / deg))
+        left = left * widen - 2 * lump
+        right = right * widen + 2 * lump
+        var lo = SIMD2<Float>(repeating: .infinity), hi = SIMD2<Float>(repeating: -.infinity)
+        for i in 0...8 {
+            let f = Double(i) / 8
+            let edges = [(left + (right - left) * f, -0.6), (left + (right - left) * f, top),
+                         (left, -0.6 + (top + 0.6) * f), (right, -0.6 + (top + 0.6) * f)]
+            for (th, alt) in edges {
+                guard let q = skyPoint(azimuth: bearing + th, altitude: alt) else { return SIMD4(-1, -1, 1, 1) }
+                lo = simd_min(lo, q)
+                hi = simd_max(hi, q)
+            }
+        }
+        let margin: Float = 0.04
+        let box = SIMD4(max(-1, lo.x - margin), max(-1, lo.y - margin), min(1, hi.x + margin), min(1, hi.y + margin))
+        return box.x < box.z && box.y < box.w ? box : nil
+    }
+
     // MARK: - Update
 
     func update(_ frame: PlainsFrame, params p: ParameterSet, quality: QualityLevel, gentle: Bool, dt: Double, size: CGSize) {
@@ -251,6 +288,7 @@ final class LightningPlainsRenderer: ThemeRenderer {
         buildBolts(frame, sky: s, pixel: pixel, ratio: ratio, gentle: gentle, quality: quality)
         let flashLight = fillUniforms(frame, sky: s, km: km, bearing: bearing, pixel: pixel, ratio: ratio, soft: soft,
                                       quality: quality, time: t, gentle: gentle)
+        stormBox = stormBounds(km: km, bearing: bearing)
         buildProps(frame, params: p, quality: quality, gentle: gentle, dt: dt, pixel: pixel, time: t, flash: flashLight)
 
         let night = 1 - Self.smooth(-12, -3, Float(s.sun.altitude))
@@ -579,6 +617,13 @@ final class LightningPlainsRenderer: ThemeRenderer {
         plainsU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
         sky.bindStars(e)
         e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+        if var box = stormBox {
+            e.setRenderPipelineState(storm)
+            e.setVertexBytes(&box, length: MemoryLayout<SIMD4<Float>>.stride, index: 0)
+            skyU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
+            plainsU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
+            e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6)
+        }
         if showWarp { warp.draw(e) }
 
         let row = MemoryLayout<SIMD4<Float>>.stride

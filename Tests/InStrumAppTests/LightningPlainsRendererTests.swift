@@ -11,8 +11,8 @@ final class LightningPlainsRendererTests: XCTestCase {
     func testPlainsShadersCompile() throws {
         guard let device = MTLCreateSystemDefaultDevice() else { throw XCTSkip("No Metal device") }
         let lib = try device.makeLibrary(source: LightningPlainsShaders.source, options: nil)
-        for name in ["plains_vertex", "plains_scene_fragment", "plains_bolt_vertex", "plains_bolt_fragment",
-                     "plains_prop_vertex", "plains_prop_fragment"] {
+        for name in ["plains_vertex", "plains_scene_fragment", "plains_box_vertex", "plains_storm_fragment",
+                     "plains_bolt_vertex", "plains_bolt_fragment", "plains_prop_vertex", "plains_prop_fragment"] {
             XCTAssertNotNil(lib.makeFunction(name: name), name)
         }
         // Built on the Sky, with no powers of its own.

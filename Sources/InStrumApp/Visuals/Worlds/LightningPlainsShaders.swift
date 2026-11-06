@@ -129,19 +129,26 @@ enum LightningPlainsShaders {
             float side = dx - lean >= 0.0 ? 1.0 : -1.0;
             float3 turret = pl_dmax(pl_dmax(float3(abs(dx - lean) - 0.62 * w, side, 0.0), float3(base - alt, 0.0, -1.0)),
                                     float3(alt - crown, 0.0, 1.0));
-            float2 at = float2(dx, alt);
-            for (int j = 0; j < 7; j++) {
-                float3 h = hash33(float3(b.z, float(j), 1.7));
-                float v = (float(j) + 0.3 + 0.4 * h.x) / 7.0;
-                float s = (j % 2 == 0) ? -1.0 : 1.0;
-                float2 c2 = float2(0.18 * w * v + s * w * (0.3 + 0.28 * h.y), base + v * (crown - base));
-                float r = w * (0.42 + 0.26 * h.z) * (0.85 + 0.3 * v);
-                turret = pl_dmin(turret, pl_circle(at, c2, r), 0.22 * w);
+            // The puffs and the head only near the turret (they reach 1.5 widths out; beyond, the core's distance,
+            // less their reach, stands in: the storm's detail never reaches that far).
+            float far = max(abs(dx - 0.09 * w) - 2.6 * w, max(alt - crown - 2.3 * w, base - 1.2 * w - alt));
+            if (far > 0.0) {
+                turret.x -= 1.4 * w;
+            } else {
+                float2 at = float2(dx, alt);
+                for (int j = 0; j < 7; j++) {
+                    float3 h = hash33(float3(b.z, float(j), 1.7));
+                    float v = (float(j) + 0.3 + 0.4 * h.x) / 7.0;
+                    float sd = (j % 2 == 0) ? -1.0 : 1.0;
+                    float2 c2 = float2(0.18 * w * v + sd * w * (0.3 + 0.28 * h.y), base + v * (crown - base));
+                    float r = w * (0.42 + 0.26 * h.z) * (0.85 + 0.3 * v);
+                    turret = pl_dmin(turret, pl_circle(at, c2, r), 0.22 * w);
+                }
+                float3 hh = hash33(float3(b.z, 9.0, 4.1));
+                turret = pl_dmin(turret, pl_circle(at, float2(-0.24 * w, crown - (0.15 + 0.2 * hh.x) * w), 0.68 * w), 0.2 * w);
+                turret = pl_dmin(turret, pl_circle(at, float2(0.23 * w, crown + 0.05 * w), (0.85 + 0.15 * hh.z) * w), 0.2 * w);
+                turret = pl_dmin(turret, pl_circle(at, float2(0.68 * w, crown - (0.25 + 0.2 * hh.y) * w), 0.62 * w), 0.2 * w);
             }
-            float3 hh = hash33(float3(b.z, 9.0, 4.1));
-            turret = pl_dmin(turret, pl_circle(at, float2(-0.24 * w, crown - (0.15 + 0.2 * hh.x) * w), 0.68 * w), 0.2 * w);
-            turret = pl_dmin(turret, pl_circle(at, float2(0.23 * w, crown + 0.05 * w), (0.85 + 0.15 * hh.z) * w), 0.2 * w);
-            turret = pl_dmin(turret, pl_circle(at, float2(0.68 * w, crown - (0.25 + 0.2 * hh.y) * w), 0.62 * w), 0.2 * w);
             float3 tower = turret;
             float anvilD = 1e4;
             if (anvilled) {
@@ -249,10 +256,10 @@ enum LightningPlainsShaders {
         float wrap = saturate((dot(st.n, L) + 0.35) / 1.35);
         float direct = wrap * wrap * mix(0.55, 1.0, st.ao);
         float lining = st.edge * saturate(-L.z) * (0.5 + 0.5 * saturate(dot(st.n.xy, L.xy)));
-        float patch = fbm3(float3(th * squeeze / (4.0 * s), alt / (4.0 * s), 2.2 + time * 0.004), max(octaves - 1, 1));
+        float patch = vnoise3(float3(th * squeeze / (4.0 * s), alt / (4.0 * s), 2.2 + time * 0.004));
         float skyward = 0.55 + 0.45 * st.n.y;
-        float streak = vnoise3(float3(th * squeeze / (2.5 * s), alt / (0.25 * s), 6.6));
-        float fibres = mix(1.0, 0.8 + 0.4 * streak, st.anvil);
+        float fibres = 1.0;
+        if (st.anvil > 0.01) fibres = mix(1.0, 0.8 + 0.4 * vnoise3(float3(th * squeeze / (2.5 * s), alt / (0.25 * s), 6.6)), st.anvil);
         float3 col = sun * (1.0 * direct * fibres + 1.2 * lining);
         float sunLum = dot(col, float3(0.2126, 0.7152, 0.0722));
         col += p.ambient.rgb * (0.95 * skyward * st.ao * (0.8 + 0.4 * patch) * (1.0 - 0.5 * saturate(2.0 * sunLum)));
@@ -287,11 +294,12 @@ enum LightningPlainsShaders {
         float right = across + 0.25 * (km - r);                 // it fans out downwind as it comes
         float spread = 0.6 * km + 8.0 * along;
         float side = smoothstep(-0.25 * spread, 0.1 * spread, right) * (1.0 - smoothstep(0.8 * spread, 1.3 * spread, right));
-        float3 w = float3(right * 0.07, r * 0.09 - time * 0.002, 3.3);
-        float body = fbm3(w, octaves);
+        float fade = side * smoothstep(1.05, 0.9, r / km) * (1.0 - smoothstep(0.55, 1.0, along)) * 0.55;
+        if (fade < 0.002) return float4(0.0);
+        float body = fbm3(float3(right * 0.07, r * 0.09 - time * 0.002, 3.3), max(octaves - 1, 1));
+        if (body < 0.4) return float4(0.0);
         float fibre = vnoise3(float3(right * 0.12 + r * 0.05, r * 0.9, 7.1));
-        float cover = smoothstep(0.4, 0.72, body) * (0.45 + 0.55 * fibre);
-        cover *= side * smoothstep(1.05, 0.9, r / km) * (1.0 - smoothstep(0.55, 1.0, along)) * 0.55;
+        float cover = smoothstep(0.4, 0.72, body) * (0.45 + 0.55 * fibre) * fade;
         if (cover < 0.002) return float4(0.0);
         float3 sun = pl_sunlight(H - p.sun.y, p);
         float3 col = sun * 0.75 + p.ambient.rgb * 0.45;
@@ -337,6 +345,12 @@ enum LightningPlainsShaders {
         return r.z * rise * mesa;
     }
 
+    /// How much of the far ridge covers the sky at (th, alt), antialiased.
+    float pl_ridge(float th, float alt, constant PlainsU& p) {
+        float top = pl_ridgeTop(th, p);
+        return top > 0.0 ? smoothstep(top + 0.05, top - 0.05, alt) : 0.0;
+    }
+
     fragment ColorDepth plains_scene_fragment(PlainsOut in [[stage_in]], constant SkyU& u [[buffer(0)]],
                                               constant PlainsU& p [[buffer(1)]], texture2d<float> stars [[texture(0)]]) {
         float2 ndc = in.ndc - p.shake.xy;
@@ -362,30 +376,22 @@ enum LightningPlainsShaders {
             col += float3(1.0, 0.88, 0.72) * (r.w * 1.6 * across * upward);
         }
 
-        // The far ridge, the storm and its rain, nearest last.
+        // The anvil's canopy, the storm's rain and the far ridge (the storm itself is its own pass, over them, and
+        // under the ridge while the ridge is the nearer).
         if (alt > -0.5) {
-            PlStorm st = pl_storm(th, alt, p, octaves, time);
-            float aa = toDeg(p.view.y) * 1.2;
-            float cover = smoothstep(0.5 * aa, -0.5 * aa, st.d);
-            float3 stormCol = cover > 0.0 ? pl_stormLight(th, alt, st, u, p, octaves, time) : float3(0.0);
             float4 canopy = pl_canopy(d, th, alt, u, p, octaves, time);
             col = mix(col, canopy.rgb, canopy.a);
             float shaft = pl_shafts(th, alt, p, time);
             float3 front = pl_frontLight(u, p);
             float3 rainCol = p.ambient.rgb * 0.3 + p.glow.rgb * 0.1 + front * 0.12;
-            float ridgeTop = pl_ridgeTop(th, p);
-            float ridge = ridgeTop > 0.0 ? smoothstep(ridgeTop + 0.05, ridgeTop - 0.05, alt) : 0.0;
-            float3 haze = p.glow.rgb;
-            float3 ridgeCol = mix(p.ambient.rgb * 0.3 + front * 0.3, haze * 0.8, 0.5) + p.flash.rgb * 0.05;
-            bool ridgeNearer = p.ridge.w < p.shake.w;
-            if (ridgeNearer) {
+            float ridge = pl_ridge(th, alt, p);
+            float3 ridgeCol = mix(p.ambient.rgb * 0.3 + front * 0.3, p.glow.rgb * 0.8, 0.5) + p.flash.rgb * 0.05;
+            if (p.ridge.w < p.shake.w) {
                 col = mix(col, rainCol, shaft);
-                col = mix(col, stormCol, cover);
                 col = mix(col, ridgeCol, ridge);
             } else {
                 col = mix(col, ridgeCol, ridge);
                 col = mix(col, rainCol, shaft);
-                col = mix(col, stormCol, cover);
             }
             // Ball lightning rolling along the ridge.
             if (p.ball.z > 0.0) {
@@ -412,6 +418,40 @@ enum LightningPlainsShaders {
 
         ColorDepth out;
         out.color = float4(col, 1.0);
+        out.depth = float4(1.0, 0, 0, 1);
+        return out;
+    }
+
+    // ---------------------------------------------------------------- the storm, over its own bounds
+    // Drawn over the scene within the storm's screen bounds (NDC x0, y0, x1, y1), premultiplied: so the sky's pixels
+    // never carry the storm's work. Under the ridge while the ridge is the nearer; into the haze below the horizon.
+    vertex PlainsOut plains_box_vertex(uint vid [[vertex_id]], constant float4& box [[buffer(0)]]) {
+        float2 corner[6] = { float2(0, 0), float2(1, 0), float2(0, 1), float2(1, 0), float2(1, 1), float2(0, 1) };
+        float2 xy = mix(box.xy, box.zw, corner[vid]);
+        PlainsOut o;
+        o.pos = float4(xy, 0, 1);
+        o.ndc = xy;
+        return o;
+    }
+
+    fragment ColorDepth plains_storm_fragment(PlainsOut in [[stage_in]], constant SkyU& u [[buffer(0)]],
+                                              constant PlainsU& p [[buffer(1)]]) {
+        float2 ndc = in.ndc - p.shake.xy;
+        float3 d = pl_ray(ndc, u);
+        float alt = toDeg(asin(clamp(d.z, -1.0, 1.0)));
+        if (alt <= -0.5) discard_fragment();
+        float th = pl_wrap(toDeg(atan2(d.x, d.y)) - p.storm.x);
+        int octaves = int(p.frame.w + 0.5);
+        float time = p.frame.y;
+        PlStorm st = pl_storm(th, alt, p, octaves, time);
+        float aa = toDeg(p.view.y) * 1.2;
+        float cover = smoothstep(0.5 * aa, -0.5 * aa, st.d);
+        if (p.ridge.w < p.shake.w) cover *= 1.0 - pl_ridge(th, alt, p);
+        if (d.z < 0.0) cover *= 1.0 - exp(-p.view.x / max(-d.z, 1e-5) / 1400.0);
+        if (cover <= 0.001) discard_fragment();
+        float3 c = pl_stormLight(th, alt, st, u, p, octaves, time);
+        ColorDepth out;
+        out.color = float4(c * cover, cover);
         out.depth = float4(1.0, 0, 0, 1);
         return out;
     }
