@@ -570,8 +570,9 @@ extension WorldPreviewTests {
         for (name, stage, q) in stages {
             try write(try T.renderCell(at: 5, stage: stage, quality: q, notes: playing, width: 1280, height: 720), name)
         }
-        // The drop: the gust front 12 s out, 120 m off, the wheat flattened behind it and the dust up.
-        try write(try T.renderCell(at: 13, energy: 0.9, tension: 0.8, moments: [60: T.chord(1, drop: true)], notes: playing,
+        // The drop: the gust front 18.5 s out, 22 m off (crossing the near field, so its wave of bent wheat and its dust
+        // are seen), the wheat flattened behind it, the hail shaft surging closer.
+        try write(try T.renderCell(at: 19.5, energy: 0.9, tension: 0.8, moments: [60: T.chord(1, drop: true)], notes: playing,
                                    width: 1280, height: 720), "supercell-drop")
         // A strike's first return stroke, at the storm's distance.
         try write(try T.renderCell(at: 3, energy: 0.7, moments: [180: T.chord(1)],
