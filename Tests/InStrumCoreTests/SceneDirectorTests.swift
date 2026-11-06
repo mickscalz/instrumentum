@@ -364,6 +364,7 @@ final class SceneDirectorTests: XCTestCase {
         XCTAssertEqual(probe.lastSky?.supercell, 0)
         XCTAssertGreaterThan(probe.sky.crawlerSky.spawned, before)
         XCTAssertEqual(probe.sky.randomExtras, [.gustFront: 0.3, .virga: 0.5])
+    }
 
     /// Endless Rise's pulse (Storms spec §3): its Pulse's Tempo with the Pulse as the gate, while the Pulse is up, so the
     /// world turns on the beat the pad ducks on. Pulse .5 at 124 is (124, .5); Pulse 0 has none; so does a set of dials
