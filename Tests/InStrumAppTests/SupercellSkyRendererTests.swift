@@ -185,12 +185,12 @@ final class SupercellSkyRendererTests: XCTestCase {
 
     func testSupercellPreviewIsStructured() throws {
         // CPU reference renders of these frames (the shaders through the MSL shim) measured means 0.38, 0.35, 0.35 and
-        // 0.04 and variances 0.031, 0.031, 0.027 and 0.0015: the floors leave room for the real sky, the bloom and the keys.
+        // 0.011 and variances 0.031, 0.031, 0.027 and 0.0005: the floors leave room for the real sky, the bloom and the keys.
         let cases = [
             LightCase(name: "approach", stage: .approach, hold: .goldenHour, mean: 0.12, variance: 0.006),
             LightCase(name: "core", stage: .core, hold: .goldenHour, mean: 0.12, variance: 0.006),
             LightCase(name: "clearing", stage: .clearing, hold: .goldenHour, mean: 0.12, variance: 0.006),
-            LightCase(name: "night", stage: .core, hold: .deepNight, mean: 0.006, variance: 0.0002),
+            LightCase(name: "night", stage: .core, hold: .deepNight, mean: 0.004, variance: 0.0001),
         ]
         for q in [QualityLevel.lite, .high] {
             for c in cases {
@@ -300,7 +300,7 @@ final class SupercellSkyRendererTests: XCTestCase {
         XCTAssertLessThanOrEqual(worst, FlashLimiter.maxFlashesPerSecond)
         let info = shot.renderer.uniforms[SupercellSkyRenderer.strikeInfoBase]
         XCTAssertGreaterThan(info.y, 8, "the channel and its branches")
-        XCTAssertGreaterThan(info.z, 0, "it leaves from inside the cloud")
+        XCTAssertEqual(info.z, 0, "a big strike bursts out of the storm's side in the clear air, none of it hidden")
         let at = shot.renderer.uniforms[SupercellSkyRenderer.strikeAtBase]
         let foot = at.w
         let top = at.z
@@ -535,11 +535,11 @@ extension WorldPreviewTests {
         for (name, stage, q) in stages {
             try write(try T.renderCell(at: 5, stage: stage, quality: q, notes: playing, width: 1280, height: 720), name)
         }
-        // The drop: the gust front 8 s out, halfway across the field, the wheat flattened behind it and the dust up.
-        try write(try T.renderCell(at: 9, energy: 0.9, tension: 0.8, moments: [60: T.chord(1, drop: true)], notes: playing,
+        // The drop: the gust front 12 s out, 120 m off, the wheat flattened behind it and the dust up.
+        try write(try T.renderCell(at: 13, energy: 0.9, tension: 0.8, moments: [60: T.chord(1, drop: true)], notes: playing,
                                    width: 1280, height: 720), "supercell-drop")
-        // A strike's first return stroke, the storm 6 km off.
-        try write(try T.renderCell(at: 3, values: ["distance": T.dial(km: 6)], energy: 0.7, moments: [180: T.chord(1)],
+        // A strike's first return stroke, at the storm's distance.
+        try write(try T.renderCell(at: 3, energy: 0.7, moments: [180: T.chord(1)],
                                    notes: playing, width: 1280, height: 720), "supercell-strike-t3")
         // Night: the storm lit from inside, a crawler across the anvil, the next cell flickering on the horizon.
         try write(try T.renderCell(at: 5, hold: .deepNight, notes: playing, width: 1280, height: 720, edit: { _, f in

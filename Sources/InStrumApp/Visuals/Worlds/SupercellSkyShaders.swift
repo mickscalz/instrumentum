@@ -250,17 +250,17 @@ enum SupercellSkyShaders {
         float Ru = bellRadius(clamp(z + 0.25, hb, ha), ring, u, lobesU);
         float3 r3 = float3(radial2, 0.0), tangent = float3(-radial2.y, radial2.x, 0.0);
         float3 N = normalize(r3 - tangent * ((Ra - R0) / (e * R0)) * 1.6 - float3(0, 0, 1) * ((Ru - R0) / 0.25) * 1.3);
-        float facing = saturate(0.75 * dot(N, Ls) + 0.25);
-        float sun = (0.12 + 0.88 * facing * facing) * (0.45 + 0.55 * light);
+        float facing = saturate(0.7 * dot(N, Ls) + 0.3);
+        float sun = (0.06 + 0.94 * facing * facing * facing) * (0.45 + 0.55 * light);
         // The striations: each band's bulging face lit, the groove under the next band in deep shadow.
         float f = fract(k + 0.35 * (dens - 0.5));
         float bandOn = smoothstep(0.3, 0.6, vnoise3(float3(ring * 2.2, floor(k) * 1.3 + 0.5)));   // some bands fade out
         float bandLit = smoothstep(0.0, 0.3, f) * (1.0 - smoothstep(0.55, 0.95, f));
-        float bandShade = mix(1.0, 0.3 + 0.85 * bandLit, 0.8 * skirtW * bandOn);
+        float bandShade = mix(1.0, 0.12 + 1.0 * bandLit, 0.85 * skirtW * bandOn);
         float3 warm = u.sunCol.rgb * sun * bandShade;
         float3 cool = u.amb.rgb * (0.28 + 0.3 * dens + 0.22 * N.z) * mix(1.0, 0.55 + 0.6 * bandLit, 0.7 * skirtW * bandOn)
                     + float3(0.55, 0.38, 0.2) * u.sunCol.rgb * 0.06;
-        float3 c = warm * 0.85 + cool * (0.62 - 0.32 * facing);
+        float3 c = warm * 0.95 + cool * (0.5 - 0.25 * facing);
         // Low down the cloud is in the base's own shade and the rain-cooled air: darker, greyer.
         float shade = 1.0 - smoothstep(0.0, 1.6, z - hb);
         c *= 1.0 - 0.6 * shade * (0.55 + 0.45 * u.look.x);
@@ -489,7 +489,8 @@ enum SupercellSkyShaders {
         float r = length(rel);
         float rMax = 15.0;
         if (r < u.wall.z * 0.8 || r > rMax) return L;
-        float centre = atan2(-0.35 * W.y, 14.0 - W.x);
+        // They fan in from the field off to the right of the camera, rising toward us in perspective.
+        float centre = atan2(-1.0 - W.y, 4.0 - W.x);
         float twist = -0.3 * u.spin.y * log(r / u.wall.z);
         float phi = atan2(rel.y, rel.x) - twist;
         float spacing = u.spin.z;
@@ -497,12 +498,15 @@ enum SupercellSkyShaders {
         float k = floor(bandsF + 0.5);
         if (k < -0.5 || k > 6.5) return L;
         float across = (bandsF - k) * spacing * r;                // km off the band's line
-        float width = 0.25 + 0.06 * r;
-        float profile = exp(-across * across / (width * width));
         float flow = u.spin.w;
-        float streak = fbm2(float2((r + flow) * 0.9, across * 6.0 + k * 3.7), octaves);
+        // A laminar band: a firm edge that wanders a little, clumped along its length as its cloud is carried in.
+        float wander = fbm2(float2((r + flow) * 0.35, k * 5.1), 2) - 0.5;
+        float width = (0.22 + 0.05 * r) * (0.8 + 0.5 * wander);
+        float off = abs(across + 0.6 * width * wander);
+        float profile = 1.0 - smoothstep(0.45 * width, width, off);
+        float streak = fbm2(float2((r + flow) * 0.6, across * 3.0 + k * 3.7), octaves);
         float ends = smoothstep(u.wall.z * 0.9, u.wall.z * 2.0, r) * (1.0 - smoothstep(rMax * 0.55, rMax, r));
-        float dens = profile * ends * smoothstep(0.25, 0.65, streak) * (0.75 + 0.25 * u.play.x);
+        float dens = profile * ends * smoothstep(0.3, 0.6, streak) * (0.6 + 0.25 * u.play.x);
         // A note's glow running up this band into the wall cloud.
         float glow = 0.0;
         for (int i = 0; i < 8; i++) {
@@ -642,7 +646,7 @@ enum SupercellSkyShaders {
         float3 c = (underside * (0.85 + 0.3 * dome * mam) * (0.8 + 0.9 * thin) + sunlit) * crease;
         // The far edge, where the low sun catches it from below.
         c += u.sunCol.rgb * float3(1.0, 0.7, 0.55) * (0.22 * (1.0 - smoothstep(0.0, 8.0, edge)) * (0.5 + fringe));
-        c += flashOnCloud(ndc, u) * (0.5 + 0.5 * dome);
+        c += flashOnCloud(ndc, u) * (0.6 + 0.4 * dome * mam) * (0.85 + 0.3 * tex);
         L.a = cover;
         L.c = aerial(c, t * 0.35, u);
         tHit = t;
@@ -696,8 +700,8 @@ enum SupercellSkyShaders {
                 float3 straw = float3(0.78, 0.6, 0.3) * shade;
                 float3 lit = u.sunCol.rgb * 0.62 * (0.55 + 0.45 * v) + u.amb.rgb * (0.55 + 0.3 * v);
                 float3 c = straw * lit * (0.55 + 0.45 * v);
-                c += u.sunCol.rgb * float3(1.0, 0.9, 0.7) * (0.35 * row.w * v);   // the sheen of flattened wheat
-                c += flashOnCloud(float2(0.0, 0.3), u) * 0.08;
+                c += u.sunCol.rgb * float3(1.0, 0.92, 0.75) * (0.6 * row.w * v);   // the sheen of flattened wheat
+                c += straw * flashOnCloud(float2(0.0, 0.3), u) * (0.35 + 0.35 * v);   // lightning lights the wheat
                 return float4(aerial(c, along * 0.001, u), cover);
             }
         }
@@ -719,7 +723,7 @@ enum SupercellSkyShaders {
         c *= 1.0 - 0.55 * under * u.look.x;
         float rain = exp(-length(P.xy - u.shaft.xy) / (u.shaft.z * 1.2));
         c = mix(c, float3(0.06, 0.08, 0.08) * (u.amb.rgb * 2.0 + 0.05), saturate(rain * (0.4 + u.look.z)));
-        c += flashOnCloud(ndc, u) * 0.06;
+        c += straw * flashOnCloud(ndc, u) * 0.3;
         return aerial(c, ground, u);
     }
 
@@ -769,7 +773,7 @@ enum SupercellSkyShaders {
         if (P.z > H || P.z < -0.01) return L;
         float v = saturate(P.z / max(H, 1e-4));
         float billow = fbm2(float2(P.x * 14.0, P.z * 20.0 - u.a.y * 1.5), octaves);
-        float a = dust * (1.0 - v * v) * (0.55 + 0.45 * billow);
+        float a = dust * (1.0 - v * v) * smoothstep(0.25, 0.75, billow) * 0.7;
         float3 c = float3(0.55, 0.42, 0.3) * (u.sunCol.rgb * 0.55 + u.amb.rgb * 0.8) * (0.8 + 0.3 * billow);
         L.a = saturate(a);
         L.c = c;
@@ -797,12 +801,14 @@ enum SupercellSkyShaders {
             if (ndc.x < box.x - 0.15 || ndc.x > box.z + 0.15 || ndc.y < box.y - 0.15 || ndc.y > box.w + 0.15) continue;
             int count = int(info.y + 0.5), inCloud = int(info.z + 0.5), branches = int(u.strikeAt[k].x + 0.5);
             float core = 0.0, halo = 1e3;
+            // The segments inside the cloud are hidden by it (their light is the cloud's glow, flashOnCloud).
             for (int i = 0; i < 24; i++) {
                 if (i >= count) break;
+                if (i < inCloud) continue;
                 float dist = segmentDistance(p, u.segs[k * 24 + i], aspect);
                 float w = (i >= branches ? 0.6 : 1.0) * px * 1.3;
                 float x = dist / w;
-                float bright = i < inCloud ? 0.12 : (i >= branches ? 0.45 : 1.0);
+                float bright = i >= branches ? 0.45 : 1.0;
                 core = max(core, bright * exp(-x * x));
                 halo = min(halo, dist);
             }
@@ -936,7 +942,7 @@ enum SupercellSkyShaders {
             float angle = toDeg(acos(clamp(dot(dE, anti), -1.0, 1.0)));
             float3 bow = rainbowBow(angle);
             float darkBand = angle > 42.5 && angle < 50.5 ? 0.88 : 1.0;
-            float strength = u.after.y * (1.0 - 0.75 * anvilCover);
+            float strength = u.after.y * (1.0 - anvilCover);
             col = col * mix(1.0, darkBand, strength) + bow * (0.55 * strength) * (0.6 + u.sunCol.rgb * 0.3);
         }
         // Lightning: the strikes (blue-white, through the limiter) and the crawlers on the cloud.

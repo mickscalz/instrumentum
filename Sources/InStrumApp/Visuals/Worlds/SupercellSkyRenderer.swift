@@ -49,6 +49,8 @@ final class SupercellSkyRenderer: ThemeRenderer {
     nonisolated static let wallRadius: Float = 2.4
     nonisolated static let wallBottom: Float = 0.38
     nonisolated static let shaftRadius: Float = 1.8
+    /// The gust front's dust wall: this tall (km) at most, so the storm stays seen over it.
+    nonisolated static let dustHeight: Float = 0.02
     /// The wheat: blades this tall (m); the rows from 6 m to 600 m out.
     nonisolated static let bladeHeight: Float = 0.75
     nonisolated static let nearestRow: Float = 6
@@ -285,7 +287,7 @@ final class SupercellSkyRenderer: ThemeRenderer {
         if let wave = frame.gustWave { front = (1 - Self.unit(wave)) * SupercellSkyModel.gustStart / 1000 }
         else if frame.dust > 0.01 { front = 0.15 }
         let outflow = Self.unit(-frame.wind.sample(.zero).y / SupercellSkyModel.gustStrength)
-        cellU[Self.rowGust] = SIMD4(front, Self.unit(frame.dust), 0.05, outflow)
+        cellU[Self.rowGust] = SIMD4(front, Self.unit(frame.dust), Self.dustHeight, outflow)
         let mammatus: Float = 0.3 + 0.6 * Self.unit(frame.clearing)
         cellU[Self.rowAfter] = SIMD4(Self.unit(frame.after.rays), Self.unit(frame.after.rainbow), Self.unit(frame.after.stars), mammatus)
         let flashScale: Float = share
@@ -314,8 +316,8 @@ final class SupercellSkyRenderer: ThemeRenderer {
         }
 
         // The strikes: each channel a jagged polyline from where it leaves the cloud to the ground at the storm's distance,
-        // with branches, projected; segments inside the cloud first (drawn as a glow), then the bare channel, then the
-        // branches.
+        // with branches, projected; the segments inside the cloud first (only a faint glow: the cloud hides them), then
+        // the bare channel, then the bare branches.
         let axes = (fwd: fwd, right: right)
         for k in 0..<Self.strikeSlots {
             cellU[Self.strikeInfoBase + k] = .zero
@@ -334,9 +336,9 @@ final class SupercellSkyRenderer: ThemeRenderer {
             for pass in 0..<3 {
                 for seg in channel {
                     let wanted: Bool
-                    if pass == 0 { wanted = !seg.branch && seg.cloud }
+                    if pass == 0 { wanted = seg.cloud }
                     else if pass == 1 { wanted = !seg.branch && !seg.cloud }
-                    else { wanted = seg.branch }
+                    else { wanted = seg.branch && !seg.cloud }
                     guard wanted, segs.count < Self.segsPerStrike,
                           let a = project(seg.a, origin: origin, axes: axes, cam: cam),
                           let b = project(seg.b, origin: origin, axes: axes, cam: cam) else { continue }
@@ -421,7 +423,12 @@ final class SupercellSkyRenderer: ThemeRenderer {
                 postInstances.append(SIMD4(k.key.isBlack ? 1 : 0, Self.unit(k.glow), k.pressed ? 1 : 0, 1))
             }
         }
-        let timber: SIMD3<Float> = sun.colour * 0.55 + ambient * 0.9 + SIMD3<Float>(repeating: 0.02)
+        // Their light: the low sun and the sky, and the lightning's blue-white flash (through the limiter).
+        let flashLight: Float = 0.9 * strikeLight + 0.35 * stormFlash * share
+        let sunOnPosts: SIMD3<Float> = sun.colour * 0.55
+        let skyOnPosts: SIMD3<Float> = ambient * 0.9 + SIMD3<Float>(repeating: 0.02)
+        let flashOnPosts: SIMD3<Float> = Self.strikeColour * flashLight
+        let timber: SIMD3<Float> = sunOnPosts + skyOnPosts + flashOnPosts
         postLight = SIMD4(timber, 1)
 
         post = PostSettings(
@@ -433,41 +440,62 @@ final class SupercellSkyRenderer: ThemeRenderer {
             time: t, quality: quality)
     }
 
-    /// A strike's channel in the storm's frame (km): the main channel from where it leaves the cloud down to the ground in
-    /// 12 jagged steps, and two or three branches off its upper half; each segment marked inside the cloud (above the
-    /// base) or not. Seeded by the strike, so it keeps its shape while it is seen.
+    /// A strike's channel in the storm's frame (km), down to the ground where it comes down (at the storm's distance) in
+    /// 16 jagged steps, with two or three branches off its upper half. An ordinary strike leaves the base straight above
+    /// its foot; a big one (its channel leaving higher) bursts out of the updraft's side facing us, swung toward its
+    /// bearing, and arcs down through the clear air in front of the storm. Each segment is marked inside the cloud or
+    /// not (the cloud hides those). Seeded by the strike, so it keeps its shape while it is seen.
     nonisolated static func channel(_ s: GroundStrike) -> [SupercellChannelSegment] {
         var rng = SeededRandom(seed: s.seed)
         let g = s.ground
         let top = max(s.topKm, baseHeight)
-        let steps = 12
+        let fromSide = top > baseHeight + 0.5
+        var start = SIMD3<Float>(g.x + rng.range(-0.4, 0.4), g.y + rng.range(-0.3, 0.3), top)
+        if fromSide {
+            let c = stormCentre(km: s.distanceKm)
+            let lift: Float = max(top - baseHeight - 2.2, 0)
+            let axis = SIMD2<Float>(c.x - 0.32 * lift, c.y + 0.12 * lift)
+            let up: Float = min(1, max(0, (top - baseHeight) / (anvilHeight - baseHeight)))
+            let radius: Float = baseRadius * (1 - 0.58 * up * up.squareRoot()) + 0.5
+            let lean: Float = s.bearing < -7 ? -0.35 : 0.35
+            let swing: Float = lean + rng.range(-0.3, 0.3)
+            let nearest: Float = 0.45 * g.y   // a storm overhead still throws it out in front of us
+            start = SIMD3(axis.x + sin(swing) * radius, max(axis.y - cos(swing) * radius, nearest), top)
+        }
+        let steps = 16
         var points: [SIMD3<Float>] = []
-        var x = g.x + rng.range(-0.6, 0.6), y = g.y + rng.range(-0.4, 0.4)
+        var wander = SIMD2<Float>(0, 0)
         for i in 0...steps {
             let f = Float(i) / Float(steps)
-            let z = top * (1 - f)
-            if i == steps { x = g.x; y = g.y }
-            points.append(SIMD3(x, y, z))
-            let jag: Float = 0.06 * top + 0.05
-            x += rng.range(-jag, jag) * (i < steps - 1 ? 1 : 0.3)
-            y += rng.range(-0.3 * jag, 0.3 * jag)
+            // Out from the cloud and down: across most of the way early on, then near straight down to the foot.
+            let across: Float = 1 - (1 - f) * (1 - f)
+            let line = SIMD2<Float>(start.x + (g.x - start.x) * across, start.y + (g.y - start.y) * across)
+            let z: Float = top * (1 - f)
+            let held: Float = i == steps ? 0 : 1
+            points.append(SIMD3(line.x + wander.x * held, line.y + wander.y * held, z))
+            let jag: Float = 0.045 * top + 0.04
+            wander.x += rng.range(-jag, jag)
+            wander.y += rng.range(-0.3 * jag, 0.3 * jag)
+            wander *= 0.85
         }
         var out: [SupercellChannelSegment] = []
         for i in 0..<steps {
             let a = points[i], b = points[i + 1]
             let mid: Float = (a.z + b.z) / 2
-            out.append(SupercellChannelSegment(a: a, b: b, branch: false, cloud: mid > baseHeight))
+            let hidden = !fromSide && mid > baseHeight
+            out.append(SupercellChannelSegment(a: a, b: b, branch: false, cloud: hidden))
         }
         let branches = 2 + Int(s.seed % 2)
         for k in 0..<branches {
-            let from = points[2 + (k * 3 + Int(s.seed % 3)) % 5]
+            let from = points[3 + (k * 3 + Int(s.seed % 3)) % 6]
             var p = from
             let side: Float = rng.unit() < 0.5 ? -1 : 1
             for _ in 0..<3 {
                 let q = SIMD3<Float>(p.x + side * rng.range(0.15, 0.45) * top / 4, p.y + rng.range(-0.1, 0.1),
                                      max(0, p.z - rng.range(0.2, 0.5) * top / 4))
                 let mid: Float = (p.z + q.z) / 2
-                out.append(SupercellChannelSegment(a: p, b: q, branch: true, cloud: mid > baseHeight))
+                let hidden = !fromSide && mid > baseHeight
+                out.append(SupercellChannelSegment(a: p, b: q, branch: true, cloud: hidden))
                 p = q
             }
         }
