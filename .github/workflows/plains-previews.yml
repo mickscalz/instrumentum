@@ -1,0 +1,39 @@
+name: Plains previews
+
+# Lightning Plains (Storms Task 12): renders the world's structured previews and its frame time on this task branch only,
+# and keeps them as an artifact (the main previews job runs on the integration branches). Drop this file at the merge.
+on:
+  push:
+    branches: [storms-t11]
+
+jobs:
+  previews:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+      - name: Render the plains previews
+        timeout-minutes: 30
+        run: PREVIEW_DIR="$PWD/previews" swift test --filter "LightningPlainsRendererTests|WorldPreviewTests/testWritePlainsPreviews" 2>&1 | tee preview.log; exit ${PIPESTATUS[0]}
+      - name: Keep the previews
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: plains-previews
+          path: |
+            previews/*.png
+            preview.log
+      - name: Print the previews into the log (small JPEGs, base64)
+        if: always()
+        run: |
+          mkdir -p small
+          for f in previews/*.png; do
+            [ -f "$f" ] || continue
+            n=$(basename "$f" .png)
+            sips -s format jpeg -s formatOptions 80 -Z 800 "$f" --out "small/$n.jpg" >/dev/null
+            base64 -i "small/$n.jpg" | tr -d '\n' | fold -w 4000 | sed "s/^/PLAINS_IMG $n /"
+          done
+      - name: Report
+        if: always()
+        run: |
+          grep -E "PLAINS_|error:|Test Case .*(passed|failed)|Executed" preview.log | tail -n 60 > report.txt || true
+          python3 -c "t=open('report.txt').read()[-60000:];print('::notice title=plains-report::'+t.replace('%','%25').replace('\r','').replace('\n','%0A'))"

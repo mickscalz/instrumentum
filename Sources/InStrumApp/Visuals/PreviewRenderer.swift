@@ -59,6 +59,7 @@ final class PreviewRenderer {
         var zenGarden: ZenRockGardenRenderer?
         var submarine: SubmarineWindowRenderer?
         var reef: GreatBarrierReefRenderer?
+        var plains: LightningPlainsRenderer?
         var images: [CGImage] = []
         for t in times.sorted() {
             var current: ThemeRenderer?
@@ -141,6 +142,10 @@ final class PreviewRenderer {
                     if reef == nil { reef = GreatBarrierReefRenderer(device: device) }
                     reef?.update(f, params: director.parameters, quality: quality, gentle: gentle, dt: dt, size: size)
                     current = reef
+                } else if let f = frame as? PlainsFrame {
+                    if plains == nil { plains = LightningPlainsRenderer(device: device) }
+                    plains?.update(f, params: director.parameters, quality: quality, gentle: gentle, dt: dt, size: size)
+                    current = plains
                 }
                 if time + frameStep > t { break }
             }
@@ -164,6 +169,7 @@ final class PreviewRenderer {
         case var f as ZenGardenFrame: edit(&f.sky); return f
         case var f as SubFrame: edit(&f.sky); return f
         case var f as ReefFrame: edit(&f.sky); return f
+        case var f as PlainsFrame: edit(&f.sky); return f
         default: return frame
         }
     }
