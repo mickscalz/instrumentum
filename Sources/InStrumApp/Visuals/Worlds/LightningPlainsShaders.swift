@@ -31,6 +31,12 @@ enum LightningPlainsShaders {
     struct PlainsOut { float4 pos [[position]]; float2 ndc; };
 
     float pl_sq(float x) { return x * x; }
+    /// Smooth value noise along a line (two hashes).
+    float pl_noise1(float x, float seed) {
+        float i = floor(x), f = x - i;
+        float a = hash33(float3(i, seed, 0.37)).x, b = hash33(float3(i + 1.0, seed, 0.37)).x;
+        return mix(a, b, f * f * (3.0 - 2.0 * f));
+    }
     float pl_wrap(float a) { return a - 360.0 * floor((a + 180.0) / 360.0); }
 
     vertex PlainsOut plains_vertex(uint vid [[vertex_id]]) {
@@ -264,6 +270,42 @@ enum LightningPlainsShaders {
         return col;
     }
 
+    /// The anvil's canopy streaming toward you: a thin veil of ice cloud at the anvil's height, from the storm out over
+    /// the plain (further overhead the nearer the storm), downwind to the right; frayed, in soft streaks along its flow.
+    /// The last sun keeps it rose and gold longest (it is high); by night a dark veil over the stars, lit by the flashes
+    /// in it. Returns (colour, cover).
+    float4 pl_canopy(float3 d, float th, float alt, constant SkyU& u, constant PlainsU& p, int octaves, float time) {
+        if (alt < 2.0) return float4(0.0);
+        float km = p.shake.w;
+        float H = km * tan(toRad(p.towerA[2].z)) * 0.82;        // the canopy's height (km)
+        float r = H / max(tan(toRad(alt)), 1e-3);                // where the ray meets it, ahead (km)
+        float near = clamp(0.3 * km, 3.0, 14.0);
+        float reach = km - near;
+        float along = saturate((km - r) / max(reach, 1e-3));    // 0 at the storm … 1 at its near edge
+        if (r > km * 1.05 || r < near * 0.6) return float4(0.0);
+        float across = r * tan(toRad(clamp(th, -80.0, 80.0)));  // km to the right of the storm's bearing
+        float right = across + 0.25 * (km - r);                 // it fans out downwind as it comes
+        float spread = 0.6 * km + 8.0 * along;
+        float side = smoothstep(-0.25 * spread, 0.1 * spread, right) * (1.0 - smoothstep(0.8 * spread, 1.3 * spread, right));
+        float3 w = float3(right * 0.07, r * 0.09 - time * 0.002, 3.3);
+        float body = fbm3(w, octaves);
+        float fibre = vnoise3(float3(right * 0.12 + r * 0.05, r * 0.9, 7.1));
+        float cover = smoothstep(0.4, 0.72, body) * (0.45 + 0.55 * fibre);
+        cover *= side * smoothstep(1.05, 0.9, r / km) * (1.0 - smoothstep(0.55, 1.0, along)) * 0.55;
+        if (cover < 0.002) return float4(0.0);
+        float3 sun = pl_sunlight(H - p.sun.y, p);
+        float3 col = sun * 0.75 + p.ambient.rgb * 0.45;
+        float3 glow = float3(0.0);
+        for (int i = 0; i < 8; i++) {
+            float4 l = p.lightA[i];
+            if (l.w <= 0.0) continue;
+            float2 dd = float2(pl_wrap(th - l.x), alt - l.y) / max(2.5 * l.z, 0.05);
+            glow += p.lightC[i].rgb * (l.w * exp(-dot(dd, dd)));
+        }
+        col += (glow * 0.35 + float3(0.8, 0.82, 1.0) * p.shake.z * 0.5) * (0.5 + 0.5 * fibre);
+        return float4(col, cover);
+    }
+
     /// The rain shafts hanging from the storm's base to the plain (to half way under virga), streaked, slanting.
     float pl_shafts(float th, float alt, constant PlainsU& p, float time) {
         float front = p.storm.w;
@@ -326,6 +368,8 @@ enum LightningPlainsShaders {
             float aa = toDeg(p.view.y) * 1.2;
             float cover = smoothstep(0.5 * aa, -0.5 * aa, st.d);
             float3 stormCol = cover > 0.0 ? pl_stormLight(th, alt, st, u, p, octaves, time) : float3(0.0);
+            float4 canopy = pl_canopy(d, th, alt, u, p, octaves, time);
+            col = mix(col, canopy.rgb, canopy.a);
             float shaft = pl_shafts(th, alt, p, time);
             float3 front = pl_frontLight(u, p);
             float3 rainCol = p.ambient.rgb * 0.3 + p.glow.rgb * 0.1 + front * 0.12;
@@ -419,10 +463,12 @@ enum LightningPlainsShaders {
     // ---------------------------------------------------------------- the plain's props, back to front
     // Each instance: a (its rectangle, NDC), b (kind, distance m, …), c and d (its own). Premultiplied colour out.
     struct PropIn { float4 a; float4 b; float4 c; float4 d; };
-    struct PropOut { float4 pos [[position]]; float2 ndc; float4 b [[flat]]; float4 c [[flat]]; float4 d [[flat]]; };
+    struct PropOut { float4 pos [[position]]; float2 ndc; float4 b [[flat]]; float4 c [[flat]]; float4 d [[flat]];
+                     float3 front [[flat]]; };
 
     vertex PropOut plains_prop_vertex(uint vid [[vertex_id]], uint iid [[instance_id]],
-                                      const device PropIn* props [[buffer(0)]], constant PlainsU& p [[buffer(1)]]) {
+                                      const device PropIn* props [[buffer(0)]], constant PlainsU& p [[buffer(1)]],
+                                      constant SkyU& u [[buffer(2)]]) {
         float2 corner[6] = { float2(0, 0), float2(1, 0), float2(0, 1), float2(1, 0), float2(1, 1), float2(0, 1) };
         PropIn k = props[iid];
         float2 xy = mix(k.a.xy, k.a.zw, corner[vid]);
@@ -430,6 +476,7 @@ enum LightningPlainsShaders {
         o.ndc = xy;
         o.pos = float4(xy + p.shake.xy, 0, 1);
         o.b = k.b; o.c = k.c; o.d = k.d;
+        o.front = pl_frontLight(u, p);
         return o;
     }
 
@@ -446,7 +493,7 @@ enum LightningPlainsShaders {
         float X = t * dot(ray.xy, p.ahead.zw);
         float Y = p.view.x + t * ray.z;
         float H = b.z;
-        if (Y < -0.05 || Y > 1.7 * H + 0.1) return float4(0.0);
+        if (Y < -0.05 || Y > 1.4 * H + 0.05) return float4(0.0);
         float aa = max(t * p.view.y, 1e-4);           // a pixel's size there (m)
         float sx = saturate(ndc.x * 0.5 + 0.5) * 3.0;
         int i0 = min(int(sx), 2);
@@ -457,14 +504,14 @@ enum LightningPlainsShaders {
         float time = p.frame.y;
         float lean0 = clamp(wind / 14.0, -1.0, 1.0);
         // The tussocks' rolling top.
-        float roll = vnoise3(float3(X / 0.9, b.w, 1.3)) * 0.65 + vnoise3(float3(X / 0.23, b.w, 7.7)) * 0.35;
+        float roll = pl_noise1(X / 0.9, b.w) * 0.65 + pl_noise1(X / 0.23, b.w + 7.7) * 0.35;
         float g = H * (0.45 + 0.14 * roll);
         float body = saturate((g - Y) / aa + 0.5);
         // Blades and stalks out of it.
         float sb = max(d.x, 1e-3);
         float cell = floor(X / sb);
         float spike = 0.0, tip = 0.0;
-        for (int j = -1; j <= 1; j++) {
+        for (int j = Y > 0.6 * g ? -1 : 2; j <= 1; j++) {
             float cj = cell + float(j);
             float3 h = hash33(float3(cj, b.w, 3.7));
             bool tall = h.z > 1.0 - d.w;
@@ -493,7 +540,7 @@ enum LightningPlainsShaders {
         float cover = max(body, spike);
         if (cover <= 0.001) return float4(0.0);
         float lit = tip * (1.0 - 0.6 * body);
-        float stems = vnoise3(float3(X / max(1.5 * sb, aa), Y / max(0.4 * H, aa), b.w + 2.9));
+        float stems = hash33(float3(floor(X / max(1.3 * sb, aa)), b.w, 2.9)).x;
         float3 straw = float3(0.5, 0.39, 0.24);
         float depthShade = (0.5 + 0.5 * smoothstep(0.1 * H, g, Y)) * (0.7 + 0.5 * stems);
         float3 col = straw * (p.ambient.rgb * 0.45 + front * (0.4 + 0.45 * lit)) * depthShade + p.flash.rgb * (0.08 + 0.3 * lit);
@@ -654,18 +701,18 @@ enum LightningPlainsShaders {
         if (Y < 0.0) return float4(0.0);
         float time = p.frame.y;
         float baseM = c.x;
-        float a;
-        float3 col;
-        if (Y > baseM) {
-            a = 0.85 * c.w;
-            col = p.ambient.rgb * 0.22 + p.flash.rgb * 0.25 + float3(0.82, 0.84, 1.0) * p.shake.z * 0.4;
-        } else {
-            float slant = X + c.z * Y;
-            float streak = vnoise3(float3(slant / max(6.0, 0.02 * t), Y / max(60.0, 0.2 * t) + time * 2.5, 6.1));
-            float reach = mix(1.0, smoothstep(c.y * baseM, (c.y + 0.25) * baseM, Y), b.z);
-            a = c.w * (0.35 + 0.65 * streak * streak) * reach;
-            col = p.ambient.rgb * 0.35 + p.glow.rgb * 0.08 + (p.flash.rgb * 0.25 + float3(0.82, 0.84, 1.0) * p.shake.z * 0.3) * (0.4 + 0.9 * streak);
-        }
+        float slant = X + c.z * Y;
+        float streak = vnoise3(float3(slant / max(6.0, 0.02 * t), Y / max(60.0, 0.2 * t) + time * 2.5, 6.1));
+        float reach = mix(1.0, smoothstep(c.y * baseM, (c.y + 0.25) * baseM, Y), b.z);
+        float rainA = c.w * (0.35 + 0.65 * streak * streak) * reach;
+        float3 lit = p.flash.rgb * 0.25 + float3(0.82, 0.84, 1.0) * p.shake.z * 0.3;
+        float3 rainCol = p.ambient.rgb * 0.35 + p.glow.rgb * 0.08 + lit * (0.4 + 0.9 * streak);
+        // Above the rain, the storm's dark base overhead, its ragged edge where the rain hangs from it.
+        float edge = baseM * (0.9 + 0.2 * pl_noise1(X / 300.0, 4.2));
+        float up = smoothstep(edge - 0.12 * baseM, edge + 0.12 * baseM, Y);
+        float3 baseCol = p.ambient.rgb * 0.14 + lit * (0.5 + 0.4 * streak);
+        float a = mix(rainA, 0.8 * c.w, up);
+        float3 col = mix(rainCol, baseCol, up);
         a = saturate(a);
         return float4(col * a, a);
     }
@@ -674,7 +721,7 @@ enum LightningPlainsShaders {
                                              constant PlainsU& p [[buffer(1)]]) {
         int kind = int(in.b.x + 0.5);
         float4 c = float4(0.0);
-        float3 front = pl_frontLight(u, p);
+        float3 front = in.front;
         if (kind == 0) c = pl_grass(in.ndc, in.b, in.c, in.d, u, p, front);
         else if (kind == 1) c = pl_post(in.ndc, in.b, in.c, in.d, p, front);
         else if (kind == 2) c = pl_wire(in.ndc, in.b, in.c, in.d, p, front);

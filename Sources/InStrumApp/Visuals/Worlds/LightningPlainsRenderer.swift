@@ -446,8 +446,14 @@ final class LightningPlainsRenderer: ThemeRenderer {
         for k in 0..<rows {
             let f = Float(k) / Float(max(1, rows - 1))
             let z = Self.grassNear * exp(f * log(Self.grassFar / Self.grassNear))
-            guard let foot = ground(0, z, 0), let top = ground(0, z, 1.7 * grassH + 0.1) else { continue }
-            let y0 = max(-1.05, foot.y - 2 * pixel), y1 = min(1.05, top.y + 2 * pixel)
+            guard let foot = ground(0, z, 0), let top = ground(0, z, 1.4 * grassH + 0.05) else { continue }
+            // The nearer row's solid band (at least 0.45 of the grass's height) hides this row below its top.
+            var y0 = max(-1.05, foot.y - 2 * pixel)
+            if k > 0 {
+                let nearer = Self.grassNear * exp(Float(k - 1) / Float(max(1, rows - 1)) * log(Self.grassFar / Self.grassNear))
+                if let band = ground(0, nearer, 0.45 * grassH) { y0 = max(y0, band.y - 2 * pixel) }
+            }
+            let y1 = min(1.05, top.y + 2 * pixel)
             guard y1 > -1, y0 < 1, y1 > y0 else { continue }
             var lean = SIMD4<Float>(0, 0, 0, 0)
             for j in 0..<4 {
@@ -595,6 +601,7 @@ final class LightningPlainsRenderer: ThemeRenderer {
                 e.setRenderPipelineState(props)
                 e.setVertexBuffer(buf, offset: boltBytes, index: 0)
                 plainsU.withUnsafeBytes { e.setVertexBytes($0.baseAddress!, length: $0.count, index: 1) }
+                skyU.withUnsafeBytes { e.setVertexBytes($0.baseAddress!, length: $0.count, index: 2) }
                 skyU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
                 plainsU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
                 e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6, instanceCount: propCount)
