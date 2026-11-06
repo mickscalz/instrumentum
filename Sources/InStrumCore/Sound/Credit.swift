@@ -43,6 +43,12 @@ public enum CreditLibrary {
                                                      artist: "Lana Del Rey", album: "Norman Fucking Rockwell!", year: 2019,
                                                      trackNumber: 13, key: "D major", tempoBPM: 68,
                                                      line: "Its soft, bell-like keys and the slow haze they drift in.")
+    /// "Runaway" (Storms spec §2, §12; brief single-note-grand.md). Credits carry only verified facts: its place on the
+    /// album, track 9, is one; its key is disputed, so it states none (the card's liner notes read "TRACK 9 · 86 BPM").
+    /// The card breathes at the felt pulse, 86.
+    public static let runaway = Credit(id: "runaway", song: "Runaway", artist: "Kanye West",
+                                       album: "My Beautiful Dark Twisted Fantasy", year: 2010, trackNumber: 9, key: "",
+                                       tempoBPM: 86, line: "One piano note, repeated, and a voice that arrives distorted.")
     public static let underwater = Credit(id: "underwater", song: "Underwater", artist: "RÜFÜS DU SOL",
                                           album: "Solace", year: 2018, trackNumber: 7, key: "F♯ minor", tempoBPM: 118,
                                           line: "The blinking, echoing arp that starts it, murky as deep water.")
@@ -53,7 +59,7 @@ public enum CreditLibrary {
                                     trackNumber: nil, key: "", tempoBPM: 124,
                                     line: "A relentless pulse under a rise that never resolves.")
     public static let all: [Credit] = [comeBackToEarth, innerbloom, musicToWatchBoysTo, highByTheBeach, stay, dunno, wings,
-                                       happinessIsAButterfly, underwater, fade]
+                                       happinessIsAButterfly, underwater, fade, runaway]
 
     public static func credit(id: String) -> Credit? { all.first { $0.id == id } }
 }

@@ -10,6 +10,18 @@ public protocol SkyAware { mutating func setSky(_ s: SkyState) }
 /// step, nil while the instrument has none. Any model may want it, a world or not.
 public protocol PulseAware { var pulse: InstrumentPulse? { get set } }
 
+/// A model that plays along with the built-in grand (Storms spec §3, §9.2): the director hands it the instrument's
+/// pressure and whether a key is being repeated before every step, and reads back the morph it forces on the
+/// instrument's voice, which the app hands the engine after the step. Any model may want it, a world or not.
+public protocol InstrumentAware {
+    /// Single Note Grand's morph as the engine reads it back, 0…1; 0 for every other instrument.
+    var instrumentPressure: Float { get set }
+    /// True while the grand hears the same key struck four or more times at 2 a second or faster.
+    var instrumentRepeat: Bool { get set }
+    /// The morph the model forces on the voice, 0…1 (Morph .8 for the storm's arrival), or nil while it forces none.
+    var forcedMorph: Float? { get }
+}
+
 /// How the mood shapes worlds, visuals and ambience. 0.5 everywhere is neutral (every scale 1).
 public enum MoodLook {
     public static func exposure(_ m: Mood) -> Float { Float(0.8 + 0.4 * m.brightness) }
@@ -152,6 +164,9 @@ protocol AnyThemeBoxProtocol {
     /// The world's own surprises (`SurpriseListing`), 0 when it has none.
     var surpriseCount: Int { get }
     mutating func step(dt: Double, params: ParameterSet, roles: RoleValues, inputs: InputFrame, quality: QualityLevel) -> Any
+    mutating func setInstrument(pressure: Float, repeating: Bool)
+    /// An instrument-aware model's forced morph; nil for every other model.
+    var forcedMorph: Float? { get }
 }
 
 struct ThemeBox<T: ThemeModel>: AnyThemeBoxProtocol {
@@ -181,6 +196,17 @@ struct ThemeBox<T: ThemeModel>: AnyThemeBoxProtocol {
     var surpriseCount: Int { (T.self as? SurpriseListing.Type)?.surpriseCount ?? 0 }
     mutating func step(dt: Double, params: ParameterSet, roles: RoleValues, inputs: InputFrame, quality: QualityLevel) -> Any {
         model.step(dt: dt, params: params, roles: roles, inputs: inputs, quality: quality)
+    }
+    mutating func setInstrument(pressure: Float, repeating: Bool) {
+        guard T.self is InstrumentAware.Type, var aware = model as? InstrumentAware,
+              aware.instrumentPressure != pressure || aware.instrumentRepeat != repeating else { return }
+        aware.instrumentPressure = pressure
+        aware.instrumentRepeat = repeating
+        if let back = aware as? T { model = back }
+    }
+    var forcedMorph: Float? {
+        guard T.self is InstrumentAware.Type else { return nil }
+        return (model as? InstrumentAware)?.forcedMorph
     }
 }
 
@@ -226,6 +252,20 @@ public final class SceneDirector {
     public private(set) var lastSky: SkyState?
     /// Wall clock for the sky (previews and tests freeze it).
     public var clock: () -> Date = { Date() }
+    /// The instrument's pressure (Storms spec §3): Single Note Grand's morph as the engine reads it back, 0…1 (the
+    /// player's pressure over the Morph floor, or the world's forced morph, smoothed), which the app sets before each
+    /// step; 0 for every other instrument. The strike distance and the voice's distortion are one number. It is about
+    /// the instrument, so it carries over a world switch; every step hands it to an instrument-aware model first.
+    public var instrumentPressure: Float = 0
+    /// True while the grand hears the same key struck four or more times at 2 a second or faster (Storms spec §4.2,
+    /// §9.2), which the app sets before each step from the engine; handed on with the pressure. Strike Lines lands a
+    /// strike on the horizon for each of those notes.
+    public var instrumentRepeat = false
+    /// The morph the world forces on the grand's voice (Storms spec §9.2: Morph .8 for the drop's 2.5 s), 0…1, or nil
+    /// while it forces none: an instrument-aware model's, as it stands after its latest step. The app hands it to the
+    /// engine after each step (`isd_synth_set_forced_morph`; nil goes as a negative value and lets it go, and the morph
+    /// returns to the player's pressure over 250 ms). A world switch takes it with the world.
+    public var forcedMorph: Float? { box.forcedMorph }
 
     /// How far the key estimate must lead the best one on any other root before it is published.
     public static let keyMargin = 0.05
@@ -317,6 +357,7 @@ public final class SceneDirector {
         let frame = hub.frame(at: t, listenStrength: listenStrength)
         let (roles, offsets) = reaction.evaluate(frame)
         lastRoles = roles
+        box.setInstrument(pressure: instrumentPressure, repeating: instrumentRepeat)
         box.setMood(mood)
         box.setPulse(instrumentPulse)
         stepExcitement(dt: dt)

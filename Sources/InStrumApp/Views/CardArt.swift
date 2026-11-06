@@ -7,6 +7,7 @@ import InStrumCore
 /// breathing at a slow fixed pulse of its own (`placeBreath`).
 enum CardArt {
     case comeBackToEarth, innerbloom, musicToWatchBoysTo, highByTheBeach, stay, dunno, wings, happinessIsAButterfly
+    case runaway
     case underwater
     case fade
     /// Place cards (see `place(for:)`).
@@ -184,6 +185,7 @@ enum CardArt {
         case CreditLibrary.dunno.id: return .dunno
         case CreditLibrary.wings.id: return .wings
         case CreditLibrary.happinessIsAButterfly.id: return .happinessIsAButterfly
+        case CreditLibrary.runaway.id: return .runaway
         case CreditLibrary.underwater.id: return .underwater
         case CreditLibrary.fade.id: return .fade
         default: return nil
@@ -209,6 +211,8 @@ enum CardArt {
             return false
         case .underwater, .fade:
             return false
+        case .runaway:
+            return false
         case .teaHouseSnow, .zenRockGarden:
             return true
         case .greatBarrierReef:
@@ -231,6 +235,7 @@ enum CardArt {
         case .dunno: return .system(size: 26, weight: .light, design: .rounded)
         case .wings: return .system(size: 28, weight: .light, design: .rounded)
         case .happinessIsAButterfly: return .system(size: 26, weight: .regular, design: .serif)
+        case .runaway: return .system(size: 28, weight: .thin, design: .serif)
         case .underwater: return .system(size: 27, weight: .light, design: .monospaced)
         case .fade: return .system(size: 30, weight: .ultraLight, design: .default)
         case .teaHouseSnow: return .system(size: 28, weight: .light, design: .serif)
@@ -249,6 +254,7 @@ enum CardArt {
         case .dunno: return 2
         case .wings: return 2
         case .happinessIsAButterfly: return 1
+        case .runaway: return 4
         case .underwater: return 2
         case .fade: return 12
         case .teaHouseSnow: return 2.5
@@ -284,6 +290,7 @@ enum CardArt {
         case .dunno: Self.dawnBedroom(ctx, size, t, pulse)
         case .wings: Self.auroraWater(ctx, size, t, pulse)
         case .happinessIsAButterfly: Self.moonlitCove(ctx, size, t, pulse)
+        case .runaway: Self.runawayPlain(ctx, size, t, pulse)
         case .underwater: Self.deepBlue(ctx, size, t, pulse)
         case .fade: Self.wallCloud(ctx, size, t, pulse)
         case .teaHouseSnow: Self.teaHouse(ctx, size, t, pulse)
@@ -2015,5 +2022,323 @@ enum CardArt {
         let u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy)
         let a = hash(xi, yi), b = hash(xi + 1, yi), c = hash(xi, yi + 1), d = hash(xi + 1, yi + 1)
         return (a + (b - a) * u) + ((c + (d - c) * u) - (a + (b - a) * u)) * v
+    }
+}
+
+// MARK: - Runaway (Storms, Set 18): an empty plain at dusk, a storm on the horizon, and a fence running away across it;
+// one post lit under a forked line of five branches, struck again on every beat at 86. Abstract, and nothing from the
+// record.
+
+extension CardArt {
+    /// The Runaway card's horizon (a fraction of the height): a little below the middle, so the sky over the plain is vast.
+    static let runawayHorizon: CGFloat = 0.56
+
+    /// The Runaway card's fence, nearest post first (the keys are fence posts on Lightning Plains, Storms spec §9.1):
+    /// nine posts, the track number, running away across the plain from the near right towards a vanishing point low on
+    /// the left, each a step further off (1 + 0.43 × its place). For each, its x and the y of its foot (fractions of the
+    /// card), its height (a fraction of the height: the posts stand taller than the eye, which lies low in the grass) and
+    /// its width (a fraction of the width).
+    static let runawayPosts: [(x: CGFloat, foot: CGFloat, height: CGFloat, width: CGFloat)] = (0..<9).map {
+        (i: Int) -> (x: CGFloat, foot: CGFloat, height: CGFloat, width: CGFloat) in
+        let z: CGFloat = 1 + 0.43 * CGFloat(i)
+        return (x: 0.20 + 0.80 / z, foot: CardArt.runawayHorizon + 0.343 / z, height: 0.55 / z, width: 0.032 / z)
+    }
+
+    /// The one post the note lights, again and again: the nearest whole one.
+    static let runawayLitPost = 1
+
+    /// The Runaway card's fork (the strike that lands for the repeated note, Storms spec §9.2), as fractions of the card:
+    /// five branches. The first is the main channel, from the storm down to a tip just above the lit post's cap; the
+    /// other four leave it on the way down, one below the other, and fork out into the air, each fainter than the last.
+    static let runawayFork: [[CGPoint]] = [
+        [CGPoint(x: 0.688, y: 0.175), CGPoint(x: 0.695, y: 0.193), CGPoint(x: 0.689, y: 0.210), CGPoint(x: 0.701, y: 0.228),
+         CGPoint(x: 0.712, y: 0.243), CGPoint(x: 0.706, y: 0.262), CGPoint(x: 0.719, y: 0.281), CGPoint(x: 0.731, y: 0.296),
+         CGPoint(x: 0.727, y: 0.316), CGPoint(x: 0.741, y: 0.334), CGPoint(x: 0.750, y: 0.351), CGPoint(x: 0.757, y: 0.372)],
+        [CGPoint(x: 0.689, y: 0.210), CGPoint(x: 0.676, y: 0.222), CGPoint(x: 0.670, y: 0.238), CGPoint(x: 0.657, y: 0.248),
+         CGPoint(x: 0.651, y: 0.266), CGPoint(x: 0.639, y: 0.275)],
+        [CGPoint(x: 0.712, y: 0.243), CGPoint(x: 0.727, y: 0.252), CGPoint(x: 0.738, y: 0.249), CGPoint(x: 0.751, y: 0.263),
+         CGPoint(x: 0.763, y: 0.272), CGPoint(x: 0.776, y: 0.291)],
+        [CGPoint(x: 0.719, y: 0.281), CGPoint(x: 0.707, y: 0.295), CGPoint(x: 0.700, y: 0.310), CGPoint(x: 0.688, y: 0.320),
+         CGPoint(x: 0.682, y: 0.336)],
+        [CGPoint(x: 0.727, y: 0.316), CGPoint(x: 0.740, y: 0.323), CGPoint(x: 0.751, y: 0.321), CGPoint(x: 0.760, y: 0.335),
+         CGPoint(x: 0.767, y: 0.346)],
+    ]
+
+    /// The repeated note on the Runaway card at `t` (0…1): it strikes the lit post on every beat of the felt pulse (86,
+    /// the card's breath), rising over the first 6% of the beat, then dying away until the next strike, never quite out.
+    static func runawayStrike(at t: Double, pulse: Double) -> Double {
+        let beats: Double = t / pulse
+        let phase: Double = beats - floor(beats)
+        let rise = 0.06, fall = 2.4
+        guard phase < rise else { return exp(-fall * (phase - rise)) }
+        let low: Double = exp(-fall * (1 - rise))
+        let u: Double = phase / rise
+        return low + (1 - low) * u * u * (3 - 2 * u)
+    }
+
+    /// Draws the Runaway card: the sky, the storm, the plain, the fence, the lit post and the fork. Everything moves once a
+    /// bar or once a beat, so the picture repeats exactly once a bar.
+    private static func runawayPlain(_ ctx: GraphicsContext, _ size: CGSize, _ t: Double, _ pulse: Double) {
+        let w = size.width, h = size.height
+        let k: CGFloat = w / 600
+        let horizon: CGFloat = h * runawayHorizon
+        let bars: Double = t / (4 * pulse)
+        let strike: Double = runawayStrike(at: t, pulse: pulse)
+        let glow: Double = 0.35 + 0.65 * strike   // the lit post's light
+        let sway: Double = sin(2 * Double.pi * bars)   // the grass, once a bar
+        let amber = Color(red: 0.96, green: 0.60, blue: 0.30)
+        let warm = Color(red: 1.0, green: 0.92, blue: 0.78)
+        let ink = Color(red: 0.035, green: 0.030, blue: 0.040)
+
+        // The sky at dusk: deep blue overhead, through violet and rose, to amber along the horizon.
+        ctx.fill(Path(CGRect(x: 0, y: 0, width: w, height: horizon)), with: .linearGradient(
+            Gradient(stops: [.init(color: Color(red: 0.045, green: 0.055, blue: 0.14), location: 0),
+                             .init(color: Color(red: 0.12, green: 0.10, blue: 0.23), location: 0.40),
+                             .init(color: Color(red: 0.36, green: 0.22, blue: 0.28), location: 0.76),
+                             .init(color: Color(red: 0.74, green: 0.45, blue: 0.25), location: 1)]),
+            startPoint: .zero, endPoint: CGPoint(x: 0, y: horizon)))
+        var light = ctx
+        light.blendMode = .plusLighter
+        // The afterglow, low on the left where the sun has gone.
+        let reach: CGFloat = w * 0.55
+        var afterglow = light
+        afterglow.translateBy(x: w * 0.12, y: horizon)
+        afterglow.scaleBy(x: 1, y: 0.40)
+        afterglow.fill(Path(ellipseIn: CGRect(x: -reach, y: -reach, width: 2 * reach, height: 2 * reach)),
+                       with: .radialGradient(Gradient(colors: [amber.opacity(0.30), amber.opacity(0)]),
+                                             center: .zero, startRadius: 0, endRadius: reach))
+        // The first stars, in the clear sky over the left, twinkling once a bar; fainter lower down, where it is lighter.
+        for i in 0..<28 {
+            let x: CGFloat = w * 0.44 * CGFloat(hash(i, 401))
+            let y: CGFloat = h * 0.32 * CGFloat(hash(i, 402))
+            let twinkle: Double = 0.6 + 0.4 * sin(2 * Double.pi * (bars + hash(i, 403)))
+            let r: CGFloat = (0.5 + 0.6 * CGFloat(hash(i, 404))) * k
+            let fade: Double = 1 - 0.6 * Double(y / (h * 0.32))
+            ctx.fill(Path(ellipseIn: CGRect(x: x - r, y: y - r, width: 2 * r, height: 2 * r)),
+                     with: .color(.white.opacity((0.12 + 0.30 * twinkle) * fade)))
+        }
+
+        // The storm: a line of towers on the horizon to the right, dark, their sunward edges catching the last light, the
+        // tallest with its anvil.
+        let towers: [(x: CGFloat, half: CGFloat, top: CGFloat, seed: Int)] = [
+            (0.47, 0.065, 0.40, 1), (0.585, 0.085, 0.29, 2), (0.70, 0.12, 0.13, 3), (0.86, 0.10, 0.22, 4), (0.985, 0.075, 0.31, 5)]
+        let cloud = Color(red: 0.105, green: 0.092, blue: 0.150)
+        let rim = Color(red: 0.50, green: 0.34, blue: 0.36)
+        /// A tower's puffs, centre and radius in points: a column narrow at its foot on the horizon and broad aloft, a
+        /// crown of small puffs boiling along its top, and on the tallest, its anvil sheared off to the right.
+        func puffs(_ index: Int, _ tower: (x: CGFloat, half: CGFloat, top: CGFloat, seed: Int)) -> [(c: CGPoint, r: CGFloat)] {
+            var out: [(c: CGPoint, r: CGFloat)] = []
+            let span: CGFloat = w * tower.half
+            for j in 0..<12 {
+                let u: CGFloat = CGFloat(j) / 11   // 0 on the horizon, 1 at the top
+                let r: CGFloat = span * (0.34 + 0.62 * u * u.squareRoot()) * (0.80 + 0.30 * CGFloat(hash(tower.seed * 32 + j, 411)))
+                let x: CGFloat = w * tower.x + span * 0.45 * CGFloat(hash(tower.seed * 32 + j, 412) - 0.5) * (0.4 + 0.6 * u)
+                let y: CGFloat = horizon * (1 - u) + (h * tower.top + 0.8 * r) * u
+                out.append((c: CGPoint(x: x, y: y), r: r))
+            }
+            for j in 0..<7 {
+                let v: CGFloat = CGFloat(j) / 3 - 1   // −1 … 1 across the top
+                let r: CGFloat = span * (0.30 + 0.12 * CGFloat(hash(tower.seed * 32 + j, 413)))
+                let dip: CGFloat = h * 0.035 * v * v + h * 0.012 * CGFloat(hash(tower.seed * 32 + j, 414) - 0.5)
+                out.append((c: CGPoint(x: w * tower.x + v * span * 0.82, y: h * tower.top + 0.8 * r + dip), r: r))
+            }
+            if index == 2 {
+                for j in 0..<8 {
+                    let v: CGFloat = CGFloat(j) / 7
+                    let r: CGFloat = span * (0.42 - 0.18 * v)
+                    out.append((c: CGPoint(x: w * tower.x + w * (0.02 + 0.20 * v), y: h * tower.top + 0.55 * r + h * 0.012 * v), r: r))
+                }
+            }
+            return out
+        }
+        var storm = ctx
+        storm.addFilter(.blur(radius: 1.6 * k))
+        storm.drawLayer { layer in
+            for (index, tower) in towers.enumerated() {
+                let body = puffs(index, tower)
+                // The lit edge first, then the body over it, a little down and right of the light.
+                for puff in body {
+                    layer.fill(Path(ellipseIn: CGRect(x: puff.c.x - puff.r, y: puff.c.y - 0.8 * puff.r, width: 2 * puff.r, height: 1.6 * puff.r)),
+                               with: .color(rim))
+                }
+                for puff in body {
+                    let dx: CGFloat = 0.05 * puff.r, dy: CGFloat = 0.035 * puff.r
+                    let shade = CGRect(x: puff.c.x - puff.r + dx, y: puff.c.y - 0.8 * puff.r + dy, width: 2 * puff.r, height: 1.6 * puff.r)
+                    layer.fill(Path(ellipseIn: shade), with: .color(cloud))
+                }
+            }
+        }
+        // Sheet lightning inside the towers, each in its turn once a bar: a soft warm swell, there and gone.
+        let sheet = Color(red: 1.0, green: 0.86, blue: 0.74)
+        var inside = light
+        inside.addFilter(.blur(radius: 6 * k))
+        inside.drawLayer { layer in
+            for (j, tower) in towers.enumerated() {
+                let cycle: Double = bars + 0.37 * Double(j)
+                let u: Double = min(1, (cycle - floor(cycle)) / 0.3)
+                let s: Double = sin(Double.pi * u)
+                let swell: Double = s * s
+                guard swell > 0.01 else { continue }
+                let c = CGPoint(x: w * tower.x, y: horizon - 0.45 * (horizon - h * tower.top))
+                let r: CGFloat = w * tower.half * 1.1
+                layer.fill(Path(ellipseIn: CGRect(x: c.x - r, y: c.y - 0.8 * r, width: 2 * r, height: 1.6 * r)),
+                           with: .radialGradient(Gradient(colors: [sheet.opacity(0.26 * swell), sheet.opacity(0)]),
+                                                 center: c, startRadius: 0, endRadius: r))
+            }
+        }
+
+        // The plain: dry grass going dark, the sky's amber on it towards the horizon, and a haze along the horizon.
+        ctx.fill(Path(CGRect(x: 0, y: horizon, width: w, height: h - horizon)), with: .linearGradient(
+            Gradient(stops: [.init(color: Color(red: 0.23, green: 0.15, blue: 0.10), location: 0),
+                             .init(color: Color(red: 0.10, green: 0.07, blue: 0.055), location: 0.35),
+                             .init(color: Color(red: 0.035, green: 0.028, blue: 0.025), location: 1)]),
+            startPoint: CGPoint(x: 0, y: horizon), endPoint: CGPoint(x: 0, y: h)))
+        light.fill(Path(CGRect(x: 0, y: horizon - 2 * k, width: w, height: 4 * k)), with: .linearGradient(
+            Gradient(colors: [amber.opacity(0.35), amber.opacity(0.06)]),
+            startPoint: CGPoint(x: 0, y: horizon), endPoint: CGPoint(x: w, y: horizon)))
+
+        // A windmill far off on the left against the afterglow, its wheel turning a blade's width a bar.
+        let hub = CGPoint(x: w * 0.13, y: horizon - h * 0.095)
+        var frame = Path()
+        frame.move(to: CGPoint(x: hub.x - 5 * k, y: horizon + k)); frame.addLine(to: hub)
+        frame.move(to: CGPoint(x: hub.x + 5 * k, y: horizon + k)); frame.addLine(to: hub)
+        for q in 1...3 {
+            let f: CGFloat = CGFloat(q) / 4
+            let y: CGFloat = horizon - (horizon - hub.y) * f
+            let half: CGFloat = 5 * k * (1 - f)
+            frame.move(to: CGPoint(x: hub.x - half, y: y)); frame.addLine(to: CGPoint(x: hub.x + half, y: y))
+        }
+        ctx.stroke(frame, with: .color(ink), lineWidth: 0.9 * k)
+        let wheel: CGFloat = 9 * k
+        let turn: Double = 2 * Double.pi * bars / 12
+        var blades = Path()
+        for b in 0..<12 {
+            let a: Double = turn + Double(b) * Double.pi / 6
+            let ca = CGFloat(cos(a)), sa = CGFloat(sin(a))
+            blades.move(to: CGPoint(x: hub.x + 0.25 * wheel * ca, y: hub.y + 0.25 * wheel * sa))
+            blades.addLine(to: CGPoint(x: hub.x + wheel * ca, y: hub.y + wheel * sa))
+        }
+        ctx.stroke(blades, with: .color(ink), lineWidth: 1.6 * k)
+        var vane = Path()
+        vane.move(to: hub)
+        vane.addLine(to: CGPoint(x: hub.x + 13 * k, y: hub.y - 0.5 * k))
+        vane.addLine(to: CGPoint(x: hub.x + 14 * k, y: hub.y - 5 * k))
+        vane.addLine(to: CGPoint(x: hub.x + 9 * k, y: hub.y - 1.5 * k))
+        vane.closeSubpath()
+        ctx.fill(vane, with: .color(ink))
+
+        // The fork, brightening with each strike: a wide violet glow, then the white channel and its branches.
+        let flash: Double = 0.72 + 0.28 * strike
+        let bolt = Color(red: 0.88, green: 0.92, blue: 1.0)
+        let boltGlow = Color(red: 0.52, green: 0.58, blue: 1.0)
+        let forkPaths: [Path] = runawayFork.map { (branch: [CGPoint]) -> Path in
+            var path = Path()
+            for (q, pt) in branch.enumerated() {
+                let at = CGPoint(x: w * pt.x, y: h * pt.y)
+                if q == 0 { path.move(to: at) } else { path.addLine(to: at) }
+            }
+            return path
+        }
+        var aura = light
+        aura.addFilter(.blur(radius: 5 * k))
+        aura.drawLayer { layer in
+            for (j, path) in forkPaths.enumerated() {
+                let fade: Double = j == 0 ? 1 : 0.75 - 0.1 * Double(j)
+                let width: CGFloat = (j == 0 ? 9 : 6) * k
+                layer.stroke(path, with: .color(boltGlow.opacity(0.50 * flash * fade)),
+                             style: StrokeStyle(lineWidth: width, lineCap: .round, lineJoin: .round))
+            }
+        }
+        for (j, path) in forkPaths.enumerated() {
+            let fade: Double = j == 0 ? 1 : 0.85 - 0.1 * Double(j)
+            let width: CGFloat = (j == 0 ? 2.2 : 1.5 - 0.15 * CGFloat(j)) * k
+            light.stroke(path, with: .color(bolt.opacity(flash * fade)),
+                         style: StrokeStyle(lineWidth: width, lineCap: .round, lineJoin: .round))
+        }
+
+        // The fence's three wires, running from post to post to the vanishing point, catching the last light; either
+        // side of the lit post they catch its light too.
+        let posts = runawayPosts
+        let lit = runawayLitPost
+        /// A point on post `i`, `f` of its height up from its foot.
+        func point(_ i: Int, _ f: CGFloat) -> CGPoint {
+            CGPoint(x: w * posts[i].x, y: h * (posts[i].foot - f * posts[i].height))
+        }
+        let vanishing = CGPoint(x: w * 0.20, y: horizon)
+        let wireColour = Color(red: 0.55, green: 0.42, blue: 0.34)
+        for f: CGFloat in [0.30, 0.58, 0.86] {
+            let a = point(0, f), b = point(1, f)
+            var wire = Path()
+            wire.move(to: CGPoint(x: a.x + 0.5 * (a.x - b.x), y: a.y + 0.5 * (a.y - b.y)))   // on past the card's edge
+            for i in posts.indices { wire.addLine(to: point(i, f)) }
+            ctx.stroke(wire, with: .color(wireColour.opacity(0.40)), lineWidth: 0.7 * k)
+            let last = point(posts.count - 1, f)
+            var away = Path()
+            away.move(to: last)
+            away.addLine(to: vanishing)
+            ctx.stroke(away, with: .linearGradient(Gradient(colors: [wireColour.opacity(0.40), wireColour.opacity(0)]),
+                                                   startPoint: last, endPoint: vanishing), lineWidth: 0.6 * k)
+            let from = point(lit, f)
+            for j in [lit - 1, lit + 1] where posts.indices.contains(j) {
+                let to = point(j, f)
+                var span = Path()
+                span.move(to: from)
+                span.addLine(to: to)
+                light.stroke(span, with: .linearGradient(Gradient(colors: [warm.opacity(0.55 * glow), warm.opacity(0)]),
+                                                         startPoint: from, endPoint: to), lineWidth: 1.0 * k)
+            }
+        }
+
+        // The posts, dark against the sky, each with a peaked cap; one lit white by its note, brightest at the top, in a
+        // halo that swells with each strike, its light pooling on the grass at its foot.
+        var litPath = Path()
+        for (i, p) in posts.enumerated() {
+            let foot: CGFloat = h * p.foot, top: CGFloat = h * (p.foot - p.height)
+            let half: CGFloat = 0.5 * w * p.width, x: CGFloat = w * p.x
+            var post = Path()
+            post.move(to: CGPoint(x: x - half, y: foot))
+            post.addLine(to: CGPoint(x: x - 0.86 * half, y: top + 0.6 * half))
+            post.addLine(to: CGPoint(x: x, y: top))
+            post.addLine(to: CGPoint(x: x + 0.86 * half, y: top + 0.6 * half))
+            post.addLine(to: CGPoint(x: x + half, y: foot))
+            post.closeSubpath()
+            ctx.fill(post, with: .color(ink))
+            if i == lit { litPath = post }
+        }
+        let p = posts[lit]
+        let x: CGFloat = w * p.x, top: CGFloat = h * (p.foot - p.height), foot: CGFloat = h * p.foot
+        let poolR: CGFloat = h * 0.09
+        var pool = light
+        pool.translateBy(x: x, y: foot)
+        pool.scaleBy(x: 1, y: 0.28)
+        pool.fill(Path(ellipseIn: CGRect(x: -poolR, y: -poolR, width: 2 * poolR, height: 2 * poolR)),
+                  with: .radialGradient(Gradient(colors: [warm.opacity(0.22 * glow), warm.opacity(0)]),
+                                        center: .zero, startRadius: 0, endRadius: poolR))
+        ctx.fill(litPath, with: .linearGradient(Gradient(colors: [warm.opacity(0.70 + 0.30 * glow), warm.opacity(0.40 + 0.35 * glow)]),
+                                                startPoint: CGPoint(x: x, y: top), endPoint: CGPoint(x: x, y: foot)))
+        let haloR: CGFloat = h * (0.10 + 0.03 * CGFloat(strike))
+        let haloC = CGPoint(x: x, y: top + 0.18 * (foot - top))
+        light.fill(Path(ellipseIn: CGRect(x: haloC.x - haloR, y: haloC.y - haloR, width: 2 * haloR, height: 2 * haloR)),
+                   with: .radialGradient(Gradient(colors: [warm.opacity(0.38 * glow), warm.opacity(0)]),
+                                         center: haloC, startRadius: 0, endRadius: haloR))
+        let cap: CGFloat = (2.2 + 1.6 * CGFloat(strike)) * k
+        let capC = CGPoint(x: x, y: top + 0.4 * cap)
+        light.fill(Path(ellipseIn: CGRect(x: capC.x - cap, y: capC.y - cap, width: 2 * cap, height: 2 * cap)),
+                   with: .radialGradient(Gradient(colors: [Color.white.opacity(0.9 * glow), Color.white.opacity(0)]),
+                                         center: capC, startRadius: 0, endRadius: cap))
+
+        // Dry grass across the near plain, leaning with the breeze once a bar.
+        let straw = Color(red: 0.22, green: 0.16, blue: 0.10)
+        for i in 0..<160 {
+            let depth: CGFloat = CGFloat(hash(i, 422))   // 0 far … 1 near
+            let x0: CGFloat = w * CGFloat(hash(i, 421))
+            let base: CGFloat = horizon + (h - horizon) * (0.30 + 0.75 * depth)
+            let tall: CGFloat = (4 + 16 * depth) * k * (0.6 + 0.4 * CGFloat(hash(i, 423)))
+            let lean: CGFloat = tall * (0.25 * CGFloat(sway) + 0.35 * CGFloat(hash(i, 424) - 0.5))
+            var blade = Path()
+            blade.move(to: CGPoint(x: x0, y: base))
+            blade.addQuadCurve(to: CGPoint(x: x0 + lean, y: base - tall), control: CGPoint(x: x0 + 0.2 * lean, y: base - 0.6 * tall))
+            ctx.stroke(blade, with: .color(straw.opacity(0.75)), lineWidth: (0.6 + 0.8 * depth) * k)
+        }
     }
 }

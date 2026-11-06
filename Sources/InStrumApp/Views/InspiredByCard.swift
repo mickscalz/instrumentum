@@ -137,7 +137,8 @@ struct InspiredByCard: View {
     }
 
     /// Key · track · tempo, as the card's top corner sets them: `F♯ minor · TRACK 7 · 118 BPM`. A key or a track number
-    /// the credit doesn't state (not yet heard, or not verified) is left out: "FADE" reads `124 BPM`.
+    /// the credit doesn't state (not yet heard, or not verified) is left out: "FADE" reads `124 BPM`; "Runaway" reads
+    /// `TRACK 9 · 86 BPM`.
     static func linerNotes(_ c: Credit) -> String {
         let track: String = c.trackNumber.map { "TRACK \($0)" } ?? ""
         let notes: [String] = [c.key, track, "\(Int(c.tempoBPM.rounded())) BPM"]

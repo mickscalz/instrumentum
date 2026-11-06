@@ -59,6 +59,7 @@ final class DemoRenderTests: XCTestCase {
             ("tea-house-koto", ISD_ENGINE_TEA_HOUSE_KOTO, DemoPhrases.teaHouseKoto),
             ("zen-shakuhachi", ISD_ENGINE_ZEN_SHAKUHACHI, DemoPhrases.zenShakuhachi),
             ("reef-marimba", ISD_ENGINE_REEF_MARIMBA, DemoPhrases.reefMarimba),
+            ("single-note-grand", ISD_ENGINE_SINGLE_NOTE_GRAND, DemoPhrases.singleNoteGrand),
             ("blue-depth", ISD_ENGINE_BLUE_DEPTH, DemoPhrases.blueDepth),
             ("endless-rise", ISD_ENGINE_ENDLESS_RISE, DemoPhrases.endlessRise),
         ]
@@ -143,6 +144,116 @@ final class DemoRenderTests: XCTestCase {
         XCTAssertGreaterThan(early, -60, "the long note rolls")
         XCTAssertGreaterThan(late - early, 6, "and the pressure swells the roll")
         XCTAssertLessThan(strokes(long.off + 3, Double(rolled.l.count) / Self.rate), -100, "no other note rolls")
+    }
+
+    /// Single Note Grand's demo, D minor at 86 (DemoPhrases.singleNoteGrand): one note, D5, struck alone on the eighths
+    /// for two bars and on through two more as a low D and a low B♭ join it; then it opens into chords (G minor, an A
+    /// suspended chord over which it is held and pressed into, falling to C♯ as the chord resolves to A under the
+    /// pressure) and a D minor chord with the D on top rings out. Original material, nothing quoted from any record.
+    /// Rendered as the release renders it: finite and well under full scale (0.30 on the g++ mirror); the grand hears the
+    /// one note repeated from its fourth strike (within 3 ms on the mirror) all through the first two bars; the swell
+    /// turns the piano into a voice: the morph it reads back rises from nothing to .85 or more (.898) and is back under .01
+    /// a second into the last chord; rendered again as the piano alone (the test hook) it is the same to the sample until
+    /// the swell begins, the voice is most of the sound at the swell's top (the difference within 6 dB of the whole; 1.4 on
+    /// the mirror), and it is gone in the last chord (25 dB or more under; 47.5).
+    func testSingleNoteGrandDemoRenders() throws {
+        let phrase = DemoPhrases.singleNoteGrand
+        let beat = 60.0 / 86
+        let dMinor: Set<Int> = [2, 4, 5, 7, 9, 10, 0, 1]   // D E F G A B♭ C, and the A chord's C♯
+        var held = Set<UInt8>(), pressure: UInt8 = 0, swell: UInt8 = 0
+        var onsets: [(t: Double, n: UInt8)] = []
+        for (time, m) in phrase {
+            switch m {
+            case let .noteOn(_, n, _):
+                XCTAssertTrue(dMinor.contains(Int(n) % 12), "note \(n) is outside D minor")
+                held.insert(n)
+                onsets.append((t: time, n: n))
+            case let .noteOff(_, n, _): held.remove(n)
+            case let .channelPressure(_, p): swell = max(swell, p); pressure = p
+            case .pitchBend: XCTFail("the wheel isn't used")
+            default: break
+            }
+        }
+        XCTAssertTrue(held.isEmpty, "everything let go")
+        XCTAssertEqual(pressure, 0)
+        XCTAssertGreaterThan(swell, 100, "a real pressure swell")
+        XCTAssertGreaterThan(phrase.last?.time ?? 0, 20)
+        func t(_ beats: Double) -> Double { (phrase.first?.time ?? 0) + beats * beat }
+        // One repeated note: the first two bars are sixteen strikes of D5 alone, on the eighths at 86.
+        let opening = onsets.filter { $0.t < t(8) - 1e-6 }
+        XCTAssertEqual(opening.count, 16)
+        XCTAssertTrue(opening.allSatisfy { $0.n == 74 }, "D5, and only D5")
+        for (a, b) in zip(opening, opening.dropFirst()) { XCTAssertEqual(b.t - a.t, beat / 2, accuracy: 1e-9) }
+        // It opens into chords: three or more keys struck together (each within 30 ms of the last), at least three times.
+        var chords = 0, run = 1
+        for (a, b) in zip(onsets, onsets.dropFirst()) {
+            if b.t - a.t <= 0.030 { run += 1 } else { if run >= 3 { chords += 1 }; run = 1 }
+        }
+        if run >= 3 { chords += 1 }
+        XCTAssertGreaterThanOrEqual(chords, 3, "it opens into chords")
+
+        /// Renders the phrase as the release renders it (256-sample blocks), as played or as the piano alone, with after
+        /// each block whether the grand hears a repeat and the morph it is using.
+        func render(pianoOnly: Bool) -> (l: [Float], r: [Float], repeating: [Bool], morph: [Float])? {
+            guard let synth = isd_synth_create(ISD_ENGINE_SINGLE_NOTE_GRAND, Self.rate, 512) else { return nil }
+            defer { isd_synth_destroy(synth) }
+            if pianoOnly { isd_synth_set_param(synth, Int32(ISD_P_DEBUG_SNG_PIANO_ONLY), 1) }
+            let total = Int(((phrase.last?.time ?? 0) + 6) * Self.rate), block = 256
+            var l = [Float](repeating: 0, count: total), r = [Float](repeating: 0, count: total)
+            var repeating: [Bool] = [], morph: [Float] = []
+            var e = 0, i = 0
+            while i < total {
+                let n = min(block, total - i)
+                while e < phrase.count, Int(phrase[e].time * Self.rate) < i + n {
+                    let offset = Int32(max(0, Int(phrase[e].time * Self.rate) - i))
+                    phrase[e].message.bytes.withUnsafeBufferPointer { isd_synth_midi(synth, $0.baseAddress, Int32($0.count), offset) }
+                    e += 1
+                }
+                l.withUnsafeMutableBufferPointer { lp in
+                    r.withUnsafeMutableBufferPointer { rp in isd_synth_render(synth, lp.baseAddress! + i, rp.baseAddress! + i, Int32(n)) }
+                }
+                repeating.append(isd_synth_debug_is_repeating(synth) != 0)
+                morph.append(Float(isd_synth_debug_count(synth, ISD_DEBUG_MORPH_PERMILLE)) / 1000)
+                i += n
+            }
+            return (l, r, repeating, morph)
+        }
+        let played = try XCTUnwrap(render(pianoOnly: false), "Single Note Grand is not in the Sound Core")
+        let piano = try XCTUnwrap(render(pianoOnly: true))
+        XCTAssertTrue(played.l.allSatisfy(\.isFinite) && played.r.allSatisfy(\.isFinite))
+        let peak = max(played.l.map(abs).max() ?? 0, played.r.map(abs).max() ?? 0)
+        XCTAssertLessThan(peak, 0.85, "well under full scale and the limiter's 0.9")
+        XCTAssertGreaterThan(peak, 0.1)
+        /// The block that holds the sample at `time`.
+        func block(_ time: Double) -> Int { min(played.morph.count - 1, max(0, Int(time * Self.rate) / 256)) }
+
+        // The grand hears the one note repeated from its fourth strike, all through the first two bars.
+        let fourth = opening.count > 3 ? opening[3].t : 0
+        XCTAssertFalse(played.repeating[block(fourth) - 1], "not before the fourth strike")
+        XCTAssertTrue((block(fourth + 0.01)...block(t(8) - 0.01)).allSatisfy { played.repeating[$0] }, "from the fourth strike through bar 2")
+
+        // The swell turns the piano into a voice, and lets it go.
+        let calm = played.morph[..<block(t(20))].max() ?? 1
+        XCTAssertLessThan(calm, 0.005, "no morph before the swell")
+        XCTAssertGreaterThanOrEqual(played.morph.max() ?? 0, 0.85, "the voice")
+        let after = played.morph[block(t(28) + 1)...].max() ?? 1
+        XCTAssertLessThan(after, 0.01, "let go")
+        /// Mean power of `x` from `a` to `b` seconds, both channels (dB).
+        func power(_ x: (l: [Float], r: [Float]), _ a: Double, _ b: Double) -> Double {
+            let i0 = max(0, Int(a * Self.rate)), i1 = min(x.l.count, Int(b * Self.rate))
+            var sum = 0.0
+            for k in i0..<max(i0, i1) { sum += Double(x.l[k]) * Double(x.l[k]) + Double(x.r[k]) * Double(x.r[k]) }
+            return 10 * log10(max(sum / Double(max(1, 2 * (i1 - i0))), 1e-30))
+        }
+        let voice: (l: [Float], r: [Float]) = (l: zip(played.l, piano.l).map { $0.0 - $0.1 }, r: zip(played.r, piano.r).map { $0.0 - $0.1 })
+        let swellAt = Int(t(20) * Self.rate)
+        let untouched = max(voice.l[..<swellAt].map(abs).max() ?? 1, voice.r[..<swellAt].map(abs).max() ?? 1)
+        XCTAssertLessThan(untouched, 1e-6, "the same as the piano alone until the swell")
+        let whole: (l: [Float], r: [Float]) = (l: played.l, r: played.r)
+        let top = power(voice, t(24.5), t(25.5)) - power(whole, t(24.5), t(25.5))
+        XCTAssertGreaterThan(top, -6, "the voice is most of the sound at the swell's top")
+        let gone = power(voice, t(30), t(35)) - power(whole, t(30), t(35))
+        XCTAssertLessThan(gone, -25, "and gone in the last chord")
     }
 
     /// For each sixteenth `k` of an arp grid that starts at `start` (seconds), the power of the 15 ms after the step
