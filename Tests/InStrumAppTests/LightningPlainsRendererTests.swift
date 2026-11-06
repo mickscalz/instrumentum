@@ -1,5 +1,6 @@
 import XCTest
 import Metal
+import simd
 @testable import InStrumApp
 @testable import InStrumCore
 
