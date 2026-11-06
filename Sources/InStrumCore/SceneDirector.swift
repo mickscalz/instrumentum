@@ -129,6 +129,7 @@ public enum ThemeRegistry {
         .make(SubmarineWindowModel.self),
         .make(GreatBarrierReefModel.self),
         .make(LightningPlainsModel.self),
+        .make(SupercellSkyModel.self),
     ]
 
     public static var all: [(id: String, name: String)] { entries.map { ($0.id, $0.name) } }
@@ -371,10 +372,11 @@ public final class SceneDirector {
             // Storms (spec §6–§8): a world may choose its own anvil crawlers and sheet lightning (nil: the Sky extras
             // settings) and hold a supercell's stage (Supercell Sky's picker; nil: no supercell), and its Random Beautiful
             // adds a gust front where storms appear and virga in dry worlds. All are read every step, so they leave with
-            // the world.
+            // the world. This step's big moment (Excitement stepped first) calls a crawler and a sheet flash (spec §6).
             let storm = StormInputs(crawlers: SkyExtraMode(rawValue: parameters.choice(SkyExtraMode.crawlersID)),
                                     sheet: SkyExtraMode(rawValue: parameters.choice(SkyExtraMode.sheetID)),
                                     supercell: SupercellStage(rawValue: parameters.choice(SupercellStage.id)),
+                                    moment: excitementFrame.moment,
                                     randomExtras: WorldWeather.randomExtras(for: themeID))
             let s = sky.step(now: clock(), dt: dt, hold: hold, aurora: aurora, meteors: meteors, storm: storm)
             lastSky = s

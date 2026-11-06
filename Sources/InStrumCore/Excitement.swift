@@ -66,6 +66,8 @@ public struct ExcitementFrame: Equatable {
     public var moment: BigMoment?
     /// Set for exactly one step when a surprise is due.
     public var surprise: WorldSurprise?
+    /// The Mac's Reduce Motion is on: worlds shake no camera and cap their fastest motion (Storms spec §5).
+    public var reduceMotion = false
     public init() {}
     public static let calm = ExcitementFrame()
 }
@@ -229,6 +231,7 @@ public struct Excitement {
         let e = settings.autoEnergy ? Float(energy) : min(max(settings.manualEnergy, 0), 1)
         frame.energy = e
         frame.visualEnergy = reduceMotion ? min(e, 0.5) : e
+        frame.reduceMotion = reduceMotion
         frame.tension = Float(tension)
         frame.drop = Float(drop)
         frame.moment = pending

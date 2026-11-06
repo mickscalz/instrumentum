@@ -31,19 +31,35 @@ jobs:
 
   previews:
     needs: test
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/m3a' || github.ref == 'refs/heads/sets' || github.ref == 'refs/heads/sets-3-4' || github.ref == 'refs/heads/sets-5-6' || github.ref == 'refs/heads/sets-7-8' || github.ref == 'refs/heads/sets-9-10' || github.ref == 'refs/heads/sets-11-12' || github.ref == 'refs/heads/small-wins' || github.ref == 'refs/heads/sets-13-14' || github.ref == 'refs/heads/storms' || github.ref == 'refs/heads/storms-t11')
+    # The integration branches render every preview after the tests pass and publish them to the previews branch; a
+    # Storms task branch (storms-*) renders only its world's previews and frame time, even when an unrelated test
+    # failed, and keeps them as an artifact.
+    if: github.event_name == 'push' && ((needs.test.result == 'success' && (github.ref == 'refs/heads/m3a' || github.ref == 'refs/heads/sets' || github.ref == 'refs/heads/sets-3-4' || github.ref == 'refs/heads/sets-5-6' || github.ref == 'refs/heads/sets-7-8' || github.ref == 'refs/heads/sets-9-10' || github.ref == 'refs/heads/sets-11-12' || github.ref == 'refs/heads/small-wins' || github.ref == 'refs/heads/sets-13-14' || github.ref == 'refs/heads/storms' || github.ref == 'refs/heads/storms-t9' || github.ref == 'refs/heads/storms-t11')) || (!cancelled() && startsWith(github.ref, 'refs/heads/storms-')))
     runs-on: macos-15
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v5
       - name: Render preview frames
-        run: PREVIEW_DIR="$PWD/previews" DEMO_DIR="$PWD/previews/audio" swift test --filter "PreviewRenderTests|ShaderPreviewArtTests|DemoRenderTests|SkyPreviewTests|WorldPreviewTests" 2>&1 | tee preview.log; exit ${PIPESTATUS[0]}
+        run: |
+          FILTER="PreviewRenderTests|ShaderPreviewArtTests|DemoRenderTests|SkyPreviewTests|WorldPreviewTests"
+          case "$GITHUB_REF" in refs/heads/storms-*) FILTER="WorldPreviewTests/testWriteSupercell|SupercellFrameTimeTests";; esac
+          PREVIEW_DIR="$PWD/previews" DEMO_DIR="$PWD/previews/audio" swift test --filter "$FILTER" 2>&1 | tee preview.log; exit ${PIPESTATUS[0]}
+      - name: Keep preview frames
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: previews-${{ github.run_number }}
+          path: |
+            previews/*.png
+            preview.log
+          if-no-files-found: warn
       - name: Encode demo audio
         run: |
           for f in previews/audio/*.wav; do [ -f "$f" ] && afconvert -f m4af -d aac -b 256000 "$f" "${f%.wav}.m4a" && rm "$f"; done
           ls -la previews/audio || true
       - name: Render icon and installer art
+        if: ${{ !startsWith(github.ref, 'refs/heads/storms-') }}
         run: |
           brew install librsvg >/dev/null
           rsvg-convert -w 512 -h 512 Packaging/AppIcon.svg -o previews/app-icon.png
@@ -67,7 +83,7 @@ jobs:
       - name: Report
         if: always()
         run: |
-          grep -E "error:|warning: |passed|failed|skipped" preview.log | tail -n 40 > report.txt || true
+          grep -E "error:|warning: |passed|failed|skipped|FRAME TIME" preview.log | tail -n 60 > report.txt || true
           python3 -c "t=open('report.txt').read()[-60000:];print('::notice title=preview-report::'+t.replace('%','%25').replace('\r','').replace('\n','%0A'))"
 
   package:

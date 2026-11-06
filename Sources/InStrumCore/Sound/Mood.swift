@@ -31,6 +31,8 @@ public struct Mood: Codable, Equatable {
     public static let reefAlive = Mood(energy: 0.65, warmth: 0.75, brightness: 0.85, space: 0.45, motion: 0.75)
     /// Aurora Fjord: awe-struck, cold, electric.
     public static let electricAwe = Mood(energy: 0.45, warmth: 0.25, brightness: 0.45, space: 0.95, motion: 0.6)
+    /// Supercell Sky: tense, thrilling (Storms spec §2, §11).
+    public static let stormTense = Mood(energy: 0.7, warmth: 0.35, brightness: 0.5, space: 0.8, motion: 0.9)
 
     /// The built-in instruments' hidden mood parameters (Audio Unit identifiers can't contain dots).
     public static let parameterIdentifiers: Set<String> = ["moodEnergy", "moodWarmth", "moodBrightness", "moodSpace", "moodMotion"]

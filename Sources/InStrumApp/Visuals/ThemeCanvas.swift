@@ -25,6 +25,7 @@ final class ThemeCanvas: NSObject, MTKViewDelegate {
     private var submarine: SubmarineWindowRenderer?
     private var reef: GreatBarrierReefRenderer?
     private var plains: LightningPlainsRenderer?
+    private var supercell: SupercellSkyRenderer?
     private var autoQuality: AutoQuality
     private var lastTime: CFTimeInterval = 0
     private var seenVersion = -1
@@ -175,6 +176,10 @@ final class ThemeCanvas: NSObject, MTKViewDelegate {
             if plains == nil { plains = LightningPlainsRenderer(device: device) }
             plains?.update(f, params: director.parameters, quality: level, gentle: gentle, dt: dt, size: size)
             renderer = plains
+        } else if let f = frame as? SupercellFrame {
+            if supercell == nil { supercell = SupercellSkyRenderer(device: device) }
+            supercell?.update(f, params: director.parameters, quality: level, gentle: gentle, dt: dt, size: size)
+            renderer = supercell
         } else {
             renderer = nil
         }
