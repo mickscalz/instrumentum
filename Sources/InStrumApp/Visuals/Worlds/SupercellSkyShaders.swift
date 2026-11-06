@@ -589,12 +589,15 @@ enum SupercellSkyShaders {
         float x = P.x - right;
         float st = fbm2(float2(P.x * 1.4, z * 0.35 + fall), octaves);
         float dens = (1.0 - smoothstep(-2.5, 1.0, x)) * (0.55 + 0.45 * st) * (0.35 + 0.65 * u.play.w);
-        float top = 1.0 - smoothstep(hb - 0.1, hb + 0.05, P.z);
+        // It hangs from the storm: none beyond the base's far side, softly into the base above.
+        float reach = abs(P.x - u.place.x) / u.dims.y;
+        dens *= 1.0 - smoothstep(0.9 + 0.2 * st, 1.35, reach);
+        float top = 1.0 - smoothstep(hb - 0.45, hb + 0.05, P.z);
         float a = saturate(dens * 1.3) * 0.95 * top;
         if (a <= 0.002) return L;
         float low = 1.0 - smoothstep(0.0, hb * 0.8, z);                // the rain's foot, lit by the horizon behind it
         L.a = a;
-        L.c = aerial(lit * (0.75 + 0.35 * st) + u.haze.rgb * (0.35 * low), t * 0.7, u);
+        L.c = aerial(lit * (0.75 + 0.35 * st) + u.haze.rgb * (0.2 * low), t * 0.5, u);
         tHit = t;
         return L;
     }
@@ -861,7 +864,7 @@ enum SupercellSkyShaders {
         float rainLit = u.sunCol.w;
         float3 hailLit = (u.sunCol.rgb * float3(1.0, 0.95, 0.88) * 1.05 + u.amb.rgb * 0.9) * (0.75 + 0.25 * rainLit);
         hailLit += flashOnCloud(ndc, u) * 0.8;
-        float3 coreLit = (u.amb.rgb * 0.3 + u.sunCol.rgb * 0.05) * float3(0.86, 1.0, 0.94);
+        float3 coreLit = (u.amb.rgb * 0.17 + u.sunCol.rgb * 0.03) * float3(0.82, 0.98, 1.0);
         float lum = dot(coreLit, float3(0.2126, 0.7152, 0.0722));
         coreLit = mix(coreLit, lum * float3(0.75, 1.15, 0.95), saturate(u.look.y * 6.0));
         coreLit += flashOnCloud(ndc, u) * 0.5;
