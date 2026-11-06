@@ -557,7 +557,7 @@ final class WallCloudTests: XCTestCase {
         XCTAssertEqual(still.distanceKm, 16.5, accuracy: 1e-4)
         XCTAssertEqual(still.rotationRPM, 0.3, accuracy: 1e-6)
         XCTAssertEqual(still.inflowSpacing, 12, accuracy: 1e-5)
-        XCTAssertEqual(still.viewAzimuth, 110, accuracy: 1e-6, "the sun at 290°, the camera at 110°")
+        XCTAssertEqual(still.viewAzimuth, 138, accuracy: 1e-6, "the sun at 290°: its antipoint at 110°, the camera 28° round")
         XCTAssertLessThanOrEqual(still.greenCast, 0.12)
         XCTAssertGreaterThan(still.greenCast, 0, "green under the core")
         XCTAssertGreaterThan(still.hailDensity, 0.3)

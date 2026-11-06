@@ -36,7 +36,7 @@ public struct BasePulse: Equatable {
     /// Its light now: an 80 ms rise, then falling away (τ 0.45 s), gone at `WallCloud.pulseSeconds`.
     public var brightness: Float {
         let rise = min(1, max(0, age / 0.08))
-        let fall = age <= 0.08 ? 1 : exp(-(age - 0.08) / 0.45)
+        let fall: Float = age <= 0.08 ? 1 : exp(-(age - 0.08) / 0.45)
         let end = 1 - min(1, max(0, (age - WallCloud.pulseSeconds + 0.3) / 0.3))
         return strength * rise * fall * end
     }
@@ -369,11 +369,12 @@ public struct StormFlock {
                     near += 1
                 }
             }
-            var steer = 3.5 * sep
+            var steer: SIMD3<Float> = sep * 3.5
             if near > 0 {
                 align = align / Float(near) - birds[i].velocity
                 centre = centre / Float(near) - p
-                steer += 0.6 * align + 0.25 * centre
+                steer += align * 0.6
+                steer += centre * 0.25
             }
             let goal: SIMD3<Float>
             if fleeing {
@@ -384,10 +385,12 @@ public struct StormFlock {
                 let off = SIMD2(p.x - c.x, p.y - c.y)
                 let r = max(1, simd_length(off))
                 let tangent = SIMD2(-off.y, off.x) / r
-                let inward = -off / r * (r - Self.wheelRadius) * 0.08
-                goal = SIMD3(tangent.x * cruise + inward.x, tangent.y * cruise + inward.y, (c.z - p.z) * 0.3)
+                let pull: Float = (r - Self.wheelRadius) * 0.08 / r
+                let inward: SIMD2<Float> = off * (-pull)
+                let around: SIMD2<Float> = tangent * cruise + inward
+                goal = SIMD3(around.x, around.y, (c.z - p.z) * 0.3)
             }
-            steer += 0.9 * (goal - birds[i].velocity)
+            steer += (goal - birds[i].velocity) * 0.9
             var v = birds[i].velocity + steer * dt
             let speed = simd_length(v)
             if speed > hi { v *= hi / speed } else if speed < lo, speed > 1e-4 { v *= lo / speed }

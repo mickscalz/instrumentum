@@ -38,7 +38,8 @@ public struct GroundStrike: Equatable {
             let peak: Float = k == 0 ? 1 : 0.75
             if since >= 0 { light = max(light, peak * exp(-since / 0.03)) }
         }
-        let glow = 0.35 * exp(-age / 0.2) * (1 - min(1, age / Self.life))
+        let fade: Float = 1 - min(1, age / Self.life)
+        let glow: Float = 0.35 * exp(-age / 0.2) * fade
         return min(1, max(light, glow) * (0.55 + 0.45 * strength))
     }
     /// Where it comes down on the field (km: x across the view, y away from the camera).
@@ -60,8 +61,8 @@ public struct StormFunnel: Equatable {
     /// How far down it reaches now (0 … `maxReach` × 0.8–1).
     public var reach: Float {
         let x = min(1, max(0, age / max(duration, 1e-3)))
-        let down = SupercellSkyModel.smooth(0, 0.4, x) * (1 - SupercellSkyModel.smooth(0.6, 1, x))
-        let deep = 0.8 + 0.2 * Float(seed % 1000) / 1000
+        let down: Float = SupercellSkyModel.smooth(0, 0.4, x) * (1 - SupercellSkyModel.smooth(0.6, 1, x))
+        let deep: Float = 0.8 + 0.2 * Float(seed % 1000) / 1000
         return Self.maxReach * deep * down
     }
 }
@@ -79,7 +80,8 @@ public struct SupercellAfter: Equatable {
 public struct SupercellFrame: AmbienceProviding {
     /// The Living Sky after the storm's own weather (warm: a summer evening; the storm's rain only where its core is).
     public var sky: SkyState
-    /// Which way the camera looks (degrees from north): away from the sun, so the low sun lights the storm's face.
+    /// Which way the camera looks (degrees from north): away from the sun (28° round from its antipoint), so the low sun
+    /// lights the storm's face from behind you and to the right.
     public var viewAzimuth: Double
     /// How far off the storm's centre is (km): the Distance dial at its Core, further while it comes and as it clears.
     public var distanceKm: Float
@@ -175,6 +177,8 @@ public struct SupercellSkyModel: ThemeModel, MoodAware, SkyAware, ExcitementAwar
     /// The camera dollies back at most this far (m) as the storm comes on.
     public static let dollyMetres: Float = 30
     public static let cameraTau = 8.0
+    /// The camera looks this far (degrees, clockwise) from the sun's antipoint: the sun behind you and to the right.
+    public static let viewTurn = 28.0
 
     public var mood = Mood.neutral
     public var instrumentPressure: Float = 0
@@ -345,15 +349,20 @@ public struct SupercellSkyModel: ThemeModel, MoodAware, SkyAware, ExcitementAwar
         let warpFrame = warp.step(dt: fdt, roles: roles, inputs: inputs)
 
         // The storm's rain and hail, the base's darkness and the green under the core.
-        let stormRain = min(1, 0.15 * w.x + 0.6 * coreLook + max(w.z * (0.5 - 0.25 * cleared), 0.4 * calm))
+        let clearingRain: Float = max(w.z * (0.5 - 0.25 * cleared), 0.4 * calm)
+        let stormRain: Float = min(1, 0.15 * w.x + 0.6 * coreLook + clearingRain)
         dropHail *= exp(-fd / 10)
         hailBurst *= exp(-fd / 6)
         farCell *= exp(-fd / 1.2)
         rainbowSurprise = max(0, rainbowSurprise - fd / 25)
-        let hailRaw = 0.12 * w.x + 0.5 * coreLook + 0.08 * clearLook + 0.35 * energy * (1 - 0.7 * clearLook)
-        let hail = min(1, hailRaw + 0.55 * hailBurst + 0.6 * dropHail)
-        let darkness = min(1, max(0, 0.35 + 0.4 * energy + 0.2 * tension + 0.15 * coreLook - 0.3 * clearLook))
-        let green = 0.12 * min(1, 0.6 * coreLook + 0.4 * tension + 0.3 * drop) * (1 - clearLook)
+        let stageHail: Float = 0.12 * w.x + 0.5 * coreLook + 0.08 * clearLook
+        let playedHail: Float = 0.35 * energy * (1 - 0.7 * clearLook)
+        let burstHail: Float = 0.55 * hailBurst + 0.6 * dropHail
+        let hail: Float = min(1, stageHail + playedHail + burstHail)
+        let darkRaw: Float = 0.35 + 0.4 * energy + 0.2 * tension + 0.15 * coreLook - 0.3 * clearLook
+        let darkness: Float = min(1, max(0, darkRaw))
+        let greenRaw: Float = min(1, 0.6 * coreLook + 0.4 * tension + 0.3 * drop)
+        let green: Float = 0.12 * greenRaw * (1 - clearLook)
         let rainHere = stormRain * Self.smooth(5, 0.5, km)
 
         // A big moment: a strike at the storm's distance, its thunder late by that distance; the first one lifts the
@@ -389,7 +398,8 @@ public struct SupercellSkyModel: ThemeModel, MoodAware, SkyAware, ExcitementAwar
 
         // The wind over the field: the inflow toward the storm (stronger as you play and as tension gathers, easing as it
         // clears), and the gust front's wave with the outflow behind it.
-        let inflow = (2 + 3 * energy + 2 * tension) * (1 - 0.5 * clearLook)
+        let inflowBody: Float = 2 + 3 * energy + 2 * tension
+        let inflow: Float = inflowBody * (1 - 0.5 * clearLook)
         wind.set(steady: simd_normalize(SIMD2<Float>(0.35, 1)) * inflow)
         wind.step(dt: fdt)
         var wave: Float?
@@ -414,20 +424,23 @@ public struct SupercellSkyModel: ThemeModel, MoodAware, SkyAware, ExcitementAwar
         if gustAge != nil, unalarmed { flock.flee(awayFromStorm: SIMD2(-0.35, -1)) }
         flock.step(dt: fdt, energy: energy)
 
-        // The camera: facing away from the sun (so it lights the storm), a slow dolly back as the storm comes on, and a
-        // shake on a close strike and at the drop.
-        let target = Self.norm(rawSky.sun.azimuth + 180)
+        // The camera: facing away from the sun, turned `viewTurn` from its antipoint so the low sun comes from behind and
+        // to the right and models the storm; a slow dolly back as the storm comes on; a shake on a close strike and at the
+        // drop.
+        let target = Self.norm(rawSky.sun.azimuth + 180 + Self.viewTurn)
         if let az = camera { camera = Self.norm(az + Self.turn(from: az, to: target) * (1 - exp(-fdt / Self.cameraTau))) }
         else { camera = target }
         let closeness = 1 - min(1, km / Self.farthestKm)
-        let dollyTarget: Float = reduce ? 0 : Self.dollyMetres * closeness * (0.4 + 0.6 * energy)
+        let dollyReach: Float = Self.dollyMetres * closeness * (0.4 + 0.6 * energy)
+        let dollyTarget: Float = reduce ? 0 : dollyReach
         dolly += (dollyTarget - dolly) * (1 - exp(-fd / 8))
         if reduce { dolly = 0; shakeAmount = 0 }
         shakeAge += fd
         var shakeNow = SIMD2<Float>(0, 0)
         if shakeAge < Self.shakeSeconds, shakeAmount > 0 {
             let x = 1 - shakeAge / Self.shakeSeconds
-            let a = Self.shakePixels * min(1, shakeAmount) * x * x * sin(2 * Float.pi * 16 * shakeAge + 0.6)
+            let beat: Float = sin(2 * Float.pi * 16 * shakeAge + 0.6)
+            let a: Float = Self.shakePixels * min(1, shakeAmount) * x * x * beat
             let spinAngle = shakePhase + 9 * shakeAge
             shakeNow = SIMD2(cos(spinAngle), sin(spinAngle)) * a
         }
@@ -435,9 +448,10 @@ public struct SupercellSkyModel: ThemeModel, MoodAware, SkyAware, ExcitementAwar
         // The light after it: rays under the anvil's edge with the sun up and low, a double rainbow in the rain with the
         // sun 1°–42° up, the stars behind once it's dark.
         let alt = Float(rawSky.sun.altitude.isFinite ? rawSky.sun.altitude : -90)
-        let rays = clearLook * Self.smooth(-3, 1, alt) * (1 - Self.smooth(25, 40, alt))
+        let raySun: Float = Self.smooth(-3, 1, alt) * (1 - Self.smooth(25, 40, alt))
+        let rays: Float = clearLook * raySun
         let wet = Self.smooth(0.2, 0.3, stormRain)
-        let bowSun = Self.smooth(1, 4, alt) * (1 - Self.smooth(38, 42, alt))
+        let bowSun: Float = Self.smooth(1, 4, alt) * (1 - Self.smooth(38, 42, alt))
         let bow = min(1, max(clearLook * wet, rainbowSurprise)) * bowSun
         let stars = clearLook * (1 - Self.smooth(-10, -4, alt))
         let after = SupercellAfter(rays: rays, rainbow: bow, stars: stars)
@@ -536,17 +550,23 @@ public struct SupercellSkyModel: ThemeModel, MoodAware, SkyAware, ExcitementAwar
     /// thunder roll (it plays the queue), the inflow's roar with Energy, and the smell of rain on dust before the rain.
     public static func levels(_ s: SkyState, km: Float, hail: Float, energy: Float, tension: Float, clearing: Float,
                               stormRain: Float, rainHere: Float, outflow: Float, alarm: Float) -> [AmbienceSource: Double] {
-        let near = Double(0.35 + 0.65 * smooth(14, 2, km))
-        let wind = Double(min(1, max(0, s.wind.isFinite ? s.wind : 0)))
-        var levels: [AmbienceSource: Double] = [
-            .grassWind: min(1, 0.25 + 0.5 * wind + 0.35 * Double(outflow)),
-            .hailOnTin: Double(min(1, max(0, hail))) * near,
-            .birdsFlee: 0.6 * Double(min(1, max(0, alarm))),
-            .thunderRoll: 0.85,
-            .inflowRoar: Double(min(1, 0.12 + 0.6 * energy + 0.2 * tension)) * Double(1 - 0.5 * clearing),
-            .rainOnDust: Double(min(1, 0.5 * stormRain * smooth(16, 4, km) * (1 - rainHere) + 0.45 * rainHere)),
-            .breeze: 0.2,
-        ]
+        let closeness: Float = 0.35 + 0.65 * smooth(14, 2, km)
+        let windNow: Float = min(1, max(0, s.wind.isFinite ? s.wind : 0))
+        let grass: Float = min(1, 0.25 + 0.5 * windNow + 0.35 * outflow)
+        let tin: Float = min(1, max(0, hail)) * closeness
+        let calls: Float = 0.6 * min(1, max(0, alarm))
+        let roarBody: Float = min(1, 0.12 + 0.6 * energy + 0.2 * tension)
+        let roar: Float = roarBody * (1 - 0.5 * clearing)
+        let beforeRain: Float = 0.5 * stormRain * smooth(16, 4, km) * (1 - rainHere)
+        let dust: Float = min(1, beforeRain + 0.45 * rainHere)
+        var levels: [AmbienceSource: Double] = [:]
+        levels[.grassWind] = Double(grass)
+        levels[.hailOnTin] = Double(tin)
+        levels[.birdsFlee] = Double(calls)
+        levels[.thunderRoll] = 0.85
+        levels[.inflowRoar] = Double(roar)
+        levels[.rainOnDust] = Double(dust)
+        levels[.breeze] = 0.2
         WeatherAmbience.levels(s, base: &levels)
         return levels
     }
