@@ -234,24 +234,46 @@ final class CPUBudgetTests: XCTestCase {
         }
     }
 
-    /// Felt Glass and Orbit Pad with all 38 ambience sources at 0.6 (the sonar pinging, the whale singing, a burst of
-    /// bubbles).
+    /// Supercell Sky's and Lightning Plains' soundscapes (Storms spec §8.3, §9.3), each < 2.5%: the storm family in full
+    /// cry with four strikes' thunder rolling, the gust front's wind and the rain; the plains at dusk with a truck crossing
+    /// the grid, a far truck passing and two far rolls. (The g++ mirror: 3.3–3.7% and 3.6–4.1% of a core on the build
+    /// machine, which runs these scenes 2.3–2.5 times slower than CI: about 1.5% each there.)
+    func testStormAmbienceBudget() {
+        typealias A = AmbienceTests
+        let supercell: [A.Action] = [A.level(ISD_AMB_GRASS_WIND, 0.8), A.level(ISD_AMB_HAIL_TIN, 0.6), A.level(ISD_AMB_BIRDS_FLEE, 0.5),
+                                     A.level(ISD_AMB_THUNDER_ROLL, 1), A.level(ISD_AMB_INFLOW_ROAR, 0.7), A.level(ISD_AMB_RAIN_ON_DUST, 0.5),
+                                     A.level(ISD_AMB_WIND, 0.5), A.level(ISD_AMB_RAIN_WATER, 0.3), A.queueThunder(0.6, 1, at: 0),
+                                     A.queueThunder(3, 0.8, at: 1), A.queueThunder(9, 0.6, at: 2), A.queueThunder(4.5, 0.9, at: 4), A.closeness(0.5)]
+        let plains: [A.Action] = [A.level(ISD_AMB_DRY_CICADAS, 0.8), A.level(ISD_AMB_WINDMILL, 0.6), A.level(ISD_AMB_CATTLE_GRID, 0.5),
+                                  A.trigger(ISD_AMB_CATTLE_GRID, at: 0.5), A.level(ISD_AMB_DUST_TICKS, 0.5), A.level(ISD_AMB_SHIMMER_HUM, 0.4),
+                                  A.level(ISD_AMB_FAR_TRUCK, 0.5), A.trigger(ISD_AMB_FAR_TRUCK, at: 0), A.level(ISD_AMB_THUNDER_ROLL, 1),
+                                  A.queueThunder(12, 0.6, at: 0), A.queueThunder(7, 0.7, at: 2), A.level(ISD_AMB_RAIN_ON_DUST, 0.4),
+                                  A.level(ISD_AMB_BREEZE, 0.4), A.level(ISD_AMB_CRICKETS, 0.3), A.closeness(0.55)]
+        for (name, scene) in [("supercell", supercell), ("plains", plains)] {
+            let seconds = bestOfThree { _ = A.render(seconds: 10, actions: scene) }
+            XCTAssertLessThan(seconds / 10, 0.025, "the \(name) ambience used \(String(format: "%.1f", seconds * 10))% of real time")
+        }
+    }
+
+    /// Felt Glass and Orbit Pad with all 50 ambience sources at 0.6 (the sonar pinging, the whale singing, a burst of
+    /// bubbles, the birds taking flight, a truck crossing the grid, a far truck passing and four rolls of thunder). (The g++
+    /// mirror: 19.3–21.0% on the build machine against 15.3–17.2% for the 38 before, which CI ran in 6.9%: about 8–8.5%
+    /// there.)
     func testCombinedBudget() {
         var felt = [R.pedal(0, 127)]
         for n: UInt8 in [36, 43, 48, 52, 55, 60, 64, 67, 71, 72, 76, 79, 83, 84, 88, 91] { felt.append(R.noteOn(0, n, 90)) }
         let pad = [48, 55, 60, 63, 67, 70, 72, 75].map { R.noteOn(0, UInt8($0), 90) }
-        // 38 sources, plus the twelve Storms ids reserved in the header with no source behind them until Task 8 of the
-        // Storms plan (which makes this 50 playing sources and re-measures the budget).
         XCTAssertEqual(ISD_AMB_COUNT.rawValue, 50)
-        let playing = Int(ISD_AMB_FISH_CHORUS.rawValue) + 1
-        XCTAssertEqual(playing, 38)
+        let playing = Int(ISD_AMB_COUNT.rawValue)
         var ambience: [AmbienceTests.Action] = (0..<playing).map { AmbienceTests.level(ISDAmbienceSource(UInt32($0)), 0.6) }
         ambience += [AmbienceTests.pingSonar(at: 0), AmbienceTests.startWhale(at: 0), AmbienceTests.bubbles(0.8, at: 1)]
+        ambience += [ISD_AMB_BIRDS_FLEE, ISD_AMB_CATTLE_GRID, ISD_AMB_FAR_TRUCK].map { AmbienceTests.trigger($0, at: 0.5) }
+        ambience += (0..<4).map { AmbienceTests.queueThunder(0.5 + 2 * Float($0), 0.8, at: 0.2) }
         let seconds = bestOfThree {
             _ = R.render(seconds: 10, events: felt)
             _ = R.render(ISD_ENGINE_ORBIT_PAD, seconds: 10, events: pad)
             _ = AmbienceTests.render(seconds: 10, actions: ambience)
         }
-        XCTAssertLessThan(seconds / 10, 0.09, "Felt Glass + Orbit Pad + ambience used \(String(format: "%.1f", seconds * 10))% of real time")
+        XCTAssertLessThan(seconds / 10, 0.11, "Felt Glass + Orbit Pad + ambience used \(String(format: "%.1f", seconds * 10))% of real time")
     }
 }

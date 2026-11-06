@@ -190,6 +190,30 @@ final class BuiltInAUTests: XCTestCase {
         XCTAssertEqual(b, a, accuracy: 1)
     }
 
+    /// Storms Review focus 4, through the real unit: a panic leaves the beds but drops the thunder on its way (a strike's
+    /// roll queued 1.5 s out never arrives), and a world switch does the same; without either, it rolls in.
+    func testPanicAndASwitchClearTheThunderOnItsWay() async throws {
+        var heard: [Double] = []
+        for clear in [0, 1, 2] {
+            let e = try await makeEngine()
+            await e.startAmbience()
+            var scene = AmbienceScene(levels: [.thunderRoll: 1, .airFlow: 0.3])
+            e.setAmbience(scene)
+            _ = try render(e, seconds: 3)   // the levels up
+            scene.thunderQueue = [QueuedThunder(delay: 1.5, strength: 1)]
+            e.setAmbience(scene)
+            _ = try render(e, seconds: 0.5)
+            if clear == 1 { e.panic() }
+            if clear == 2 { e.clearAmbienceThunder() }
+            let after = try render(e, seconds: 3)
+            heard.append(DSPTestKit.dBFS(Array(after[Int(1.2 * 48_000)...])))
+        }
+        let rolled = heard[0], panicked = heard[1], switched = heard[2]
+        XCTAssertGreaterThanOrEqual(rolled - panicked, 10, "panic: \(rolled) dBFS with the roll, \(panicked) without")
+        XCTAssertGreaterThanOrEqual(rolled - switched, 10, "switch: \(rolled) dBFS with the roll, \(switched) without")
+        XCTAssertGreaterThan(panicked, -90, "the beds carry on")
+    }
+
     func testAmbienceVolumeAndSwitch() async throws {
         let e = try await makeEngine()
         await e.startAmbience()

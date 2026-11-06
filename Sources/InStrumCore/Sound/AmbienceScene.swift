@@ -6,10 +6,27 @@ public enum AmbienceSource: String, Codable, CaseIterable {
     case iceGroan, waterfall, lapping, boat
     case templeBell, paperScreens, waterKnocker, warbler
     case sonar, hullCreak, whaleSong, bubbles, snappingShrimp, fishChorus
-    /// Storms (Sets 17 & 18), reserved: the storm family, then the plains family. Silent until the engine has sources
-    /// for them (Task 8 of the Storms plan).
+    /// Storms (Sets 17 & 18): the storm family, then the plains family. The thunder roll makes no sound of its own: it
+    /// rolls the scene's `thunderQueue`.
     case grassWind, hailOnTin, birdsFlee, thunderRoll, inflowRoar, rainOnDust
     case dryCicadas, windmill, cattleGrid, dustTicks, shimmerHum, farTruck
+}
+
+/// A strike's thunder on its way (Storms spec §3): the roll starts `delay` seconds from now (the picture first, the sound
+/// after: 3 s a kilometre, capped at 12 s), at `strength` 0…1.
+public struct QueuedThunder: Equatable {
+    public var delay: Double
+    public var strength: Double
+
+    public init(delay: Double, strength: Double) {
+        self.delay = delay
+        self.strength = strength
+    }
+
+    /// The thunder of a strike `km` off: 3 s a kilometre, capped at 12 s.
+    public static func strike(km: Double, strength: Double) -> QueuedThunder {
+        QueuedThunder(delay: min(12, max(0, km.isFinite ? 3 * km : 12)), strength: strength)
+    }
 }
 
 /// The key the player is in (spec §7.1): root 0…11 (C = 0), major or minor.
@@ -54,11 +71,15 @@ public struct AmbienceScene: Equatable {
     /// One-shot: a burst of bubbles rises now, with this strength (0 a few … 1 a stream). Heard only while the world's
     /// bubbles are up.
     public var bubbleBurst: Double?
+    /// One-shots: the thunder of the strikes seen this frame, each arriving late by its distance (Storms spec §3). Heard
+    /// only while the world's thunder roll is up; the engine holds 16 (a 17th drops the oldest), and a world switch or a
+    /// panic clears them.
+    public var thunderQueue: [QueuedThunder]
 
     public init(levels: [AmbienceSource: Double] = [:], nightCool: Double = 0, activity: Double = 0, thunder: Double? = nil,
                 closeness: Double = 0.5, density: Double = 1, wave: Double? = nil, speed: Double = 0, surfDistance: Double = 0,
                 indoors: Double = 0, wetness: Double = 0, snowOnGlass: Double = 0, key: AmbienceKey? = nil,
-                bubbleBurst: Double? = nil) {
+                bubbleBurst: Double? = nil, thunderQueue: [QueuedThunder] = []) {
         self.levels = levels
         self.nightCool = nightCool
         self.activity = activity
@@ -73,6 +94,7 @@ public struct AmbienceScene: Equatable {
         self.snowOnGlass = snowOnGlass
         self.key = key
         self.bubbleBurst = bubbleBurst
+        self.thunderQueue = thunderQueue
     }
 
     public static let silent = AmbienceScene()

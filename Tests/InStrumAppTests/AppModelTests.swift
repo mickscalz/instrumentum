@@ -39,6 +39,8 @@ final class FakeEngine: InstrumentEngine {
     var ambienceStarts = 0, startedBeforeAmbience = false
     func startAmbience() async { ambienceStarts += 1; startedBeforeAmbience = started > 0 }
     func setAmbience(_ s: AmbienceScene) { scenes.append(s) }
+    var thunderClears = 0
+    func clearAmbienceThunder() { thunderClears += 1 }
     // Output
     var isRunning = true
     var restarts = 0
@@ -359,6 +361,76 @@ final class AppModelTests: XCTestCase {
         n.updateAmbience(lake, at: 3.4)
         XCTAssertFalse(engine.scenes.isEmpty)
         XCTAssertTrue(engine.scenes.allSatisfy { $0.bubbleBurst == nil }, "the submarine's bubbles don't rise by the lake")
+    }
+
+    /// Storms Review focus 4, the app's half: queued thunder held back by the throttle still goes, every roll of it, each
+    /// delay shortened by the time it waited (so it still arrives when the strike's distance says), and goes once; at most
+    /// 16 go, the newest; it stays behind when the next scene has no thunder roll; a world switch clears the engine's queue
+    /// and what the throttle holds, whatever the next world plays, and a panic drops what the throttle holds.
+    func testThunderQueueSurvivesTheThrottleButNotASwitch() {
+        let storm = AmbienceScene(levels: [.thunderRoll: 1, .grassWind: 0.6])
+        let m = makeModel()
+        m.updateAmbience(storm, at: 3)
+        engine.scenes.removeAll()
+        var one = storm; one.thunderQueue = [QueuedThunder(delay: 3, strength: 0.8)]
+        var two = storm; two.thunderQueue = [QueuedThunder(delay: 9, strength: 0.4), .strike(km: 0.5, strength: 1)]
+        m.updateAmbience(one, at: 3.01)   // too soon: held back, not dropped
+        m.updateAmbience(two, at: 3.05)
+        m.updateAmbience(storm, at: 3.11)
+        let sent = engine.scenes.flatMap(\.thunderQueue)
+        XCTAssertEqual(sent.map(\.strength), [0.8, 0.4, 1], "every roll goes, in order")
+        XCTAssertEqual(sent.first?.delay ?? -1, 3 - 0.1, accuracy: 1e-9, "shortened by the 0.1 s it waited")
+        XCTAssertEqual(sent.dropFirst().first?.delay ?? -1, 9 - 0.06, accuracy: 1e-9)
+        XCTAssertEqual(sent.last?.delay ?? -1, 1.5 - 0.06, accuracy: 1e-9, "3 s a kilometre")
+        m.updateAmbience(storm, at: 3.3)
+        XCTAssertEqual(engine.scenes.flatMap(\.thunderQueue).count, 3, "and goes once")
+        XCTAssertEqual(QueuedThunder.strike(km: 10, strength: 1).delay, 12, "capped at 12 s")
+
+        // A storm overhead: twenty rolls inside a tenth of a second, sixteen go, the newest.
+        let crowd = makeModel()
+        crowd.updateAmbience(storm, at: 5)
+        engine.scenes.removeAll()
+        for i in 0..<20 {
+            var s = storm; s.thunderQueue = [QueuedThunder(delay: 10 + Double(i), strength: 0.5)]
+            crowd.updateAmbience(s, at: 5.001 + 0.001 * Double(i))
+        }
+        crowd.updateAmbience(storm, at: 5.2)
+        let rolls = engine.scenes.flatMap(\.thunderQueue)
+        XCTAssertEqual(rolls.count, AppModel.thunderQueueLimit)
+        XCTAssertEqual(rolls.first?.delay ?? -1, 14 - (5.2 - 5.005), accuracy: 1e-9, "the four oldest gave way")
+
+        // The world changes before it is sent: its thunder stays behind.
+        let gone = makeModel()
+        gone.updateAmbience(storm, at: 7)
+        engine.scenes.removeAll()
+        gone.updateAmbience(one, at: 7.01)
+        let lake = AmbienceScene(levels: [.water: 0.8, .crickets: 0.6])
+        gone.updateAmbience(lake, at: 7.05)
+        gone.updateAmbience(lake, at: 7.2)
+        XCTAssertFalse(engine.scenes.isEmpty)
+        XCTAssertTrue(engine.scenes.allSatisfy { $0.thunderQueue.isEmpty }, "the storm's thunder never rolls by the lake")
+
+        // A world switch, even to a world with thunder of its own: the engine's queue and the throttle's are cleared.
+        let switched = makeModel()
+        switched.updateAmbience(storm, at: 9)
+        engine.scenes.removeAll()
+        switched.updateAmbience(one, at: 9.01)
+        let clears = engine.thunderClears
+        switched.setTheme(MoonlitLakeModel.id)
+        XCTAssertEqual(engine.thunderClears, clears + 1, "the engine drops what is on its way")
+        switched.updateAmbience(storm, at: 9.2)
+        XCTAssertTrue(engine.scenes.allSatisfy { $0.thunderQueue.isEmpty }, "and nothing held arrives in the next world")
+        switched.setTheme(MoonlitLakeModel.id)
+        XCTAssertEqual(engine.thunderClears, clears + 1, "the same world again changes nothing")
+
+        // A panic drops what the throttle holds (the engine's own panic drops what is on its way).
+        let panicked = makeModel()
+        panicked.updateAmbience(storm, at: 11)
+        engine.scenes.removeAll()
+        panicked.updateAmbience(one, at: 11.01)
+        panicked.panic()
+        panicked.updateAmbience(storm, at: 11.2)
+        XCTAssertTrue(engine.scenes.allSatisfy { $0.thunderQueue.isEmpty })
     }
 
     func testAmbienceSettingsPersist() async {

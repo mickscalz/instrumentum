@@ -18,7 +18,9 @@ const float kGain[ISD_AMB_COUNT] = {
     /* ice groan */ 0.10f, /* waterfall */ 0.134f, /* lapping */ 0.72f, /* boat */ 0.24f,
     /* temple bell */ 0.143f, /* paper screens */ 0.216f, /* water-knocker */ 0.055f, /* warbler */ 0.107f,
     /* sonar */ 0.0845f, /* hull creak */ 0.066f, /* whale */ 0.0663f, /* bubbles */ 0.083f, /* shrimp */ 0.223f, /* fish chorus */ 0.182f,
-    // Storms (Sets 17 & 18): twelve ids reserved in the header, no source and no gain yet (zero-filled; Task 8 sets them).
+    /* grass wind */ 0.54f, /* hail on tin */ 0.109f, /* birds flee */ 0.149f, /* thunder roll */ 0.12f, /* inflow roar */ 0.169f,
+    /* rain on dust */ 0.264f, /* dry cicadas */ 0.242f, /* windmill */ 0.134f, /* cattle grid */ 0.114f, /* dust ticks */ 0.6f,
+    /* shimmer hum */ 0.0112f, /* far truck */ 0.0886f,
 };
 
 /// sin(2πx) for x in cycles (any value). 9th-order odd polynomial after folding: error ≈ 2e-6.
@@ -2261,6 +2263,878 @@ public:
     }
 };
 
+// ================================================================ Storms (Sets 17 & 18): the storm and plains families
+
+/// Pareto amplitudes (most small, a few big): at least 1, a tail of `alpha`, capped.
+inline float pareto(FastRandom &rng, float alpha, float cap) { return std::min(cap, std::exp(expRand(rng) / alpha)); }
+
+/// Glides a pitch toward its target in equal steps of pitch, about 63% of the way in `seconds` (a wind's or the air's
+/// note drifts to a new key; it never jumps).
+inline void glidePitch(float &hz, float target, float dt, float seconds) {
+    if (!(hz > 0.f)) { hz = target; return; }
+    hz *= std::exp2(std::log2(target / hz) * (1.f - std::exp(-dt / seconds)));
+}
+
+/// The inflow roar's resonance: a fifth (equal-tempered) below the key's tonic in A2–G♯3, so 73.4–138.6 Hz.
+inline float roarHz(int root) { return 2.f * bellTonicHz(root) * 0.66741992708f; }
+/// The heat shimmer's hum: the key's tonic in A5–G♯6 (the sonar's octave), with its fifth and octave above it.
+inline float shimmerHz(int root) { return 16.f * bellTonicHz(root); }
+
+// ---------------------------------------------------------------- Grass wind: a field of dry grass in the wind
+/// The level is the wind: the stubble hisses brighter and busier as it rises, gust waves sweep across the field from one
+/// side to the other, and seed heads tick in the gusts.
+class GrassWind final : public AmbienceSource {
+    FastRandom rng;
+    Pink pinkL, pinkR, pinkW, pinkB;
+    SVF hissL, hissR, hissW, topL, topR, body;
+    Wander gust;
+    struct Wave { bool on = false; float t = 0, dur = 2, from = -1, to = 1, amp = 1; } waves[3];
+    Burst ticks[6];
+    int nextTick = 0;
+    float toWave = 2, toTick = 1, a = 0.55f, w = 0, wl = 0.7f, wr = 0.7f;
+
+public:
+    explicit GrassWind(uint64_t seed) : rng(seed) { direct = 1.f; send = 0.3f; }
+    void wake(const AmbienceContext &) override {
+        for (auto &q : waves) q.on = false;
+        toWave = 0.5f + 2.f * rng.uniform();
+    }
+    void render(float *l, float *r, int n, const AmbienceContext &c) override {
+        const float fsr = c.sr, dt = (float)n / fsr, wind = level;
+        const float g = gust.next(rng, dt, 3.f);
+        if ((toWave -= dt) <= 0) {
+            for (auto &q : waves) if (!q.on) {
+                const float side = rng.uniform() < 0.5f ? -1.f : 1.f;
+                q.on = true; q.t = 0; q.dur = 1.6f + 2.2f * rng.uniform(); q.amp = 0.5f + 0.5f * rng.uniform();
+                q.from = side * (0.6f + 0.35f * rng.uniform()); q.to = -side * (0.6f + 0.35f * rng.uniform());
+                break;
+            }
+            toWave = (2.5f + 5.f * rng.uniform()) * (1.4f - 0.6f * wind) / c.density;
+        }
+        float wave = 0, pan = 0;
+        for (auto &q : waves) {
+            if (!q.on) continue;
+            q.t += dt;
+            const float u = q.t / q.dur;
+            if (u >= 1.f) { q.on = false; continue; }
+            const float e = q.amp * (0.5f - 0.5f * std::cos(kTwoPi * u));
+            wave += e; pan += e * (q.from + (q.to - q.from) * u);
+        }
+        if (wave > 0) pan /= wave;
+        wave = std::min(1.2f, wave);
+        // Brighter in a stronger wind and in each gust.
+        const float centre = 1500.f + 2600.f * (0.45f + 0.55f * wind) * (0.75f + 0.25f * g + 0.3f * wave);
+        hissL.set(centre, 0.8f, fsr); hissR.set(centre * 1.07f, 0.8f, fsr); hissW.set(centre * 1.15f, 0.9f, fsr);
+        topL.set(9000.f, 0.7f, fsr); topR.set(9000.f, 0.7f, fsr); body.set(420.f, 0.7f, fsr);
+        float pl, pr;
+        panGains(pan, pl, pr);
+        const float inv = 1.f / (float)n, a1 = 0.55f + 0.3f * g, w1 = 0.9f * wave;
+        const float da = (a1 - a) * inv, dw = (w1 - w) * inv, dl = (pl - wl) * inv, dr = (pr - wr) * inv;
+        // Seed heads ticking, more of them in the gusts.
+        const float tickRate = (6.f + 50.f * wind * (0.3f + g + wave)) * c.density;
+        toTick -= tickRate * dt;
+        for (int k = 0; k < 3 && toTick <= 0.f; ++k) {
+            ticks[nextTick].start(4000.f + 4000.f * rng.uniform(), 2.f, 0.0006f + 0.0012f * rng.uniform(),
+                                  0.5f * pareto(rng, 2.5f, 3.f), 0.85f * rng.bipolar(), fsr);
+            nextTick = (nextTick + 1) % 6;
+            toTick += expRand(rng);
+        }
+        for (int t = 0; t < n; ++t) {
+            a += da; w += dw; wl += dl; wr += dr;
+            const float xb = 0.18f * body.low(pinkB.next(rng.bipolar()));
+            const float xw = w * hissW.band(pinkW.next(rng.bipolar()));
+            float yl = a * hissL.band(pinkL.next(rng.bipolar())) + xw * wl + xb;
+            float yr = a * hissR.band(pinkR.next(rng.bipolar())) + xw * wr + xb;
+            for (auto &k : ticks) if (k.on()) { const float x = k.next(rng); yl += x * k.gl; yr += x * k.gr; }
+            l[t] += topL.low(yl); r[t] += topR.low(yr);
+        }
+    }
+};
+
+// ---------------------------------------------------------------- Hail on tin: a far shed's roof in a hailstorm
+/// The level is the hail: stones strike the corrugated iron as a Poisson rain of impacts (700 a second at 1, rising with
+/// the level's 1.5 power), each ringing the roof's own panel modes (seven on each half of the roof, fixed for the shed,
+/// 1.5–4 kHz, ringing 30–90 ms) as strongly as where it lands lets them; the rare big stone (a Pareto tail) knocks the
+/// frame. Mostly dry, so the roof keeps its own tuning.
+class HailTin final : public AmbienceSource {
+    FastRandom rng;
+    static constexpr int kModes = 7;
+    static constexpr float kRate = 700.f, kMostRate = 1000.f;
+    struct Mode { float re = 0, im = 0, cr = 1, ci = 0; };
+    Mode roof[2][kModes];
+    float weight[2][kModes] = {};
+    float sideGl[2] = {0.7f, 0.7f}, sideGr[2] = {0.7f, 0.7f};
+    Partial knock;
+    SVF topL, topR;
+    float toHit = 1;
+
+    void hit(float sr) {
+        const int s = rng.uniform() < 0.5f ? 0 : 1;
+        const float a = 0.25f * pareto(rng, 2.3f, 4.f);
+        for (int k = 0; k < kModes; ++k) roof[s][k].im += a * weight[s][k] * (0.25f + 0.75f * rng.uniform());   // where it lands
+        // Now and then a big stone knocks the frame (about one hit in 200).
+        if (a >= 0.9f && rng.uniform() < 0.25f && knock.energy() < 1e-4f) knock.startSine(170.f + 90.f * rng.uniform(), 0.12f, 0.12f * a, sr);
+        if (events < 0x7fffffff) ++events;
+    }
+
+public:
+    HailTin(uint64_t seed, float sr) : rng(seed) {
+        direct = 1.f; send = 0.1f;
+        for (int s = 0; s < 2; ++s)
+            for (int k = 0; k < kModes; ++k) {
+                // Spread over the band (one mode in each seventh of 1.5–4 kHz, on a log scale), each its own decay.
+                const float u = ((float)k + 0.15f + 0.7f * rng.uniform()) / (float)kModes;
+                const float hz = 1500.f * std::exp2(1.415f * u), t60 = 0.03f + 0.06f * rng.uniform();
+                const float rr = std::pow(10.f, -3.f / (t60 * sr)), wv = kTwoPi * hz / sr;
+                roof[s][k].cr = rr * std::cos(wv); roof[s][k].ci = rr * std::sin(wv);
+                weight[s][k] = 0.5f + 0.5f * rng.uniform();
+            }
+        panGains(0.05f, sideGl[0], sideGr[0]); panGains(0.45f, sideGl[1], sideGr[1]);   // the shed, off to the right
+        topL.set(7000.f, 0.7f, sr); topR.set(7000.f, 0.7f, sr);
+    }
+    void wake(const AmbienceContext &) override {
+        for (auto &side : roof) for (auto &m : side) m.re = m.im = 0;
+        toHit = expRand(rng);
+    }
+    void render(float *l, float *r, int n, const AmbienceContext &c) override {
+        const float step = std::min(kMostRate, kRate * level * std::sqrt(level) * c.density) / c.sr;
+        for (int i = 0; i < n; ++i) {
+            if ((toHit -= step) <= 0.f) { hit(c.sr); toHit += expRand(rng); }
+            float y[2] = {0, 0};
+            for (int s = 0; s < 2; ++s)
+                for (auto &m : roof[s]) {
+                    const float nr = m.re * m.cr - m.im * m.ci, ni = m.re * m.ci + m.im * m.cr;
+                    m.re = nr; m.im = ni; y[s] += ni;
+                }
+            const float k = knock.mag > 0.f ? knock.next() : 0.f;
+            if (knock.mag > 0.f && knock.energy() < 1e-10f) knock.mag = 0.f;
+            l[i] += topL.low(y[0] * sideGl[0] + y[1] * sideGl[1] + 0.6f * k);
+            r[i] += topR.low(y[0] * sideGr[0] + y[1] * sideGr[1] + 0.8f * k);
+        }
+    }
+};
+
+// ---------------------------------------------------------------- Birds fleeing the storm
+/// A flock flushed out of the stubble ahead of the storm: a burst of wingbeats, then a scatter of harsh alarm calls
+/// (galah-like screeches near 2–3.5 kHz, rough with a fast flutter), one at a time, each farther round to one side and
+/// fainter and duller than the last, so the calls sweep away from the storm (straight ahead) in azimuth. A flight as the
+/// level comes up (the world raises it on its first big moment), then another every 12–30 s.
+class BirdsFlee final : public AmbienceSource {
+    FastRandom rng;
+    static constexpr int kMost = 13;
+    struct Call { float at = 0, dur = 0.1f, f0 = 2400, f1 = 2800, depth = 0.08f, amp = 1, pan = 0, cut = 6000; };
+    Call calls[kMost];
+    int count = 0, cur = -1;
+    float t = -1, toFlight = 1, ph = 0, fm = 0, fmHz = 90, wingHz = 12, wingDur = 0.8f, gl = 0.7f, gr = 0.7f;
+    float wingGl = 0.7f, wingGr = 0.7f;
+    int flights = 0;   // since the level came up: the field empties, so each flight comes later than the last
+
+    float flightInterval(const AmbienceContext &c) { return (15.f + 30.f * rng.uniform()) * (1.f + 0.5f * (float)std::min(flights, 6)) / c.density; }
+    SVF breath, far, wings;
+
+    void flight() {
+        count = 8 + (int)(rng.uniform() * 5.99f);
+        const float side = rng.uniform() < 0.5f ? -1.f : 1.f, p0 = 0.06f + 0.12f * rng.uniform(), p1 = 0.82f + 0.15f * rng.uniform();
+        const float span = 3.f + 2.5f * rng.uniform();
+        float at = 0.3f + 0.2f * rng.uniform();
+        for (int i = 0; i < count; ++i) {
+            Call &q = calls[i];
+            const float frac = (float)i / (float)(count - 1);
+            q.at = at; q.dur = 0.09f + 0.12f * rng.uniform();
+            q.pan = side * (p0 + (p1 - p0) * std::pow(frac, 0.85f));
+            q.f0 = 2000.f + 900.f * rng.uniform(); q.f1 = q.f0 * (1.12f + 0.15f * rng.uniform()); q.depth = 0.05f + 0.06f * rng.uniform();
+            q.amp = (1.f - 0.62f * frac) * (0.75f + 0.25f * rng.uniform());
+            q.cut = 7500.f - 4300.f * frac;
+            at += q.dur + std::max(0.07f, span / (float)count - q.dur) * (0.6f + 0.8f * rng.uniform());
+        }
+        t = 0; cur = -1; wingHz = 10.f + 5.f * rng.uniform(); wingDur = 0.6f + 0.4f * rng.uniform(); ++flights;
+        panGains(0.15f * rng.bipolar(), wingGl, wingGr);
+        fmHz = 70.f + 40.f * rng.uniform();
+    }
+
+public:
+    // Mostly direct: an open field gives little back, and each call is heard where the bird is.
+    BirdsFlee(uint64_t seed, float sr) : rng(seed) { direct = 1.f; send = 0.12f; wings.set(900.f, 0.8f, sr); }
+    void wake(const AmbienceContext &) override { t = -1; flights = 0; toFlight = 0.15f + 0.5f * rng.uniform(); }
+    void triggerNow(const AmbienceContext &c) override { flight(); toFlight = flightInterval(c); }
+    void render(float *l, float *r, int n, const AmbienceContext &c) override {
+        const float fsr = c.sr, invSr = 1.f / fsr;
+        if (t < 0) {
+            if ((toFlight -= (float)n * invSr) > 0) return;
+            flight();
+            toFlight = flightInterval(c);
+        }
+        for (int i = 0; i < n && t >= 0; ++i) {
+            float yl = 0, yr = 0;
+            if (t < wingDur) {   // the flock lifting: wingbeats, fading as it climbs away
+                const float e = (1.f - t / wingDur), beat = 0.5f - 0.5f * std::cos(kTwoPi * wingHz * t);
+                const float x = 0.5f * e * e * beat * wings.band(rng.bipolar());
+                yl += x * wingGl; yr += x * wingGr;
+            }
+            const int next = cur + 1;
+            if (next < count && t >= calls[next].at) {   // the next call: where it is, how far off
+                cur = next;
+                const Call &q = calls[cur];
+                far.set(q.cut, 0.7f, fsr); breath.set(2.f * q.f0, 1.5f, fsr); panGains(q.pan, gl, gr);
+                ph = 0; fm = 0;
+                ++events;
+            }
+            if (cur >= 0 && cur < count) {
+                const Call &q = calls[cur];
+                const float u = t - q.at;
+                if (u < q.dur) {
+                    const float x = u / q.dur;
+                    const float env = std::min(1.f, u / 0.008f) * std::min(1.f, (q.dur - u) / 0.03f);
+                    const float arch = x < 0.35f ? x / 0.35f : 1.f - 0.6f * (x - 0.35f) / 0.65f;   // up, then sagging
+                    advanceTone(fm, fmHz * invSr);
+                    const float f = (q.f0 + (q.f1 - q.f0) * arch) * (1.f + q.depth * sin2pi(fm));
+                    advanceTone(ph, f * invSr);
+                    const float tone = sin2pi(ph) + 0.55f * sin2pi(2.f * ph) + 0.3f * sin2pi(3.f * ph) + 0.15f * sin2pi(4.f * ph);
+                    const float y = far.low(q.amp * env * (tone + 0.35f * breath.band(rng.bipolar())));
+                    yl += y * gl; yr += y * gr;
+                } else {
+                    const float y = far.low(0.f);
+                    yl += y * gl; yr += y * gr;
+                }
+            }
+            l[i] += yl; r[i] += yr;
+            t += invSr;
+            if (cur == count - 1 && t > calls[cur].at + calls[cur].dur + 0.05f) t = -1;
+        }
+    }
+};
+
+// ---------------------------------------------------------------- Thunder roll: thunder that arrives late
+/// A strike's thunder (spec §3, §8.3), from the queue: the roll starts when its delay runs out (to the sample), from the
+/// channel's arrivals: the nearest part first (a sharp onset, a ripping crack when it is close, a boom under it), then
+/// the rest of the channel over 2–8 s (the farther, the longer, the softer and the lower: front-loaded when close, a
+/// slow swell when far), nearly all of it below 150 Hz, in no key. It makes no sound of its own: every roll is a strike's
+/// (picture first, sound late). The queue holds 16 (a 17th drops the oldest) and is cleared as the roll goes silent.
+class ThunderRoll final : public AmbienceSource {
+    FastRandom rng;
+    static constexpr int kQueue = 16, kRolls = 6, kArrivals = 20, kBooms = 3;
+    struct Pending { bool on = false; int left = 0; float km = 1, strength = 1; uint32_t serial = 0; } queue[kQueue];
+    struct Arrival { float at = 0, amp = 0, rise = 0.01f, tau = 0.3f; };
+    struct Roll {
+        bool on = false;
+        uint32_t serial = 0;
+        int wait = 0, count = 0, booms = 0, nextBoom = 0;
+        float t = 0, end = 3, gain = 1, env = 0, fade = 1, fadeStep = 0, gl = 0.7f, gr = 0.7f;
+        float crack = 0, crackDecay = 1, cut = 150;
+        Arrival arr[kArrivals];
+        Partial boom[kBooms];
+        float boomAt[kBooms] = {}, boomHz[kBooms] = {}, boomT60[kBooms] = {}, boomAmp[kBooms] = {};
+        Brown brownL, brownR;
+        SVF lowL[2], lowR[2], hpL[2], hpR[2], crackF, crackTop;
+    } rolls[kRolls];
+    uint32_t serial = 0, rollSerial = 0;
+    // The rumble's scale: about 0.25 RMS at an envelope of 1 (the brown noise, its two low-passes and the 25 Hz high-pass).
+    static constexpr float kRumble = 18.f;
+
+    static float shape(const Arrival &a, float t) {
+        const float u = t - a.at;
+        if (u <= 0.f) return 0.f;
+        if (u < a.rise) { const float s = u / a.rise; return a.amp * s * s * (3.f - 2.f * s); }
+        return a.amp * std::exp(-(u - a.rise) / a.tau);
+    }
+    static float envelope(const Roll &r, float t) {
+        float e = 0;
+        for (int i = 0; i < r.count; ++i) e += shape(r.arr[i], t);
+        return e;
+    }
+
+    void start(const Pending &p, int offset, float sr) {
+        Roll *r = nullptr;
+        for (auto &x : rolls) if (!x.on) { r = &x; break; }
+        if (!r) {   // every voice rolling (a storm overhead): the quietest gives way
+            r = &rolls[0];
+            for (auto &x : rolls) if (x.env * x.gain < r->env * r->gain) r = &x;
+        }
+        const float km = std::clamp(p.km, 0.f, 4.f), s = p.strength, far = km / 4.f;
+        r->on = true; r->serial = ++rollSerial; r->wait = offset; r->t = 0; r->env = 0; r->fade = 1; r->fadeStep = 0;
+        r->gain = (0.35f + 0.65f * s) / (1.f + 0.9f * km);   // 13 dB down at 4 km
+        const float dur = std::clamp(2.5f + 1.05f * km + 0.6f * s + 1.2f * rng.uniform(), 2.5f, 7.6f);
+        const float span = std::max(0.5f, dur - 1.6f - 0.3f * far);   // the arrivals; the last of them ring on to `dur`
+        r->count = std::min(kArrivals, 6 + (int)(dur * 1.5f + 3.f * s * rng.uniform()));
+        r->arr[0] = {0.f, 1.f - 0.3f * far, 0.006f + 0.02f * far, 0.25f + 0.2f * rng.uniform() + 0.2f * far};
+        float last = r->arr[0].rise + 5.f * r->arr[0].tau;
+        for (int i = 1; i < r->count; ++i) {
+            // Front-loaded when close (most of the channel is near), evenly spread when far.
+            const float u = rng.uniform(), x = std::pow(u, 1.5f - 0.5f * far);
+            Arrival &a = r->arr[i];
+            a.at = span * x;
+            // Close, the clap is the loudest and the rest roll away under it; far, the roll swells and fades.
+            const float profile = (1.f - far) * 0.6f * std::exp(-2.2f * x) + far * (0.45f + 0.55f * std::sin(kPi * x));
+            a.amp = (0.25f + 0.55f * rng.uniform()) * profile;
+            a.rise = 0.015f + 0.06f * rng.uniform() + 0.12f * far;
+            a.tau = 0.15f + 0.3f * rng.uniform() + 0.35f * far;
+            last = std::max(last, a.at + a.rise + 5.f * a.tau);
+        }
+        // However the arrivals overlap, the roll at its loudest is the strike's own loudness (the distance sets it).
+        float most = 0;
+        for (int k = 0; k <= 96; ++k) most = std::max(most, envelope(*r, (float)k * (span + 0.4f) / 96.f));
+        if (most > 1.f) for (int i = 0; i < r->count; ++i) r->arr[i].amp /= most;
+        // Booms: the first arrival's, then the two biggest after it.
+        r->booms = 0; r->nextBoom = 0;
+        r->boomAt[0] = 0.f; r->boomHz[0] = 40.f + 18.f * rng.uniform(); r->boomT60[0] = 0.7f + 0.5f * rng.uniform();
+        r->boomAmp[0] = 0.55f * (1.f - 0.4f * far);
+        r->booms = 1;
+        int took = -1;
+        for (int pass = 0; pass < 2; ++pass) {
+            int best = -1;
+            for (int i = 1; i < r->count; ++i)
+                if (i != took && r->arr[i].amp > 0.45f && (best < 0 || r->arr[i].amp > r->arr[best].amp)) best = i;
+            took = best;
+            if (best < 0) break;
+            r->boomAt[r->booms] = r->arr[best].at + 0.5f * r->arr[best].rise; r->boomHz[r->booms] = 36.f + 20.f * rng.uniform();
+            r->boomT60[r->booms] = 0.6f + 0.6f * rng.uniform(); r->boomAmp[r->booms] = 0.45f * r->arr[best].amp;
+            ++r->booms;
+        }
+        // Keep the booms in time order, so each starts as the roll's clock passes it.
+        for (int a = 1; a < r->booms; ++a)
+            for (int b = a; b > 0 && r->boomAt[b] < r->boomAt[b - 1]; --b) {
+                std::swap(r->boomAt[b], r->boomAt[b - 1]); std::swap(r->boomHz[b], r->boomHz[b - 1]);
+                std::swap(r->boomT60[b], r->boomT60[b - 1]); std::swap(r->boomAmp[b], r->boomAmp[b - 1]);
+            }
+        for (auto &b : r->boom) b.mag = 0;
+        r->end = last + 1.f;
+        // The farther, the lower: the air takes the top off the rumble (170 Hz close, 90 Hz at 4 km).
+        r->cut = 170.f - 20.f * km;
+        for (int k = 0; k < 2; ++k) { r->lowL[k].clear(); r->lowR[k].clear(); r->lowL[k].set(r->cut, 0.7f, sr); r->lowR[k].set(r->cut * 1.04f, 0.7f, sr); }
+        // Nothing below 28 Hz: what no speaker plays would only take headroom (24 dB an octave).
+        for (int k = 0; k < 2; ++k) { r->hpL[k].clear(); r->hpR[k].clear(); r->hpL[k].set(28.f, 0.7f, sr); r->hpR[k].set(28.f, 0.7f, sr); }
+        r->brownL.y = r->brownR.y = 0;
+        // A close one rips first: a crack above the rumble, gone in a tenth of a second.
+        r->crack = km < 1.5f ? 0.9f * (1.f - km / 1.5f) * (0.4f + 0.6f * s) : 0.f;
+        r->crackDecay = std::exp(-1.f / ((0.07f + 0.05f * rng.uniform()) * sr));
+        r->crackF.clear(); r->crackF.set(1100.f, 0.6f, sr); r->crackTop.clear(); r->crackTop.set(3500.f, 0.7f, sr);
+        panGains(0.3f * rng.bipolar(), r->gl, r->gr);
+        if (events < 0x7fffffff) ++events;
+    }
+
+public:
+    explicit ThunderRoll(uint64_t seed) : rng(seed) { direct = 1.f; send = 0.6f; }
+    /// A roll on its way: it starts `delaySeconds` (0…12) from the start of the next render, `strength` 0…1, from a
+    /// strike delaySeconds / 3 km off. With 16 waiting, the oldest gives way.
+    void enqueue(float delaySeconds, float strength, float sr) {
+        Pending *p = nullptr;
+        for (auto &q : queue) if (!q.on) { p = &q; break; }
+        if (!p) { p = &queue[0]; for (auto &q : queue) if (q.serial < p->serial) p = &q; }
+        const float d = std::clamp(delaySeconds, 0.f, 12.f);
+        p->on = true; p->left = (int)std::lround(d * sr); p->km = d / 3.f; p->strength = clamp01(strength); p->serial = ++serial;
+    }
+    void clearQueue() { for (auto &q : queue) q.on = false; }
+    /// Panic: nothing more on its way, and everything rolling gone within 40 ms.
+    void silence(float sr) {
+        clearQueue();
+        for (auto &r : rolls) if (r.on) r.fadeStep = 1.f / (0.04f * sr);
+    }
+    void wake(const AmbienceContext &) override { clearQueue(); for (auto &r : rolls) r.on = false; }
+    void render(float *l, float *r, int n, const AmbienceContext &c) override {
+        const float fsr = c.sr, invSr = 1.f / fsr;
+        for (auto &q : queue) {
+            if (!q.on) continue;
+            if (q.left < n) { start(q, q.left, fsr); q.on = false; }
+            else q.left -= n;
+        }
+        for (auto &v : rolls) {
+            if (!v.on) continue;
+            const int from = std::min(v.wait, n);
+            v.wait -= from;
+            if (from >= n) continue;
+            const float t1 = v.t + (float)(n - from) * invSr, e1 = envelope(v, t1);
+            const float de = (e1 - v.env) / (float)(n - from);
+            while (v.nextBoom < v.booms && v.boomAt[v.nextBoom] <= t1) {
+                const int b = v.nextBoom++;
+                v.boom[b].startSine(v.boomHz[b], v.boomT60[b], v.boomAmp[b], fsr);
+            }
+            for (int i = from; i < n; ++i) {
+                v.env += de;
+                const float rl = v.hpL[1].high(v.hpL[0].high(v.lowL[1].low(v.lowL[0].low(v.brownL.next(rng.bipolar())))));
+                const float rr = v.hpR[1].high(v.hpR[0].high(v.lowR[1].low(v.lowR[0].low(v.brownR.next(rng.bipolar())))));
+                float b = 0;
+                for (int k = 0; k < v.booms; ++k) if (v.boom[k].mag > 0.f) b += v.boom[k].next();
+                float ck = 0;
+                if (v.crack > 1e-4f) { ck = v.crack * v.crackTop.low(v.crackF.band(rng.bipolar())); v.crack *= v.crackDecay; }
+                const float g = v.gain * v.fade, rumble = kRumble * v.env;
+                l[i] += g * (rumble * rl + (b + ck) * v.gl);
+                r[i] += g * (rumble * rr + (b + ck) * v.gr);
+                if (v.fadeStep > 0.f && (v.fade -= v.fadeStep) <= 0.f) { v.on = false; break; }
+            }
+            v.t = t1;
+            if (v.t > v.end) v.on = false;
+        }
+    }
+};
+
+// ---------------------------------------------------------------- Inflow roar: the storm drawing the air in
+/// A low wind body (brown noise under a low-pass that opens as the level, the storm's energy, rises) with a resonant
+/// throat a fifth below the key's tonic (in A2–G♯3: a narrow band of the wind itself, Q 45, and a fainter one an octave
+/// up), so the roar sits under the music instead of against it; a new key glides in over about 1.5 s. All dry: the
+/// shared room's modulated tail would pull it off the key.
+class InflowRoar final : public AmbienceSource {
+    FastRandom rng;
+    Brown brownL, brownR;
+    SVF bodyL, bodyR, lowCutL, lowCutR, throatL, throatR, coreL, coreR, octL, octR;
+    Wander swell;
+    float hz = 0, a = 0.85f, applied = -1, bodyCut = -1;
+    // The throat: a breathy band (Q 45) round a narrow core (Q 400, a quarter of a hertz wide) that carries the pitch,
+    // breathing slowly in level, like wind over a pipe.
+    static constexpr float kQ = 45.f, kCoreQ = 400.f;
+
+public:
+    InflowRoar(uint64_t seed, float sr) : rng(seed) {
+        direct = 1.f; send = 0.f;
+        lowCutL.set(38.f, 0.7f, sr); lowCutR.set(38.f, 0.7f, sr);   // nothing a speaker can't play
+    }
+    void render(float *l, float *r, int n, const AmbienceContext &c) override {
+        const float fsr = c.sr, dt = (float)n / fsr;
+        glidePitch(hz, roarHz(c.keyRoot), dt, 1.5f);
+        if (std::fabs(hz - applied) > 1e-4f * hz) {
+            applied = hz;
+            throatL.set(hz, kQ, fsr); throatR.set(hz, kQ, fsr); coreL.set(hz, kCoreQ, fsr); coreR.set(hz, kCoreQ, fsr);
+            octL.set(2.f * hz, kQ, fsr); octR.set(2.f * hz, kQ, fsr);
+        }
+        const float cut = 140.f + 220.f * level;
+        if (std::fabs(cut - bodyCut) > 0.5f) { bodyCut = cut; bodyL.set(cut, 0.6f, fsr); bodyR.set(cut * 1.05f, 0.6f, fsr); }
+        const float a1 = 0.7f + 0.3f * swell.next(rng, dt, 5.f), da = (a1 - a) / (float)n;
+        for (int t = 0; t < n; ++t) {
+            a += da;
+            const float bl = lowCutL.high(bodyL.low(brownL.next(rng.bipolar()))), br = lowCutR.high(bodyR.low(brownR.next(rng.bipolar())));
+            const float tl = throatL.band(rng.bipolar()) + 5.f * coreL.band(rng.bipolar()) + 0.3f * octL.band(rng.bipolar());
+            const float tr = throatR.band(rng.bipolar()) + 5.f * coreR.band(rng.bipolar()) + 0.3f * octR.band(rng.bipolar());
+            l[t] += a * (4.f * bl + 20.f * tl);
+            r[t] += a * (4.f * br + 20.f * tr);
+        }
+    }
+};
+
+// ---------------------------------------------------------------- Rain on dust: the smell of rain, then its first drops
+/// Petrichor: a soft hiss (the rain curtain still far off, 1.1 kHz up, brighter as it nears), heard from the first of
+/// the level; the first fat drops patter on the dust only past 0.6 (16 a second at 1), each a dull thud with a tick of
+/// grit, so the hiss always comes before the rain, and virga's petrichor (0.5) never drops a drop.
+class RainOnDust final : public AmbienceSource {
+    FastRandom rng;
+    Pink pinkL, pinkR;
+    SVF hpL, hpR, lpL, lpR;
+    Wander swell;
+    struct Drop { Burst thud, grit; } drops[8];
+    int nextDrop = 0;
+    float a = 0.9f, toDrop = 1, lpApplied = -1;
+
+public:
+    RainOnDust(uint64_t seed, float sr) : rng(seed) { direct = 1.f; send = 0.35f; hpL.set(1100.f, 0.7f, sr); hpR.set(1150.f, 0.7f, sr); }
+    void wake(const AmbienceContext &) override { toDrop = expRand(rng); }
+    void render(float *l, float *r, int n, const AmbienceContext &c) override {
+        const float fsr = c.sr, dt = (float)n / fsr;
+        const float lp = 3500.f + 3500.f * level;
+        if (std::fabs(lp - lpApplied) > 5.f) { lpApplied = lp; lpL.set(lp, 0.7f, fsr); lpR.set(lp * 1.04f, 0.7f, fsr); }
+        const float a1 = 0.8f + 0.2f * swell.next(rng, dt, 3.f), da = (a1 - a) / (float)n;
+        const float perSecond = 16.f * std::max(0.f, level - 0.6f) / 0.4f * c.density;
+        toDrop -= perSecond * dt;
+        for (int k = 0; k < 3 && toDrop <= 0.f; ++k) {
+            Drop &d = drops[nextDrop]; nextDrop = (nextDrop + 1) & 7;
+            const float amp = 0.6f * pareto(rng, 3.f, 3.f), pan = 0.8f * rng.bipolar();
+            d.thud.start(380.f + 620.f * rng.uniform(), 1.3f, 0.012f + 0.013f * rng.uniform(), amp, pan, fsr);
+            d.grit.start(3000.f + 2500.f * rng.uniform(), 2.f, 0.0015f, 0.3f * amp, pan, fsr);
+            toDrop += expRand(rng);
+            ++events;
+        }
+        for (int t = 0; t < n; ++t) {
+            a += da;
+            float yl = a * lpL.low(hpL.high(pinkL.next(rng.bipolar()))), yr = a * lpR.low(hpR.high(pinkR.next(rng.bipolar())));
+            for (auto &d : drops) {
+                if (d.thud.on()) { const float x = d.thud.next(rng); yl += x * d.thud.gl; yr += x * d.thud.gr; }
+                if (d.grit.on()) { const float x = d.grit.next(rng); yl += x * d.grit.gl; yr += x * d.grit.gr; }
+            }
+            l[t] += yl; r[t] += yr;
+        }
+    }
+};
+
+// ---------------------------------------------------------------- Dry cicadas: the dusk chorus on the plain
+/// Six singers, each a train of tymbal clicks (140–260 a second) ringing its body's resonance (4.2–6.8 kHz), in phrases
+/// that swell, hold for 3–12 s and fade. A drop in the level to nothing (the world hushing them before a close strike)
+/// stops the whole chorus dead, together, within 50 ms, as a startled chorus does; when the level comes back they start
+/// again one by one.
+class DryCicadas final : public AmbienceSource {
+    FastRandom rng;
+    static constexpr int kSingers = 6;
+    struct Singer {
+        SVF res;
+        float rate = 200, ph = 0, gl = 0.7f, gr = 0.7f, gain = 1, env = 0, t = 0, rise = 0.8f, hold = 6, fall = 1, rest = 2;
+        int stage = 0;   // 0 resting, 1 swelling, 2 holding, 3 fading
+    } singers[kSingers];
+    float gate = 1;
+    bool hushed = false;
+
+    void restAll(float most) {
+        for (auto &s : singers) { s.stage = 0; s.t = 0; s.env = 0; s.rest = 0.2f + most * rng.uniform(); }
+    }
+
+public:
+    DryCicadas(uint64_t seed, float sr) : rng(seed) {
+        direct = 1.f; send = 0.15f;
+        for (auto &s : singers) {
+            s.res.set(4200.f + 2600.f * rng.uniform(), 18.f + 8.f * rng.uniform(), sr);   // the body rings 1–2 ms a click
+            s.rate = 140.f + 120.f * rng.uniform();
+            s.gain = 0.6f + 0.4f * rng.uniform();
+            panGains(0.9f * rng.bipolar(), s.gl, s.gr);
+        }
+    }
+    void wake(const AmbienceContext &) override { hushed = false; gate = 1; restAll(1.5f); }
+    void render(float *l, float *r, int n, const AmbienceContext &c) override {
+        const float fsr = c.sr, dt = (float)n / fsr, invSr = 1.f / fsr;
+        const bool hush = levelTarget <= 0.02f && level > 0.1f;
+        if (hush && !hushed) hushed = true;
+        else if (hushed && levelTarget > 0.02f) { hushed = false; gate = 1; restAll(5.f); }   // back, one by one
+        const float g1 = hushed ? std::max(0.f, gate - dt / 0.04f) : 1.f, dg = (g1 - gate) / (float)n;
+        if (hushed && gate <= 0.f) return;
+        for (auto &s : singers) {   // the phrases, at control rate
+            s.t += dt;
+            switch (s.stage) {
+            case 0: if (s.t >= s.rest) { s.stage = 1; s.t = 0; s.rise = 0.4f + 0.8f * rng.uniform(); ++events; } break;
+            case 1: if (s.t >= s.rise) { s.stage = 2; s.t = 0; s.hold = (3.f + 9.f * rng.uniform()); } break;
+            case 2: if (s.t >= s.hold) { s.stage = 3; s.t = 0; s.fall = 0.5f + 1.f * rng.uniform(); } break;
+            default: if (s.t >= s.fall) { s.stage = 0; s.t = 0; s.rest = (0.5f + 3.5f * rng.uniform()) / c.density; } break;
+            }
+        }
+        bool singing[kSingers];
+        for (int k = 0; k < kSingers; ++k) singing[k] = singers[k].stage != 0 || singers[k].env > 1e-4f;
+        for (int i = 0; i < n; ++i) {
+            gate += dg;
+            float yl = 0, yr = 0;
+            for (int k = 0; k < kSingers; ++k) {
+                if (!singing[k]) continue;
+                Singer &s = singers[k];
+                float e = 0;
+                switch (s.stage) {
+                case 1: e = std::min(1.f, s.t / s.rise); break;
+                case 2: e = 1.f; break;
+                case 3: e = std::max(0.f, 1.f - s.t / s.fall); break;
+                default: break;
+                }
+                s.env += (e - s.env) * 0.002f;
+                s.ph += s.rate * invSr;
+                float kick = 0;
+                if (s.ph >= 1.f) { s.ph -= 1.f; kick = 30.f * (0.8f + 0.4f * rng.uniform()); }
+                const float y = s.gain * s.env * s.res.band(kick + 0.8f * rng.bipolar());
+                yl += y * s.gl; yr += y * s.gr;
+            }
+            l[i] += gate * yl; r[i] += gate * yr;
+        }
+    }
+};
+
+// ---------------------------------------------------------------- Windmill: a steel water pump in the wind
+/// The level is the wind: below the cut-in (0.08) the wheel stands still; above it the pump works at 0.75 × (level −
+/// 0.08) / 0.92 strokes a second (45 a minute in a gale), the wheel speeding up and running down with its weight (2.5 s
+/// up, 5 s down). Each stroke clanks at the top (the rod and the gear: inharmonic iron partials near 300 Hz–2.2 kHz,
+/// pitched afresh each time, so in no key) and knocks softer at the bottom, the bushing creaks on most up-strokes (a
+/// stick-slip squeal), and the wheel whirs. Off to the left, by the tank.
+class Windmill final : public AmbienceSource {
+    FastRandom rng;
+    static constexpr float kRatio[4] = {1.f, 2.41f, 4.17f, 6.89f}, kAmp[4] = {1.f, 0.6f, 0.4f, 0.25f}, kT60[4] = {0.45f, 0.3f, 0.2f, 0.12f};
+    Partial clank[4], thunk;
+    Burst click;
+    struct Creak { bool on = false; float t = 0, dur = 0.4f, ph = 0, rate0 = 30, rate1 = 60, f0 = 900, amp = 1; SVF res; } creak;
+    SVF whirBand;
+    float speed = 0, phase = 0, wheel = 0, gl = 0.7f, gr = 0.7f, whir = 0;
+
+    float rateFor(float wind) const { return 0.75f * std::max(0.f, wind - 0.08f) / 0.92f; }
+    void strike(float scale, float lower, float sr) {
+        const float f0 = 285.f * lower * (0.96f + 0.08f * rng.uniform());
+        for (int k = 0; k < 4; ++k)
+            clank[k].startSine(f0 * kRatio[k] * (1.f + 0.01f * rng.bipolar()), kT60[k] * (0.85f + 0.3f * rng.uniform()) * lower,
+                               scale * kAmp[k], sr);
+        thunk.startSine(95.f + 35.f * rng.uniform(), 0.18f, 0.9f * scale, sr);
+        click.start(2500.f, 1.f, 0.003f, 2.f * scale, 0.f, sr);
+    }
+
+public:
+    explicit Windmill(uint64_t seed, float sr) : rng(seed) {
+        direct = 1.f; send = 0.35f;
+        panGains(-0.5f, gl, gr);
+        whirBand.set(900.f, 1.f, sr);
+    }
+    void wake(const AmbienceContext &) override { speed = 0; phase = 0.6f * rng.uniform(); creak.on = false; }
+    void render(float *l, float *r, int n, const AmbienceContext &c) override {
+        const float fsr = c.sr, dt = (float)n / fsr, invSr = 1.f / fsr;
+        const float want = rateFor(level);
+        speed += (want - speed) * (1.f - std::exp(-dt / (want > speed ? 2.5f : 5.f)));
+        if (want <= 0.f && speed < 1e-4f) speed = 0;   // run down: it stands still
+        const float p0 = phase;
+        phase += speed * dt;
+        wheel += 3.29f * speed * dt;   // back-geared: the wheel turns 3.29 times a stroke
+        wheel -= std::floor(wheel);
+        const float drive = std::min(1.f, speed / 0.75f), scale = 0.5f + 0.5f * drive;
+        if (phase >= 1.f) {   // the top of the stroke: the clank
+            phase -= 1.f;
+            strike(scale, 1.f, fsr);
+            ++events;
+            if (rng.uniform() < 0.55f) {   // and on the way up, the bushing creaks
+                creak.on = true; creak.t = -(0.1f + 0.15f * rng.uniform()) / std::max(0.2f, speed);
+                creak.dur = std::min(1.f, (0.25f + 0.35f * rng.uniform()) / std::max(0.3f, speed));
+                creak.rate0 = 25.f + 20.f * rng.uniform(); creak.rate1 = 45.f + 30.f * rng.uniform();
+                creak.f0 = 650.f + 750.f * rng.uniform(); creak.amp = 0.5f + 0.5f * rng.uniform(); creak.ph = 0;
+            }
+        } else if (p0 < 0.5f && phase >= 0.5f) {   // the bottom: a softer knock, lower
+            strike(0.45f * scale, 0.62f, fsr);
+        }
+        const float w1 = 0.15f * drive, dw = (w1 - whir) / (float)n;
+        float creakInc = 0, creakTone = 1;
+        if (creak.on && creak.t >= 0) {
+            const float u = std::min(1.f, creak.t / creak.dur), arch = std::sin(kPi * u);
+            creakInc = (creak.rate0 + (creak.rate1 - creak.rate0) * arch) * invSr;
+            creakTone = 1.f + 0.15f * arch;
+            creak.res.set(creak.f0 * creakTone, 14.f, fsr);
+        }
+        const bool sounding = clank[0].mag > 0.f || thunk.mag > 0.f || click.on() || creak.on || whir > 1e-4f || w1 > 0.f;
+        if (!sounding) return;
+        for (int i = 0; i < n; ++i) {
+            whir += dw;
+            float x = 0;
+            for (auto &p : clank) if (p.mag > 0.f) x += p.next();
+            if (thunk.mag > 0.f) x += thunk.next();
+            if (click.on()) x += click.next(rng);
+            if (creak.on) {
+                if (creak.t >= 0) {
+                    const float u = creak.t / creak.dur;
+                    float slip = 0;
+                    creak.ph += creakInc;
+                    if (creak.ph >= 1.f) { creak.ph -= 1.f + 0.15f * (rng.uniform() - 0.5f); slip = 30.f * (0.6f + 0.4f * rng.uniform()); }
+                    const float env = std::sin(kPi * std::min(1.f, u));
+                    x += creak.amp * env * creak.res.band(slip);
+                    if (u >= 1.f) creak.on = false;
+                }
+                creak.t += invSr;
+            }
+            if (whir > 1e-4f) x += whir * (0.6f + 0.4f * sin2pi(18.f * wheel)) * whirBand.band(rng.bipolar());
+            l[i] += x * gl; r[i] += x * gr;
+        }
+        for (auto &p : clank) if (p.mag > 0.f && p.energy() < 1e-10f) p.mag = 0;
+        if (thunk.mag > 0.f && thunk.energy() < 1e-10f) thunk.mag = 0;
+    }
+};
+
+// ---------------------------------------------------------------- Cattle grid: a far truck drumming over the bars
+/// Rare (every 90–240 s): a vehicle on the far road comes up, crosses the cattle grid at the fence line and goes on: a
+/// semi-trailer (five axles) or a ute (two), each axle drumming over the bars at its speed (bars 0.2 m apart, so 70–110
+/// strikes a second at 50–80 km/h) through the rails' ring (340–870 Hz) and the pit's boom (95 Hz), under the engine's
+/// far drone; it crosses the view from one side to the other, low-passed by the distance.
+class CattleGrid final : public AmbienceSource {
+    FastRandom rng;
+    static constexpr int kAxles = 5;
+    bool on = false;
+    int axles = 5;
+    float t = 0, dur = 18, cross = 8, until = 60, v = 18, barPh = 0, engPh = 0, engHz = 32, panFrom = -0.6f, panTo = 0.6f;
+    float axleAt[kAxles] = {}, axleLoad[kAxles] = {};
+    SVF rail[3], pit, engLP, engHP, farL, farR;
+    Pink pink;
+
+    float interval(const AmbienceContext &c) { return (90.f + 150.f * rng.uniform()) / c.density; }
+
+public:
+    explicit CattleGrid(uint64_t seed) : rng(seed) { direct = 1.f; send = 0.5f; }
+    void triggerNow(const AmbienceContext &c) override {
+        const float fsr = c.sr;
+        on = true; t = 0; dur = 16.f + 6.f * rng.uniform(); cross = dur * (0.42f + 0.1f * rng.uniform());
+        v = (50.f + 30.f * rng.uniform()) / 3.6f;
+        const bool truck = rng.uniform() < 0.7f;
+        static constexpr float kSemi[kAxles] = {0.f, 4.6f, 5.9f, 12.5f, 13.8f}, kSemiLoad[kAxles] = {0.6f, 1.f, 1.f, 0.9f, 0.9f};
+        axles = truck ? 5 : 2;
+        for (int i = 0; i < axles; ++i) {
+            axleAt[i] = cross + (truck ? kSemi[i] : 2.7f * (float)i) / v;
+            axleLoad[i] = truck ? kSemiLoad[i] * (0.85f + 0.3f * rng.uniform()) : 0.6f;
+        }
+        const float k = 0.95f + 0.1f * rng.uniform();
+        rail[0].set(340.f * k, 9.f, fsr); rail[1].set(560.f * k, 9.f, fsr); rail[2].set(870.f * k, 9.f, fsr);
+        pit.set(95.f, 3.f, fsr);
+        engHz = truck ? 28.f + 10.f * rng.uniform() : 40.f + 15.f * rng.uniform();
+        engLP.set(500.f, 0.7f, fsr); engHP.set(45.f, 0.7f, fsr); farL.set(1600.f, 0.7f, fsr); farR.set(1650.f, 0.7f, fsr);
+        const float side = rng.uniform() < 0.5f ? -1.f : 1.f;
+        panFrom = side * (0.5f + 0.3f * rng.uniform()); panTo = -side * (0.5f + 0.3f * rng.uniform());
+        barPh = 0;
+        ++events;
+        until = interval(c);
+    }
+    void wake(const AmbienceContext &c) override { on = false; until = interval(c) * (0.05f + 0.25f * rng.uniform()); }
+    void render(float *l, float *r, int n, const AmbienceContext &c) override {
+        const float fsr = c.sr, dt = (float)n / fsr, invSr = 1.f / fsr;
+        if (!on) {
+            if ((until -= dt) > 0) return;
+            triggerNow(c);
+        }
+        const float onGrid = 2.4f / v, barHz = v / 0.2f;
+        float pl, pr;
+        panGains(panFrom + (panTo - panFrom) * std::min(1.f, t / dur), pl, pr);
+        const float x = (t - cross) / (0.2f * dur), engine = 0.12f * std::exp(-x * x);
+        for (int i = 0; i < n; ++i) {
+            float kick = 0;
+            barPh += barHz * invSr;
+            if (barPh >= 1.f) {
+                barPh -= 1.f;
+                for (int k = 0; k < axles; ++k) {
+                    const float u = (t - axleAt[k]) / onGrid;
+                    // Each bar is one sample's strike: a resonance of unity peak gain rings to about 2πf/(Q·sr) of it.
+                    if (u > 0.f && u < 1.f) kick += 100.f * axleLoad[k] * std::sqrt(std::sin(kPi * u)) * (0.75f + 0.5f * rng.uniform());
+                }
+            }
+            const float grid = 0.5f * (rail[0].band(kick) + 0.8f * rail[1].band(kick) + 0.5f * rail[2].band(kick)) + 1.2f * pit.band(kick);
+            advanceTone(engPh, engHz * invSr);
+            // Far off, the engine is its upper harmonics and the tyres; its firing note is gone in the distance.
+            const float eng = engine * engHP.high(engLP.low(0.3f * sin2pi(engPh) + 0.5f * sin2pi(2.f * engPh) + 0.4f * sin2pi(3.f * engPh)
+                                                            + 0.25f * sin2pi(4.f * engPh) + 0.5f * pink.next(rng.bipolar())));
+            const float y = grid + eng;
+            l[i] += farL.low(y * pl); r[i] += farR.low(y * pr);
+            t += invSr;
+        }
+        if (t > dur) on = false;
+    }
+};
+
+// ---------------------------------------------------------------- Dust ticks: grit on the wind against wire and tin
+/// Grains of grit blown against the fence wire and the tank: soft clicks of a fraction of a millisecond (3–9 kHz,
+/// Pareto amplitudes, anywhere across the field), in clusters with the gusts, more of them the higher the level (the
+/// wind); now and then the tank ticks as it cools.
+class DustTicks final : public AmbienceSource {
+    FastRandom rng;
+    static constexpr int kVoices = 10;
+    Burst voices[kVoices];
+    Partial tink[2];
+    Wander gust;
+    int next = 0;
+    float toTick = 1, toTink = 10, tinkGl = 0.7f, tinkGr = 0.7f;
+
+    float tinkInterval(const AmbienceContext &c) { return (10.f + 20.f * rng.uniform()) / c.density; }
+
+public:
+    explicit DustTicks(uint64_t seed) : rng(seed) { direct = 1.f; send = 0.25f; }
+    void wake(const AmbienceContext &c) override { toTick = expRand(rng); toTink = tinkInterval(c) * rng.uniform(); }
+    void render(float *l, float *r, int n, const AmbienceContext &c) override {
+        const float fsr = c.sr, dt = (float)n / fsr;
+        const float g = gust.next(rng, dt, 1.2f);
+        const float perSecond = (30.f + 260.f * level) * c.density * (0.25f + 1.5f * g * g);
+        toTick -= perSecond * dt;
+        for (int k = 0; k < 4 && toTick <= 0.f; ++k) {
+            voices[next].start(3000.f * std::exp2(1.585f * rng.uniform()), 2.5f, 0.0003f + 0.0005f * rng.uniform(),
+                               0.5f * pareto(rng, 2.5f, 3.f), 0.9f * rng.bipolar(), fsr);
+            next = (next + 1) % kVoices;
+            toTick += expRand(rng);
+            if (events < 0x7fffffff) ++events;
+        }
+        if ((toTink -= dt) <= 0) {
+            const float f = 1900.f + 1500.f * rng.uniform();
+            tink[0].startSine(f, 0.08f + 0.08f * rng.uniform(), 0.35f, fsr); tink[1].startSine(f * 2.76f, 0.05f, 0.12f, fsr);
+            panGains(-0.45f + 0.1f * rng.bipolar(), tinkGl, tinkGr);   // the tank, by the windmill
+            toTink = tinkInterval(c);
+        }
+        for (int i = 0; i < n; ++i) {
+            float yl = 0, yr = 0;
+            for (auto &v : voices) if (v.on()) { const float x = v.next(rng); yl += x * v.gl; yr += x * v.gr; }
+            if (tink[0].mag > 0.f) { const float x = tink[0].next() + tink[1].next(); yl += x * tinkGl; yr += x * tinkGr; }
+            l[i] += yl; r[i] += yr;
+        }
+        if (tink[0].mag > 0.f && tink[0].energy() < 1e-10f) tink[0].mag = tink[1].mag = 0;
+    }
+};
+
+// ---------------------------------------------------------------- Heat shimmer: a faint high hum in the hot air
+/// A faint hum on the key's tonic in A5–G♯6 with its fifth and octave above, each a pair a fraction of a hertz apart so
+/// it beats slowly, its level flickering in each ear as the hot air shimmers; the world fades it with the day's heat
+/// (by dusk it is gone). A new key glides in over about two seconds; all dry, so it never leaves the key.
+class ShimmerHum final : public AmbienceSource {
+    FastRandom rng;
+    static constexpr float kRatio[3] = {1.f, 1.5f, 2.f}, kAmp[3] = {1.f, 0.42f, 0.18f};
+    float ph[3][2] = {}, det[3][2] = {}, hz = 0, fl = 0.8f, fr = 0.8f;
+    Wander flutterL, flutterR;
+
+public:
+    explicit ShimmerHum(uint64_t seed) : rng(seed) {
+        direct = 1.f; send = 0.f;
+        for (auto &d : det) { d[0] = -(0.25f + 0.45f * rng.uniform()); d[1] = 0.25f + 0.45f * rng.uniform(); }
+    }
+    void render(float *l, float *r, int n, const AmbienceContext &c) override {
+        const float fsr = c.sr, dt = (float)n / fsr, invSr = 1.f / fsr;
+        glidePitch(hz, shimmerHz(c.keyRoot), dt, 2.f);
+        float inc[3][2];
+        for (int k = 0; k < 3; ++k) for (int j = 0; j < 2; ++j) inc[k][j] = (hz * kRatio[k] + det[k][j]) * invSr;
+        const float l1 = 0.6f + 0.4f * flutterL.next(rng, dt, 0.35f), r1 = 0.6f + 0.4f * flutterR.next(rng, dt, 0.45f);
+        const float dl = (l1 - fl) / (float)n, dr = (r1 - fr) / (float)n;
+        for (int i = 0; i < n; ++i) {
+            fl += dl; fr += dr;
+            float s = 0;
+            for (int k = 0; k < 3; ++k)
+                for (int j = 0; j < 2; ++j) { s += kAmp[k] * sin2pi(ph[k][j]); advanceTone(ph[k][j], inc[k][j]); }
+            l[i] += s * fl; r[i] += s * fr;
+        }
+    }
+};
+
+// ---------------------------------------------------------------- A far truck on the highway
+/// A road train on a highway a few kilometres off, every 50–140 s: its diesel (a firing note of 28–42 Hz and its
+/// harmonics, under a tyre roar) swells over 30–60 s as it comes along the road and fades as it goes, crossing from one
+/// side to the other, a little brighter at its closest and falling 2.4% in pitch as it passes (the doppler), with a gear
+/// change or two on the way. Low-passed by the distance; in no key.
+class FarTruck final : public AmbienceSource {
+    FastRandom rng;
+    static constexpr float kHarm[6] = {1.f, 0.75f, 0.5f, 0.4f, 0.22f, 0.15f};
+    Pink pink;
+    SVF tyres, lowCut, farL, farR;
+    bool on = false;
+    int shifts = 0;
+    float t = 0, dur = 40, until = 30, ph = 0, base = 34, panFrom = -0.7f, panTo = 0.7f, shiftAt[2] = {-1, -1};
+    float farApplied = -1;
+
+    float interval(const AmbienceContext &c) { return (50.f + 90.f * rng.uniform()) / c.density; }
+
+public:
+    FarTruck(uint64_t seed, float sr) : rng(seed) { direct = 1.f; send = 0.4f; tyres.set(600.f, 0.7f, sr); lowCut.set(40.f, 0.7f, sr); }
+    void triggerNow(const AmbienceContext &c) override {
+        on = true; t = 0; dur = 30.f + 30.f * rng.uniform(); base = 28.f + 14.f * rng.uniform(); ph = 0;
+        shifts = rng.uniform() < 0.6f ? 2 : 1;
+        shiftAt[0] = dur * (0.15f + 0.2f * rng.uniform()); shiftAt[1] = shifts > 1 ? dur * (0.6f + 0.2f * rng.uniform()) : -1.f;
+        const float side = rng.uniform() < 0.5f ? -1.f : 1.f;
+        panFrom = side * (0.6f + 0.25f * rng.uniform()); panTo = -side * (0.6f + 0.25f * rng.uniform());
+        ++events;
+        until = interval(c);
+    }
+    void wake(const AmbienceContext &c) override { on = false; until = interval(c) * (0.05f + 0.3f * rng.uniform()); }
+    void render(float *l, float *r, int n, const AmbienceContext &c) override {
+        const float fsr = c.sr, dt = (float)n / fsr, invSr = 1.f / fsr;
+        if (!on) {
+            if ((until -= dt) > 0) return;
+            triggerNow(c);
+        }
+        const float x = t / dur, near = std::exp(-((x - 0.5f) / 0.22f) * ((x - 0.5f) / 0.22f));
+        // A gear change: the revs fall by a third and climb back over 4 s, the note dropping out for the clutch.
+        float rev = 1.f, clutch = 1.f;
+        for (int k = 0; k < 2; ++k) {
+            const float u = t - shiftAt[k];
+            if (shiftAt[k] < 0 || u < 0 || u > 4.4f) continue;
+            if (u < 0.4f) clutch = std::min(clutch, 0.35f + 0.65f * std::fabs(1.f - u / 0.2f));
+            else rev = std::min(rev, 0.7f + 0.3f * (u - 0.4f) / 4.f);
+        }
+        const float doppler = 1.f + 0.012f * std::tanh(6.f * (0.5f - x)), f = base * rev * doppler;
+        const float cut = 300.f + 600.f * near;
+        if (std::fabs(cut - farApplied) > 2.f) { farApplied = cut; farL.set(cut, 0.7f, fsr); farR.set(cut * 1.05f, 0.7f, fsr); }
+        float pl, pr;
+        panGains(panFrom + (panTo - panFrom) * x, pl, pr);
+        const float amp = near, inc = f * invSr;
+        for (int i = 0; i < n; ++i) {
+            advanceTone(ph, inc);
+            // The harmonics by the Chebyshev recurrence: sin((k + 1)x) = 2cos(x)·sin(kx) − sin((k − 1)x).
+            const float s1 = sin2pi(ph), c2 = 2.f * sin2pi(ph + 0.25f);
+            float prev = 0.f, cur = s1, tone = kHarm[0] * s1;
+            for (int k = 1; k < 6; ++k) { const float next = c2 * cur - prev; prev = cur; cur = next; tone += kHarm[k] * cur; }
+            const float y = amp * lowCut.high(0.35f * clutch * tone + 0.8f * tyres.low(pink.next(rng.bipolar())));
+            l[i] += farL.low(y * pl); r[i] += farR.low(y * pr);
+        }
+        t += dt;
+        if (t > dur) on = false;
+    }
+};
+
 } // namespace amb
 
 using namespace amb;
@@ -2286,10 +3160,18 @@ public:
                 v.amp[i] = i == 0 ? 1.f : 0.5f + 0.5f * rng.uniform();
             }
             v.crack = v.d < 0.3f ? 1.f - v.d / 0.3f : 0.f;
+            v.fade = 1; v.fadeStep = 0;
             return;
         }
     }
     bool active() const { for (auto &v : voices) if (v.on) return true; return false; }
+    /// Panic: every clap still waiting is dropped and every one rolling fades out within 40 ms.
+    void silence(float sr) {
+        for (auto &v : voices) {
+            if (!v.on) continue;
+            if (v.t < 0) v.on = false; else v.fadeStep = 1.f / (0.04f * sr);
+        }
+    }
     void render(float *l, float *r, int n, float sr) {
         const float invSr = 1.f / sr;
         for (auto &v : voices) {
@@ -2308,9 +3190,10 @@ public:
                 }
                 const float rumble = v.lowB.low(v.lowA.low(v.brown.next(rng.bipolar()) * 6.f));
                 const float crack = v.crack > 0 ? v.crack * std::exp(-v.t / 0.2f) * v.crackF.band(rng.bipolar()) : 0.f;
-                const float x = v.level * (env * rumble + crack);
+                const float x = v.fade * v.level * (env * rumble + crack);
                 l[t] += x; r[t] += x * 0.9f;
                 if (v.t > v.dur + 6.f) { v.on = false; break; }
+                if (v.fadeStep > 0.f && (v.fade -= v.fadeStep) <= 0.f) { v.on = false; break; }
             }
         }
     }
@@ -2319,7 +3202,7 @@ private:
     FastRandom rng;
     struct Voice {
         bool on = false;
-        float d = 0.5f, delay = 1, t = 0, dur = 2, level = 1, crack = 0;
+        float d = 0.5f, delay = 1, t = 0, dur = 2, level = 1, crack = 0, fade = 1, fadeStep = 0;
         int rolls = 2;
         float at[4] = {}, rise[4] = {}, fall[4] = {}, amp[4] = {};
         Brown brown;
@@ -2388,6 +3271,21 @@ Ambience::Ambience(double sampleRate, uint64_t seed) : sr(sampleRate), room(samp
     sources[ISD_AMB_BUBBLES] = std::move(bubblesSource);
     sources[ISD_AMB_SHRIMP] = std::make_unique<Shrimp>(s(37), fsr);
     sources[ISD_AMB_FISH_CHORUS] = std::make_unique<FishChorus>(s(38), fsr);
+    // Storms (Sets 17 & 18): the storm family, then the plains family.
+    sources[ISD_AMB_GRASS_WIND] = std::make_unique<GrassWind>(s(39));
+    sources[ISD_AMB_HAIL_TIN] = std::make_unique<HailTin>(s(40), fsr);
+    sources[ISD_AMB_BIRDS_FLEE] = std::make_unique<BirdsFlee>(s(41), fsr);
+    auto rollSource = std::make_unique<ThunderRoll>(s(42));
+    thunderRoll = rollSource.get();
+    sources[ISD_AMB_THUNDER_ROLL] = std::move(rollSource);
+    sources[ISD_AMB_INFLOW_ROAR] = std::make_unique<InflowRoar>(s(43), fsr);
+    sources[ISD_AMB_RAIN_ON_DUST] = std::make_unique<RainOnDust>(s(44), fsr);
+    sources[ISD_AMB_DRY_CICADAS] = std::make_unique<DryCicadas>(s(45), fsr);
+    sources[ISD_AMB_WINDMILL] = std::make_unique<Windmill>(s(46), fsr);
+    sources[ISD_AMB_CATTLE_GRID] = std::make_unique<CattleGrid>(s(47));
+    sources[ISD_AMB_DUST_TICKS] = std::make_unique<DustTicks>(s(48));
+    sources[ISD_AMB_SHIMMER_HUM] = std::make_unique<ShimmerHum>(s(49));
+    sources[ISD_AMB_FAR_TRUCK] = std::make_unique<FarTruck>(s(50), fsr);
     for (int i : {ISD_AMB_SHIP_HUM, ISD_AMB_AIR_FLOW, ISD_AMB_CHIME, ISD_AMB_HULL_TICKS}) sources[i]->indoor = true;
     closeness.init(sampleRate, 300.0);
     closeness.snap(0.5f);
@@ -2396,15 +3294,34 @@ Ambience::Ambience(double sampleRate, uint64_t seed) : sr(sampleRate), room(samp
 Ambience::~Ambience() = default;
 
 void Ambience::setLevel(int source, float level) {
-    // A reserved id with no source behind it (the Storms families until Task 8) is ignored.
     if (source < 0 || source >= ISD_AMB_COUNT || !sources[source]) return;
     Ramp &r = ramps[source];
     const float v = clamp01(level);
     if (v > 0.f && r.silent()) sources[source]->wake(ctx);
     r.setTarget(v, (int)(kRampSeconds * (float)sr));
+    // The world's thunder going (a world switch): nothing still on its way may arrive in the next one.
+    if (source == ISD_AMB_THUNDER_ROLL && v <= 0.f) thunderRoll->clearQueue();
 }
 
 void Ambience::triggerThunder(float distance) { thunder->trigger(distance); }
+
+void Ambience::queueThunder(float delaySeconds, float strength) {
+    if (ramps[ISD_AMB_THUNDER_ROLL].to <= 0.f) return;   // silent, or fading out as the world changes
+    thunderRoll->enqueue(delaySeconds, strength, (float)sr);
+}
+
+void Ambience::clearThunder() { thunderRoll->clearQueue(); }
+
+void Ambience::allSoundOff() {
+    thunderRoll->silence((float)sr);
+    thunder->silence((float)sr);
+}
+
+void Ambience::triggerNow(int source) {
+    if (source < 0 || source >= ISD_AMB_COUNT || !sources[source]) return;
+    if (ramps[source].silent()) sources[source]->wake(ctx);
+    sources[source]->triggerNow(ctx);
+}
 
 void Ambience::startKettle() {
     if (ramps[ISD_AMB_KETTLE].silent()) kettle->wake(ctx);
@@ -2504,6 +3421,7 @@ void Ambience::processBlock(float *left, float *right, int n) {
         const float g0 = r.value, g1 = r.advance(n);
         std::fill(tl, tl + n, 0.f); std::fill(tr, tr + n, 0.f);
         sources[i]->level = g1;
+        sources[i]->levelTarget = r.to;
         sources[i]->render(tl, tr, n, ctx);
         const float k = kGain[i], d = sources[i]->direct, s = sources[i]->send, step = (g1 - g0) / (float)n;
         const bool in = sources[i]->indoor;
@@ -2604,8 +3522,37 @@ struct ISDAmbience {
     std::atomic<int> bubbleSeq{0}, sonarSeq{0}, whaleSeq{0};
     int bubbleSeen = 0, sonarSeen = 0, whaleSeen = 0;
     std::atomic<float> sonarHz{0.f};   // after each render: the sonar's ringing ping, 0 while it is silent
+    // Thunder on its way: a mailbox of 32 from any thread to the render (each slot's ticket is its index + 1 once
+    // written), drained in order at the start of each render; overrun, the oldest are lost. A clear or an all-sound-off
+    // drops everything posted before it.
+    static constexpr uint32_t kThunderMail = 32;
+    struct ThunderMail { std::atomic<uint32_t> ticket{0}; std::atomic<float> delay{0.f}, strength{0.f}; } thunderMail[kThunderMail];
+    std::atomic<uint32_t> thunderHead{0}, thunderClearAt{0}, allOffAt{0};
+    std::atomic<int> thunderClearSeq{0}, allOffSeq{0};
+    uint32_t thunderTail = 0;
+    int thunderClearSeen = 0, allOffSeen = 0;
+    std::atomic<int> triggerSeq[ISD_AMB_COUNT];
+    int triggerSeen[ISD_AMB_COUNT];
     ISDAmbience(double sr, uint64_t seed) : engine(sr, seed) {
-        for (int i = 0; i < ISD_AMB_COUNT; ++i) { levels[i].store(0.f); applied[i] = 0.f; }
+        for (int i = 0; i < ISD_AMB_COUNT; ++i) { levels[i].store(0.f); applied[i] = 0.f; triggerSeq[i].store(0); triggerSeen[i] = 0; }
+    }
+    /// Render thread: skips everything posted before `at` (a clear's mark).
+    void skipThunderBefore(uint32_t at) { if ((int32_t)(at - thunderTail) > 0) thunderTail = at; }
+    /// Render thread: hands the posted rolls to the engine, oldest first.
+    void drainThunder() {
+        const uint32_t head = thunderHead.load(std::memory_order_acquire);
+        if (head - thunderTail > kThunderMail) thunderTail = head - kThunderMail;   // overrun: the oldest are gone
+        while (thunderTail != head) {
+            ThunderMail &m = thunderMail[thunderTail % kThunderMail];
+            const uint32_t want = thunderTail + 1, ticket = m.ticket.load(std::memory_order_acquire);
+            if (ticket != want) {
+                if ((int32_t)(ticket - want) > 0) { ++thunderTail; continue; }   // written over by a newer one: lost
+                break;                                                           // still being written: next render
+            }
+            const float delay = m.delay.load(std::memory_order_relaxed), strength = m.strength.load(std::memory_order_relaxed);
+            if (m.ticket.load(std::memory_order_acquire) == want) engine.queueThunder(delay, strength);
+            ++thunderTail;
+        }
     }
 };
 
@@ -2633,6 +3580,32 @@ void isd_ambience_trigger_thunder(ISDAmbience *a, float distance) {
     if (!a || !std::isfinite(distance)) return;
     a->thunderDistance.store(isd::clamp01(distance), std::memory_order_relaxed);
     a->thunderSeq.fetch_add(1, std::memory_order_release);
+}
+
+void isd_ambience_queue_thunder(ISDAmbience *a, float delaySeconds, float strength) {
+    if (!a || !std::isfinite(delaySeconds) || !std::isfinite(strength)) return;
+    const uint32_t i = a->thunderHead.fetch_add(1, std::memory_order_acq_rel);
+    ISDAmbience::ThunderMail &m = a->thunderMail[i % ISDAmbience::kThunderMail];
+    m.delay.store(std::clamp(delaySeconds, 0.f, 12.f), std::memory_order_relaxed);
+    m.strength.store(isd::clamp01(strength), std::memory_order_relaxed);
+    m.ticket.store(i + 1, std::memory_order_release);
+}
+
+void isd_ambience_clear_thunder(ISDAmbience *a) {
+    if (!a) return;
+    a->thunderClearAt.store(a->thunderHead.load(std::memory_order_acquire), std::memory_order_relaxed);
+    a->thunderClearSeq.fetch_add(1, std::memory_order_release);
+}
+
+void isd_ambience_all_sound_off(ISDAmbience *a) {
+    if (!a) return;
+    a->allOffAt.store(a->thunderHead.load(std::memory_order_acquire), std::memory_order_relaxed);
+    a->allOffSeq.fetch_add(1, std::memory_order_release);
+}
+
+void isd_ambience_debug_trigger(ISDAmbience *a, ISDAmbienceSource source) {
+    if (!a || (int)source < 0 || (int)source >= ISD_AMB_COUNT) return;
+    a->triggerSeq[source].fetch_add(1, std::memory_order_release);
 }
 
 void isd_ambience_trigger_wave(ISDAmbience *a, float strength) {
@@ -2719,6 +3692,21 @@ void isd_ambience_render(ISDAmbience *a, float *left, float *right, int frames) 
     if (songs != a->whaleSeen) { a->whaleSeen = songs; a->engine.startWhale(); }
     const int bursts = a->bubbleSeq.load(std::memory_order_acquire);
     if (bursts != a->bubbleSeen) { a->bubbleSeen = bursts; a->engine.triggerBubbles(a->bubbleStrength.load(std::memory_order_relaxed)); }
+    // Thunder: a panic or a world switch first (each drops what was posted before it), then what is on its way, after
+    // the levels (a roll is heard only while the thunder roll is up).
+    const int offs = a->allOffSeq.load(std::memory_order_acquire);
+    if (offs != a->allOffSeen) { a->allOffSeen = offs; a->engine.allSoundOff(); a->skipThunderBefore(a->allOffAt.load(std::memory_order_relaxed)); }
+    const int clears = a->thunderClearSeq.load(std::memory_order_acquire);
+    if (clears != a->thunderClearSeen) {
+        a->thunderClearSeen = clears;
+        a->engine.clearThunder();
+        a->skipThunderBefore(a->thunderClearAt.load(std::memory_order_relaxed));
+    }
+    a->drainThunder();
+    for (int i = 0; i < ISD_AMB_COUNT; ++i) {
+        const int asked = a->triggerSeq[i].load(std::memory_order_acquire);
+        if (asked != a->triggerSeen[i]) { a->triggerSeen[i] = asked; a->engine.triggerNow(i); }
+    }
     a->engine.render(left, right, frames);
     a->bellHz.store(a->engine.bellRingingHz(), std::memory_order_release);
     a->sonarHz.store(a->engine.sonarRingingHz(), std::memory_order_release);

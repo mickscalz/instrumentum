@@ -25,6 +25,8 @@ public protocol InstrumentEngine: AnyObject {
     /// Puts the ambience generator on its own bus (after `start`).
     func startAmbience() async
     func setAmbience(_ scene: AmbienceScene)
+    /// A world switch: thunder still on its way from the last world never arrives.
+    func clearAmbienceThunder()
     var ambienceVolume: Float { get set }
     var ambienceEnabled: Bool { get set }
     // Output (Sound & MIDI settings)
@@ -46,6 +48,7 @@ public extension InstrumentEngine {
     var builtInPatchID: String? { nil }
     func startAmbience() async {}
     func setAmbience(_ scene: AmbienceScene) {}
+    func clearAmbienceThunder() {}
     var isRunning: Bool { true }
     var outputDevices: [OutputDevice] { [] }
     var outputSampleRate: Double { 0 }
