@@ -200,14 +200,8 @@ public struct WallCloud {
         if rotation > Float.pi || rotation < -Float.pi {
             rotation -= 2 * Float.pi * (rotation / (2 * Float.pi)).rounded()
         }
-        // Age what is alive, and let go of what has finished.
-        for i in glows.indices { glows[i].age += fdt }
-        glows.removeAll { $0.age >= Self.glowSeconds + Self.glowFade }
-        for i in pulses.indices { pulses[i].age += fdt }
-        pulses.removeAll { $0.age >= Self.pulseSeconds }
-        for i in ripples.indices { ripples[i].age += fdt }
-        ripples.removeAll { $0.age >= Self.rippleSeconds }
-        // Release the waiting notes' glows, at most `maxSpawnsPerStep` a step; the cap lets the dimmest go first.
+        // Release the waiting notes' glows, at most `maxSpawnsPerStep` a step (they set out this step, so they are lit on
+        // the frame they are struck); the cap lets the dimmest go first.
         let n = min(Self.maxSpawnsPerStep, queue.count)
         lastSpawns = n
         for q in queue.prefix(n) {
@@ -215,6 +209,13 @@ public struct WallCloud {
             nextGlowID = nextGlowID &+ 1
         }
         queue.removeFirst(n)
+        // Age what is alive, and let go of what has finished.
+        for i in glows.indices { glows[i].age += fdt }
+        glows.removeAll { $0.age >= Self.glowSeconds + Self.glowFade }
+        for i in pulses.indices { pulses[i].age += fdt }
+        pulses.removeAll { $0.age >= Self.pulseSeconds }
+        for i in ripples.indices { ripples[i].age += fdt }
+        ripples.removeAll { $0.age >= Self.rippleSeconds }
         while glows.count > Self.glowCap {
             var dimmest = 0
             for i in glows.indices where glows[i].brightness < glows[dimmest].brightness { dimmest = i }
