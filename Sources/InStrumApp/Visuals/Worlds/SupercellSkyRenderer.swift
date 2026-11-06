@@ -51,7 +51,7 @@ final class SupercellSkyRenderer: ThemeRenderer {
     nonisolated static let shaftRadius: Float = 1.8
     /// The gust front's dust: billows this tall (km) rolling off the field along the front (up to 1.3× in places), so a
     /// front crossing the near field lifts dust about the posts' height and the storm stays seen over it.
-    nonisolated static let dustHeight: Float = 0.0032
+    nonisolated static let dustHeight: Float = 0.0042
     /// The wheat: blades this tall (m); the rows from 6 m to 600 m out.
     nonisolated static let bladeHeight: Float = 0.75
     nonisolated static let nearestRow: Float = 6
