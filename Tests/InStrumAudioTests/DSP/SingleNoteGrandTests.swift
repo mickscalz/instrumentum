@@ -272,21 +272,35 @@ final class SingleNoteGrandTests: XCTestCase {
         let o = play(6, params: [dry: 1], events: [R.noteOn(0, a3, 100), R.Event(time: 0, bytes: [0xD0, 25])],
                      forced: [(1, 0.8), (3.5, -1)], chunk: 48)
         XCTAssertEqual(Double(o.morph[999]), 1000 * target, accuracy: 2, "the player's pressure before")
-        let held = o.morph[1700..<3500]
-        XCTAssertGreaterThanOrEqual(held.min() ?? 0, 799, "forced from 1.7 s")
-        XCTAssertLessThanOrEqual(held.max() ?? 9999, 801, "forced from 1.7 s")
-        let level = 1000 * (target + (0.8 - target) / M_E)
-        let back = (3500..<o.morph.count).first { Double(o.morph[$0]) <= level }.map { Double($0 + 1) / 1000 - 3.5 } ?? -1
+        let held: ArraySlice<Int> = o.morph[1700..<3500]
+        let heldMin: Int = held.min() ?? 0
+        let heldMax: Int = held.max() ?? 9999
+        XCTAssertGreaterThanOrEqual(heldMin, 799, "forced from 1.7 s")
+        XCTAssertLessThanOrEqual(heldMax, 801, "forced from 1.7 s")
+        let level: Double = 1000 * (target + (0.8 - target) / M_E)
+        var backIndex: Int = -1
+        for i in 3500..<o.morph.count where Double(o.morph[i]) <= level { backIndex = i; break }
+        let back: Double = backIndex < 0 ? -1 : Double(backIndex + 1) / 1000 - 3.5
         XCTAssertEqual(back, 0.25, accuracy: 0.025, "back to the player over 250 ms")
-        XCTAssertLessThanOrEqual(zip(o.morph.dropFirst(), o.morph).map { abs($0.0 - $0.1) }.max() ?? 999, 50, "no step above .05 per ms")
+        XCTAssertLessThanOrEqual(largestStep(o.morph), 50, "no step above .05 per ms")
         XCTAssertEqual(Double(o.morph[o.morph.count - 1]), 1000 * target, accuracy: 3, "settled on the player's pressure")
         let full = play(4.5, params: [dry: 1], events: [R.noteOn(0, a3, 100), R.Event(time: 0, bytes: [0xD0, 127])],
                         forced: [(0.5, 0.8), (3, -1)], chunk: 48)
         let over = full.morph[2000..<3000]
-        XCTAssertGreaterThanOrEqual(over.min() ?? 0, 799, "forced over full pressure")
-        XCTAssertLessThanOrEqual(over.max() ?? 9999, 801, "forced over full pressure")
-        XCTAssertLessThanOrEqual(zip(full.morph.dropFirst(), full.morph).map { abs($0.0 - $0.1) }.max() ?? 999, 50, "no step, up or down")
+        let overMin: Int = over.min() ?? 0
+        let overMax: Int = over.max() ?? 9999
+        XCTAssertGreaterThanOrEqual(overMin, 799, "forced over full pressure")
+        XCTAssertLessThanOrEqual(overMax, 801, "forced over full pressure")
+        XCTAssertLessThanOrEqual(largestStep(full.morph), 50, "no step, up or down")
         XCTAssertEqual(full.morph[full.morph.count - 1], 1000, "back to full pressure")
+    }
+
+    /// The largest change between neighbouring samples of a read-back, in permille.
+    private func largestStep(_ values: [Int]) -> Int {
+        var largest = 0
+        var i = 1
+        while i < values.count { largest = max(largest, abs(values[i] - values[i - 1])); i += 1 }
+        return largest
     }
 
     // MARK: - Repeats
