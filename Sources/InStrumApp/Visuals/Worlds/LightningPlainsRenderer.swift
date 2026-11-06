@@ -247,6 +247,8 @@ final class LightningPlainsRenderer: ThemeRenderer {
         var s = frame.sky
         let overcast = Self.unit(frame.rainCurtain) * 0.85
         if overcast > s.cloudCover { s.cloudCover = overcast }
+        // The stars alone over the plains: no constellation lines.
+        s.constellationLines = 0
         self.size = size
         aspect = Float(max(1, size.width) / max(1, size.height))
         let height = Float(max(1, size.height))
