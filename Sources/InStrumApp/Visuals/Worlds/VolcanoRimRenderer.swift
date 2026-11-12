@@ -141,9 +141,19 @@ final class VolcanoRimRenderer: ThemeRenderer {
 
     /// The lake's light on the crater (rgb, HDR): its crust and cracks together as one glowing disc, brighter with Energy,
     /// the lake's activity, the fountains, the column and the breach.
+    /// A crust seed's weight in the lake's power diagram (m²): fixed by its index (so the plates run from small to big),
+    /// and a plate just split off takes its parent's at first, so nothing jumps as it is born.
+    nonisolated static func plateWeight(_ k: Int, twin: Int, birth: Float) -> Float {
+        func size(_ i: Int) -> Float { (Float(i) * 0.618034).truncatingRemainder(dividingBy: 1) }
+        let own = size(k)
+        let parent = twin >= 0 ? size(twin) : own
+        let h = parent + (own - parent) * unit(birth)
+        return 900 * (1.8 * h * h * h - 0.3)
+    }
+
     nonisolated static func lakeLight(energy: Float, activity: Float, fountains: Float, eruption: Float, breach: Float) -> SIMD3<Float> {
         let e = unit(energy), a = unit(activity)
-        let level: Float = 0.38 + 0.3 * e + 0.15 * a + 0.12 * unit(fountains) + 0.4 * unit(eruption) + 0.5 * unit(breach)
+        let level: Float = 0.38 + 0.3 * e + 0.15 * a + 0.12 * unit(fountains) + 0.25 * unit(eruption) + 0.5 * unit(breach)
         let warm = blackbody(1150)
         return warm * level
     }
@@ -301,7 +311,7 @@ final class VolcanoRimRenderer: ThemeRenderer {
             if k < frame.cells.count {
                 let c = frame.cells[k]
                 volU[Self.cellABase + k] = SIMD4(c.position.x, c.position.y, Self.unit(c.glow), Self.unit(c.heat))
-                volU[Self.cellBBase + k] = SIMD4(Self.unit(c.birth), Float(c.twin), 0, 0)
+                volU[Self.cellBBase + k] = SIMD4(Self.unit(c.birth), Float(c.twin), Self.plateWeight(k, twin: c.twin, birth: c.birth), 0)
             } else {
                 volU[Self.cellABase + k] = SIMD4(1e5, 1e5, 0, 0)
                 volU[Self.cellBBase + k] = SIMD4(1, -1, 0, 0)
@@ -314,7 +324,7 @@ final class VolcanoRimRenderer: ThemeRenderer {
 
         buildSparks(frame, view: v, height: height, tanV: tanV, gentle: gentle)
         buildBolts(frame, view: v, height: height, gentle: gentle, share: share)
-        buildColumns(frame, show: keysShow, glow: glow, sky: skyLight)
+        buildColumns(frame, show: keysShow, glow: glow, sky: skyLight, aspect: aspect)
 
         post = PostSettings(
             bloom: 0.9, bloomThreshold: 0.75,
@@ -418,14 +428,26 @@ final class VolcanoRimRenderer: ThemeRenderer {
     }
 
     /// The keys: a row of basalt columns along the near rim, white keys' standing taller, lit by the crater ahead.
-    private func buildColumns(_ frame: VolcanoFrame, show: Bool, glow: SIMD3<Float>, sky: SIMD3<Float>) {
+    /// The keys' pavement: the white keys the front row of hexagonal columns (their rects run from the bottom of the view
+    /// to the top of the row behind), each black key a column of the row behind, centred on its boundary and as wide as
+    /// a white one (its rect just its hexagonal top).
+    private func buildColumns(_ frame: VolcanoFrame, show: Bool, glow: SIMD3<Float>, sky: SIMD3<Float>, aspect: Float) {
         columnInstances.removeAll(keepingCapacity: true)
         guard show else { return }
         let bottom: Float = -1.0
-        let lowTop = keyTop - 0.3 * (keyTop - bottom)
+        let whiteWidth = frame.keys.first(where: { !$0.key.isBlack })?.key.width ?? (1 / 52)
+        let keyHeight = 2 * whiteWidth * aspect          // a white key's width, in NDC y
+        let rs: Float = 0.5773503 * 0.7                    // the hexagon's corner radius, squashed (key widths)
+        let backCentre = keyTop - rs * keyHeight
         for k in frame.keys {
-            let x0 = -1 + k.key.x * 2, x1 = -1 + (k.key.x + k.key.width) * 2
-            columnInstances.append(SIMD4(x0, bottom, x1, k.key.isBlack ? lowTop : keyTop))
+            if k.key.isBlack {
+                let mid = -1 + (k.key.x + 0.5 * k.key.width) * 2
+                let x0 = max(-1, mid - whiteWidth), x1 = min(1, mid + whiteWidth)
+                columnInstances.append(SIMD4(x0, max(bottom, backCentre - rs * keyHeight), x1, backCentre + rs * keyHeight))
+            } else {
+                let x0 = -1 + k.key.x * 2, x1 = -1 + (k.key.x + k.key.width) * 2
+                columnInstances.append(SIMD4(x0, bottom, x1, keyTop))
+            }
             columnInstances.append(SIMD4(k.key.isBlack ? 1 : 0, Self.unit(k.glow), k.pressed ? 1 : 0, 0))
         }
         let light: SIMD3<Float> = glow * 3.5 + sky

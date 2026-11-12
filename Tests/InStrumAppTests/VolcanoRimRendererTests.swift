@@ -439,6 +439,10 @@ extension WorldPreviewTests {
         // Red sprites over the far storm (a surprise), mid-burst.
         try write(try T.renderVolcano(at: 2.13, energy: 0.3, surprises: [120: WorldSurprise(index: 3, seed: 5)], width: 1280,
                                       height: 720), "volcano-sprites")
+        // A rockfall down the inner wall and a steam blast by the other (surprises), mid-way.
+        try write(try T.renderVolcano(at: 4.6, energy: 0.4, surprises: [120: WorldSurprise(index: 1, seed: 5),
+                                                                         150: WorldSurprise(index: 2, seed: 9)],
+                                      width: 1280, height: 720), "volcano-rockfall")
         // Magma Veins: a chord lit, its veins joined.
         try write(try T.renderVolcano(at: 2, values: ["visual": .choice("Magma Veins")], energy: 0.5,
                                       notes: { i in i == 80 ? [45, 52, 57, 60, 64] : (i % 30 == 0 ? [UInt8(62 + (i / 30) % 20)] : []) },
