@@ -146,6 +146,38 @@ enum WindscreenShaders {
         return float3(off, r);
     }
 
+    /// The keys' strip along the dashboard's edge: 88 slim keys with rounded ends (the black keys shorter and set higher),
+    /// unlit barely there, lit a soft glow in `keyInfo`'s colour. Light at `p` (NDC); `blur` (pixels) softens it for its
+    /// reflection in the glass. `dim` is the unlit keys' faint shade (the city's light on them).
+    float3 keysLight(float2 p, constant ScreenU& u, float px, float blur, float3 dim) {
+        float aspect = u.a.x;
+        float pxX = px / max(aspect, 0.1);
+        float sw = 1.8 / 88.0;
+        float k0 = floor((p.x + 0.9) / sw);
+        float yc = dashY(p.x, u) - 0.026;
+        float r = max(0.12 * sw / pxX, 1.2);
+        float3 light = float3(0);
+        for (int j = -1; j <= 1; j++) {
+            float k = k0 + float(j);
+            if (k < 0.0 || k > 87.0) continue;
+            int i = int(k);
+            int pc = (i + 9) % 12;
+            bool black = pc == 1 || pc == 3 || pc == 6 || pc == 8 || pc == 10;
+            float hh = (black ? 0.010 : 0.016) / px;
+            float yk = yc + (black ? 0.006 : 0.0);
+            float dx = (p.x - (-0.9 + (k + 0.5) * sw)) / pxX;
+            float dy = (p.y - yk) / px;
+            float d = length(float2(dx, max(abs(dy) - max(hh - r, 0.0), 0.0))) - r;
+            float cov = saturate(0.5 - d / (1.0 + blur));
+            float g = u.keys[i / 4][i % 4];
+            float outD = max(d, 0.0);
+            float3 hot = mix(u.keyInfo.rgb, float3(1.0), 0.35 * g);
+            light += hot * (g * (cov * 1.6 + exp(-outD / (2.5 + blur)) * 0.3 + exp(-outD / (8.0 + blur)) * 0.06));
+            light += dim * (cov * (1.0 - g) * (black ? 0.5 : 1.0));
+        }
+        return light;
+    }
+
     fragment float4 screen_glass_fragment(ScreenOut in [[stage_in]], constant ScreenU& u [[buffer(0)]],
                                           texture2d<float> view [[texture(0)]]) {
         constexpr sampler s(filter::linear, mip_filter::linear, address::clamp_to_edge);
@@ -203,35 +235,28 @@ enum WindscreenShaders {
             C = rubber * blade + C * (1.0 - blade);
             A = blade + A * (1.0 - blade);
         }
-        // The glass's own edge darkens into the frame (the frit's band).
-        float band = smoothstep(0.0, 0.035, inside);
+        // The glass's own edge darkens into the frame: the frit's black band and its fading dots, wide enough that what the
+        // pillars cut off doesn't show as a bright sliver at their edge.
+        float dyB = dashY(p.x, u), ryB = roofY(p.x, u);
+        float fB = clamp((p.y - dyB) / max(ryB - dyB, 1e-3), 0.0, 1.0);
+        float pillarIn = min(p.x - mix(u.pillars.x, u.pillars.y, fB), mix(u.pillars.z, u.pillars.w, fB) - p.x);
+        float band = smoothstep(0.0, 0.035, inside) * smoothstep(0.0, 0.08, pillarIn);
         C *= band;
         A = A * band + (1.0 - band);
+        // The lit keys' faint reflection in the glass's base, just above the band (the glass leans back over the dash).
+        if (u.keyInfo.w > 0.5) {
+            float dy = dashY(p.x, u);
+            float above = p.y - (dy + 0.07);
+            if (above > -0.04 && above < 0.12 && abs(p.x) < 0.95) {
+                float2 src = float2(p.x, (dy - 0.026) - above * 1.4);
+                float3 kr = keysLight(src, u, px, 4.0, float3(0));
+                C += kr * (0.12 * exp(-max(above, 0.0) / 0.05) * smoothstep(-0.04, 0.0, above));
+            }
+        }
         return float4(C, A);
     }
 
     // ---------------------------------------------------------------- the car round the glass
-    /// The key under `x` (0…1 along the strip) and how high up the strip `y` (0…1) it is: (note index 0…87, black 0/1),
-    /// or −1 for none.
-    float2 keyAt(float x, float y) {
-        if (x < 0.0 || x >= 1.0) return float2(-1.0, 0.0);
-        float sW = x * 52.0;
-        float w = floor(sW);
-        int offs[7] = { 0, 2, 3, 5, 7, 8, 10 };
-        int wi = int(w);
-        int note = 12 * (wi / 7) + offs[wi % 7];
-        // A black key sits over the boundary to the right of A, C, D, F, G; and to the left of B, D, E, G, A.
-        if (y > 0.4) {
-            float f = sW - w;
-            int k = wi % 7;
-            bool right = k == 0 || k == 2 || k == 3 || k == 5 || k == 6;
-            bool left = k == 1 || k == 3 || k == 4 || k == 6 || k == 0;
-            if (right && f > 0.68 && note + 1 <= 87) return float2(float(note + 1), 1.0);
-            if (left && f < 0.32 && wi > 0 && note - 1 >= 0) return float2(float(note - 1), 1.0);
-        }
-        return float2(float(min(note, 87)), 0.0);
-    }
-
     fragment float4 screen_frame_fragment(ScreenOut in [[stage_in]], constant ScreenU& u [[buffer(0)]],
                                           texture2d<float> view [[texture(0)]]) {
         constexpr sampler s(filter::linear, mip_filter::linear, address::clamp_to_edge);
@@ -265,27 +290,11 @@ enum WindscreenShaders {
             col = float3(0.004, 0.004, 0.005) + (outside * 0.07 + strobe) * (0.25 + 1.2 * pad * sheen);
             float vent = smoothstep(0.003, 0.0, abs(down - 0.03)) * step(abs(p.x + 0.3), 0.35);
             col *= 1.0 - 0.6 * vent;
-            // The keys: a slim strip of light along the dashboard's edge, each lit in the neon's colour by its note.
+            // The keys: a slim row of light along the dashboard's edge, each lit in the neon's colour by its note.
             if (u.keyInfo.w > 0.5) {
-                float y0 = dy - 0.036, y1 = dy - 0.01;
-                float kx = (p.x + 0.92) / 1.84;
-                float ky = (p.y - y0) / (y1 - y0);
-                if (ky > -0.6 && ky < 1.6 && kx > -0.02 && kx < 1.02) {
-                    float2 k = keyAt(kx, ky);
-                    if (k.x >= 0.0) {
-                        int i = int(k.x);
-                        float glow = u.keys[i / 4][i % 4];
-                        float f = fract(kx * 52.0);
-                        float edge = k.y > 0.5 ? 1.0 : smoothstep(0.0, 0.08, f) * smoothstep(1.0, 0.92, f);
-                        float on = step(0.0, ky) * step(ky, 1.0) * edge;
-                        // Unlit, a white key is a faint pale slot brighter towards its front edge; a black key darker.
-                        float3 dim = k.y > 0.5 ? float3(0.004, 0.004, 0.006)
-                                               : (float3(0.045, 0.045, 0.055) + outside * 0.12) * (0.6 + 0.6 * (1.0 - saturate(ky)));
-                        float3 hot = mix(u.keyInfo.rgb, float3(1.0), 0.3 * glow);
-                        col = mix(col, dim + hot * glow * 2.6, on * 0.95);
-                        float halo = exp(-max(max(-ky, ky - 1.0), 0.0) * 3.0) * glow * 0.25;
-                        col += u.keyInfo.rgb * halo * (1.0 - on);
-                    }
+                float yc = dy - 0.026;
+                if (abs(p.y - yc) < 0.06 && abs(p.x) < 0.95) {
+                    col += keysLight(p, u, px, 0.0, float3(0.012, 0.012, 0.015) + outside * 0.03);
                 }
             }
         } else {
