@@ -102,6 +102,7 @@ final class ThemeCanvas: NSObject, MTKViewDelegate {
         director.reaction = model.reaction
         director.sky.settings = model.skySettings.holdingBack()   // held-back weathers never run
         director.mood = model.mood
+        director.excitementSettings = model.excitementSettings   // Energy, big moments, surprises, build and drop
     }
 
     @MainActor

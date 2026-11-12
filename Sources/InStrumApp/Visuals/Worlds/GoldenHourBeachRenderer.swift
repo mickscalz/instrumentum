@@ -20,8 +20,18 @@ final class GoldenHourBeachRenderer: ThemeRenderer {
     let warp: WarpLayer
     private var showWarp = false
     private let beach: SkyPipeline
-    private let keys: MTLRenderPipelineState
-    private var beachU = [SIMD4<Float>](repeating: .zero, count: 7 + 2 * TideLines.cap)
+    private let keys, sparks, sprites: MTLRenderPipelineState
+    private var beachU = [SIMD4<Float>](repeating: .zero, count: GoldenHourBeachRenderer.uniformCount)
+    /// Fire & Neon §5.5: the fireworks' and the green flash's streaks (two float4s each, in a ring of three buffers made
+    /// once) and the sprites (the gulls and the kite over the sky, the dolphins on the sea).
+    private var sparkInstances: [SIMD4<Float>] = []
+    private var skySprites: [BeachSprite] = []
+    private var seaSprites: [BeachSprite] = []
+    private var ring: [MTLBuffer] = []
+    private var slot = 0
+    private var view = SIMD4<Float>(16.0 / 9, 2.0 / 720, 0, 0)
+    private var primed = false
+    private var burstGlow: Float = 0
     private var oceanU = [SIMD4<Float>](repeating: .zero, count: 7)   // the beach doesn't travel: travel stays 0
     private var keyInstances: [KeyInstance] = []
     private var aspect: Float = 16.0 / 9
@@ -37,8 +47,29 @@ final class GoldenHourBeachRenderer: ThemeRenderer {
     var oceanUniforms: [SIMD4<Float>] { oceanU }
     /// The keys' rectangles in NDC (x0, y0, x1, y1) (tests check they stay inside the frame).
     var keyRects: [SIMD4<Float>] { keyInstances.map(\.rect) }
+    /// Excitement as drawn (tests read them): the firework stars and every streak, the bursts mirrored by the water, the
+    /// gulls, dolphins and kite, the green flash, the exposure after the flash limiter, the buffers made.
+    private(set) var starCount = 0
+    private(set) var sparkCount = 0
+    private(set) var burstsReflected = 0
+    private(set) var gullsDrawn = 0
+    private(set) var dolphinsDrawn = 0
+    private(set) var kiteDrawn = false
+    private(set) var greenFlashOut: Float = 0
+    private(set) var exposureOut: Float = 1
+    private(set) var bufferAllocations = 0
+    var flashesInLastSecond: Int { limiter.recent }
+    var flashTotal: Int { limiter.total }
+
+    /// BeachU's rows: 7, the 48 lines' two rows, then the fireworks' 9 bursts' two rows.
+    nonisolated static let fireworkRow = 7 + 2 * TideLines.cap, fireworkRows = 9
+    nonisolated static let uniformCount = fireworkRow + 2 * fireworkRows
+    /// Every streak at once: each shell's stars and its climbing comet, and the green flash's two.
+    nonisolated static let sparkCapacity = GoldenHourBeachModel.shellCount * (FireworkShell.mostStars + 1) + 2
 
     private struct KeyInstance { var rect: SIMD4<Float>; var info: SIMD4<Float> }
+    /// The shader's BeachSprite.
+    private struct BeachSprite { var rect: SIMD4<Float>; var local: SIMD4<Float>; var info: SIMD4<Float>; var tint: SIMD4<Float> }
 
     init?(device: MTLDevice) {
         guard let s = SkyLayer(device: device), let w = WeatherLayer(device: device), let gw = WarpLayer(device: device),
@@ -51,8 +82,34 @@ final class GoldenHourBeachRenderer: ThemeRenderer {
             d.colorAttachments[1].pixelFormat = RenderStack.depthFormat
             return try? device.makeRenderPipelineState(descriptor: d)
         }
-        guard let b = SkyPipeline(program: { make("beach_vertex", "beach_fragment", program: $0) }), let k = make("beach_keys_vertex", "beach_keys_fragment") else { return nil }
-        sky = s; weather = w; warp = gw; beach = b; keys = k
+        func blended(_ v: String, _ f: String, additive: Bool) -> MTLRenderPipelineState? {
+            let d = MTLRenderPipelineDescriptor()
+            d.vertexFunction = lib.skyFunction(v)
+            d.fragmentFunction = lib.skyFunction(f)
+            d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
+            d.colorAttachments[1].pixelFormat = RenderStack.depthFormat
+            let c = d.colorAttachments[0]!
+            c.isBlendingEnabled = true
+            c.sourceRGBBlendFactor = .one
+            c.destinationRGBBlendFactor = additive ? .one : .oneMinusSourceAlpha
+            c.sourceAlphaBlendFactor = additive ? .zero : .one
+            c.destinationAlphaBlendFactor = additive ? .one : .oneMinusSourceAlpha
+            d.colorAttachments[1].writeMask = []
+            return try? device.makeRenderPipelineState(descriptor: d)
+        }
+        guard let b = SkyPipeline(program: { make("beach_vertex", "beach_fragment", program: $0) }), let k = make("beach_keys_vertex", "beach_keys_fragment"),
+              let sp = blended("beach_spark_vertex", "beach_spark_fragment", additive: true),
+              let sr = blended("beach_sprite_vertex", "beach_sprite_fragment", additive: false) else { return nil }
+        let bytes = Self.sparkCapacity * 2 * MemoryLayout<SIMD4<Float>>.stride
+        var buffers: [MTLBuffer] = []
+        for _ in 0..<3 {
+            guard let buf = device.makeBuffer(length: bytes, options: .storageModeShared) else { return nil }
+            buffers.append(buf)
+        }
+        sky = s; weather = w; warp = gw; beach = b; keys = k; sparks = sp; sprites = sr
+        ring = buffers
+        bufferAllocations = buffers.count
+        sparkInstances.reserveCapacity(Self.sparkCapacity * 2)
         sky.verticalFOV = 58
     }
 
@@ -110,7 +167,21 @@ final class GoldenHourBeachRenderer: ThemeRenderer {
         let mood = frame.mood
         let haze = min(1, Float(p.number("haze")) * MoodLook.hazeScale(mood) + s.mist)
         let exposure = MoodLook.exposure(mood) * (1 + 0.9 * night) * weather.exposureBoost
-        let limited = limiter.limit(exposure: exposure, sparkle: Float(p.number("glitter")) * (0.25 + 0.75 * frame.glitter), dt: dt)
+        // The fireworks' bursts light the beach through the flash limiter; under gentle visuals only ever a glow, eased in.
+        let request = Self.unit(frame.flashRequest)
+        let fdt = Float(dt.isFinite ? min(max(dt, 0), 0.25) : 0)
+        if gentle {
+            burstGlow += (min(0.12, 0.4 * request) - burstGlow) * (dt == 0 ? 1 : 1 - exp(-fdt / 0.8))
+        } else {
+            burstGlow = 0.9 * request
+        }
+        if !primed {
+            // The limiter starts from black: settle it on the scene's own exposure first, so arriving is never a flash.
+            primed = true
+            for _ in 0..<16 { _ = limiter.limit(exposure: exposure, sparkle: 1, dt: 1) }
+        }
+        let limited = limiter.limit(exposure: exposure * (1 + burstGlow), sparkle: Float(p.number("glitter")) * (0.25 + 0.75 * frame.glitter), dt: dt)
+        exposureOut = limited.exposure
         glitterOut = limited.sparkle
 
         // Tide lines → sand coordinates.
@@ -156,6 +227,8 @@ final class GoldenHourBeachRenderer: ThemeRenderer {
         oceanU[4] = SIMD4(lights.moonColor, limited.sparkle)
         oceanU[5] = SIMD4(frame.swellScale, 0.06 + 0.25 * s.wind, haze, quality == .lite ? 2 : 3)
 
+        buildExcitement(frame, cam: cam, sunLight: lights.sun.w, gentle: gentle, height: Float(max(1, size.height)))
+
         // Keys: dark wood along the sand, golden amber where you play.
         keyInstances.removeAll(keepingCapacity: true)
         if keysShow {
@@ -178,12 +251,217 @@ final class GoldenHourBeachRenderer: ThemeRenderer {
             time: time, quality: quality)
     }
 
+    // MARK: - Excitement (Fire & Neon spec §5.5)
+
+    nonisolated static func unit(_ v: Float) -> Float { v.isFinite ? min(1, max(0, v)) : 0 }
+
+    /// A small integer hash to 0…1.
+    nonisolated static func hash01(_ x: UInt32) -> Float {
+        var h = x &* 0x9E37_79B1
+        h ^= h >> 15
+        h = h &* 0x85EB_CA6B
+        h ^= h >> 13
+        return Float(h & 0xFFFF) / 65535
+    }
+
+    /// A firework's colour (brightest channel 1): a vivid hue, or silver for a negative one.
+    nonisolated static func fireworkColour(_ hue: Float) -> SIMD3<Float> {
+        guard hue >= 0, hue.isFinite else { return SIMD3(1, 0.95, 0.88) }
+        let h = hue - floor(hue)
+        let k = SIMD3<Float>(abs(h * 6 - 3) - 1, 2 - abs(h * 6 - 2), 2 - abs(h * 6 - 4))
+        let rgb = simd_clamp(k, SIMD3<Float>(repeating: 0), SIMD3<Float>(repeating: 1))
+        return rgb + (SIMD3<Float>(repeating: 1) - rgb) * 0.15
+    }
+
+    /// Star `i` of `n` leaving a burst: an even spread over the sphere (turned by the shell's seed), and how fast it goes
+    /// against the shell's own speed (0.85…1.15).
+    nonisolated static func starDirection(_ i: Int, of n: Int, seed: UInt32) -> (dir: SIMD3<Float>, pace: Float, hash: Float) {
+        let count = Float(max(n, 1))
+        let z = 1 - 2 * (Float(i) + 0.5) / count
+        let r = max(0, 1 - z * z).squareRoot()
+        let h = hash01(UInt32(truncatingIfNeeded: i) &* 2_654_435_761 ^ seed)
+        let phi = Float(i) * 2.399963 + Float(seed % 1000) * 0.00628
+        return (SIMD3(r * cos(phi), r * sin(phi), z), 0.85 + 0.3 * h, h)
+    }
+
+    /// Where a star is `t` s after the burst (metres in the beach's frame): out along `dir` against the air's drag, and
+    /// sinking under gravity toward its slow terminal fall.
+    nonisolated static func starPoint(_ sh: FireworkShell, dir: SIMD3<Float>, pace: Float, t: Float) -> SIMD3<Float> {
+        let tt = max(0, t)
+        let drag = max(0.2, sh.drag)
+        let out = (1 - exp(-drag * tt)) / drag
+        let sag = 9.81 / drag * (tt - out)
+        return sh.burst + dir * (sh.speed * pace * out) - SIMD3<Float>(0, 0, sag)
+    }
+
+    /// The fireworks, the bursts' rows for the water, the gulls, the dolphins, the kite and the green flash.
+    private func buildExcitement(_ frame: BeachFrame, cam: SkyLayer.Camera, sunLight: Float, gentle: Bool, height: Float) {
+        let s = frame.sky
+        view = SIMD4(cam.tanH / cam.tanV, 2 / height, 0, 0)
+        let fwd2 = simd_normalize(SIMD2<Float>(cam.forward.x, cam.forward.y))
+        let rgt2 = SIMD2<Float>(fwd2.y, -fwd2.x)
+        let eye = Self.cameraHeight
+        func world(_ q: SIMD3<Float>) -> SIMD3<Float> {
+            SIMD3(rgt2.x * q.x + fwd2.x * q.y, rgt2.y * q.x + fwd2.y * q.y, q.z - eye)
+        }
+        func project(_ q: SIMD3<Float>) -> SIMD3<Float>? {
+            let w = world(q)
+            let z = simd_dot(w, cam.forward)
+            guard z > 1 else { return nil }
+            return SIMD3(simd_dot(w, cam.right) / (z * cam.tanH), simd_dot(w, cam.up) / (z * cam.tanV), z)
+        }
+        func projectDirection(_ d: SIMD3<Float>) -> SIMD2<Float>? {
+            let z = simd_dot(d, cam.forward)
+            guard z > 1e-3 else { return nil }
+            return SIMD2(simd_dot(d, cam.right) / (z * cam.tanH), simd_dot(d, cam.up) / (z * cam.tanV))
+        }
+        let lightScale: Float = gentle ? 0.6 : 1
+        sparkInstances.removeAll(keepingCapacity: true)
+        func spark(_ a: SIMD2<Float>, _ b: SIMD2<Float>, colour: SIMD3<Float>, radius: Float) {
+            guard sparkInstances.count + 2 <= Self.sparkCapacity * 2 else { return }
+            guard max(abs(a.x), abs(b.x)) < 1.3, max(abs(a.y), abs(b.y)) < 1.3 else { return }
+            sparkInstances.append(SIMD4(a.x, a.y, b.x, b.y))
+            sparkInstances.append(SIMD4(colour, radius))
+        }
+
+        // The fireworks: climbing comets, then the stars; each burst a row for the water's reflections.
+        for i in 0..<(2 * Self.fireworkRows) { beachU[Self.fireworkRow + i] = .zero }
+        var rows = 0, stars = 0
+        for sh in frame.fireworks {
+            if sh.sinceBurst < 0 {
+                let rise = max(sh.rise, 1e-3)
+                func climb(_ a: Float) -> SIMD3<Float> {
+                    let x = min(1, max(0, a / rise))
+                    return sh.launch + (sh.burst - sh.launch) * (1 - (1 - x) * (1 - x))
+                }
+                if let p0 = project(climb(sh.age - 0.14)), let p1 = project(climb(sh.age)) {
+                    spark(SIMD2(p0.x, p0.y), SIMD2(p1.x, p1.y), colour: SIMD3<Float>(1.0, 0.72, 0.38) * (1.4 * lightScale), radius: 1.1)
+                }
+                continue
+            }
+            let t = sh.sinceBurst, u = min(1, t / max(sh.life, 1e-3))
+            let trail: Float
+            switch sh.kind {
+            case .peony: trail = 0.1
+            case .chrysanthemum: trail = 0.22
+            case .willow: trail = 0.45
+            }
+            let c0 = Self.fireworkColour(sh.hue), c1 = Self.fireworkColour(sh.hue2)
+            let colour = c0 + (c1 - c0) * u
+            let on = min(1, t / 0.06)
+            let base = 5 * sh.brightness * on * lightScale
+            for k in 0..<min(sh.stars, FireworkShell.mostStars) {
+                let st = Self.starDirection(k, of: sh.stars, seed: sh.seed)
+                let fade: Float
+                switch sh.kind {
+                case .peony: fade = (1 - u) * (1 - u).squareRoot()
+                case .chrysanthemum: fade = (1 - u) * (u > 0.65 ? 0.55 + 0.45 * sin(st.hash * 40 + t * 38) : 1)
+                case .willow: fade = (1 - u) * (1 - 0.3 * u)
+                }
+                guard fade > 0.01 else { continue }
+                guard let p1 = project(Self.starPoint(sh, dir: st.dir, pace: st.pace, t: t)),
+                      let p0 = project(Self.starPoint(sh, dir: st.dir, pace: st.pace, t: t - trail)) else { continue }
+                spark(SIMD2(p0.x, p0.y), SIMD2(p1.x, p1.y), colour: colour * (base * fade), radius: 1.0)
+                stars += 1
+            }
+            if rows < Self.fireworkRows {
+                let w = world(sh.burst)
+                let dist = max(1, simd_length(w))
+                let spread = sh.speed * (1 - exp(-max(0.2, sh.drag) * t)) / max(0.2, sh.drag)
+                let light = 0.35 * sh.brightness * on * (1 - u) * lightScale
+                beachU[Self.fireworkRow + rows] = SIMD4(w / dist, max(0.004, spread / dist))
+                beachU[Self.fireworkRow + Self.fireworkRows + rows] = SIMD4(colour * light, 1)
+                rows += 1
+            }
+        }
+        starCount = stars
+        burstsReflected = rows
+
+        // The green flash: the sun's last (or first) sliver turning green for a breath, and a green spot over it.
+        let gf = Self.unit(frame.greenFlash) * lightScale
+        greenFlashOut = 0
+        if gf > 0.001 {
+            let r = 0.9 * Double(s.sunSize.isFinite ? min(3, max(0.5, s.sunSize)) : 1)
+            let limb = SkyLayer.enu(SkyDirection(azimuth: s.sun.azimuth, altitude: s.sun.altitude + 0.95 * r))
+            let left = SkyLayer.enu(SkyDirection(azimuth: s.sun.azimuth - 0.45 * r, altitude: s.sun.altitude + 0.88 * r))
+            let right = SkyLayer.enu(SkyDirection(azimuth: s.sun.azimuth + 0.45 * r, altitude: s.sun.altitude + 0.88 * r))
+            let spot = SkyLayer.enu(SkyDirection(azimuth: s.sun.azimuth, altitude: s.sun.altitude + 1.2 * r))
+            if s.sun.altitude + r > -0.05, let a = projectDirection(left), let b = projectDirection(right),
+               let c = projectDirection(limb), let d = projectDirection(spot) {
+                let green = SIMD3<Float>(0.25, 1.0, 0.45)
+                spark(a, b, colour: green * (4 * gf), radius: 1.5)
+                spark(c, d, colour: green * (1.6 * gf), radius: 2.4)
+                greenFlashOut = gf
+            }
+        }
+        sparkCount = sparkInstances.count / 2
+
+        // Sprites: the gulls and the kite over the sky, the dolphins on the sea.
+        skySprites.removeAll(keepingCapacity: true)
+        seaSprites.removeAll(keepingCapacity: true)
+        let sunHigh = Float(Self.smooth(8, 30, s.sun.altitude))
+        let ambient = s.horizon * 0.08 + s.zenith * 0.05
+        var gullCount = 0
+        for g in frame.gulls {
+            guard let at = project(g.position) else { continue }
+            let half = 0.65 / at.z * 1.25
+            let hx = half / cam.tanH, hy = half / cam.tanV
+            let tint = ambient + SIMD3<Float>(0.3, 0.3, 0.32) * sunHigh * sunLight
+            skySprites.append(BeachSprite(rect: SIMD4(at.x - hx, at.y - hy, at.x + hx, at.y + hy), local: SIMD4(-1.25, -1.25, 1.25, 1.25),
+                                          info: SIMD4(0, g.wing, 0, Self.unit(g.alpha)), tint: SIMD4(tint, 0)))
+            gullCount += 1
+        }
+        gullsDrawn = gullCount
+        kiteDrawn = false
+        if let k = frame.kite, let at = project(k.position) {
+            let mx = 1 / (at.z * cam.tanH), my = 1 / (at.z * cam.tanV)
+            let lo = SIMD2<Float>(-1.5, -4.4), hi = SIMD2<Float>(1.5, 1.1)
+            let backlight = sunLight * Float(1 - Self.smooth(20, 45, s.sun.altitude))
+            skySprites.append(BeachSprite(rect: SIMD4(at.x + lo.x * mx, at.y + lo.y * my, at.x + hi.x * mx, at.y + hi.y * my),
+                                          local: SIMD4(lo.x, lo.y, hi.x, hi.y), info: SIMD4(2, k.tail, k.tilt, Self.unit(k.alpha)),
+                                          tint: SIMD4(s.horizon * 0.25 + s.zenith * 0.1, backlight)))
+            kiteDrawn = k.alpha > 0.01
+        }
+        var dolphinCount = 0
+        for dph in frame.dolphins {
+            let unitM = max(0.5, dph.length) / 2.25   // metres per unit of the shader's dolphin
+            guard let at = project(dph.position + SIMD3<Float>(0, 0, 0.22 * unitM)) else { continue }
+            let mx = unitM / (at.z * cam.tanH), my = unitM / (at.z * cam.tanV)
+            let flip: Float = dph.heading < 0 ? -1 : 1
+            let rim = sunLight * 0.6
+            seaSprites.append(BeachSprite(rect: SIMD4(at.x - 1.6 * mx, at.y - 0.5 * my, at.x + 1.6 * mx, at.y + 0.95 * my),
+                                          local: SIMD4(-1.6 * flip, -0.5, 1.6 * flip, 0.95), info: SIMD4(1, dph.roll, 0, 1),
+                                          tint: SIMD4(SIMD3<Float>(0.02, 0.025, 0.03) + ambient * 0.6, rim)))
+            dolphinCount += 1
+        }
+        dolphinsDrawn = dolphinCount
+    }
+
     func render(stack: RenderStack, commandBuffer cb: MTLCommandBuffer) {
         sky.prepare(cb)   // the supercell's impostor, before the frame's passes
         guard let pass = stack.scenePass(clear: MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)),
               let e = cb.makeRenderCommandEncoder(descriptor: pass) else { return }
         sky.draw(e)
         if showWarp { warp.draw(e) }
+
+        // The fireworks and the green flash over the sky, and the gulls and the kite: the headland and the palms then
+        // draw over them where they stand in front.
+        if sparkCount > 0, !ring.isEmpty {
+            slot = (slot + 1) % ring.count
+            let buf = ring[slot]
+            let bytes = sparkCount * 2 * MemoryLayout<SIMD4<Float>>.stride
+            sparkInstances.withUnsafeBytes { buf.contents().copyMemory(from: $0.baseAddress!, byteCount: bytes) }
+            var vw = view
+            e.setRenderPipelineState(sparks)
+            e.setVertexBuffer(buf, offset: 0, index: 0)
+            e.setVertexBytes(&vw, length: MemoryLayout<SIMD4<Float>>.size, index: 1)
+            e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6, instanceCount: sparkCount)
+        }
+        if !skySprites.isEmpty {
+            e.setRenderPipelineState(sprites)
+            skySprites.withUnsafeBytes { e.setVertexBytes($0.baseAddress!, length: $0.count, index: 0) }
+            e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6, instanceCount: skySprites.count)
+        }
 
         let skyU = sky.uniforms
         e.setRenderPipelineState(beach.state(sky.program))
@@ -192,6 +470,12 @@ final class GoldenHourBeachRenderer: ThemeRenderer {
         oceanU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 2) }
         sky.bindStars(e)
         e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+
+        if !seaSprites.isEmpty {
+            e.setRenderPipelineState(sprites)
+            seaSprites.withUnsafeBytes { e.setVertexBytes($0.baseAddress!, length: $0.count, index: 0) }
+            e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6, instanceCount: seaSprites.count)
+        }
 
         weather.draw(e)
 

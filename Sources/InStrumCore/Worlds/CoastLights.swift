@@ -78,6 +78,9 @@ public struct CoastLights {
     public var bloomAmount: Float = 0.6
     public var reactionScale: Float = 1
     public var lingerScale: Float = 1
+    /// Excitement's Energy (Fire & Neon spec §5.5), 0…1: it pushes the car as playing does, so a hard, fast passage keeps
+    /// it going between the notes.
+    public var push: Float = 0
 
     private var held = Set<UInt8>()
     private var pending: [CoastLight] = []
@@ -119,7 +122,8 @@ public struct CoastLights {
     public mutating func step(dt: Double, roles: RoleValues) {
         let d = max(0, dt), fdt = Float(d)
         // Speed: playing pushes the car toward 1 (τ 0.8 s); silence eases it back to cruise (τ 3 s).
-        let drive = Float(min(1, 0.6 * roles[.energy] + 0.4 * roles[.density]))
+        let played = Float(min(1, 0.6 * roles[.energy] + 0.4 * roles[.density]))
+        let drive = max(played, push.isFinite ? min(1, max(0, push)) : 0)
         let target = min(1, Self.cruise + 0.65 * speedResponse * drive)
         let tau = target > speed ? Self.riseTau : Self.fallTau
         speed = min(1, speed + (target - speed) * Float(1 - exp(-d / tau)))

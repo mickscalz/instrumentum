@@ -16,11 +16,14 @@ final class MoonlitLakeRenderer: ThemeRenderer {
     let warp: WarpLayer
     private var showWarp = false
     private let lake: SkyPipeline
-    private let glow, keys: MTLRenderPipelineState
+    private let glow, keys, owlState: MTLRenderPipelineState
     private var lakeU = [SIMD4<Float>](repeating: .zero, count: 4 + 2 * LakeRipples.cap)
     private var fireflies: [SIMD4<Float>] = []
     private var keyInstances: [KeyInstance] = []
+    private var owlInstances: [OwlInstance] = []
     private var aspect: Float = 16.0 / 9
+    private var primed = false
+    private var fireballGlow: Float = 0
     private var viewAzimuth: Double?
     private var limiter = FlashLimiter()
     private(set) var post = PostSettings()
@@ -30,8 +33,18 @@ final class MoonlitLakeRenderer: ThemeRenderer {
     private(set) var fireflyScale: Float = 1
     /// Where the horizon (the far shore's foot) sits this frame, NDC y.
     private(set) var horizonY: Float = -0.2
+    /// Excitement as drawn (tests read them): the exposure after the flash limiter, the mist on the water, how many of
+    /// the lake's own meteors the sky shows, and the owl.
+    private(set) var exposureOut: Float = 1
+    private(set) var mistOut: Float = 0
+    private(set) var worldMeteorsShown = 0
+    private(set) var owlDrawn = false
+    var flashesInLastSecond: Int { limiter.recent }
+    var flashTotal: Int { limiter.total }
 
     private struct KeyInstance { var rect: SIMD4<Float>; var info: SIMD4<Float> }
+    /// The shader's OwlInstance: the quad (NDC), its wingbeat and bank, and its colour and cover.
+    private struct OwlInstance { var rect: SIMD4<Float>; var info: SIMD4<Float>; var tint: SIMD4<Float> }
 
     init?(device: MTLDevice) {
         guard let s = SkyLayer(device: device), let w = WeatherLayer(device: device), let gw = WarpLayer(device: device),
@@ -51,11 +64,25 @@ final class MoonlitLakeRenderer: ThemeRenderer {
             }
             return try? device.makeRenderPipelineState(descriptor: d)
         }
+        func premultiplied(_ v: String, _ f: String) -> MTLRenderPipelineState? {
+            let d = MTLRenderPipelineDescriptor()
+            d.vertexFunction = lib.skyFunction(v)
+            d.fragmentFunction = lib.skyFunction(f)
+            d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
+            d.colorAttachments[1].pixelFormat = RenderStack.depthFormat
+            let c = d.colorAttachments[0]!
+            c.isBlendingEnabled = true
+            c.sourceRGBBlendFactor = .one; c.destinationRGBBlendFactor = .oneMinusSourceAlpha
+            c.sourceAlphaBlendFactor = .one; c.destinationAlphaBlendFactor = .oneMinusSourceAlpha
+            d.colorAttachments[1].writeMask = []
+            return try? device.makeRenderPipelineState(descriptor: d)
+        }
         guard let l = SkyPipeline(program: { make("lake_vertex", "lake_fragment", additive: false, program: $0) }),
               let g = make("firefly_vertex", "firefly_fragment", additive: true),
-              let k = make("lake_keys_vertex", "lake_keys_fragment", additive: false) else { return nil }
+              let k = make("lake_keys_vertex", "lake_keys_fragment", additive: false),
+              let o = premultiplied("lake_owl_vertex", "lake_owl_fragment") else { return nil }
         self.device = device
-        sky = s; weather = w; warp = gw; lake = l; glow = g; keys = k
+        sky = s; weather = w; warp = gw; lake = l; glow = g; keys = k; owlState = o
         sky.verticalFOV = 62
     }
 
@@ -64,12 +91,11 @@ final class MoonlitLakeRenderer: ThemeRenderer {
         return t * t * (3 - 2 * t)
     }
 
-    /// Face the moon while it's up (a little to its left, so it sits off-centre), else the sun, else the equator.
-    static func targetAzimuth(_ s: SkyState) -> Double {
-        if s.moon.altitude > -5, s.sun.altitude < 2 { return s.moon.azimuth - 10 }
-        if s.sun.altitude > -12 { return s.sun.azimuth - 10 }
-        return SkyLayer.defaultViewAzimuth(latitude: s.latitude)
-    }
+    nonisolated static func unit(_ v: Float) -> Float { v.isFinite ? min(1, max(0, v)) : 0 }
+
+    /// Face the moon while it's up (a little to its left, so it sits off-centre), else the sun, else the equator: the
+    /// model's own rule, so its meteor burst and its owl are placed where the lake looks.
+    static func targetAzimuth(_ s: SkyState) -> Double { MoonlitLakeModel.viewAzimuth(s) }
 
     /// Where a point on the lake (x 0…1 across, depth 0 near … 1 far) lies: forward and sideways distance.
     static func lakePoint(x: Float, depth: Float, tanH: Float) -> (f: Float, s: Float) {
@@ -100,7 +126,12 @@ final class MoonlitLakeRenderer: ThemeRenderer {
         sky.horizonY = horizonY
         sky.verticalFOV = 62 + 10 * Double(lift)
         sky.gentle = gentle
-        sky.update(s, quality: quality, size: size, time: time)
+        // Tension gathers the mist (on the water and in the sky, dimming the stars); a drop lifts it all at once.
+        let gather = Self.unit(frame.mistGather), lifted = Self.unit(frame.mistLift)
+        var shown = s
+        shown.mist = min(1, max(0, s.mist.isFinite ? s.mist : 0) + 0.35 * gather) * (1 - 0.9 * lifted)
+        sky.update(shown, quality: quality, size: size, time: time)
+        worldMeteorsShown = min(frame.worldMeteors, SkyLayer.meteorSlots)
         // Sea smoke rises off the lake: the water from the keys (the near shore) up to the far shore's foot (spec §6.4).
         weather.waterBand = SIMD4(-1, keyTop, 1, horizonY)
         weather.steamCamera = sky.camera(latitude: s.latitude, aspect: aspect)
@@ -135,16 +166,33 @@ final class MoonlitLakeRenderer: ThemeRenderer {
         }
 
         let mood = frame.mood
-        let mist = min(1, Float(p.number("mist")) * MoodLook.hazeScale(mood) * 0.8 + s.mist)
-        // Glints and the exposure go through the flash limiter (gentle visuals halve the sparkle).
+        let baseMist = min(1, Float(p.number("mist")) * MoodLook.hazeScale(mood) * 0.8 + s.mist)
+        let mist = min(1, baseMist * (1 + 1.2 * gather) + 0.3 * gather) * (1 - 0.92 * lifted)
+        mistOut = mist
+        // Glints and the exposure go through the flash limiter (gentle visuals halve the sparkle). A fireball's light on
+        // the lake rides on the exposure: under gentle visuals it is only ever a glow, eased in.
         let exposure = MoodLook.exposure(mood) * (1 + 0.9 * night) * weather.exposureBoost
-        let limited = limiter.limit(exposure: exposure, sparkle: Float(p.number("glitter")) * (0.25 + 0.75 * frame.glitter), dt: dt)
+        let request = Self.unit(frame.flashRequest)
+        let fdt = Float(dt.isFinite ? min(max(dt, 0), 0.25) : 0)
+        if gentle {
+            fireballGlow += (min(0.12, 0.4 * request) - fireballGlow) * (dt == 0 ? 1 : 1 - exp(-fdt / 0.8))
+        } else {
+            fireballGlow = 0.9 * request
+        }
+        limiter.gentle = gentle
+        if !primed {
+            // The limiter starts from black: settle it on the scene's own exposure first, so arriving is never a flash.
+            primed = true
+            for _ in 0..<16 { _ = limiter.limit(exposure: exposure, sparkle: 1, dt: 1) }
+        }
+        let limited = limiter.limit(exposure: exposure * (1 + fireballGlow), sparkle: Float(p.number("glitter")) * (0.25 + 0.75 * frame.glitter), dt: dt)
+        exposureOut = limited.exposure
         let glitter = limited.sparkle
         glitterOut = glitter
 
-        // Ripples → wave packets.
+        // Ripples → wave packets: the notes' rings, and the water's own (a fish rising, Energy's dimples).
         let budget = Self.rippleBudget(quality)
-        let ripples = LakeRipples.visible(frame.ripples, limit: budget)
+        let ripples = LakeRipples.visible(frame.rings.isEmpty ? frame.ripples : frame.ripples + frame.rings, limit: budget)
         rippleCount = ripples.count
         for i in 0..<LakeRipples.cap { lakeU[4 + i] = .zero; lakeU[4 + LakeRipples.cap + i] = .zero }
         for (i, r) in ripples.enumerated() {
@@ -161,7 +209,7 @@ final class MoonlitLakeRenderer: ThemeRenderer {
             lakeU[4 + LakeRipples.cap + i] = SIMD4(width, k, r.strength * fade, 0)
         }
         lakeU[0] = SIMD4(keyTop, time, glitter, mist)
-        lakeU[1] = SIMD4(Float(p.number("reeds")), s.wind, Float(ripples.count), night)
+        lakeU[1] = SIMD4(Float(p.number("reeds")), Self.unit(frame.windOnWater), Float(ripples.count), night)
         lakeU[2] = light
         lakeU[3] = SIMD4(lightColor, MoodLook.driftScale(mood))
 
@@ -185,6 +233,28 @@ final class MoonlitLakeRenderer: ThemeRenderer {
             }
             if let c = project(SIMD3(ground.x, ground.y, -height - 1)) {
                 fireflies.append(SIMD4(c.x, c.y, min(0.07, max(0.014, 0.24 / c.z)), alpha * 0.3))
+            }
+        }
+
+        // The owl crossing the moon (a surprise): a silhouette, its wings spread across the sky, beating then gliding.
+        owlInstances.removeAll(keepingCapacity: true)
+        owlDrawn = false
+        if let o = frame.owl {
+            let d = o.direction
+            let z = simd_dot(d, cam.forward)
+            if z > 0.05 {
+                let at = SIMD2<Float>(simd_dot(d, cam.right) / (z * cam.tanH), simd_dot(d, cam.up) / (z * cam.tanV))
+                let half = Float(o.span) * 0.5 * .pi / 180 * 1.2
+                let hx = half / cam.tanH, hy = half / cam.tanV
+                if abs(at.x) < 1 + hx, abs(at.y) < 1 + hy {
+                    let flown = o.progress
+                    let cover = min(1, flown / 0.06) * min(1, (1 - flown) / 0.06)
+                    let bank = 0.18 * sin(flown * 5.3)
+                    let ambient = s.zenith * 0.05 + SIMD3<Float>(0.002, 0.002, 0.003)
+                    owlInstances.append(OwlInstance(rect: SIMD4(at.x - hx, at.y - hy, at.x + hx, at.y + hy),
+                                                    info: SIMD4(o.wing, bank, 0, 0), tint: SIMD4(ambient, cover)))
+                    owlDrawn = cover > 0.01
+                }
             }
         }
 
@@ -229,6 +299,12 @@ final class MoonlitLakeRenderer: ThemeRenderer {
             fireflies.withUnsafeBytes { e.setVertexBytes($0.baseAddress!, length: $0.count, index: 0) }
             e.setVertexBytes(&a, length: MemoryLayout<SIMD4<Float>>.size, index: 1)
             e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6, instanceCount: fireflies.count)
+        }
+
+        if !owlInstances.isEmpty {
+            e.setRenderPipelineState(owlState)
+            owlInstances.withUnsafeBytes { e.setVertexBytes($0.baseAddress!, length: $0.count, index: 0) }
+            e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6, instanceCount: owlInstances.count)
         }
 
         weather.draw(e)

@@ -34,8 +34,14 @@ final class AuroraFjordRenderer: ThemeRenderer {
     let warp: WarpLayer
     private var showWarp = false
     private let scene: SkyPipeline
-    private let village, floe, rail, keys: MTLRenderPipelineState
-    private var fjordU = [SIMD4<Float>](repeating: .zero, count: 9)
+    private let village, floe, rail, keys, coronaState, orcaState: MTLRenderPipelineState
+    private var fjordU = [SIMD4<Float>](repeating: .zero, count: AuroraFjordRenderer.uniformCount)
+    /// Fire & Neon §5.5: the corona's quad (NDC; none while it rests), the orca, and the fireball's light through the
+    /// flash limiter.
+    private var coronaRect: SIMD4<Float>?
+    private var orcaInstances: [OrcaInstance] = []
+    private var primed = false
+    private var fireballGlow: Float = 0
     private var villageInstances: [VillageInstance] = []
     private var floeInstances: [SIMD4<Float>] = []
     private var railParts: [RailPart] = []
@@ -64,6 +70,19 @@ final class AuroraFjordRenderer: ThemeRenderer {
     var villageRects: [SIMD4<Float>] { villageInstances.map(\.rect) }
     /// The shader's FjordU (tests read its clock).
     var uniforms: [SIMD4<Float>] { fjordU }
+    /// FjordU's rows: the nine before Fire & Neon, then the corona's.
+    nonisolated static let uniformCount = 10, coronaRow = 9
+    /// Excitement as drawn (tests read them): the surge and its corona after the sparkle, the gathering, the aurora's
+    /// height above its framing (degrees) and pace, the orca, the exposure after the flash limiter.
+    private(set) var surgeOut: Float = 0
+    private(set) var coronaOut: Float = 0
+    private(set) var gatherOut: Float = 0
+    private(set) var liftOut: Float = 0
+    private(set) var paceOut: Float = 1
+    private(set) var orcaDrawn = false
+    private(set) var exposureOut: Float = 1
+    var flashesInLastSecond: Int { limiter.recent }
+    var flashTotal: Int { limiter.total }
     /// The shader's clock wraps at the hour (the newer worlds' wrap); the water, the falls and the glints read noise that
     /// repeats in a whole number of cells an hour (the shader's kFjordTick), so the wrap never shows.
     static let clockWrap = 3600.0
@@ -73,6 +92,8 @@ final class AuroraFjordRenderer: ThemeRenderer {
     private struct VillageInstance { var rect: SIMD4<Float>; var dir: SIMD4<Float>; var colour: SIMD4<Float> }
     /// The shader's RailPart: four clip-space corners and info (kind, length, seed).
     private struct RailPart { var p0, p1, p2, p3, info: SIMD4<Float> }
+    /// The shader's OrcaInstance.
+    private struct OrcaInstance { var rect: SIMD4<Float>; var local: SIMD4<Float>; var info: SIMD4<Float>; var tint: SIMD4<Float> }
 
     init?(device: MTLDevice) {
         guard let s = SkyLayer(device: device), let w = WeatherLayer(device: device), let gw = WarpLayer(device: device),
@@ -103,12 +124,16 @@ final class AuroraFjordRenderer: ThemeRenderer {
               let v = make("fjord_village_vertex", "fjord_village_fragment", .additive, writesDepth: false),
               let fl = make("fjord_floe_vertex", "fjord_floe_fragment", .premultiplied, writesDepth: false),
               let r = make("fjord_rail_vertex", "fjord_rail_fragment", .premultiplied),
-              let k = make("fjord_keys_vertex", "fjord_keys_fragment", .opaque) else { return nil }
+              let k = make("fjord_keys_vertex", "fjord_keys_fragment", .opaque),
+              let co = make("fjord_corona_vertex", "fjord_corona_fragment", .additive, writesDepth: false),
+              let oc = make("fjord_orca_vertex", "fjord_orca_fragment", .premultiplied, writesDepth: false) else { return nil }
         sky = s; weather = w; warp = gw; scene = sc; village = v; floe = fl; rail = r; keys = k
+        coronaState = co; orcaState = oc
         sky.verticalFOV = 64
     }
 
     private static func smooth(_ a: Double, _ b: Double, _ x: Double) -> Double { OceanLight.smooth(a, b, x) }
+    nonisolated static func unit(_ v: Float) -> Float { v.isFinite ? min(1, max(0, v)) : 0 }
     private static func smoothF(_ a: Float, _ b: Float, _ x: Float) -> Float {
         let t = min(1, max(0, (x - a) / (b - a)))
         return t * t * (3 - 2 * t)
@@ -184,13 +209,32 @@ final class AuroraFjordRenderer: ThemeRenderer {
         let night = Float(1 - Self.smooth(-12, -3, sunAlt))
         limiter.gentle = gentle
         let exposure = MoodLook.exposure(mood) * (1 + 0.9 * night) * weather.exposureBoost
-        let limited = limiter.limit(exposure: exposure, sparkle: 1, dt: dt)
+        // A fireball's light on the fjord rides on the exposure: under gentle visuals only ever a glow, eased in.
+        let request = Self.unit(frame.flashRequest)
+        if gentle {
+            fireballGlow += (min(0.12, 0.4 * request) - fireballGlow) * (dt == 0 ? 1 : Float(1 - exp(-fdt / 0.8)))
+        } else {
+            fireballGlow = 0.9 * request
+        }
+        if !primed {
+            // The limiter starts from black: settle it on the scene's own exposure first, so arriving is never a flash.
+            primed = true
+            for _ in 0..<16 { _ = limiter.limit(exposure: exposure, sparkle: 1, dt: 1) }
+        }
+        let limited = limiter.limit(exposure: exposure * (1 + fireballGlow), sparkle: 1, dt: dt)
+        exposureOut = limited.exposure
         let sparkle = limited.sparkle
+        // Excitement (Fire & Neon spec §5.5): the surge, the curtains gathering, Energy's pace and lift.
+        let surge = Self.unit(frame.surge), gather = Self.unit(frame.gather)
+        surgeOut = surge * sparkle
+        gatherOut = gather * sparkle
+        let pace = (frame.auroraPace.isFinite ? min(max(frame.auroraPace, 1), 2) : 1) * (1 + 0.6 * surge)
+        paceOut = pace
 
         // The camera faces the aurora's pole-ward azimuth, gliding over 4 s as it wanders; the sky's clock runs at the
         // curtain's shimmer speed.
         let shimmer = frame.shimmer.isFinite ? min(max(frame.shimmer, 1), 2) : 1
-        skyClock += fdt * Double(shimmer)
+        skyClock += fdt * Double(shimmer * pace)
         let skyTime = Float(skyClock)
         let target = SkyLayer.auroraAzimuth(hemisphere: s.hemisphere, time: skyTime)
         if let az = viewAzimuth {
@@ -210,16 +254,24 @@ final class AuroraFjordRenderer: ThemeRenderer {
         let sent = CurtainLights.visible(frame.ripples, limit: SkyLayer.rippleCount)
         for (i, r) in sent.enumerated() { ripples[i] = Self.shaderRipple(r, sparkle: sparkle) }
         rippleCount = sent.count
+        // The surge sends its own pulse out both ways from the band's middle (in the last slot when the notes fill them).
+        if surge > 0.01, frame.surgeAge >= 0 {
+            let slot = min(sent.count, SkyLayer.rippleCount - 1)
+            ripples[slot] = SIMD4(0.5, frame.surgeAge * 1.6, 0.9 * surge * sparkle, 0.08)
+        }
         shaderRipples = ripples
         sky.ripples = ripples
         let glow = frame.glow.isFinite ? min(max(frame.glow, 0), 1) : 0
-        glowOut = glow * glow * sparkle
+        glowOut = min(1, glow * glow + 0.7 * surge + 0.3 * gather) * sparkle
         let hue = frame.hueShift.isFinite ? min(max(frame.hueShift, -1), 1) : 0
         sky.auroraTint = SIMD2(hue, glowOut)
         var shown = s
-        shown.auroraAltitude = Self.framedAltitude(s.auroraAltitude)
+        // Energy lifts the curtain higher in the V; gathering draws it down into a tight arc; the surge throws it up.
+        let lift = (frame.auroraLift.isFinite ? min(max(frame.auroraLift, 0), 12) : 0) + 12 * surge - 3 * gather
+        liftOut = lift
+        shown.auroraAltitude = max(1, Self.framedAltitude(s.auroraAltitude) + lift)
         let tense = frame.tensePulse.isFinite ? min(max(frame.tensePulse, 0), 1) : 0
-        shown.auroraStorm = max(s.auroraStorm, Self.tenseFlare * tense * sparkle)
+        shown.auroraStorm = max(s.auroraStorm, Self.tenseFlare * tense * sparkle, min(1, 0.85 * surge + 0.35 * gather) * sparkle)
         sky.gentle = gentle
         sky.update(shown, quality: quality, size: size, time: skyTime)
         let cam = sky.camera(latitude: s.latitude, aspect: aspect)
@@ -244,7 +296,7 @@ final class AuroraFjordRenderer: ThemeRenderer {
         let topColour = SIMD3<Float>(0.95, 0.25, 0.4) + (SIMD3<Float>(0.55, 0.35, 1.0) - SIMD3<Float>(0.95, 0.25, 0.4)) * cool
         let aurora = min(max(s.aurora, 0), 1)
         let topWeight: Float = 0.4 * (shown.auroraStorm + 0.7 * warm + 0.5 * cool)
-        let auroraGain: Float = aurora * (1 + 0.6 * glowOut) * 0.05
+        let auroraGain: Float = aurora * (1 + 0.6 * glowOut) * (1 + (1.4 * surge + 0.4 * gather) * sparkle) * 0.05
         let auroraLight: SIMD3<Float> = (green + topColour * topWeight) * auroraGain
         let mist = min(1, max(0, s.mist) * (0.6 + 0.4 * MoodLook.hazeScale(mood)))
         let swell = Float(min(max(p.number("swell"), 0), 1))
@@ -262,6 +314,9 @@ final class AuroraFjordRenderer: ThemeRenderer {
         fjordU[6] = SIMD4(auroraLight, aurora)
         fjordU[7] = SIMD4(s.zenith * 0.7 + s.horizon * 0.3, cloud)
         fjordU[8] = SIMD4(phase1, phase2, 0, 0)
+        let corona = Self.unit(frame.corona) * sparkle
+        coronaOut = corona
+        fjordU[Self.coronaRow] = SIMD4(corona, 0, 0, 0)
 
         // The view's frame (level ahead and across, as the shader takes them) and projection.
         let ahead2 = simd_normalize(SIMD2(cam.forward.x, cam.forward.y))
@@ -359,6 +414,35 @@ final class AuroraFjordRenderer: ThemeRenderer {
             if let top = project(simd_normalize(point(sx, 4.44, railTop + 0.03))) { jettyPosts.append(top) }
         }
 
+        // The corona's quad: from 26° up, straight ahead, to the frame's top (the shader keeps it clear of the walls).
+        coronaRect = nil
+        if corona > 0.001, let foot = project(direction(phi: 0, alt: 26 * .pi / 180)), foot.y < 1 {
+            coronaRect = SIMD4(-1, max(-1, foot.y), 1, 1)
+        }
+
+        // The orca: its fin out of the still water and its blow, a few metres high, lit by the night (the aurora, the
+        // moon, the sky).
+        orcaInstances.removeAll(keepingCapacity: true)
+        orcaDrawn = false
+        if let o = frame.orca {
+            let pt = Self.floePoint(x: o.x, depth: o.depth, tanH: cam.tanH)
+            func at(_ x: Float, _ y: Float) -> SIMD2<Float>? {
+                let flat: SIMD3<Float> = across * (pt.s + x) + ahead * pt.f
+                return project(flat + SIMD3<Float>(0, 0, y - eye))
+            }
+            let lo = SIMD2<Float>(-4.5, -0.4), hi = SIMD2<Float>(4.5, 6)
+            if let a = at(lo.x, lo.y), let b = at(hi.x, hi.y), b.x > -1.2, a.x < 1.2 {
+                let skyLight: SIMD3<Float> = s.zenith * 0.5 + s.horizon * 0.3
+                let moonLight: SIMD3<Float> = SIMD3<Float>(0.55, 0.63, 0.82) * (0.3 * moonUp)
+                let light: SIMD3<Float> = skyLight + auroraLight * 6 + moonLight
+                let wind = s.wind.isFinite ? min(max(s.wind, 0), 1) : 0
+                orcaInstances.append(OrcaInstance(rect: SIMD4(a.x, a.y, b.x, b.y), local: SIMD4(lo.x, lo.y, hi.x, hi.y),
+                                                  info: SIMD4(Self.unit(o.fin), o.blowAge, Self.unit(o.blow), wind),
+                                                  tint: SIMD4(light, 1)))
+                orcaDrawn = o.fin > 0.01 || o.blowAge >= 0
+            }
+        }
+
         // Keys: ice-blue glass along the jetty's edge, glowing where you play.
         keyInstances.removeAll(keepingCapacity: true)
         if keysShow {
@@ -431,6 +515,20 @@ final class AuroraFjordRenderer: ThemeRenderer {
             bindUniforms()
             // Two float4s per floe, two layers each (its side, then its top): one instance per float4.
             e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6, instanceCount: floeInstances.count)
+        }
+
+        // The surge's corona over the top of the V of sky, and the orca on the water.
+        if var rect = coronaRect {
+            e.setRenderPipelineState(coronaState)
+            e.setVertexBytes(&rect, length: MemoryLayout<SIMD4<Float>>.size, index: 0)
+            bindUniforms()
+            e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6)
+        }
+        if !orcaInstances.isEmpty {
+            e.setRenderPipelineState(orcaState)
+            orcaInstances.withUnsafeBytes { e.setVertexBytes($0.baseAddress!, length: $0.count, index: 0) }
+            bindUniforms()
+            e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6, instanceCount: orcaInstances.count)
         }
 
         // Snow and rain, diamond dust's crystals (the weather layer binds its own buffers).

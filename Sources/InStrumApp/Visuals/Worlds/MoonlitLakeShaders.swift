@@ -239,6 +239,62 @@ enum MoonlitLakeShaders {
         return float4(float3(1.0, 0.86, 0.42) * 4.0 * a, 0.0);
     }
 
+    // ---------------------------------------------------------------- the owl crossing the moon (Fire & Neon §5.5)
+    // rect: the quad (NDC x0, y0, x1, y1), square in the sky's angles; info: the wingbeat (−1 down … 1 up), its bank
+    // (radians), unused; tint: its colour (the night sky's faint light on it) and its cover (it fades in and out at the
+    // ends of its flight). Premultiplied over the lake and the sky.
+    struct OwlInstance { float4 rect; float4 info; float4 tint; };
+    struct OwlOut { float4 pos [[position]]; float2 uv; float4 info; float4 tint; };
+
+    vertex OwlOut lake_owl_vertex(uint vid [[vertex_id]], uint iid [[instance_id]], constant OwlInstance* owls [[buffer(0)]]) {
+        float2 c[6] = { float2(0, 0), float2(1, 0), float2(0, 1), float2(1, 0), float2(1, 1), float2(0, 1) };
+        OwlInstance o = owls[iid];
+        OwlOut out;
+        out.pos = float4(mix(o.rect.xy, o.rect.zw, c[vid]), 0, 1);
+        out.uv = c[vid] * 2.0 - 1.0;
+        out.info = o.info;
+        out.tint = o.tint;
+        return out;
+    }
+
+    /// Distance from p to the segment a–b, and how far along it (0…1) the nearest point lies.
+    float2 owlSegment(float2 p, float2 a, float2 b) {
+        float2 pa = p - a, ba = b - a;
+        float h = saturate(dot(pa, ba) / max(dot(ba, ba), 1e-6));
+        return float2(length(pa - ba * h), h);
+    }
+
+    /// An owl in flight seen from below (uv: its wingspan runs −1…1 across, its head up): a round head, a stout body, a
+    /// short fanned tail, and broad wings rounded at the ends, their tips raised or lowered by the beat. A signed
+    /// distance (negative inside).
+    float owlDistance(float2 uv, float wing) {
+        float d = length((uv - float2(0.0, 0.2)) / float2(1.0, 1.05)) - 0.14;
+        d = min(d, length((uv - float2(0.0, -0.02)) / float2(0.72, 1.0)) - 0.19);
+        float2 t = owlSegment(uv, float2(0.0, -0.16), float2(0.0, -0.38));
+        d = min(d, t.x - mix(0.06, 0.1, t.y));
+        for (int k = 0; k < 2; k++) {
+            float side = k == 0 ? -1.0 : 1.0;
+            float2 root = float2(0.09 * side, 0.05);
+            float2 elbow = float2(0.55 * side, 0.07 + 0.16 * wing);
+            float2 tip = float2(0.97 * side, 0.02 + 0.4 * wing);
+            float2 a = owlSegment(uv, root, elbow), b = owlSegment(uv, elbow, tip);
+            d = min(d, a.x - mix(0.16, 0.14, a.y));
+            d = min(d, b.x - mix(0.14, 0.07, b.y));
+        }
+        return d;
+    }
+
+    fragment float4 lake_owl_fragment(OwlOut in [[stage_in]]) {
+        float bank = in.info.y, cb = cos(bank), sb = sin(bank);
+        float2 uv = float2(in.uv.x * cb - in.uv.y * sb, in.uv.x * sb + in.uv.y * cb);
+        float d = owlDistance(uv, in.info.x);
+        float aa = max(fwidth(in.uv.x) * 1.2, 1e-3);
+        float cover = 1.0 - smoothstep(-aa, aa, d);
+        if (cover < 0.002) discard_fragment();
+        float a = cover * in.tint.w;
+        return float4(in.tint.rgb * a, a);
+    }
+
     // Keys: rect (x0, y0, x1, y1) and info (isBlack, glow, pressed, light).
     struct KeyInstance { float4 rect; float4 info; };
     struct KeyOut { float4 pos [[position]]; float2 uv; float4 info; };
