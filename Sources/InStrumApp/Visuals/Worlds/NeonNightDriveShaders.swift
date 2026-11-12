@@ -1217,14 +1217,15 @@ enum NeonNightDriveShaders {
         if (kind == 0) {
             float zMax = 470.0;
             for (int i = 0; i < 2; i++) {
-                Tower r;
-                if (d.x < 0.0) {
-                    r = i == 0 ? towerRow(d, -30.0, -1.0, 64.0, 16.0, 62.0, 1.0, zMin, zMax, u, pa)
-                               : towerRow(d, -64.0, -1.0, 80.0, 30.0, 140.0, 2.0, zMin, zMax, u, pa);
-                } else {
-                    r = i == 0 ? towerRow(d, 44.0, 1.0, 60.0, 16.0, 70.0, 3.0, zMin, zMax, u, pa)
-                               : towerRow(d, 80.0, 1.0, 96.0, 30.0, 150.0, 4.0, zMin, zMax, u, pa);
-                }
+                // The row's facade line (m across), side, cell, lowest and tallest building (m) and seed: the near and
+                // the far row on the left or the right. One call with its row chosen: towerRow (with its signs and
+                // facades) was inlined four times, one for each row, which made the shader far larger, and an Intel or
+                // AMD GPU slower, for no change in what it draws.
+                bool left = d.x < 0.0;
+                float4 row = left ? (i == 0 ? float4(-30.0, 64.0, 16.0, 62.0) : float4(-64.0, 80.0, 30.0, 140.0))
+                                  : (i == 0 ? float4(44.0, 60.0, 16.0, 70.0) : float4(80.0, 96.0, 30.0, 150.0));
+                float rowSeed = left ? (i == 0 ? 1.0 : 2.0) : (i == 0 ? 3.0 : 4.0);
+                Tower r = towerRow(d, row.x, left ? -1.0 : 1.0, row.y, row.z, row.w, rowSeed, zMin, zMax, u, pa);
                 if (r.addT < 1e8) add += r.add * exp(-r.addT / max(u.haze.w, 1.0));
                 if (r.t < 1e8) { tHit = r.t; col = r.col; kind = 20; break; }
             }
