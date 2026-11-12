@@ -212,10 +212,10 @@ final class HeldTimeTests: XCTestCase {
         d.handle([.control(controller: 67, value: 0)], at: t)
         run(d, &t, seconds: Self.frameDt)
         XCTAssertFalse(d.holding, "soft pedal up")
-        d.handle([.control(controller: 67, value: 64.0 / 127)], at: t)
+        d.handle([.control(controller: 67, value: Float(64.0 / 127.0))], at: t)
         run(d, &t, seconds: Self.frameDt)
         XCTAssertTrue(d.holding, "64 is down")
-        d.handle([.control(controller: 67, value: 63.0 / 127)], at: t)
+        d.handle([.control(controller: 67, value: Float(63.0 / 127.0))], at: t)
         run(d, &t, seconds: Self.frameDt)
         XCTAssertFalse(d.holding, "63 is up")
 

@@ -115,8 +115,8 @@ final class ExcitementWorldsTests: XCTestCase {
         let a = Self.run(&calm, sky: Self.night(), frames: 300, plan: Plan(energy: 0))
         let b = Self.run(&stirred, sky: Self.night(), frames: 300, plan: Plan(energy: 1))
         let still: Float = a.last?.windOnWater ?? 1
-        let stirred: Float = b.last?.windOnWater ?? 0
-        XCTAssertGreaterThan(stirred, still + 0.25)
+        let ruffled: Float = b.last?.windOnWater ?? 0
+        XCTAssertGreaterThan(ruffled, still + 0.25)
         XCTAssertTrue(a.allSatisfy { $0.rings.isEmpty }, "a still lake at rest")
         XCTAssertTrue(b.contains { !$0.rings.isEmpty }, "the water's own dimples")
         XCTAssertTrue(b.allSatisfy { $0.rings.count <= MoonlitLakeModel.ringCount })
