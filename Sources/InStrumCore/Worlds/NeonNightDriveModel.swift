@@ -129,27 +129,44 @@ public struct Wipers: Equatable {
         return restBefore + up * lastSweepSeconds
     }
 
-    /// Advances by `dt` (s) in `rain` (0…1).
+    /// Advances by `dt` (s) in `rain` (0…1). Time left over when a sweep ends or a rest runs out carries on into the next,
+    /// so the blades keep their rate whatever the frame rate.
     public mutating func step(dt: Float, rain: Float) {
         guard dt.isFinite, dt > 0 else { return }
-        if sweeping {
-            phase += dt / max(0.1, sweepSeconds)
-            if phase >= 1 {
-                let over: Float = (phase - 1) * sweepSeconds
+        let r = Self.unit(rain)
+        var left: Float = dt
+        for _ in 0..<4 {
+            if sweeping {
+                let length: Float = max(0.1, sweepSeconds)
+                let need: Float = (1 - phase) * length
+                if left < need {
+                    phase += left / length
+                    return
+                }
+                left -= need
                 sweeping = false
                 phase = 0
                 lastSweepSeconds = sweepSeconds
-                restBefore = over
+                restBefore = 0
                 sweeps += 1
+            } else {
+                guard r >= Self.dryBelow else {
+                    restBefore += left
+                    return
+                }
+                let wait: Float = Self.rest(rain: r) - restBefore
+                if left < wait {
+                    restBefore += left
+                    return
+                }
+                if wait > 0 {
+                    restBefore += wait
+                    left -= wait
+                }
+                sweeping = true
+                phase = 0
+                sweepSeconds = Self.sweepTime(rain: r)
             }
-            return
-        }
-        restBefore += dt
-        let r = Self.unit(rain)
-        if r >= Self.dryBelow, restBefore >= Self.rest(rain: r) {
-            sweeping = true
-            phase = 0
-            sweepSeconds = Self.sweepTime(rain: r)
         }
     }
 }
