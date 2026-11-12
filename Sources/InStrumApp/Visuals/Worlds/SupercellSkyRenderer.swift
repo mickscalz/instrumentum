@@ -76,6 +76,11 @@ final class SupercellSkyRenderer: ThemeRenderer {
     private var pulseLimiter = FlashLimiter()
     private var flow: Float = 0
     private(set) var post = PostSettings()
+    /// Layers a timing test skips (0 in the app: everything is drawn), so one run can price each on a slow GPU. The scene's
+    /// bits: 1 the tower, 2 the flanking line, 4 the anvil, 8 the wall cloud, 16 the base, 32 the hail and the rain core,
+    /// 64 the inflow, the funnel and the dust, 128 the sky, 256 the field, 8192 the wheat, 512 the trees, the silo and the
+    /// light after the storm, 1024 the lightning; the renderer's: 2048 the weather, 4096 the flock and the posts.
+    var skipLayers: UInt32 = 0
 
     /// What was drawn (tests read them): the rows of wheat (distance m, lean across at the tip m, height kept, sheen),
     /// the strikes' light after the limiter and whether their channels were drawn (not under gentle visuals), the shake
@@ -515,11 +520,14 @@ final class SupercellSkyRenderer: ThemeRenderer {
         let skyU = sky.uniforms
         e.setRenderPipelineState(scene.state(storms: sky.storms))
         skyU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
+        cellU[Self.crawlInfoBase].w = Float(skipLayers & 0x3FFF)
         cellU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
+        cellU[Self.crawlInfoBase].w = 0
         sky.bindStars(e)
         e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         if showWarp { warp.draw(e) }
-        weather.draw(e)
+        if skipLayers & 2048 == 0 { weather.draw(e) }
+        if skipLayers & 4096 != 0 { e.endEncoding(); return }
         if !birdInstances.isEmpty {
             e.setRenderPipelineState(birds)
             birdInstances.withUnsafeBytes { e.setVertexBytes($0.baseAddress!, length: $0.count, index: 0) }

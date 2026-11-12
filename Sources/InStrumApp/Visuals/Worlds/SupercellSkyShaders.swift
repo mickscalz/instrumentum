@@ -38,7 +38,7 @@ enum SupercellSkyShaders {
         float4 strikeBox[2];   // NDC xmin, ymin, xmax, ymax
         float4 strikeAt[2];    // the branches' first segment, top (NDC xy), the foot's NDC y
         float4 segs[48];       // strike segments (NDC x0, y0, x1, y1), 24 a strike
-        float4 crawlInfo[4];   // light 0…1, segments, unused
+        float4 crawlInfo[4];   // light 0…1, segments, unused; [0].w: layers skipped (a timing test's mask; 0 drawn)
         float4 crawl[64];      // crawler segments (NDC), 16 a crawler
         float4 grass[48];      // rows: distance (m), lean across at the tip (m), height kept 0…1, sheen 0…1
     };
@@ -1087,6 +1087,8 @@ enum SupercellSkyShaders {
         float anvilCover = 0.0;
         // Lightning's light on the cloud here, read once for every layer.
         float3 flash = flashOnCloud(ndc, u);
+        // (The timing test's mask: a set bit skips a layer, so one run can price each. Always 0 in the app.)
+        uint skip = uint(u.crawlInfo[0].w + 0.5);
 
         // Every layer the ray meets, each into its own named variable (L0…L10, its depth t0…t10, in the order they were
         // listed when an insertion sort composited them): the dust wall, the funnel, the inflow bands, the wall cloud,
@@ -1097,18 +1099,19 @@ enum SupercellSkyShaders {
         float t0 = 1e9, t1 = 1e9, t2 = 1e9, t3 = 1e9, t4 = 1e9, t5 = 1e9, t6 = 1e9, t7 = 1e9, t8 = 1e9, t9 = 1e9, t10 = 1e9;
         Layer none; none.a = 0.0; none.c = float3(0);
         Layer L1 = none, L2 = none, L3 = none, L4 = none, L5 = none, L6 = none, L7 = none, L8 = none, L9 = none, L10 = none;
-        Layer L0 = dustWall(o, d, u, octaves, t0);
+        Layer L0 = none;
+        if ((skip & 64u) == 0u) L0 = dustWall(o, d, u, octaves, t0);
         // Looking down at the field, only the dust wall can stand in the way (the clouds, the rain's feet at the storm's
         // distance, are all above a ray more than half a degree below the horizon).
         if (dE.z >= -0.01) {
             // The heaviest first, while few of the others are held (fewer registers live through their noise).
-            L7 = tower(o, d, flash, u, octaves, t7);
-            L8 = flankingLine(o, d, flash, u, octaves, 0, t8);
-            if (octaves >= 3) L9 = flankingLine(o, d, flash, u, octaves, 1, t9);   // (the second tower: not on Smooth)
-            L10 = anvil(o, d, flash, u, octaves, t10);
+            if ((skip & 1u) == 0u) L7 = tower(o, d, flash, u, octaves, t7);
+            if ((skip & 2u) == 0u) L8 = flankingLine(o, d, flash, u, octaves, 0, t8);
+            if (octaves >= 3 && (skip & 2u) == 0u) L9 = flankingLine(o, d, flash, u, octaves, 1, t9);   // (the second tower: not on Smooth)
+            if ((skip & 4u) == 0u) L10 = anvil(o, d, flash, u, octaves, t10);
             anvilCover = L10.a;
-            L3 = wallCloud(o, d, flash, u, octaves, t3);
-            L6 = base(o, d, flash, u, octaves, t6);
+            if ((skip & 8u) == 0u) L3 = wallCloud(o, d, flash, u, octaves, t3);
+            if ((skip & 16u) == 0u) L6 = base(o, d, flash, u, octaves, t6);
             float rainLit = u.sunCol.w;
             float surge = u.gust.y;                                // the drop: the gust front's dust is up
             // The hail: a pale column lit softly by the low sun and the sky, greyed green by the core; brighter in the
@@ -1117,15 +1120,15 @@ enum SupercellSkyShaders {
             float hl = dot(hailLit, float3(0.2126, 0.7152, 0.0722));
             hailLit = mix(hailLit, hl * float3(0.84, 1.06, 1.0), saturate(u.look.y * 3.0)) * (1.0 + 0.3 * surge);
             hailLit += flash * 0.8;
-            L4 = column(o, d, u.shaft.xy, u.shaft.z, 0.05 + 0.25 * u.look.z + 0.1 * surge, hailLit, 1.0, u, t4);
+            if ((skip & 32u) == 0u) L4 = column(o, d, u.shaft.xy, u.shaft.z, 0.05 + 0.25 * u.look.z + 0.1 * surge, hailLit, 1.0, u, t4);
             // The rain core: dark blue-grey, a little green.
             float3 coreLit = (u.amb.rgb * 0.13 + u.sunCol.rgb * 0.015) * float3(0.8, 0.94, 1.0) * (1.0 - 0.3 * surge);
             float lum = dot(coreLit, float3(0.2126, 0.7152, 0.0722));
             coreLit = mix(coreLit, lum * float3(0.75, 1.12, 0.98), saturate(u.look.y * 4.0));
             coreLit += flash * 0.5;
-            L5 = rainCurtain(o, d, ndc, coreLit, u, octaves, t5);
-            L2 = inflow(o, d, u, octaves, t2);
-            L1 = funnelCloud(o, d, u, t1);
+            if ((skip & 32u) == 0u) L5 = rainCurtain(o, d, ndc, coreLit, u, octaves, t5);
+            if ((skip & 64u) == 0u) L2 = inflow(o, d, u, octaves, t2);
+            if ((skip & 64u) == 0u) L1 = funnelCloud(o, d, u, t1);
         }
         // A layer counts where it covers the pixel nearer than the field (those the sort took in).
         keepLayer(L0, t0, groundT); keepLayer(L1, t1, groundT); keepLayer(L2, t2, groundT); keepLayer(L3, t3, groundT);
@@ -1180,10 +1183,10 @@ enum SupercellSkyShaders {
         // Behind cloud that lets no light through at all (T exactly 0, under the storm's dark body) the sky and the
         // field add nothing, so they are not drawn there.
         if (T > 0.0) {
-            float3 back;
+            float3 back = float3(0.1);
             if (dE.z >= 0.0) {
                 float moonMask = 0.0;
-                back = skyRadiance(dE, sky, moonMask, stars);
+                if ((skip & 128u) == 0u) back = skyRadiance(dE, sky, moonMask, stars);
                 // The far sky seen beneath the storm lies in its shade and its rain: dimmer, greyer.
                 float2 q = o.xy - u.place.xy;
                 float aa = max(dot(d.xy, d.xy), 1e-6);
@@ -1199,11 +1202,13 @@ enum SupercellSkyShaders {
                     back += float3(0.85, 0.82, 1.0) * (0.35 * u.glowL.y * exp(-x * x - y * y));
                 }
             } else {
-                back = field(o, d, flash, u, octaves);
-                float4 w = wheat(o, d, u);
-                back = mix(back, w.rgb, w.a);
+                if ((skip & 256u) == 0u) back = field(o, d, flash, u, octaves);
+                if ((skip & 8192u) == 0u) {
+                    float4 w = wheat(o, d, u);
+                    back = mix(back, w.rgb, w.a);
+                }
             }
-            if (dE.z > -0.01) {
+            if (dE.z > -0.01 && (skip & 512u) == 0u) {
                 float4 h = horizonThings(d, u);
                 back = mix(back, h.rgb, h.a);
             }
@@ -1213,7 +1218,7 @@ enum SupercellSkyShaders {
         // The light after the storm: rays converging on the sun's antipoint through the clear air, and the double rainbow
         // standing in the rain.
         float3 anti = -sky.sun.xyz;
-        if (u.after.x > 0.0 && dE.z > -0.02) {
+        if (u.after.x > 0.0 && dE.z > -0.02 && (skip & 512u) == 0u) {
             float3 e1 = normalize(cross(anti, float3(0, 0, 1)) + float3(1e-4, 0, 0));
             float3 e2 = cross(e1, anti);
             float psi = atan2(dot(dE, e2), dot(dE, e1));
@@ -1233,8 +1238,10 @@ enum SupercellSkyShaders {
             col = col * mix(1.0, darkBand, strength) + bow * (0.4 * strength) * (0.6 + u.sunCol.rgb * 0.3);
         }
         // Lightning: the strikes (blue-white, through the limiter) and the crawlers on the cloud.
-        col += strikes(ndc, u);
-        col += crawlers(ndc, u, max(cloudy, 0.3));
+        if ((skip & 1024u) == 0u) {
+            col += strikes(ndc, u);
+            col += crawlers(ndc, u, max(cloudy, 0.3));
+        }
         ColorDepth out;
         out.color = float4(col, 1.0);
         out.depth = float4(depth, 0, 0, 1);

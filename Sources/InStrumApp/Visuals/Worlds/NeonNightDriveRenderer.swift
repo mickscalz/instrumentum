@@ -57,6 +57,11 @@ final class NeonNightDriveRenderer: ThemeRenderer {
     private var limiterStarted = false
     private var showWarp = false
     private(set) var post = PostSettings()
+    /// Layers a timing test skips (0 in the app: everything is drawn), so one run can price each on a slow GPU. The scene's
+    /// bits: 1 the road's shading, 2 the rows of towers along the road, 4 the downtown, 8 the street below, 16 the cars,
+    /// 32 the street lights' glow, 64 the cars' glow, 128 the sky; the renderer's: 256 the wet road's mirror, 512 Light
+    /// Trails, 1024 the windscreen's glass, 2048 the cabin, 4096 the weather, 8192 everything after the scene's pass.
+    var skipLayers: UInt32 = 0
 
     /// What was drawn (tests read them): the wave's and the lightning's light after the limiter, the tunnel's strobe (its
     /// amplitude after the limiter, 0 under gentle visuals) and how often its lights pass, the exposure, whether the
@@ -319,27 +324,32 @@ final class NeonNightDriveRenderer: ThemeRenderer {
         skyU[Self.skyMoonRow] = SIMD4(0, 0, -1, skyU[Self.skyMoonRow].w)
         e.setRenderPipelineState(scene.state(sky.program))
         skyU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
+        u[Self.rowRoad3].w = Float(skipLayers & 0xFF)
         u.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
+        u[Self.rowRoad3].w = 0
         sky.bindStars(e)
         e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         if showWarp { warp.draw(e) }
-        weather.draw(e)
+        if skipLayers & 4096 == 0 { weather.draw(e) }
         e.endEncoding()
+        if skipLayers & 8192 != 0 { return }
         // The wet road's and the harbour's mirror of the city, and Light Trails.
         if let view = reflectCopy.make(from: hdr, commandBuffer: cb), let e2 = cb.makeRenderCommandEncoder(descriptor: colourPass(hdr)) {
-            e2.setRenderPipelineState(reflect)
-            skyU.withUnsafeBytes { e2.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
-            u.withUnsafeBytes { e2.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
-            e2.setFragmentTexture(view, index: 0)
-            e2.setFragmentTexture(depth, index: 1)
-            e2.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
-            trails.draw(e2, depth: depth, sky: skyU, drive: u)
+            if skipLayers & 256 == 0 {
+                e2.setRenderPipelineState(reflect)
+                skyU.withUnsafeBytes { e2.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
+                u.withUnsafeBytes { e2.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
+                e2.setFragmentTexture(view, index: 0)
+                e2.setFragmentTexture(depth, index: 1)
+                e2.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+            }
+            if skipLayers & 512 == 0 { trails.draw(e2, depth: depth, sky: skyU, drive: u) }
             e2.endEncoding()
         }
         // The windscreen: the rain on the glass and the wipers, then the cabin round it.
         if let view = screen.makeView(from: hdr, commandBuffer: cb), let e3 = cb.makeRenderCommandEncoder(descriptor: colourPass(hdr)) {
-            screen.drawGlass(e3, view: view)
-            screen.drawCabin(e3, view: view)
+            if skipLayers & 1024 == 0 { screen.drawGlass(e3, view: view) }
+            if skipLayers & 2048 == 0 { screen.drawCabin(e3, view: view) }
             e3.endEncoding()
         }
     }
