@@ -20,7 +20,7 @@ final class HeldTimeTests: XCTestCase {
 
     /// Steps `d` on from `t` for `seconds`, `dt` a step, and returns the last frame.
     @discardableResult
-    private func run(_ d: SceneDirector, _ t: inout Double, seconds: Double, dt: Double = HeldTimeTests.frameDt) -> Any {
+    private func run(_ d: SceneDirector, _ t: inout Double, seconds: Double, dt: Double = 1.0 / 60) -> Any {
         var frame: Any = ()
         let n = Int((seconds / dt).rounded())
         for _ in 0..<n {

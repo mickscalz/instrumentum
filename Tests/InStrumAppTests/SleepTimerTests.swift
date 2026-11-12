@@ -142,7 +142,8 @@ final class SleepTimerTests: XCTestCase {
         tick(m, at: 100.1)
         XCTAssertNil(m.toast, "nothing to wake")
         XCTAssertEqual(m.sleepRemaining, 800)
-        XCTAssertEqual(m.sleepRemaining.map(SleepMenu.label), "14 min")
+        let label = SleepMenu.label(remaining: m.sleepRemaining ?? 0)
+        XCTAssertEqual(label, "14 min")
         tick(m, at: 600)
         XCTAssertEqual(engine.sleepGain, 0.5005, accuracy: 1e-3, "the fade goes ahead")
     }
