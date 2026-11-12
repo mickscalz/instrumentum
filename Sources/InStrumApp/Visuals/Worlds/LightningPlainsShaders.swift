@@ -181,8 +181,10 @@ enum LightningPlainsShaders {
                 float reach = dx > 0.0 ? A : 0.2 * A;
                 float ax = dx / max(reach, 1e-3);
                 float sa = ax >= 0.0 ? 1.0 : -1.0;
-                float topE = T + 0.05 * thick - thick * 0.12 * ax * ax + 0.06 * thick * sin(dx / max(w, 1e-3) * 1.7 + b.z);
-                float botE = Ab + thick * (-0.2 + 0.3 * abs(ax) + 0.42 * ax * ax);
+                // Flat on top (the tropopause), its underside rising gently to a blunt edge downwind: an anvil, not a
+                // tapering tail.
+                float topE = T + 0.05 * thick - thick * 0.05 * ax * ax + 0.04 * thick * sin(dx / max(w, 1e-3) * 1.7 + b.z);
+                float botE = Ab + thick * (-0.25 + 0.2 * abs(ax) + 0.5 * ax * ax);
                 float3 topD = float3(alt - topE, thick * 0.24 * ax / reach, 1.0);
                 float3 botD = float3(botE - alt, thick * (0.3 * sa + 0.84 * ax) / reach, -1.0);
                 float3 endD = float3((abs(ax) - 1.0) * reach * 0.3, 0.3 * sa, 0.0);
@@ -288,16 +290,16 @@ enum LightningPlainsShaders {
         st.under = smoothstep(front + 0.1 * s, front - 0.3 * s, alt + 0.5 * s * scud) * (1.0 - anvil);
         float ends = abs(outward.x);
         float depth = -e + amp * s * bump + s * (mix(0.22, 0.12, crisp) * mix(1.0, 0.5, near) * (1.0 - anvil) * wisp
-                                                 + mix(0.12, 0.25, ends) * anvil * fibre)
+                                                 + mix(0.05, 0.1, ends) * anvil * fibre)
                       + st.under * s * 0.5 * scud;
         float aa = toDeg(p.view.y);
-        float feather = s * mix(mix(0.2, 0.07, crisp), mix(0.22, 0.75, ends), anvil) * mix(1.0, 0.55, near) + 0.6 * aa;
+        float feather = s * mix(mix(0.2, 0.07, crisp), mix(0.18, 0.38, ends), anvil) * mix(1.0, 0.55, near) + 0.6 * aa;
         st.a = smoothstep(-0.5 * aa, feather, depth);
         st.d = -depth;
         st.thick = saturate(depth / (1.3 * s));
         // The anvil's thin edges stream away in strands of ice, some denser, some all but gone.
         float strands = saturate(0.5 + 1.7 * fibre);
-        st.a *= mix(1.0, strands, anvil * (1.0 - smoothstep(0.08, 0.45, st.thick)) * mix(0.5, 1.0, ends));
+        st.a *= mix(1.0, strands, anvil * (1.0 - smoothstep(0.08, 0.45, st.thick)) * mix(0.2, 0.45, ends));
         float t = 1.0 - saturate(depth / (mix(1.6, 1.0, anvil) * s));
         t *= 1.0 - 0.55 * anvil;
         float3 mass = float3(outward * t, sqrt(saturate(1.0 - t * t)));
@@ -597,11 +599,26 @@ enum LightningPlainsShaders {
         return o;
     }
 
+    float pl_hash1(float n) { return fract(sin(n) * 43758.5453); }
+    float pl_vn1(float x) {
+        float i = floor(x), f = x - i;
+        return mix(pl_hash1(i), pl_hash1(i + 1.0), f * f * (3.0 - 2.0 * f));
+    }
+
     fragment ColorDepth plains_bolt_fragment(BoltOut in [[stage_in]]) {
         float2 a = in.seg.xy, c = in.seg.zw;
         float2 pa = in.q - a, ba = c - a;
-        float h = saturate(dot(pa, ba) / max(dot(ba, ba), 1e-12));
-        float dist = length(pa - ba * h);
+        float len = max(length(ba), 1e-6);
+        float2 tdir = ba / len, nrm = float2(-tdir.y, tdir.x);
+        float along = dot(pa, tdir);
+        float h = saturate(along / len);
+        // A real channel kinks far finer than its segments: it wanders across its line (two scales), never at the
+        // segment's ends (so the segments still meet), and never further than its glow reaches.
+        float seed = 100.0 * pl_hash1(dot(a + c, float2(12.9898, 78.233)));
+        float wig = 0.7 * (pl_vn1(h * 9.0 + seed) - 0.5) + 0.3 * (pl_vn1(h * 31.0 + 1.7 * seed) - 0.5);
+        float amp = min(0.08 * len, 0.5 * in.info.y) * 4.0 * h * (1.0 - h);
+        float over = max(-along, 0.0) + max(along - len, 0.0);
+        float dist = length(float2(dot(pa, nrm) - wig * amp, over));
         float core = max(in.info.x, 1e-5);
         float reach = max(in.info.y, 1e-5);
         float x = dist / core;
@@ -785,6 +802,9 @@ enum LightningPlainsShaders {
             float splay = mix(d.y, d.x, k);
             float leg = min(abs(q.x - splay), abs(q.x + splay));
             cover = max(cover, saturate(1.0 - leg / (0.9 * px)));
+            // The back pair of legs, nearer together and a little to the side: the tower has depth.
+            float sb = 0.62 * splay, xb = q.x - 0.2 * splay;
+            cover = max(cover, 0.55 * saturate(1.0 - min(abs(xb - sb), abs(xb + sb)) / (0.8 * px)));
             float bay = k * 6.0;
             float f = bay - floor(bay);
             float x1 = mix(-splay, splay, f), x2 = mix(splay, -splay, f);
@@ -793,30 +813,44 @@ enum LightningPlainsShaders {
         }
         float platform = abs(q.y + 0.2 * R) < 0.8 * px && abs(q.x) < 0.35 * R ? 1.0 : 0.0;
         cover = max(cover, platform);
-        // The wheel: rings, 18 sails, the hub; blurred into a disc as it races.
-        float2 w = float2(q.x / 0.86, q.y);
+        // The wheel, turned three-quarters into the wind (an ellipse): its rims, 18 pitched sails (each shows its face
+        // on one side of the wheel and its edge on the other; the faces turned to the light catch it), the hub and the
+        // head behind it; blurred into a disc as it races.
+        const float yaw = 0.58;
+        float2 w = float2(q.x / yaw, q.y);
         float r = length(w) / max(R, 1e-5);
-        float rr = px / max(R, 1e-5);
-        float ring = max(saturate(1.0 - abs(r - 0.97) / (1.3 * rr)), saturate(1.0 - abs(r - 0.33) / (1.1 * rr)));
-        float sails = 0.0;
-        if (r > 0.33 && r < 0.98) {
-            float a = atan2(w.y, w.x) + b.z;
+        float rr = px / max(R * yaw, 1e-5);
+        float ring = max(saturate(1.0 - abs(r - 0.97) / (1.3 * rr)), saturate(1.0 - abs(r - 0.36) / (1.1 * rr)));
+        float sails = 0.0, sailLight = 0.0;
+        if (r > 0.34 && r < 0.98) {
+            float a0 = atan2(w.y, w.x);
+            float a = a0 + b.z;
             float f = a * 18.0 / 6.2831853;
             float s = f - floor(f);
-            float sharp = smoothstep(0.05, 0.12, s) * (1.0 - smoothstep(0.55, 0.62, s));
-            sails = mix(sharp, 0.5, saturate(b.w)) * 0.95;
+            float face = 0.3 + 0.32 * (0.5 + 0.5 * cos(a0));
+            float sharp = smoothstep(0.03, 0.08, s) * (1.0 - smoothstep(face, face + 0.06, s));
+            float sheen = smoothstep(0.4 * face, face, s);               // each curved sheet lighter toward its edge
+            float blur = saturate(b.w);
+            sails = mix(sharp, 0.5, blur) * 0.95;
+            sailLight = mix(sharp * (0.35 + 0.65 * sheen), 0.3, blur) * (0.5 + 0.5 * cos(a0 - 0.9));
         }
-        float hub = r < 0.1 ? 1.0 : 0.0;
-        cover = max(cover, max(max(ring, sails), hub));
-        // The tail vane, downwind to the right: a boom and a flat sheet.
-        float vx = q.x / max(d.w, 1e-5);
+        float hub = r < 0.11 ? 1.0 : 0.0;
+        float head = (q.x > -0.04 * R && q.x < 0.32 * R && abs(q.y + 0.02 * R) < 0.09 * R) ? 1.0 : 0.0;
+        cover = max(cover, max(max(ring, sails), max(hub, head)));
+        // The tail vane behind the wheel, downwind and foreshortened: a boom rising a little away from you and a sheet
+        // narrowing with distance.
+        float vx = q.x / max(0.72 * d.w, 1e-5);
         if (vx > 0.1 && vx < 1.0) {
-            float boom = saturate(1.0 - abs(q.y) / (0.7 * px));
-            float sheet = vx > 0.55 && abs(q.y) < R * (0.12 + 0.4 * (vx - 0.55)) ? 1.0 : 0.0;
+            float lift = 0.06 * R * vx;
+            float boom = saturate(1.0 - abs(q.y - lift) / (0.7 * px));
+            float hh = R * (0.12 + 0.36 * (vx - 0.55)) * (1.0 - 0.25 * vx);
+            float sheet = vx > 0.55 && abs(q.y - lift) < hh ? 1.0 : 0.0;
             cover = max(cover, max(boom, sheet * 0.95));
         }
         if (cover <= 0.001) return float4(0.0);
         float3 iron = p.ambient.rgb * 0.16 + front * 0.22 + p.flash.rgb * 0.12;
+        // Galvanised sails catch the sky's light on their faces; the frame stays dark iron.
+        iron += (p.ambient.rgb * 0.22 + front * 0.32 + p.flash.rgb * 0.18) * sailLight;
         return float4(iron * cover, cover);
     }
 
@@ -876,11 +910,13 @@ enum LightningPlainsShaders {
         float time = p.frame.y;
         float baseM = c.x;
         float slant = X + c.z * Y;
-        float streak = vnoise3(float3(slant / max(6.0, 0.02 * t), Y / max(60.0, 0.2 * t) + time * 2.5, 6.1));
+        // Fine streaks, softly (wide bright ones read as a shower curtain hung across the sky).
+        float streak = 0.65 * vnoise3(float3(slant / max(1.6, 0.007 * t), Y / max(40.0, 0.15 * t) + time * 2.5, 6.1))
+                     + 0.35 * vnoise3(float3(slant / max(5.0, 0.02 * t), Y / max(90.0, 0.3 * t) + time * 1.8, 2.7));
         float reach = mix(1.0, smoothstep(c.y * baseM, (c.y + 0.25) * baseM, Y), b.z);
-        float rainA = c.w * (0.35 + 0.65 * streak * streak) * reach;
+        float rainA = c.w * (0.5 + 0.5 * streak) * reach;
         float3 lit = p.flash.rgb * 0.25 + float3(0.82, 0.84, 1.0) * p.shake.z * 0.3;
-        float3 rainCol = p.ambient.rgb * 0.35 + p.glow.rgb * 0.08 + lit * (0.4 + 0.9 * streak);
+        float3 rainCol = p.ambient.rgb * 0.35 + p.glow.rgb * 0.08 + lit * (0.55 + 0.5 * streak);
         // Above the rain, the storm's dark base overhead, its ragged edge where the rain hangs from it.
         float edge = baseM * (0.9 + 0.2 * pl_noise1(X / 300.0, 4.2));
         float up = smoothstep(edge - 0.12 * baseM, edge + 0.12 * baseM, Y);
