@@ -268,6 +268,19 @@ final class SkyExtrasFrameTimeTests: XCTestCase {
             let ms = Self.median(r, stack: stack, queue: queue)
             print(String(format: "TIMING sky-extras %@ 1280x720: dome %.3f ms (median of 24)", label, ms))
             XCTAssertGreaterThan(ms, 0)
+            if s.supercellWeather != nil {
+                // The supercell's impostor on its own: one frame's strip.
+                var strip: [Double] = []
+                for i in 0..<28 {
+                    guard let cb = queue.makeCommandBuffer() else { continue }
+                    r.sky.prepare(cb)
+                    cb.commit()
+                    cb.waitUntilCompleted()
+                    if i >= 4 { strip.append((cb.gpuEndTime - cb.gpuStartTime) * 1000) }
+                }
+                strip.sort()
+                print(String(format: "TIMING sky-extras %@ impostor strip: %.3f ms (median of 24)", label, strip.isEmpty ? 0 : strip[strip.count / 2]))
+            }
         }
     }
 }
