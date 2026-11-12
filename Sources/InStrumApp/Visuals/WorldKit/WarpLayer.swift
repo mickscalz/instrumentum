@@ -108,8 +108,8 @@ final class WarpLayer {
         guard let lib = try? device.makeLibrary(source: WarpShaders.source, options: nil) else { return nil }
         func make(_ v: String, _ f: String) -> MTLRenderPipelineState? {
             let d = MTLRenderPipelineDescriptor()
-            d.vertexFunction = lib.makeFunction(name: v)
-            d.fragmentFunction = lib.makeFunction(name: f)
+            d.vertexFunction = lib.skyFunction(v)
+            d.fragmentFunction = lib.skyFunction(f)
             d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
             let c = d.colorAttachments[0]!
             c.isBlendingEnabled = true

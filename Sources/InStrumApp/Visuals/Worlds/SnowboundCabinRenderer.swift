@@ -28,7 +28,8 @@ final class SnowboundCabinRenderer: ThemeRenderer {
     let warp: WarpLayer
     let glass: WindowGlassLayer
     private var showWarp = false
-    private let scene, sparks, room, keys: MTLRenderPipelineState
+    private let scene: SkyPipeline
+    private let sparks, room, keys: MTLRenderPipelineState
     private var cabinU = [SIMD4<Float>](repeating: .zero, count: 8 + 19)
     private var keyInstances: [KeyInstance] = []
     private var sparkInstances: [SIMD4<Float>] = []
@@ -54,10 +55,10 @@ final class SnowboundCabinRenderer: ThemeRenderer {
               let g = WindowGlassLayer(device: device),
               let lib = try? device.makeLibrary(source: SnowboundCabinShaders.source, options: nil) else { return nil }
         enum Blend { case opaque, premultiplied, additive }
-        func make(_ v: String, _ f: String, _ blend: Blend, writesDepth: Bool = true) -> MTLRenderPipelineState? {
+        func make(_ v: String, _ f: String, _ blend: Blend, writesDepth: Bool = true, storms: Bool = false) -> MTLRenderPipelineState? {
             let d = MTLRenderPipelineDescriptor()
-            d.vertexFunction = lib.makeFunction(name: v)
-            d.fragmentFunction = lib.makeFunction(name: f)
+            d.vertexFunction = lib.skyFunction(v, storms: storms)
+            d.fragmentFunction = lib.skyFunction(f, storms: storms)
             d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
             d.colorAttachments[1].pixelFormat = RenderStack.depthFormat
             let c = d.colorAttachments[0]!
@@ -75,7 +76,7 @@ final class SnowboundCabinRenderer: ThemeRenderer {
             if !writesDepth { d.colorAttachments[1].writeMask = [] }
             return try? device.makeRenderPipelineState(descriptor: d)
         }
-        guard let sc = make("cabin_glass_vertex", "cabin_scene_fragment", .premultiplied),
+        guard let sc = SkyPipeline(build: { make("cabin_glass_vertex", "cabin_scene_fragment", .premultiplied, storms: $0) }),
               let sp = make("cabin_spark_vertex", "cabin_spark_fragment", .additive, writesDepth: false),
               let rm = make("cabin_full_vertex", "cabin_room_fragment", .opaque),
               let k = make("cabin_keys_vertex", "cabin_keys_fragment", .opaque) else { return nil }
@@ -225,7 +226,7 @@ final class SnowboundCabinRenderer: ThemeRenderer {
         sky.draw(e)
         if showWarp { warp.draw(e) }
         let skyU = sky.uniforms
-        e.setRenderPipelineState(scene)
+        e.setRenderPipelineState(scene.state(storms: sky.storms))
         skyU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
         sky.bindStars(e)
         cabinU.withUnsafeBytes {

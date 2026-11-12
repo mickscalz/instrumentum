@@ -11,7 +11,7 @@ final class GreatBarrierReefRendererTests: XCTestCase {
         let lib = try device.makeLibrary(source: GreatBarrierReefShaders.source, options: nil)
         for name in ["reef_vertex", "reef_above_fragment", "reef_below_fragment", "reef_dot_vertex", "reef_dot_fragment",
                      "reef_keys_vertex", "reef_keys_fragment"] {
-            XCTAssertNotNil(lib.makeFunction(name: name), name)
+            XCTAssertNotNil(lib.skyFunction(name), name)
         }
         // Built on the Sky and the Underwater Kit, with no powers of its own.
         let kits = SkyShaders.common + UnderwaterShaders.common
@@ -25,8 +25,8 @@ final class GreatBarrierReefRendererTests: XCTestCase {
         let row = MemoryLayout<SIMD4<Float>>.stride
         for fragment in ["reef_above_fragment", "reef_below_fragment"] {
             let d = MTLRenderPipelineDescriptor()
-            d.vertexFunction = lib.makeFunction(name: "reef_vertex")
-            d.fragmentFunction = lib.makeFunction(name: fragment)
+            d.vertexFunction = lib.skyFunction("reef_vertex")
+            d.fragmentFunction = lib.skyFunction(fragment)
             d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
             d.colorAttachments[1].pixelFormat = RenderStack.depthFormat
             var reflection: MTLAutoreleasedRenderPipelineReflection?

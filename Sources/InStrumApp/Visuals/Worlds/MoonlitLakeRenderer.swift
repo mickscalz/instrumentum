@@ -15,7 +15,8 @@ final class MoonlitLakeRenderer: ThemeRenderer {
     let weather: WeatherLayer
     let warp: WarpLayer
     private var showWarp = false
-    private let lake, glow, keys: MTLRenderPipelineState
+    private let lake: SkyPipeline
+    private let glow, keys: MTLRenderPipelineState
     private var lakeU = [SIMD4<Float>](repeating: .zero, count: 4 + 2 * LakeRipples.cap)
     private var fireflies: [SIMD4<Float>] = []
     private var keyInstances: [KeyInstance] = []
@@ -35,10 +36,10 @@ final class MoonlitLakeRenderer: ThemeRenderer {
     init?(device: MTLDevice) {
         guard let s = SkyLayer(device: device), let w = WeatherLayer(device: device), let gw = WarpLayer(device: device),
               let lib = try? device.makeLibrary(source: MoonlitLakeShaders.source, options: nil) else { return nil }
-        func make(_ v: String, _ f: String, additive: Bool) -> MTLRenderPipelineState? {
+        func make(_ v: String, _ f: String, additive: Bool, storms: Bool = false) -> MTLRenderPipelineState? {
             let d = MTLRenderPipelineDescriptor()
-            d.vertexFunction = lib.makeFunction(name: v)
-            d.fragmentFunction = lib.makeFunction(name: f)
+            d.vertexFunction = lib.skyFunction(v, storms: storms)
+            d.fragmentFunction = lib.skyFunction(f, storms: storms)
             d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
             d.colorAttachments[1].pixelFormat = RenderStack.depthFormat
             if additive {
@@ -50,7 +51,7 @@ final class MoonlitLakeRenderer: ThemeRenderer {
             }
             return try? device.makeRenderPipelineState(descriptor: d)
         }
-        guard let l = make("lake_vertex", "lake_fragment", additive: false),
+        guard let l = SkyPipeline(build: { make("lake_vertex", "lake_fragment", additive: false, storms: $0) }),
               let g = make("firefly_vertex", "firefly_fragment", additive: true),
               let k = make("lake_keys_vertex", "lake_keys_fragment", additive: false) else { return nil }
         self.device = device
@@ -214,7 +215,7 @@ final class MoonlitLakeRenderer: ThemeRenderer {
         if showWarp { warp.draw(e) }
 
         let skyU = sky.uniforms
-        e.setRenderPipelineState(lake)
+        e.setRenderPipelineState(lake.state(storms: sky.storms))
         skyU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
         lakeU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
         sky.bindStars(e)

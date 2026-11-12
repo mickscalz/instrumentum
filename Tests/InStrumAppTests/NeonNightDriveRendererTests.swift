@@ -131,15 +131,15 @@ final class NeonNightDriveRendererTests: XCTestCase {
         guard let device = MTLCreateSystemDefaultDevice() else { throw XCTSkip("No Metal device") }
         let lib = try device.makeLibrary(source: NeonNightDriveShaders.source, options: nil)
         for name in ["drive_vertex", "drive_scene_fragment", "drive_reflect_fragment"] {
-            let function = lib.makeFunction(name: name)
+            let function = lib.skyFunction(name)
             XCTAssertNotNil(function, name)
         }
         let trailsLib = try device.makeLibrary(source: LightTrailsShaders.source, options: nil)
-        let trailsFn = trailsLib.makeFunction(name: "trails_fragment")
+        let trailsFn = trailsLib.skyFunction("trails_fragment")
         XCTAssertNotNil(trailsFn)
         let screenLib = try device.makeLibrary(source: WindscreenShaders.source, options: nil)
         for name in ["screen_vertex", "screen_glass_fragment", "screen_frame_fragment", "screen_copy_fragment"] {
-            let function = screenLib.makeFunction(name: name)
+            let function = screenLib.skyFunction(name)
             XCTAssertNotNil(function, name)
         }
         // Built on the Sky kit, with no powers of their own.
@@ -156,8 +156,8 @@ final class NeonNightDriveRendererTests: XCTestCase {
         // The Swift rows match the MSL structs byte for byte (the pipelines' own reflection).
         let row = MemoryLayout<SIMD4<Float>>.stride
         let d = MTLRenderPipelineDescriptor()
-        d.vertexFunction = lib.makeFunction(name: "drive_vertex")
-        d.fragmentFunction = lib.makeFunction(name: "drive_scene_fragment")
+        d.vertexFunction = lib.skyFunction("drive_vertex")
+        d.fragmentFunction = lib.skyFunction("drive_scene_fragment")
         d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
         d.colorAttachments[1].pixelFormat = RenderStack.depthFormat
         var reflection: MTLAutoreleasedRenderPipelineReflection?
@@ -169,8 +169,8 @@ final class NeonNightDriveRendererTests: XCTestCase {
         XCTAssertEqual(driveBytes, NeonNightDriveRenderer.uniformCount * row, "DriveU")
         XCTAssertLessThanOrEqual(NeonNightDriveRenderer.uniformCount * row, 4096, "one setFragmentBytes call")
         let sd = MTLRenderPipelineDescriptor()
-        sd.vertexFunction = screenLib.makeFunction(name: "screen_vertex")
-        sd.fragmentFunction = screenLib.makeFunction(name: "screen_glass_fragment")
+        sd.vertexFunction = screenLib.skyFunction("screen_vertex")
+        sd.fragmentFunction = screenLib.skyFunction("screen_glass_fragment")
         sd.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
         var screenReflection: MTLAutoreleasedRenderPipelineReflection?
         _ = try device.makeRenderPipelineState(descriptor: sd, options: [.bindingInfo, .bufferTypeInfo], reflection: &screenReflection)
@@ -178,8 +178,8 @@ final class NeonNightDriveRendererTests: XCTestCase {
         let screenBytes = screenBuffers.first { $0.index == 0 }?.bufferDataSize
         XCTAssertEqual(screenBytes, WindscreenLayer.uniformCount * row, "ScreenU")
         let td = MTLRenderPipelineDescriptor()
-        td.vertexFunction = trailsLib.makeFunction(name: "drive_vertex")
-        td.fragmentFunction = trailsLib.makeFunction(name: "trails_fragment")
+        td.vertexFunction = trailsLib.skyFunction("drive_vertex")
+        td.fragmentFunction = trailsLib.skyFunction("trails_fragment")
         td.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
         var trailsReflection: MTLAutoreleasedRenderPipelineReflection?
         _ = try device.makeRenderPipelineState(descriptor: td, options: [.bindingInfo, .bufferTypeInfo], reflection: &trailsReflection)

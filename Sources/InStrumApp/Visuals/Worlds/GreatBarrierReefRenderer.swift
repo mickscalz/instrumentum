@@ -54,7 +54,8 @@ final class GreatBarrierReefRenderer: ThemeRenderer {
     let weather: WeatherLayer
     let warp: WarpLayer
     private var showWarp = false
-    private let above, below, dots, keys: MTLRenderPipelineState
+    private let above, below: SkyPipeline
+    private let dots, keys: MTLRenderPipelineState
     private var reefU = [SIMD4<Float>](repeating: .zero, count: GreatBarrierReefRenderer.uniformCount)
     private var keyInstances: [KeyInstance] = []
     private var fishInstances: [SIMD4<Float>] = []
@@ -100,10 +101,10 @@ final class GreatBarrierReefRenderer: ThemeRenderer {
     init?(device: MTLDevice) {
         guard let s = SkyLayer(device: device), let w = WeatherLayer(device: device), let gw = WarpLayer(device: device),
               let lib = try? device.makeLibrary(source: GreatBarrierReefShaders.source, options: nil) else { return nil }
-        func make(_ v: String, _ f: String, blend: Bool) -> MTLRenderPipelineState? {
+        func make(_ v: String, _ f: String, blend: Bool, storms: Bool = false) -> MTLRenderPipelineState? {
             let d = MTLRenderPipelineDescriptor()
-            d.vertexFunction = lib.makeFunction(name: v)
-            d.fragmentFunction = lib.makeFunction(name: f)
+            d.vertexFunction = lib.skyFunction(v, storms: storms)
+            d.fragmentFunction = lib.skyFunction(f, storms: storms)
             d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
             if blend {
                 d.colorAttachments[0].isBlendingEnabled = true
@@ -118,8 +119,8 @@ final class GreatBarrierReefRenderer: ThemeRenderer {
         // The dots blend over the water and leave its depth alone.
         func makeDots() -> MTLRenderPipelineState? {
             let d = MTLRenderPipelineDescriptor()
-            d.vertexFunction = lib.makeFunction(name: "reef_dot_vertex")
-            d.fragmentFunction = lib.makeFunction(name: "reef_dot_fragment")
+            d.vertexFunction = lib.skyFunction("reef_dot_vertex")
+            d.fragmentFunction = lib.skyFunction("reef_dot_fragment")
             d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
             d.colorAttachments[0].isBlendingEnabled = true
             d.colorAttachments[0].sourceRGBBlendFactor = .one
@@ -130,7 +131,8 @@ final class GreatBarrierReefRenderer: ThemeRenderer {
             d.colorAttachments[1].writeMask = []
             return try? device.makeRenderPipelineState(descriptor: d)
         }
-        guard let a = make("reef_vertex", "reef_above_fragment", blend: true), let b = make("reef_vertex", "reef_below_fragment", blend: false),
+        guard let a = SkyPipeline(build: { make("reef_vertex", "reef_above_fragment", blend: true, storms: $0) }),
+              let b = SkyPipeline(build: { make("reef_vertex", "reef_below_fragment", blend: false, storms: $0) }),
               let k = make("reef_keys_vertex", "reef_keys_fragment", blend: false), let dd = makeDots() else { return nil }
         let bytes = (Self.fishCapacity + Self.dotCapacity) * 2 * MemoryLayout<SIMD4<Float>>.stride
         var buffers: [MTLBuffer] = []
@@ -439,7 +441,7 @@ final class GreatBarrierReefRenderer: ThemeRenderer {
         // The reef below the meniscus, then the sky and the lagoon above it, feathered over the reef along the line.
         if let rect = underRect {
             e.setScissorRect(rect)
-            e.setRenderPipelineState(below)
+            e.setRenderPipelineState(below.state(storms: sky.storms))
             skyU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
             reefU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
             sky.bindStars(e)
@@ -447,7 +449,7 @@ final class GreatBarrierReefRenderer: ThemeRenderer {
         }
         if let rect = aboveRect {
             e.setScissorRect(rect)
-            e.setRenderPipelineState(above)
+            e.setRenderPipelineState(above.state(storms: sky.storms))
             skyU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
             reefU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
             sky.bindStars(e)

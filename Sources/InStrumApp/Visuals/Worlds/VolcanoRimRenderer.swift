@@ -42,7 +42,8 @@ final class VolcanoRimRenderer: ThemeRenderer {
     let veinsRenderer: MagmaVeinsRenderer
     private var showWarp = false
     private(set) var showingVeins = false
-    private let scene, sparks, bolts, columns: MTLRenderPipelineState
+    private let scene: SkyPipeline
+    private let sparks, bolts, columns: MTLRenderPipelineState
     private var volU = [SIMD4<Float>](repeating: .zero, count: VolcanoRimRenderer.uniformCount)
     private var sparkInstances: [SIMD4<Float>] = []
     private var boltInstances: [SIMD4<Float>] = []
@@ -81,10 +82,10 @@ final class VolcanoRimRenderer: ThemeRenderer {
         guard let s = SkyLayer(device: device), let w = WeatherLayer(device: device), let gw = WarpLayer(device: device),
               let mv = MagmaVeinsRenderer(device: device),
               let lib = try? device.makeLibrary(source: VolcanoRimShaders.source, options: nil) else { return nil }
-        func make(_ v: String, _ f: String, blend: Int) -> MTLRenderPipelineState? {
+        func make(_ v: String, _ f: String, blend: Int, storms: Bool = false) -> MTLRenderPipelineState? {
             let d = MTLRenderPipelineDescriptor()
-            d.vertexFunction = lib.makeFunction(name: v)
-            d.fragmentFunction = lib.makeFunction(name: f)
+            d.vertexFunction = lib.skyFunction(v, storms: storms)
+            d.fragmentFunction = lib.skyFunction(f, storms: storms)
             d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
             d.colorAttachments[1].pixelFormat = RenderStack.depthFormat
             if blend > 0 {
@@ -99,7 +100,7 @@ final class VolcanoRimRenderer: ThemeRenderer {
             return try? device.makeRenderPipelineState(descriptor: d)
         }
         // Blend 1: premultiplied over (with depth); 2: additive (no depth).
-        guard let sc = make("volcano_vertex", "volcano_scene_fragment", blend: 0),
+        guard let sc = SkyPipeline(build: { make("volcano_vertex", "volcano_scene_fragment", blend: 0, storms: $0) }),
               let sp = make("volcano_spark_vertex", "volcano_spark_fragment", blend: 2),
               let bo = make("volcano_bolt_vertex", "volcano_bolt_fragment", blend: 2),
               let co = make("volcano_column_vertex", "volcano_column_fragment", blend: 1) else { return nil }
@@ -464,7 +465,7 @@ final class VolcanoRimRenderer: ThemeRenderer {
         guard let pass = stack.scenePass(clear: MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)),
               let e = cb.makeRenderCommandEncoder(descriptor: pass) else { return }
         let skyU = sky.uniforms
-        e.setRenderPipelineState(scene)
+        e.setRenderPipelineState(scene.state(storms: sky.storms))
         skyU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
         volU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
         sky.bindStars(e)

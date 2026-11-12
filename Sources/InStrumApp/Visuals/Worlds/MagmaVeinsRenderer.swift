@@ -41,8 +41,8 @@ final class MagmaVeinsRenderer: ThemeRenderer {
         guard let lib = try? device.makeLibrary(source: MagmaVeinsShaders.source, options: nil) else { return nil }
         func make(_ v: String, _ f: String, additive: Bool, brighter: Bool = false) -> MTLRenderPipelineState? {
             let d = MTLRenderPipelineDescriptor()
-            d.vertexFunction = lib.makeFunction(name: v)
-            d.fragmentFunction = lib.makeFunction(name: f)
+            d.vertexFunction = lib.skyFunction(v)
+            d.fragmentFunction = lib.skyFunction(f)
             d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
             d.colorAttachments[1].pixelFormat = RenderStack.depthFormat
             if additive {

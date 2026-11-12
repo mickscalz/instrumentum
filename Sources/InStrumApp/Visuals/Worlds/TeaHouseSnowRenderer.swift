@@ -165,8 +165,8 @@ final class TeaHouseSnowRenderer: ThemeRenderer {
         enum Blend { case opaque, premultiplied }
         func make(_ v: String, _ f: String, _ blend: Blend, writesDepth: Bool = true) -> MTLRenderPipelineState? {
             let d = MTLRenderPipelineDescriptor()
-            d.vertexFunction = lib.makeFunction(name: v)
-            d.fragmentFunction = lib.makeFunction(name: f)
+            d.vertexFunction = lib.skyFunction(v)
+            d.fragmentFunction = lib.skyFunction(f)
             d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
             d.colorAttachments[1].pixelFormat = RenderStack.depthFormat
             if blend == .premultiplied {

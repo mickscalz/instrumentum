@@ -116,12 +116,12 @@ final class VolcanoRimRendererTests: XCTestCase {
         let names = ["volcano_vertex", "volcano_scene_fragment", "volcano_spark_vertex", "volcano_spark_fragment",
                      "volcano_bolt_vertex", "volcano_bolt_fragment", "volcano_column_vertex", "volcano_column_fragment"]
         for name in names {
-            let function = lib.makeFunction(name: name)
+            let function = lib.skyFunction(name)
             XCTAssertNotNil(function, name)
         }
         let veins = try device.makeLibrary(source: MagmaVeinsShaders.source, options: nil)
         for name in ["veins_vertex", "veins_crust_fragment", "veins_seg_vertex", "veins_seg_fragment"] {
-            let function = veins.makeFunction(name: name)
+            let function = veins.skyFunction(name)
             XCTAssertNotNil(function, name)
         }
         // Built on the Sky kit, with no powers of their own.
@@ -140,8 +140,8 @@ final class VolcanoRimRendererTests: XCTestCase {
         let row = MemoryLayout<SIMD4<Float>>.stride
         func fragmentBytes(_ library: MTLLibrary, _ v: String, _ f: String, index: Int) throws -> Int? {
             let d = MTLRenderPipelineDescriptor()
-            d.vertexFunction = library.makeFunction(name: v)
-            d.fragmentFunction = library.makeFunction(name: f)
+            d.vertexFunction = library.skyFunction(v)
+            d.fragmentFunction = library.skyFunction(f)
             d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
             d.colorAttachments[1].pixelFormat = RenderStack.depthFormat
             var reflection: MTLAutoreleasedRenderPipelineReflection?

@@ -60,7 +60,8 @@ final class LightningPlainsRenderer: ThemeRenderer {
     let weather: WeatherLayer
     let warp: WarpLayer
     private var showWarp = false
-    private let scene, storm, bolts, props: MTLRenderPipelineState
+    private let scene: SkyPipeline
+    private let storm, bolts, props: MTLRenderPipelineState
     /// The storm's screen bounds (NDC x0, y0, x1, y1) for its own pass; nil when it is out of view.
     private(set) var stormBox: SIMD4<Float>?
     private var plainsU = [SIMD4<Float>](repeating: .zero, count: LightningPlainsRenderer.uniformCount)
@@ -104,10 +105,10 @@ final class LightningPlainsRenderer: ThemeRenderer {
     init?(device: MTLDevice) {
         guard let s = SkyLayer(device: device), let w = WeatherLayer(device: device), let gw = WarpLayer(device: device),
               let lib = try? device.makeLibrary(source: LightningPlainsShaders.source, options: nil) else { return nil }
-        func make(_ v: String, _ f: String, blend: Int) -> MTLRenderPipelineState? {
+        func make(_ v: String, _ f: String, blend: Int, storms: Bool = false) -> MTLRenderPipelineState? {
             let d = MTLRenderPipelineDescriptor()
-            d.vertexFunction = lib.makeFunction(name: v)
-            d.fragmentFunction = lib.makeFunction(name: f)
+            d.vertexFunction = lib.skyFunction(v, storms: storms)
+            d.fragmentFunction = lib.skyFunction(f, storms: storms)
             d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
             d.colorAttachments[1].pixelFormat = RenderStack.depthFormat
             if blend > 0 {
@@ -122,7 +123,7 @@ final class LightningPlainsRenderer: ThemeRenderer {
             return try? device.makeRenderPipelineState(descriptor: d)
         }
         // Blend 1: premultiplied over (with depth); 2: additive (no depth); 3: premultiplied over (no depth).
-        guard let sc = make("plains_vertex", "plains_scene_fragment", blend: 0),
+        guard let sc = SkyPipeline(build: { make("plains_vertex", "plains_scene_fragment", blend: 0, storms: $0) }),
               let st = make("plains_box_vertex", "plains_storm_fragment", blend: 3),
               let bo = make("plains_bolt_vertex", "plains_bolt_fragment", blend: 2),
               let pr = make("plains_prop_vertex", "plains_prop_fragment", blend: 1) else { return nil }
@@ -614,7 +615,7 @@ final class LightningPlainsRenderer: ThemeRenderer {
         guard let pass = stack.scenePass(clear: MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)),
               let e = cb.makeRenderCommandEncoder(descriptor: pass) else { return }
         let skyU = sky.uniforms
-        e.setRenderPipelineState(scene)
+        e.setRenderPipelineState(scene.state(storms: sky.storms))
         skyU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
         plainsU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
         sky.bindStars(e)

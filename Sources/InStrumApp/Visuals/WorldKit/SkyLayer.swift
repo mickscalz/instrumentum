@@ -191,7 +191,12 @@ final class SkyLayer {
     private(set) var stormShift: Double = 0
     private var cellAnchor: (episode: Int, azimuth: Double)?
 
-    private let pipeline: MTLRenderPipelineState
+    private let pipeline: SkyPipeline
+    /// Whether this frame's sky needs the storm program (`SkySpecialisation`): a supercell, ash, a far storm or a sprite
+    /// in its rows. Every world drawing the sky in its own pass picks its pipeline by it.
+    private(set) var storms = false
+    /// Tests: draw with the storm program whatever the sky (a plain sky must look the same either way).
+    var forceStormProgram = false
     /// A 1×1 black texture bound while the real stars build, so no pass ever lacks texture 0.
     private let placeholder: MTLTexture
     private var u = [SIMD4<Float>](repeating: .zero, count: SkyLayer.uniformCount)
@@ -211,13 +216,15 @@ final class SkyLayer {
     }
 
     init?(device: MTLDevice) {
-        guard let lib = try? device.makeLibrary(source: SkyShaders.source, options: nil) else { return nil }
-        let d = MTLRenderPipelineDescriptor()
-        d.vertexFunction = lib.makeFunction(name: "sky_dome_vertex")
-        d.fragmentFunction = lib.makeFunction(name: "sky_dome_fragment")
-        d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
-        d.colorAttachments[1].pixelFormat = RenderStack.depthFormat
-        guard let p = try? device.makeRenderPipelineState(descriptor: d) else { return nil }
+        guard let lib = try? device.makeLibrary(source: SkyShaders.source, options: nil),
+              let p = SkyPipeline(build: { storms in
+                  let d = MTLRenderPipelineDescriptor()
+                  d.vertexFunction = lib.skyFunction("sky_dome_vertex", storms: storms)
+                  d.fragmentFunction = lib.skyFunction("sky_dome_fragment", storms: storms)
+                  d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
+                  d.colorAttachments[1].pixelFormat = RenderStack.depthFormat
+                  return try? device.makeRenderPipelineState(descriptor: d)
+              }) else { return nil }
         let pd = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 1, height: 1, mipmapped: false)
         pd.usage = [.shaderRead]
         guard let ph = device.makeTexture(descriptor: pd) else { return nil }
@@ -369,10 +376,15 @@ final class SkyLayer {
         }
         let sunTint = tint(s.sunTint)
         u[Self.ashRow] = SIMD4(unit(s.ash), sunTint.x, sunTint.y, sunTint.z)
+        storms = forceStormProgram || SkySpecialisation.needsStorms(u)
     }
 
+    /// How many times the dome's storm program was built, and whether it has been (tests).
+    var domeStormBuilds: Int { pipeline.stormBuilds }
+    var domeHasStormProgram: Bool { pipeline.hasStormProgram }
+
     func draw(_ e: MTLRenderCommandEncoder) {
-        e.setRenderPipelineState(pipeline)
+        e.setRenderPipelineState(pipeline.state(storms: storms))
         uniforms.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
         bindStars(e)
         e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
@@ -486,8 +498,8 @@ final class WeatherLayer {
         guard let lib = try? device.makeLibrary(source: SkyShaders.source, options: nil) else { return nil }
         func make(_ v: String, _ f: String) -> MTLRenderPipelineState? {
             let d = MTLRenderPipelineDescriptor()
-            d.vertexFunction = lib.makeFunction(name: v)
-            d.fragmentFunction = lib.makeFunction(name: f)
+            d.vertexFunction = lib.skyFunction(v)
+            d.fragmentFunction = lib.skyFunction(f)
             d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
             d.colorAttachments[0].isBlendingEnabled = true
             d.colorAttachments[0].sourceRGBBlendFactor = .one

@@ -10,6 +10,13 @@ enum SkyShaders {
 
     struct ColorDepth { float4 color [[color(0)]]; float4 depth [[color(1)]]; };
 
+    // ---------------------------------------------------------------- the storm program
+    // Fire & Neon's storm weathers (the far storm and its sprites, the supercell, the ash) are compiled into a sky only
+    // where its pipeline is specialised for them (`SkySpecialisation`): a plain sky's program carries none of their code
+    // (inlined into every sky, its registers slowed them all). A function made without the constant keeps them.
+    constant bool kSkyStormsSet [[function_constant(20)]];
+    constant bool kSkyStorms = is_function_constant_defined(kSkyStormsSet) ? kSkyStormsSet : true;
+
     // ---------------------------------------------------------------- noise
     float hash13(float3 p) {
         p = fract(p * 0.1031);
@@ -591,12 +598,13 @@ enum SkyShaders {
     // ---------------------------------------------------------------- Fire & Neon: ashfall (spec §7.1)
     /// The sun's light through the ash (the sky's own, `SkyState.sunTint`; a zero row, as a test sky has, is no ash).
     float3 ashSunTint(constant SkyU& u) {
+        if (!kSkyStorms) return float3(1.0);
         float3 t = u.ash.yzw;
         return t.x + t.y + t.z > 0.0 ? t : float3(1.0);
     }
     /// The moon's (mirrors `WorldWeather.ashTint`: ash × (0.05, 0.085, 0.13) an airmass, Rozenberg's airmass).
     float3 ashMoonTint(constant SkyU& u, float moonZ) {
-        float ash = saturate(u.ash.x);
+        float ash = kSkyStorms ? saturate(u.ash.x) : 0.0;
         if (ash <= 0.0) return float3(1.0);
         float hgt = max(moonZ, 0.0);
         float airmass = 1.0 / (hgt + 0.025 * exp(-11.0 * hgt));
@@ -903,7 +911,7 @@ enum SkyShaders {
         float3 col = mix(u.zenith.rgb, u.horizon.rgb, band);
         col = mix(col, u.horizon.rgb * 1.05, mist * 0.6 * exp(-max(alt, 0.0) / 0.12));
         // Ashfall (Fire & Neon §7.1): a brown-grey haze low down.
-        if (u.ash.x > 0.0) {
+        if (kSkyStorms && u.ash.x > 0.0) {
             float hl = dot(u.horizon.rgb, float3(0.2126, 0.7152, 0.0722));
             col = mix(col, float3(1.1, 0.96, 0.78) * hl, saturate(u.ash.x) * 0.45 * exp(-max(alt, 0.0) / 0.22));
         }
@@ -945,7 +953,7 @@ enum SkyShaders {
         float3 meteors = alt > 0.0 ? meteorLight(d, alt, u) : float3(0);
         col += meteors;
         // Red sprites (Fire & Neon §6.1): 50–90 km up, over the far storm; any cloud here hides them.
-        if (alt > 0.0 && (u.spriteA[0].w > 0.0 || u.spriteA[1].w > 0.0 || u.spriteA[2].w > 0.0)) {
+        if (kSkyStorms && alt > 0.0 && (u.spriteA[0].w > 0.0 || u.spriteA[1].w > 0.0 || u.spriteA[2].w > 0.0)) {
             col += redSprites(d, alt, u);
         }
 
@@ -1026,11 +1034,11 @@ enum SkyShaders {
         }
 
         // A far storm on the horizon (Fire & Neon §6.1), in front of the stars and the moon, behind any cloud here.
-        if (u.storm.z > 0.001 && alt > -0.01) col = farStorm(d, alt, col, u, time);
+        if (kSkyStorms && u.storm.z > 0.001 && alt > -0.01) col = farStorm(d, alt, col, u, time);
 
         // The supercell weather (Fire & Neon §7.2) takes the generic cloud's place as it comes (drawn over all this in
         // skyRadiance).
-        cloudCover *= 1.0 - saturate(u.cellA.w);
+        if (kSkyStorms) cloudCover *= 1.0 - saturate(u.cellA.w);
 
         // Clouds: a drifting layer lit by the sun or the moon.
         if (cloudCover > 0.01 && alt > 0.0) {
@@ -1096,9 +1104,10 @@ enum SkyShaders {
     /// it comes (over the clouds, the moon and the sun's disc, which it hides). The storm is drawn first, where little
     /// else is live, and the sky behind it only where it shows through (under the storm's dark body none of it is drawn).
     float3 skyRadiance(float3 d, constant SkyU& u, thread float& moonMask, texture2d<float> stars) {
-        float amount = d.z > -0.01 ? saturate(u.cellA.w) : 0.0;
+        // (A plain sky's program has none of the storm: amount folds to 0, and the base is all that is left.)
+        float amount = kSkyStorms && d.z > -0.01 ? saturate(u.cellA.w) : 0.0;
         float4 storm = float4(0.0, 0.0, 0.0, 1.0);
-        if (amount > 0.001) storm = supercellSky(d, u, u.forward.w);
+        if (kSkyStorms && amount > 0.001) storm = supercellSky(d, u, u.forward.w);
         // The light under the core goes green (a grade of at most 12%).
         float3 grade = mix(float3(1.0), float3(1.0 - 0.9 * 0.12, 1.0 + 0.25 * 0.12, 1.0 - 0.6 * 0.12),
                            saturate(u.cellB.x / 0.12)) * amount;
