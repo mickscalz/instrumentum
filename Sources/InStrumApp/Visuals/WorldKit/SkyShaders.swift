@@ -777,7 +777,7 @@ enum SkyShaders {
         float Wt = 4.3 + 0.5 * exp(-(hz - 4.8) * (hz - 4.8) / 3.0) + 2.0 * smoothstep(6.0, 8.8, hz);
         float dome = kCellAnvil + 1.0 + 1.9 * exp(-(x - xa - 0.5) * (x - xa - 0.5) / 5.0);
         float e = min(mix(Ws, Wt, upper) - sqrt((x - xa) * (x - xa) + 1.0), dome - z);
-        float eF = min(min(x - xa + 10.0 - 0.7 * (z - 3.4) * (z - 3.4), xa - 2.0 + 0.25 * hz - x),
+        float eF = min(min(x - xa + 9.6 - 0.18 * (z - 3.3) * (z - 3.3), xa - 2.0 + 0.25 * hz - x),
                        min(6.0 - 0.2 * max(xa - x, 0.0) - 0.1 * max(xa - x - 5.5, 0.0) - z, 2.0 * (hz - 0.8)));
         float fx = x - xa;
         float crest = -1e3;
@@ -1035,7 +1035,7 @@ enum SkyShaders {
                 float sn = s, nz = 0.12, lumpy = upper;
                 // The forward flank's cloud beside it (left, downshear): a lower, flatter shelf over the rain, from a
                 // couple of km up to a shoulder falling away from the updraft, its lumps smoothed.
-                float eF = min(min(x - xa + 10.0 - 0.7 * (z - 3.4) * (z - 3.4), xa - 2.0 + 0.25 * hz - x),
+                float eF = min(min(x - xa + 9.6 - 0.18 * (z - 3.3) * (z - 3.3), xa - 2.0 + 0.25 * hz - x),
                                min(6.0 - 0.2 * max(xa - x, 0.0) - 0.1 * max(xa - x - 5.5, 0.0) - z, 2.0 * (hz - 0.8)))
                          + 1.2 * (en - 0.5) + 0.5 * turret;
                 if (eF > edge - 1.0) {
@@ -1117,7 +1117,7 @@ enum SkyShaders {
                     float vary = smoothstep(0.25, 0.75, en + 0.35 * (fold - 0.5));
                     float lining = (0.75 * rim + 0.15 * thinA * thinA) * (0.35 + 0.65 * saturate(N.z + 0.6)) * (0.3 + 1.0 * vary);
                     c += Lc * (lightAmt * (2.2 * back + 0.35 * wideBack) * lining);
-                    c += Lc * (lightAmt * back * (0.06 * saturate(N.z + 0.5) * (0.4 + en) + 0.12 * strLip * stri));
+                    c += Lc * (lightAmt * back * (0.06 * saturate(N.z + 0.5) * (0.4 + en) + 0.05 * strLip * stri));
                     // How it takes the lightning (supercellFlashLight): its lumps bulge bright, the creases stay dark,
                     // its thin edges glow.
                     float rec = (0.62 + 0.38 * fold * saturate(N.z + 0.6)) * (0.7 + 0.6 * thinA) * (0.55 + 0.45 * en);
@@ -1194,15 +1194,19 @@ enum SkyShaders {
                 // tower it pours from, lighter and fibrous toward its thin edges.
                 float HA = bil * 1.2;
                 float2 gA = float2(0.0);
-                if (fine > 0.5) HA = cloudBumps(gq / 2.4 + 0.8 * float2(na, bil) + 50.0, 0.0, float2(11.0), float2(13.0),
+                // (Warped in the same frame, by noise round on screen: a warp taken on the plane shears them into streaks.)
+                float wq = skyNoise2(gq * 0.13 + 21.0);
+                if (fine > 0.5) HA = cloudBumps(gq / 2.4 + 0.8 * float2(wq, bil) + 50.0, 0.0, float2(11.0), float2(13.0),
                                                 0.55, 0.45, 1.7, gA);
                 float billow = smoothstep(0.1, 1.1, HA);
-                if (fine > 0.5) {
-                    // (Smaller lumps on the billows: an underside, not a ceiling.)
+                float pm = mam * smoothstep(0.38, 0.58, na) * (1.0 - smoothstep(14.0, 30.0, trail)) * smoothstep(0.0, 4.0, trail);
+                if (fine > 0.5 && pm < 0.6) {
+                    // (Smaller lumps on the billows: an underside, not a ceiling. Among the pouches, the pouches.)
                     float2 gA2;
-                    float HA2 = cloudBumps(gq / 0.95 + 0.6 * float2(bil, na) + 70.0, 0.0, float2(19.0), float2(23.0), 0.5, 0.4, 1.8, gA2);
-                    gA += 0.6 * gA2;
-                    billow = 0.65 * billow + 0.35 * smoothstep(0.1, 1.1, HA2);
+                    float HA2 = cloudBumps(gq / 0.95 + 0.6 * float2(bil, wq) + 70.0, 0.0, float2(19.0), float2(23.0), 0.5, 0.4, 1.8, gA2);
+                    float w2 = 1.0 - smoothstep(0.3, 0.6, pm);
+                    gA += 0.6 * w2 * gA2;
+                    billow = mix(billow, 0.65 * billow + 0.35 * smoothstep(0.1, 1.1, HA2), w2);
                 }
                 float edgeNear = 1.0 - smoothstep(0.0, 7.0, ed);
                 // (The billows lit from the bright sky low under its edge, toward the light: relief, not a flat lid.)
@@ -1217,7 +1221,6 @@ enum SkyShaders {
                 // sunset it lights it from below.
                 float reach = exp(-max(trail, 0.0) / 14.0) * saturate(Lu.x * 2.0 + 0.4);
                 float lit = under * (0.7 + 0.6 * saturate(0.5 + 2.0 * (bilL - bil)));
-                float pm = mam * smoothstep(0.38, 0.58, na) * (1.0 - smoothstep(14.0, 30.0, trail)) * smoothstep(0.0, 4.0, trail);
                 float dome = 0.5;
                 if (pm > 0.01) {
                     // Mammatus: Supercell Sky's pouches (the same sum of bumps and the same light), in the frame where a

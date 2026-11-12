@@ -268,13 +268,14 @@ final class SkyLayer {
     // ---------------------------------------------------------------- the supercell's impostor (Fire & Neon fix pass)
     // The supercell weather changes over minutes, so it is drawn into a texture the sky samples (at the world's own
     // quality, for the cost of a lookup a pixel): a window in azimuth and altitude round the view. No frame ever draws
-    // more than a 32nd of it (every 32nd row; a 64th in the Clearing), so none spikes, even on a slow graphics chip. The texture holds
-    // three snapshots: while one is filled a strip a frame, the sky shows the other two cross-fading from the older to the
-    // newer as the fill goes on (so the storm moves smoothly, a fill behind, never in torn rows); when the fill is whole it
-    // becomes the newer. A new window (the view swung past the one shown) is filled the same way and shown alone once
-    // whole. Each snapshot's upper half is the storm's light (premultiplied) and how much of the sky shows through; its
-    // lower half how its cloud takes the lightning's light, which the sky adds each frame round the strike (so a flash
-    // never waits). Allocated once, kept. Previews and tests (`cellAtOnce`) draw a snapshot whole when they need one.
+    // more than a 32nd of it (every 32nd row; a 64th in the Clearing), so none spikes, even on a slow graphics chip. The
+    // texture holds three snapshots: while one is filled a strip a frame, the sky shows the other two cross-fading from
+    // the older to the newer as the fill goes on (so the storm moves smoothly, a fill behind, never in torn rows); when
+    // the fill is whole it becomes the newer. A new window (the view swung past the one shown) is filled the same way
+    // and shown alone once whole. Each snapshot's upper half is the storm's light (premultiplied) and how much of the
+    // sky shows through; its lower half how its cloud takes the lightning's light, which the sky adds each frame round
+    // the strike (so a flash never waits). Allocated once, kept. Previews and tests (`cellAtOnce`) draw a snapshot whole
+    // when they need one.
 
     /// The fragment texture index the impostor is bound at (beside the stars at 0, clear of every world's own).
     nonisolated static let cellTextureIndex = 9

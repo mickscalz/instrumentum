@@ -1,12 +1,13 @@
 import Metal
 import simd
 
-/// The shared sky's two programs (Fire & Neon fix pass). Fire & Neon's storm weathers (the far storm and its sprites,
-/// the supercell, the ash) are compiled into a sky only where its pipeline is specialised for them, by the function
-/// constant `kSkyStorms` in `SkyShaders.common`: inlined into every sky, their code's registers slowed every plain sky
-/// by about half a millisecond. A plain sky draws with the program that has none of it; a sky with a storm in its rows
-/// draws with the other, made the first time one is needed and kept. Every library built on `SkyShaders.common` takes
-/// its functions through `skyFunction`, so none is left unspecialised.
+/// The shared sky's programs (Fire & Neon fix pass). Fire & Neon's storm weathers (the far storm and its sprites, the
+/// supercell, the ash) are compiled into a sky only where its pipeline is specialised for them, by the function constants
+/// `kSkyStorms` and `kSkyCell` in `SkyShaders.common`: inlined into every sky, their code's registers slowed every plain
+/// sky by about half a millisecond. A plain sky draws with the program that has none of it; a sky with a storm in its
+/// rows draws with the whole storm program, or (where its world reads the supercell's impostor) with the supercell's
+/// alone when that is its only storm weather; each made the first time one is needed and kept. Every library built on
+/// `SkyShaders.common` takes its functions through `skyFunction`, so none is left unspecialised.
 enum SkySpecialisation {
     /// The function constants' indices (`kSkyStormsSet` and `kSkyCellSet` in `SkyShaders.common`).
     static let stormsIndex = 20, cellIndex = 21
@@ -49,7 +50,7 @@ extension MTLLibrary {
 }
 
 /// A render pipeline whose fragment reads the shared sky: its plain program made at once (so a world that cannot build
-/// it fails as before), its storm program the first time a frame needs it; both kept.
+/// it fails as before), its storm programs the first time a frame needs each; all kept.
 @MainActor
 final class SkyPipeline {
     private let build: (SkyProgram) -> MTLRenderPipelineState?
