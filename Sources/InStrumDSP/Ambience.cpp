@@ -530,30 +530,78 @@ public:
     }
 };
 
-// ---------------------------------------------------------------- Chime (a rare soft bell on the Glass partials)
+// ---------------------------------------------------------------- Chime (a rare soft bell on the Glass partials, in your key)
+/// The chime's tones (Small Wins spec §7), into `out` (6 at most), returning how many. Before a key is sensed, the six
+/// it has always rung: E♭ major pentatonic, E♭5–E♭6. Once one is, the key's own pentatonic (major 0 2 4 7 9, minor
+/// 0 3 5 7 10) in the same octave, MIDI 75–87: five tones, or six when E♭ is one of them.
+inline int chimeTones(const AmbienceContext &c, float *out) {
+    static constexpr float kBefore[6] = {622.25f, 698.46f, 783.99f, 932.33f, 1046.5f, 1244.5f};
+    if (!c.keySensed) {
+        for (int i = 0; i < 6; ++i) out[i] = kBefore[i];
+        return 6;
+    }
+    static constexpr int kMajor[5] = {0, 2, 4, 7, 9}, kMinor[5] = {0, 3, 5, 7, 10};
+    const int *scale = c.keyMajor ? kMajor : kMinor;
+    const int root = ((c.keyRoot % 12) + 12) % 12;
+    int n = 0;
+    for (int m = 75; m <= 87 && n < 6; ++m) {
+        const int degree = ((m - root) % 12 + 12) % 12;
+        for (int k = 0; k < 5; ++k) {
+            if (scale[k] != degree) continue;
+            out[n++] = 440.f * std::exp2((float)(m - 69) / 12.f);
+            break;
+        }
+    }
+    return n;
+}
+
 class Chime final : public AmbienceSource {
     FastRandom rng;
     static constexpr float kRatio[6] = {1.f, 2.32f, 4.25f, 6.63f, 9.38f, 12.5f};
     static constexpr float kAmp[6] = {1.f, 0.55f, 0.35f, 0.22f, 0.14f, 0.09f};
-    static constexpr float kNotes[6] = {622.25f, 698.46f, 783.99f, 932.33f, 1046.5f, 1244.5f};   // E♭ major pentatonic
-    struct Bell { bool on = false; Partial p[6]; float gl = 0.7f, gr = 0.7f; int attack = 0, attackLen = 1; int check = 0; } bells[4];
+    struct Bell {
+        bool on = false; Partial p[6]; float gl = 0.7f, gr = 0.7f, hz = 0; int attack = 0, attackLen = 1; int check = 0;
+        uint32_t serial = 0;
+    } bells[4];
     float next = 0, second = -1;
+    uint32_t serial = 0;
 
+    /// Each strike picks its tone from the key as it stands then, and keeps it: a new key never retunes a ring. With all
+    /// four ringing, the oldest makes way.
     void strike(const AmbienceContext &c) {
-        for (auto &b : bells) {
-            if (b.on) continue;
-            const float f0 = kNotes[(int)(rng.uniform() * 5.99f)], v = 0.6f + 0.4f * rng.uniform();
-            for (int i = 0; i < 6; ++i)
-                b.p[i].start(f0 * kRatio[i] * std::exp2((2.f * rng.bipolar()) / 1200.f), 6.f / (1.f + 0.6f * (float)i), v * kAmp[i], c.sr);
-            panGains(0.5f * rng.bipolar(), b.gl, b.gr);
-            b.on = true; b.attack = 0; b.attackLen = (int)((0.002f + 0.002f * rng.uniform()) * c.sr);
-            return;
+        Bell *b = nullptr;
+        for (auto &x : bells) if (!x.on) { b = &x; break; }
+        if (!b) { b = &bells[0]; for (auto &x : bells) if (x.serial < b->serial) b = &x; }
+        float tones[6];
+        const int count = chimeTones(c, tones);
+        if (count <= 0) return;
+        const float tone = tones[std::min(count - 1, (int)(rng.uniform() * ((float)count - 0.01f)))], v = 0.6f + 0.4f * rng.uniform();
+        for (int i = 0; i < 6; ++i) {
+            const float hz = tone * kRatio[i] * std::exp2((2.f * rng.bipolar()) / 1200.f);
+            if (i == 0) b->hz = hz;
+            b->p[i].start(hz, 6.f / (1.f + 0.6f * (float)i), v * kAmp[i], c.sr);
         }
+        panGains(0.5f * rng.bipolar(), b->gl, b->gr);
+        b->on = true; b->attack = 0; b->attackLen = (int)((0.002f + 0.002f * rng.uniform()) * c.sr);
+        b->check = 0; b->serial = ++serial;
+        ++events;
     }
 
 public:
     explicit Chime(uint64_t seed) : rng(seed) { direct = 0.8f; send = 0.8f; }
-    void wake(const AmbienceContext &) override { next = 15.f + 35.f * rng.uniform(); second = -1; }
+    /// Up from silence: nothing left ringing from before (a ring cut off with the world never resumes with it).
+    void wake(const AmbienceContext &) override {
+        for (auto &b : bells) b.on = false;
+        next = 15.f + 35.f * rng.uniform(); second = -1;
+    }
+    /// A strike now (tests): the next one waits its usual 80–160 s.
+    void strikeNow(const AmbienceContext &c) { strike(c); next = (80.f + 80.f * rng.uniform()) / c.density; second = -1; }
+    /// The struck fundamental of the newest ringing strike, or 0 while none rings.
+    float ringingHz() const {
+        const Bell *newest = nullptr;
+        for (auto &b : bells) if (b.on && (!newest || b.serial > newest->serial)) newest = &b;
+        return newest ? newest->hz : 0.f;
+    }
     void render(float *l, float *r, int n, const AmbienceContext &c) override {
         const float dt = (float)n / c.sr;
         if ((next -= dt) <= 0) {
@@ -4285,7 +4333,9 @@ Ambience::Ambience(double sampleRate, uint64_t seed) : sr(sampleRate), room(samp
     sources[ISD_AMB_DAWN_CHORUS] = std::make_unique<DawnChorus>(s(6));
     sources[ISD_AMB_SHIP_HUM] = std::make_unique<ShipHum>(s(7), fsr);
     sources[ISD_AMB_AIR_FLOW] = std::make_unique<AirFlow>(s(8), fsr);
-    sources[ISD_AMB_CHIME] = std::make_unique<Chime>(s(9));
+    auto chimeSource = std::make_unique<Chime>(s(9));
+    chime = chimeSource.get();
+    sources[ISD_AMB_CHIME] = std::move(chimeSource);
     sources[ISD_AMB_HULL_TICKS] = std::make_unique<HullTicks>(s(10));
     sources[ISD_AMB_WIND] = std::make_unique<Wind>(s(11));
     thunder = std::make_unique<Thunder>(s(12));
@@ -4455,6 +4505,13 @@ void Ambience::strikeBell() {
 }
 
 float Ambience::bellRingingHz() const { return ramps[ISD_AMB_TEMPLE_BELL].silent() ? 0.f : bell->ringingHz(); }
+
+void Ambience::strikeChime() {
+    if (ramps[ISD_AMB_CHIME].silent()) chime->wake(ctx);
+    chime->strikeNow(ctx);
+}
+
+float Ambience::chimeRingingHz() const { return ramps[ISD_AMB_CHIME].silent() ? 0.f : chime->ringingHz(); }
 
 void Ambience::startKnocker() {
     if (ramps[ISD_AMB_WATER_KNOCKER].silent()) knocker->wake(ctx);
@@ -4633,7 +4690,10 @@ struct ISDAmbience {
     std::atomic<float> indoors{0.f}, wetness{0.f}, snowOnGlass{0.f};
     std::atomic<int> kettleSeq{0}, boatSeq{0};
     int kettleSeen = 0, boatSeen = 0;
-    std::atomic<int> key{4 | 16};   // root | (major << 4): E major until the player's key is sensed
+    std::atomic<int> key{4 | 16};   // root | (major << 4) | 32 once sensed: E major, unsensed, until the player's key is
+    std::atomic<int> chimeSeq{0};
+    int chimeSeen = 0;
+    std::atomic<float> chimeHz{0.f};   // after each render: the chime's newest ringing strike, 0 while none rings
     std::atomic<int> bellSeq{0}, knockerSeq{0}, warblerSeq{0};
     int bellSeen = 0, knockerSeen = 0, warblerSeen = 0;
     std::atomic<float> bellHz{0.f};   // after each render: the bell's ringing fundamental, 0 while it is silent
@@ -4807,10 +4867,12 @@ void isd_ambience_debug_start_boat(ISDAmbience *a) { if (a) a->boatSeq.fetch_add
 
 void isd_ambience_set_key(ISDAmbience *a, int root, int major) {
     if (!a || root < 0 || root > 11) return;   // the key can't be sensed: the bell stays where it is
-    a->key.store(root | (major ? 16 : 0), std::memory_order_relaxed);
+    a->key.store(root | (major ? 16 : 0) | 32, std::memory_order_relaxed);   // 32: a key has been sensed (the chime)
 }
 
 void isd_ambience_debug_strike_bell(ISDAmbience *a) { if (a) a->bellSeq.fetch_add(1, std::memory_order_release); }
+void isd_ambience_debug_strike_chime(ISDAmbience *a) { if (a) a->chimeSeq.fetch_add(1, std::memory_order_release); }
+float isd_ambience_debug_chime_hz(const ISDAmbience *a) { return a ? a->chimeHz.load(std::memory_order_acquire) : 0.f; }
 void isd_ambience_debug_start_knocker(ISDAmbience *a) { if (a) a->knockerSeq.fetch_add(1, std::memory_order_release); }
 void isd_ambience_debug_call_warbler(ISDAmbience *a) { if (a) a->warblerSeq.fetch_add(1, std::memory_order_release); }
 
@@ -4861,9 +4923,11 @@ void isd_ambience_render(ISDAmbience *a, float *left, float *right, int frames) 
     const int boats = a->boatSeq.load(std::memory_order_acquire);
     if (boats != a->boatSeen) { a->boatSeen = boats; a->engine.startBoat(); }
     const int key = a->key.load(std::memory_order_relaxed);
-    a->engine.setKey(key & 15, (key & 16) != 0);   // before any strike this render: a new key waits for the next strike
+    a->engine.setKey(key & 15, (key & 16) != 0, (key & 32) != 0);   // before any strike this render: a new key waits for the next strike
     const int bells = a->bellSeq.load(std::memory_order_acquire);
     if (bells != a->bellSeen) { a->bellSeen = bells; a->engine.strikeBell(); }
+    const int chimes = a->chimeSeq.load(std::memory_order_acquire);
+    if (chimes != a->chimeSeen) { a->chimeSeen = chimes; a->engine.strikeChime(); }
     const int knockers = a->knockerSeq.load(std::memory_order_acquire);
     if (knockers != a->knockerSeen) { a->knockerSeen = knockers; a->engine.startKnocker(); }
     const int calls = a->warblerSeq.load(std::memory_order_acquire);
@@ -4899,6 +4963,7 @@ void isd_ambience_render(ISDAmbience *a, float *left, float *right, int frames) 
     }
     a->engine.render(left, right, frames);
     a->bellHz.store(a->engine.bellRingingHz(), std::memory_order_release);
+    a->chimeHz.store(a->engine.chimeRingingHz(), std::memory_order_release);
     a->sonarHz.store(a->engine.sonarRingingHz(), std::memory_order_release);
     for (int i = ISD_AMB_VENT_RUMBLE; i < ISD_AMB_COUNT; ++i) a->hz[i].store(a->engine.sourceHz(i), std::memory_order_release);
 }

@@ -1,7 +1,7 @@
 // Ambience: sixty-two sources generated live (never loops), each gliding to its level over 2.5 s, through a
 // small room whose amount follows "closeness", ducking under the instrument while you play. Outdoor sources can be
 // heard through a window ("indoors"): darker and quieter, while the indoor ones stay close. In-key sources (the
-// temple bell, the sonar, the inflow roar, the heat shimmer, the far siren) follow the key the player is in. Thunder can
+// temple bell, the chime, the sonar, the inflow roar, the heat shimmer, the far siren) follow the key the player is in. Thunder can
 // be queued to arrive late by its distance (the picture first, the sound after), and so can the world's one-shots
 // (Fire & Neon: the eruption's boom, the plume's cracks, a rockfall, a steam blast, a car passing, a wiper's sweep).
 // Everything is preallocated; the setters are lock-free atomics read at the start of each render.
@@ -24,6 +24,7 @@ struct AmbienceContext {
     float snowOnGlass = 0.f; // rain on the glass becomes soft snow ticks
     int keyRoot = 4;         // the key the player is in (C = 0; E until one is sensed), for in-key sources
     bool keyMajor = true;
+    bool keySensed = false;  // true once the player's key has been sensed (the chime keeps its own notes until then)
     float lakeSurge = 0.f;   // the volcano's lake: how hard it surges (the vent rumble) and how brightly its cracks
     float lakeGlow = 0.f;    // glow (the lava hiss), 0…1, gliding over 0.3 s
 };
@@ -66,7 +67,7 @@ public:
 
 class Thunder;
 namespace amb { class Surf; class Kettle; class Boat; class TempleBell; class WaterKnocker; class Warbler; class Sonar; class Whale; class Bubbles;
-                class ThunderRoll; }
+                class ThunderRoll; class Chime; }
 
 class Ambience {
 public:
@@ -107,13 +108,19 @@ public:
     void startKettle();
     /// A boat passes now (tests).
     void startBoat();
-    /// The key the player is in (root 0…11, C = 0; anything else keeps the last): in-key sources take it at their
-    /// next event (the bell at its next strike, never mid-ring).
-    void setKey(int root, bool major) { if (root >= 0 && root < 12) { ctx.keyRoot = root; ctx.keyMajor = major; } }
+    /// The key the player is in (root 0…11, C = 0; anything else keeps the last), and whether it has been sensed yet:
+    /// in-key sources take it at their next event (the bell and the chime at their next strike, never mid-ring).
+    void setKey(int root, bool major, bool sensed = true) {
+        if (root >= 0 && root < 12) { ctx.keyRoot = root; ctx.keyMajor = major; ctx.keySensed = sensed; }
+    }
     /// The temple bell strikes now (tests).
     void strikeBell();
     /// The fundamental of the temple bell's newest ringing strike, or 0 while it is silent.
     float bellRingingHz() const;
+    /// The chime strikes now (tests).
+    void strikeChime();
+    /// The struck fundamental of the chime's newest ringing strike, or 0 while none rings.
+    float chimeRingingHz() const;
     /// The water-knocker starts filling now (tests).
     void startKnocker();
     /// The bush warbler calls now (tests).
@@ -165,6 +172,7 @@ private:
     amb::Kettle *kettle = nullptr;
     amb::Boat *boat = nullptr;
     amb::TempleBell *bell = nullptr;
+    amb::Chime *chime = nullptr;
     amb::WaterKnocker *knocker = nullptr;
     amb::Warbler *warbler = nullptr;
     amb::Sonar *sonar = nullptr;
