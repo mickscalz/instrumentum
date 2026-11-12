@@ -129,6 +129,18 @@ public struct Wipers: Equatable {
         return restBefore + up * lastSweepSeconds
     }
 
+    /// Seconds until the next sweep begins in `rain` (0…1), as `step` would run it: the rest of this sweep and the rest
+    /// after it, or what is left of the rest; nil while it is too dry for one.
+    public func nextSweep(rain: Float) -> Float? {
+        let r = Self.unit(rain)
+        if sweeping {
+            let left: Float = (1 - phase) * max(0.1, sweepSeconds)
+            return r >= Self.dryBelow ? left + Self.rest(rain: r) : nil
+        }
+        guard r >= Self.dryBelow else { return nil }
+        return max(0, Self.rest(rain: r) - restBefore)
+    }
+
     /// Advances by `dt` (s) in `rain` (0…1). Time left over when a sweep ends or a rest runs out carries on into the next,
     /// so the blades keep their rate whatever the frame rate.
     public mutating func step(dt: Float, rain: Float) {
@@ -193,6 +205,8 @@ public struct DriveCar: Equatable {
     /// The surprise's abstract light bar on its roof (a slow ribbon of colour, never a beacon).
     public var lightBar: Bool
     public var oncoming: Bool { lane >= 4 }
+    /// About one in nine is a truck (the soundscape hears it lower and longer as it passes).
+    public var truck: Bool { !lightBar && seed % 9 == 4 }
 }
 
 /// A bridge over the expressway (a surprise): a railway with a train crossing, or a road (under it, the rain on the glass
@@ -392,6 +406,11 @@ public struct NeonNightDriveModel: ThemeModel, MoodAware, SkyAware, ExcitementAw
     private var closeIn: Float = 0
     private var shelter: Float = 0
     private var wiperRain: Float = 0
+    /// The soundscape's one-shots this step (wipers' sweeps, cars passing), the last sweep sent, and each car slot's pass
+    /// sent (by the car's seed).
+    private var events: [AmbienceEvent] = []
+    private var sweepSent = -1
+    private var passSent = [UInt64](repeating: 0, count: NeonNightDriveModel.carCap)
     private var rng = SeededRandom(seed: 0xD21_7E0_4E0)
     private var trafficRng = SeededRandom(seed: 0x7AF_F1C)
 
@@ -514,6 +533,7 @@ public struct NeonNightDriveModel: ThemeModel, MoodAware, SkyAware, ExcitementAw
         let surprise = excite.surprise
         excite.moment = nil
         excite.surprise = nil
+        events.removeAll(keepingCapacity: true)
 
         // The neon follows the chord, easing over 0.4 s.
         let quality3 = held.count >= 3 ? PlayingAnalyzer.classify(Set(held.keys)) : .none
@@ -614,6 +634,8 @@ public struct NeonNightDriveModel: ThemeModel, MoodAware, SkyAware, ExcitementAw
         let glassRain: Float = rainAll * (1 - shelter)
         wiperRain += (rainAll - wiperRain) * (1 - exp(-fd / 3))
         wipers.step(dt: fd, rain: wiperRain)
+        sendSweeps(glassRain: glassRain)
+        sendPasses(mps: mps)
 
         // The release: the city's lights breathe out, and the rain hangs.
         let breath: Float = drop > 0 ? sin(Float.pi * (1 - drop)) : 0
@@ -650,7 +672,7 @@ public struct NeonNightDriveModel: ThemeModel, MoodAware, SkyAware, ExcitementAw
         shownCars.reserveCapacity(Self.carCap)
         for i in cars.indices where carActive[i] { shownCars.append(cars[i]) }
         let dead: Float = deadLight()
-        let ambience = scene(sky: s, mps: mps, glassRain: glassRain, inTunnel: inTunnel, roles: roles, density: Float(p.number("traffic")))
+        let ambience = scene(sky: s, glassRain: glassRain, inTunnel: inTunnel, roles: roles, gentle: excite.gentle)
         return DriveFrame(sky: s, yaw: yaw, roll: roll, fov: fov, speed: speed, kmh: mps * 3.6, distance: distance,
                           neonWarmth: warmth, neon: neonDial, signs: signs, deadSign: deadSign?.slot, deadLight: dead,
                           wave: wave, studs: studs, trails: warping ? [] : trails.streaks,
@@ -871,38 +893,86 @@ public struct NeonNightDriveModel: ThemeModel, MoodAware, SkyAware, ExcitementAw
 
     // MARK: - Ambience
 
-    /// The drive's soundscape, from the sources the coast road already has: the road and the engine following the speed,
-    /// the rain on the glass (none under a bridge or in the tunnel), cars passing with the traffic, the city's hum, a little
-    /// wind round the windscreen; the weather's own on top.
-    // Fire & Neon Task 10 adds the drive family here (wet tyres, wipers, the drive's engine and passing cars, roof rain
-    // and the far siren in key): put them in `levels` beside these, and read the wipers' rate from the frame.
-    public static func levels(_ s: SkyState, speed: Float, glassRain: Float, traffic: Float, inTunnel: Bool) -> [AmbienceSource: Double] {
+    /// The wipers' sweeps for the soundscape (spec §9.3): each sent a moment before it begins, so its squeak and its thunks
+    /// land with the blades however the throttle holds it (and one already under way at once); `glassRain` says how wet
+    /// the glass is (dry under a bridge, so the rubber squeaks).
+    static let sweepLead: Float = 0.25
+
+    private mutating func sendSweeps(glassRain: Float) {
+        let wet = Double(min(1, max(0, glassRain.isFinite ? glassRain : 0)))
+        if wipers.sweeping, wipers.sweeps > sweepSent {
+            events.append(.sweep(in: 0, seconds: Double((1 - wipers.phase) * wipers.sweepSeconds), wet: wet))
+            sweepSent = wipers.sweeps
+        }
+        let next = wipers.sweeps + (wipers.sweeping ? 1 : 0)
+        if next > sweepSent, let t = wipers.nextSweep(rain: wiperRain), t <= Self.sweepLead {
+            events.append(.sweep(in: Double(t), seconds: Double(Wipers.sweepTime(rain: wiperRain)), wet: wet))
+            sweepSent = next
+        }
+    }
+
+    /// When a car in another lane comes alongside you (s from now), how fast it closes (m/s) and how far to the side it
+    /// passes (m, < 0 on your left); nil once it has passed or never will.
+    public static func pass(of c: DriveCar, mps: Float) -> (after: Float, closing: Float, lateral: Float)? {
+        guard c.lane != 1, c.ahead.isFinite, c.speed.isFinite else { return nil }
+        let closing: Float
+        if c.oncoming {
+            guard c.ahead > 0 else { return nil }
+            closing = c.speed + mps
+        } else if c.ahead > 0 {
+            closing = mps - c.speed    // you are catching it
+        } else {
+            closing = c.speed - mps    // it is catching you
+        }
+        guard closing > 0.5 else { return nil }
+        return (abs(c.ahead) / closing, closing, DriveRoad.laneCentre(c.lane))
+    }
+
+    /// How long before a car comes alongside its sound is sent (the engine plays its approach from then).
+    static let passLead: Float = 3
+
+    private mutating func sendPasses(mps: Float) {
+        for i in cars.indices where carActive[i] {
+            let c = cars[i]
+            guard passSent[i] != c.seed, let p = Self.pass(of: c, mps: mps), p.after <= Self.passLead else { continue }
+            passSent[i] = c.seed
+            events.append(.passingCar(in: Double(p.after), closing: Double(p.closing), lateral: Double(p.lateral), truck: c.truck))
+        }
+    }
+
+    /// The drive's soundscape (spec §9.3): the drive family and a little of the city. Wet tyres and the engine follow the
+    /// speed in the engine (the scene's `speed`), the roof rain is the rain on the glass (none under a bridge or in the
+    /// tunnel), the wipers and the passing cars sound on the world's events, and the far siren calls now and then, rare,
+    /// far and in key, off under gentle visuals and in the tunnel. The wind round the windscreen rises with the speed; the
+    /// city's far street hum is gone in the tunnel; the weather's own on top.
+    public static func levels(_ s: SkyState, speed: Float, glassRain: Float, inTunnel: Bool, gentle: Bool) -> [AmbienceSource: Double] {
         let v = Double(min(1.25, max(0, speed.isFinite ? speed : 0)) / 1.25)
         let rain = Double(min(1, max(0, glassRain.isFinite ? glassRain : 0)))
-        let cars = Double(min(1, max(0, traffic.isFinite ? traffic : 0.5)))
         var levels: [AmbienceSource: Double] = [
-            .road: 0.45 + 0.4 * v,
-            .engine: 0.35 + 0.3 * v,
+            .wetTyres: 0.8,
+            .driveEngine: 0.65,
+            .drivePassingCar: 0.8,
+            .wipers: 0.75,
             .windowWind: 0.12 + 0.18 * v,
-            .passingCar: 0.15 + 0.4 * cars,
             .street: inTunnel ? 0 : 0.22,
         ]
-        if rain > 0.01 { levels[.rainOnGlass] = rain }
+        if rain > 0.01 { levels[.roofRain] = rain }
+        if !gentle, !inTunnel { levels[.farSiren] = 0.6 }
         var weather = s
         if inTunnel { weather.rain = 0; weather.snow = 0 }
         WeatherAmbience.levels(weather, base: &levels)
         return levels
     }
 
-    private func scene(sky s: SkyState, mps: Float, glassRain: Float, inTunnel: Bool, roles: RoleValues, density: Float) -> AmbienceScene {
-        let levels = Self.levels(s, speed: speed, glassRain: glassRain, traffic: density, inTunnel: inTunnel)
+    private func scene(sky s: SkyState, glassRain: Float, inTunnel: Bool, roles: RoleValues, gentle: Bool) -> AmbienceScene {
+        let levels = Self.levels(s, speed: speed, glassRain: glassRain, inTunnel: inTunnel, gentle: gentle)
         let night = MoonlitLakeModel.smooth(-3, -9, s.sun.altitude)
         let sinceDusk = (s.hourOfDay - 19 + 24).truncatingRemainder(dividingBy: 24)
         let nightCool = night > 0 ? min(1, sinceDusk / 8) : 0
         let activity = min(1, 0.6 * roles[.energy] + 0.4 * roles[.density])
         return AmbienceScene(levels: levels, nightCool: nightCool, activity: activity, thunder: nil,
                              closeness: MoodLook.ambienceCloseness(base: 0.6, mood), density: MoodLook.ambienceDensity(mood),
-                             speed: Double(min(1, speed)), indoors: 0.55, wetness: Double(max(0.6, s.wetness)))
+                             speed: Double(min(1, speed)), indoors: 0.55, wetness: Double(max(0.6, s.wetness)), events: events)
     }
 }
 

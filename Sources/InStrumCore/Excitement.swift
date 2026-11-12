@@ -68,6 +68,9 @@ public struct ExcitementFrame: Equatable {
     public var surprise: WorldSurprise?
     /// The Mac's Reduce Motion is on: worlds shake no camera and cap their fastest motion (Storms spec §5).
     public var reduceMotion = false
+    /// Gentle visuals are on (the scene's controls, set by the director): worlds hold back their alarms (the drive's far
+    /// siren is off).
+    public var gentle = false
     public init() {}
     public static let calm = ExcitementFrame()
 }

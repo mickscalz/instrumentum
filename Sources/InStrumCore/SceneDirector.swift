@@ -392,7 +392,8 @@ public final class SceneDirector {
     private func stepExcitement(dt: Double) {
         excitement.holding = holding
         excitement.reduceMotion = controls.reduceMotion
-        let e = excitement.step(dt: dt, surpriseCount: box.surpriseCount)
+        var e = excitement.step(dt: dt, surpriseCount: box.surpriseCount)
+        e.gentle = controls.gentle   // for the worlds' sound (the drive's far siren); Excitement's own pacing is untouched
         excitementFrame = e
         box.setExcitement(e)
         let p = pressure
