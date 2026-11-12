@@ -50,6 +50,7 @@ final class NeonNightDriveRenderer: ThemeRenderer {
     private let scene, reflect: MTLRenderPipelineState
     private var u = [SIMD4<Float>](repeating: .zero, count: NeonNightDriveRenderer.uniformCount)
     private var limiter = FlashLimiter()
+    private var limiterStarted = false
     private var showWarp = false
     private(set) var post = PostSettings()
 
@@ -170,8 +171,12 @@ final class NeonNightDriveRenderer: ThemeRenderer {
         strobeHz = inTunnel ? mps / spacing : 0
         let strobe: Float = inTunnel && !gentle ? Self.strobeWave(distance: frame.distance, spacing: spacing) : 0
         let asked: Float = gentle ? 0 : 0.28 * waveEnv + 0.45 * bolt + 0.12 * strobe
-        limiter.gentle = gentle
+        // The first frame starts at its exposure (a world appearing doesn't rise from black, which gentle visuals' slower
+        // rise would count as a flash).
+        limiter.gentle = gentle && limiterStarted
+        limiterStarted = true
         let limited = limiter.limit(exposure: base * (1 + asked), sparkle: 1, dt: dt)
+        limiter.gentle = gentle
         exposureOut = limited.exposure
         let passed: Float = asked > 1e-4 ? Self.unit((limited.exposure / base - 1) / asked) : 1
         // Gentle: the wave is a slow glow on the signs, the lightning a glow in the cloud with no bolt, no strobe.
