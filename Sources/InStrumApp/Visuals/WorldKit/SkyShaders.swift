@@ -778,7 +778,7 @@ enum SkyShaders {
         float dome = kCellAnvil + 1.0 + 1.9 * exp(-(x - xa - 0.5) * (x - xa - 0.5) / 5.0);
         float e = min(mix(Ws, Wt, upper) - sqrt((x - xa) * (x - xa) + 1.0), dome - z);
         float eF = min(min(x - xa + 10.0 - 0.7 * (z - 3.4) * (z - 3.4), xa - 2.0 + 0.25 * hz - x),
-                       min(6.0 - 0.2 * max(xa - x, 0.0) - 0.1 * max(xa - x - 5.5, 0.0) - z, 2.0 * (hz - 0.8 - 0.12 * max(xa - x - 6.0, 0.0))));
+                       min(6.0 - 0.2 * max(xa - x, 0.0) - 0.1 * max(xa - x - 5.5, 0.0) - z, 2.0 * (hz - 0.8)));
         float fx = x - xa;
         float crest = -1e3;
         for (int i = 0; i < 4; i++) {
@@ -1036,7 +1036,7 @@ enum SkyShaders {
                 // The forward flank's cloud beside it (left, downshear): a lower, flatter shelf over the rain, from a
                 // couple of km up to a shoulder falling away from the updraft, its lumps smoothed.
                 float eF = min(min(x - xa + 10.0 - 0.7 * (z - 3.4) * (z - 3.4), xa - 2.0 + 0.25 * hz - x),
-                               min(6.0 - 0.2 * max(xa - x, 0.0) - 0.1 * max(xa - x - 5.5, 0.0) - z, 2.0 * (hz - 0.8 - 0.12 * max(xa - x - 6.0, 0.0))))
+                               min(6.0 - 0.2 * max(xa - x, 0.0) - 0.1 * max(xa - x - 5.5, 0.0) - z, 2.0 * (hz - 0.8)))
                          + 1.2 * (en - 0.5) + 0.5 * turret;
                 if (eF > edge - 1.0) {
                     float w = smoothstep(-1.0, 1.0, eF - edge);

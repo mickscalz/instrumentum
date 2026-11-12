@@ -268,7 +268,7 @@ final class SkyLayer {
     // ---------------------------------------------------------------- the supercell's impostor (Fire & Neon fix pass)
     // The supercell weather changes over minutes, so it is drawn into a texture the sky samples (at the world's own
     // quality, for the cost of a lookup a pixel): a window in azimuth and altitude round the view. No frame ever draws
-    // more than a 32nd of it (every 32nd row), so none spikes, even on a slow graphics chip. The texture holds
+    // more than a 32nd of it (every 32nd row; a 64th in the Clearing), so none spikes, even on a slow graphics chip. The texture holds
     // three snapshots: while one is filled a strip a frame, the sky shows the other two cross-fading from the older to the
     // newer as the fill goes on (so the storm moves smoothly, a fill behind, never in torn rows); when the fill is whole it
     // becomes the newer. A new window (the view swung past the one shown) is filled the same way and shown alone once
@@ -280,8 +280,9 @@ final class SkyLayer {
     nonisolated static let cellTextureIndex = 9
     /// Its size: columns, and rows in each half of a snapshot (three snapshots, six halves, one texture).
     nonisolated static let cellColumns = 1280, cellRows = 448, cellSlots = 3
-    /// How many frames one snapshot is drawn over.
-    nonisolated static let cellStrips = 32
+    /// How many frames one snapshot is drawn over; in the Clearing, where only the anvil drifts off and its pouches
+    /// hang (and a picked storm holds), twice as many.
+    nonisolated static let cellStrips = 32, cellStripsClearing = 64
     /// Previews and tests: a snapshot drawn whole when one is needed (a still frame has no frames after it).
     static var cellAtOnce = false
     private var cellKernel: MTLComputePipelineState?
@@ -293,6 +294,7 @@ final class SkyLayer {
     /// The snapshot being filled, the newer and the older shown (−1: none).
     private var cellFill = 0, cellNewer = -1, cellOlder = -1
     private var cellFillStrip = 0
+    private var cellFillStrips = SkyLayer.cellStrips
     /// The window the fills draw now.
     private(set) var cellWindow = SIMD4<Float>(0, 0, 0, 0)
     private var cellClock: Float = .nan
@@ -397,15 +399,17 @@ final class SkyLayer {
         // (Previews: the clock or the storm jumped between still frames, so what is shown is stale.)
         let jumped = !cellClock.isFinite || abs(clock - cellClock) > 0.5 || abs(phase - cellPhase) > 0.01
         cellClock = clock; cellPhase = phase
+        // (A snapshot keeps the strips it began with.)
+        if cellFillStrip == 0 { cellFillStrips = phase > 0.7 ? Self.cellStripsClearing : Self.cellStrips }
         let whole = Self.cellAtOnce && (jumped || cellNewer < 0 || cellWindows[cellNewer] != cellWindow)
         if whole {
             encodeCell(cb, kernel: kernel, texture: texture, slot: cellFill, first: 0, strips: 1)
-            cellFillStrip = Self.cellStrips
+            cellFillStrip = cellFillStrips
         } else {
-            encodeCell(cb, kernel: kernel, texture: texture, slot: cellFill, first: cellFillStrip, strips: Self.cellStrips)
+            encodeCell(cb, kernel: kernel, texture: texture, slot: cellFill, first: cellFillStrip, strips: cellFillStrips)
             cellFillStrip += 1
         }
-        if cellFillStrip >= Self.cellStrips {
+        if cellFillStrip >= cellFillStrips {
             // Whole: it becomes the newer, the newer the older; the fill goes on in the oldest.
             cellWindows[cellFill] = cellWindow
             cellWhole[cellFill] = true
@@ -420,7 +424,7 @@ final class SkyLayer {
         // The older cross-fades into the newer as the next fill goes on; one drawn in another window is not shown.
         let w = cellWindows[cellNewer]
         let older = cellOlder >= 0 && cellWindows[cellOlder] == w ? cellOlder : cellNewer
-        let blend = older == cellNewer ? 1 : Float(cellFillStrip) / Float(Self.cellStrips)
+        let blend = older == cellNewer ? 1 : Float(cellFillStrip) / Float(cellFillStrips)
         u[9].w = w.x; u[10].w = w.y
         u[Self.flashRow].y = w.z; u[Self.flashRow].z = w.w
         u[Self.flashRow].w = 1 + Float(3 * older + cellNewer) + 0.9 * min(blend, 1)
