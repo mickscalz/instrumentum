@@ -421,8 +421,10 @@ enum NeonNightDriveShaders {
         // there); panels and roof signs take any glyph.
         int kind;
         if (mode == 1 || mode == 3) {
-            int round4[5] = { 0, 2, 6, 8, 5 };
-            kind = round4[int(hash11(seed * 9.1 + 3.3) * 4.99)];
+            // The round glyphs 0, 2, 6, 8 and 5, chosen without an array (indexed at run time, a private array lives in
+            // scratch memory on Intel and AMD GPUs).
+            int ri = int(hash11(seed * 9.1 + 3.3) * 4.99);
+            kind = ri == 0 ? 0 : (ri == 1 ? 2 : (ri == 2 ? 6 : (ri == 3 ? 8 : 5)));
         } else {
             kind = int(hash11(seed * 9.1 + 3.3) * 10.99);
         }
@@ -872,9 +874,12 @@ enum NeonNightDriveShaders {
         float cover = smoothstep(fp, -fp, sil);
         if (cover <= 0.0) return float4(0);
         float seed = b.x;
-        float3 paints[6] = { float3(0.02, 0.02, 0.022), float3(0.06, 0.065, 0.07), float3(0.18, 0.19, 0.2),
-                             float3(0.12, 0.02, 0.025), float3(0.02, 0.03, 0.07), float3(0.28, 0.28, 0.27) };
-        float3 paint = paints[int(seed * 5.99)];
+        // Its paint, one of six chosen without an array (a private array indexed at run time lives in scratch memory on
+        // Intel and AMD GPUs).
+        int paintIndex = int(seed * 5.99);
+        float3 paint = paintIndex == 0 ? float3(0.02, 0.02, 0.022) : (paintIndex == 1 ? float3(0.06, 0.065, 0.07)
+                     : (paintIndex == 2 ? float3(0.18, 0.19, 0.2) : (paintIndex == 3 ? float3(0.12, 0.02, 0.025)
+                     : (paintIndex == 4 ? float3(0.02, 0.03, 0.07) : float3(0.28, 0.28, 0.27)))));
         float3 ambient = u.amb.rgb * 0.8 + u.haze.rgb * 0.9;
         float3 col = paint * ambient;
         // A highlight along the boot's edge and the roof from the lamps overhead.
@@ -1225,15 +1230,16 @@ enum NeonNightDriveShaders {
             }
         }
         if (kind == 0) {
-            float layers[4] = { 520.0, 820.0, 1250.0, 1900.0 };
-            float cells[4] = { 34.0, 46.0, 62.0, 85.0 };
-            float hmin[4] = { 70.0, 60.0, 50.0, 40.0 };
-            float hmax[4] = { 300.0, 360.0, 330.0, 260.0 };
-            float g0[4] = { -24.0, -34.0, -48.0, 0.0 };
-            float g1[4] = { 40.0, 52.0, 66.0, 0.0 };
             for (int i = 0; i < 4; i++) {
-                if (layers[i] < zMin) continue;
-                Tower r = downtown(d, layers[i], cells[i], hmin[i], hmax[i], g0[i], g1[i], float(i), u, pa);
+                // Each layer's distance, cell, lowest and tallest tower (m) and the gap the road runs through, chosen
+                // without arrays (indexed at run time in a loop that isn't unrolled, private arrays live in scratch
+                // memory on Intel and AMD GPUs).
+                float4 lay = i == 0 ? float4(520.0, 34.0, 70.0, 300.0) : (i == 1 ? float4(820.0, 46.0, 60.0, 360.0)
+                           : (i == 2 ? float4(1250.0, 62.0, 50.0, 330.0) : float4(1900.0, 85.0, 40.0, 260.0)));
+                float2 gap = i == 0 ? float2(-24.0, 40.0) : (i == 1 ? float2(-34.0, 52.0)
+                           : (i == 2 ? float2(-48.0, 66.0) : float2(0.0, 0.0)));
+                if (lay.x < zMin) continue;
+                Tower r = downtown(d, lay.x, lay.y, lay.z, lay.w, gap.x, gap.y, float(i), u, pa);
                 if (r.addT < 1e8) add += r.add * exp(-r.addT / max(u.haze.w, 1.0));
                 if (r.t < 1e8) { tHit = r.t; col = r.col; kind = 30; break; }
             }
