@@ -605,8 +605,9 @@ enum SkyShaders {
 
     // ---------------------------------------------------------------- Fire & Neon: the supercell weather (spec §7.2)
     // The staged storm over any sky world, drawn at the shared sky's cost: no ray march, each part one closed-form hit,
-    // composited front to back, its texture 2D value noise (four hashes a sample, two octaves). In the storm's own frame
-    // (km): u along its bearing from you, v to its right (mirrored in the south, where they turn the other way).
+    // composited front to back, its texture 2D value noise (four hashes a sample, at most two octaves). In the storm's
+    // own frame (km): u along its bearing from you, v to its right (mirrored in the south, where they turn the other
+    // way).
     // Two level planes: the rain-free base 1.5 km up, and the anvil's underside 9.5 km up spreading over you. Three
     // upright sheets facing you at the storm (it stands tens of km off, so a sheet loses no parallax worth having): the
     // rain curtain on its forward flank (left), the wall cloud hanging under the updraft (right of it), and the storm's
@@ -629,8 +630,6 @@ enum SkyShaders {
         float c = skyHash12(i + float2(0, 1)), e = skyHash12(i + float2(1, 1));
         return mix(mix(a, b, w.x), mix(c, e, w.x), w.y);
     }
-    /// Two octaves of skyNoise2 (0…1).
-    float skyFbm2(float2 p) { return 0.6667 * skyNoise2(p) + 0.3333 * skyNoise2(p * 2.03 + float2(17.1, 9.2)); }
 
     /// A smooth sum of rounded bumps over a jittered grid at `g` (3×3 cells): its height, and its slope in `grad`.
     float cellBumps(float2 g, float size, thread float2& grad) {
@@ -652,10 +651,8 @@ enum SkyShaders {
         return H;
     }
 
-    /// The supercell over `col` along `d`; `cover` returns how much of the view it hides (the sun's disc behind it).
-    float3 supercellSky(float3 d, float3 col, constant SkyU& u, float time, thread float& cover) {
-        cover = 0.0;
-        float amount = saturate(u.cellA.w);
+    /// The supercell along `d`: its light (premultiplied) in rgb, and in a how much of the sky behind it shows through.
+    float4 supercellSky(float3 d, constant SkyU& u, float time) {
         float2 b = u.cellA.xy;
         float2 rgt = float2(b.y, -b.x);
         float mirror = u.aurora.w < 0.0 ? -1.0 : 1.0;
@@ -663,7 +660,7 @@ enum SkyShaders {
         float2 hv = hl > 1e-5 ? float2(dot(d.xy, b), dot(d.xy, rgt) * mirror) / hl : float2(1.0, 0.0);
         float k = max(d.z, 0.0) / max(hl, 1e-4);              // km up per km out
         float D = u.cellC.x, E = u.cellC.y, phase = u.cellA.z;
-        float turn = u.cellB.y * mirror, glow = saturate(u.cellB.z), green = saturate(u.cellB.x / 0.12);
+        float turn = u.cellB.y * mirror, glow = saturate(u.cellB.z);
         float mam = saturate(u.cellC.z);
         float sunAlt = u.sun.w;
         bool day = sunAlt > -6.0;
@@ -693,9 +690,9 @@ enum SkyShaders {
                       : (phase < 2.0 / 3.0 ? smoothstep(0.0, 0.3, q2) * (1.0 - 0.2 * smoothstep(0.6, 1.0, q2))
                                            : 0.8 * (1.0 - smoothstep(0.0, 0.45, q3)));
         if (rainNow > 0.01) {
-            float a = rainNow * 0.95 * (1.0 - exp(-min(baseHit, 9.0) / 3.5));
-            float3 c = grey * (0.3 + 0.28 * (1.0 - saturate(k * 3.0))) + Lc * (lightAmt * 0.45 * back)
-                     + flashCol * (glow * 0.5);
+            float a = rainNow * 0.97 * (1.0 - exp(-min(baseHit, 9.0) / 2.2));
+            float3 c = grey * (0.3 + 0.28 * (1.0 - saturate(k * 3.0))) + Lc * (lightAmt * 0.3 * back)
+                     + flashCol * (glow * 0.3);
             acc += T * a * c; T *= 1.0 - a;
         }
 
@@ -710,11 +707,11 @@ enum SkyShaders {
                 float n = skyNoise2(float2(x * 1.3 + z * 0.4, z * 0.12 - time * 0.03));
                 float dens = smoothstep(-16.0, -10.0, x + 2.0 * n) * (1.0 - smoothstep(-6.0, -3.2, x + 0.8 * n))
                            * (1.0 - smoothstep(kCellBase - 0.3, kCellBase + 0.2, z));
-                float a = dens * (0.55 + 0.35 * n) * smoothstep(2.5, 6.0, Dr);
+                float a = dens * (0.65 + 0.3 * n) * smoothstep(2.5, 6.0, Dr);
                 if (a > 0.002) {
                     float hail = exp(-(x + 5.0) * (x + 5.0) / 2.5);
-                    float3 c = grey * (0.26 + 0.16 * hail) + Lc * (lightAmt * (0.1 + 1.1 * back));
-                    c += flashCol * (glow * 0.35 * exp(-(x - spot.y) * (x - spot.y) / 16.0));
+                    float3 c = grey * (0.24 + 0.16 * hail) + Lc * (lightAmt * (0.06 + 0.35 * back));
+                    if (glow > 0.0) c += flashCol * (glow * 0.35 * exp(-(x - spot.y) * (x - spot.y) / 16.0));
                     c = mix(c, u.horizon.rgb * 0.5, 1.0 - exp(-rho / 80.0));
                     acc += T * a * c; T *= 1.0 - a;
                 }
@@ -736,7 +733,7 @@ enum SkyShaders {
                 if (a > 0.002) {
                     float ndl = saturate(dot(float3(-sqrt(1.0 - s * s), s, 0.0), Lu) * 0.7 + 0.3);
                     float3 c = grey * (0.11 + 0.07 * n) + Lc * (lightAmt * 0.22 * ndl * (0.6 + 0.4 * n));
-                    c += flashCol * (glow * 0.7 * exp(-(x + 2.5 - spot.y) * (x + 2.5 - spot.y) / 10.0));
+                    if (glow > 0.0) c += flashCol * (glow * 0.7 * exp(-(x + 2.5 - spot.y) * (x + 2.5 - spot.y) / 10.0));
                     c = mix(c, u.horizon.rgb * 0.5, 1.0 - exp(-rho / 80.0));
                     acc += T * a * c; T *= 1.0 - a;
                 }
@@ -750,7 +747,7 @@ enum SkyShaders {
             float2 P = hv * baseHit;
             float2 qa = (P - float2(D + 0.5, 1.0)) * float2(0.9, 1.0);
             float2 qf = (P - float2(D - 0.5, -6.5)) * float2(1.0, 1.1);
-            float nb = skyFbm2(P * 0.22 + 3.0);
+            float nb = skyNoise2(P * 0.22 + 3.0);
             float edge = min(min(P.x - (D - 3.6), D + 7.0 - P.x), min(P.y + 14.0, 9.0 - P.y)) + 2.4 * (nb - 0.5);
             float a = smoothstep(-0.8, 1.0, edge);
             if (a > 0.002) {
@@ -761,7 +758,7 @@ enum SkyShaders {
                 float2 Ld = Lu.xy / max(length(Lu.xy), 1e-3);
                 float2 qn = qa / max(length(qa), 1e-3);
                 c += Lc * (lowSun * lightAmt * 0.55 * smoothstep(3.0, 0.0, edge) * saturate(dot(qn, Ld)) * (0.5 + nb));
-                c += flashCol * (glow * 0.5 * nb * exp(-dot(P - spot.xy, P - spot.xy) / 16.0));
+                if (glow > 0.0) c += flashCol * (glow * 0.5 * nb * exp(-dot(P - spot.xy, P - spot.xy) / 16.0));
                 c = mix(c, u.horizon.rgb * 0.5, 1.0 - exp(-baseHit / 80.0));
                 acc += T * a * c; T *= 1.0 - a;
             }
@@ -775,7 +772,13 @@ enum SkyShaders {
             float hz = z - kCellBase;
             if (hz > -0.3 && z < kCellAnvil + 1.0 && abs(x) < 26.0) {
                 float2 p = float2(x, z) * 0.8 + 7.0;
-                float en = skyFbm2(p);
+                // Its texture (two octaves), and the first octave again a step toward the light: the slope the light
+                // rolls over, and a finer fray at its edges.
+                float2 Lp = float2(Lu.y, Lu.z);
+                float lpl = length(Lp);
+                float e1 = skyNoise2(p);
+                float eL = skyNoise2(p + (lpl > 0.05 ? Lp / lpl : float2(0.0, 1.0)) * 0.45);
+                float en = 0.6667 * e1 + 0.3333 * skyNoise2(p * 2.03 + float2(17.1, 9.2));
                 float xa = 1.0 - 0.22 * max(hz - 3.0, 0.0);          // the updraft's axis, leaning left as it rises
                 float upper = smoothstep(2.6, 4.2, hz);              // 0 the striated skirt … 1 the tower
                 float flare = smoothstep(kCellAnvil - kCellBase - 2.4, kCellAnvil - kCellBase, hz);
@@ -789,9 +792,10 @@ enum SkyShaders {
                 float edge = W - abs(x - xa), sn = s;
                 float stri = (1.0 - upper) * smoothstep(0.15, 0.7, hz) * smoothstep(0.25, 0.7, en);
                 float lumpy = upper;
-                // The forward flank's cloud to its left, from the base into the anvil, lumpy at its edge and top.
-                float eF = min(min(x - xa + 14.0 - 0.35 * hz, xa + 1.5 - x), 9.0 + 0.1 * (x - xa) - z)
-                         + 2.4 * (en - 0.5);
+                // The forward flank's cloud to its left, from the base into the anvil, its top a shoulder falling away
+                // from the updraft, lumpy at its edge and top.
+                float eF = min(min(x - xa + 14.0 - 0.35 * hz, xa + 1.5 - x), 9.0 - 0.22 * max(xa - x, 0.0) - z)
+                         + 2.4 * (en - 0.5) + 0.8 * (eL - 0.5);
                 if (eF > edge) {
                     float w = saturate((eF - edge) * 2.0);
                     sn = mix(sn, -0.35, w); stri *= 1.0 - w; lumpy = mix(lumpy, 0.6, w); edge = eF;
@@ -802,7 +806,7 @@ enum SkyShaders {
                     float xc = t.x, wc = t.y, top = t.z;
                     float sx = (x - xc) / wc;
                     float e = min(wc * (1.3 - 0.6 * saturate(hz / (top - kCellBase))) - abs(x - xc),
-                                  top - z - 1.2 * wc * sx * sx) + 1.8 * (en - 0.5);
+                                  top - z - 1.2 * wc * sx * sx) + 1.8 * (en - 0.5) + 0.9 * (eL - 0.5);
                     if (e > edge) {
                         float w = saturate((e - edge) * 2.0);
                         sn = mix(sn, clamp(sx, -1.0, 1.0), w); stri *= 1.0 - w; lumpy = mix(lumpy, 1.0, w); edge = e;
@@ -811,11 +815,8 @@ enum SkyShaders {
                 float a = smoothstep(-0.3, 0.35, edge) * smoothstep(-0.3, 0.05, hz) * smoothstep(1.5, 5.0, Df)
                         * (1.0 - smoothstep(kCellAnvil - 1.1, kCellAnvil + 0.3, z));
                 if (a > 0.002) {
-                    // The light rolls over its lumps: the noise's own slope toward the light (one more sample).
-                    float2 Lp = float2(Lu.y, Lu.z);
-                    float lpl = length(Lp);
-                    float bump = 0.5;
-                    if (lpl > 0.05) bump = saturate(0.5 + 2.4 * (en - skyFbm2(p + Lp / lpl * 0.45)));
+                    // The light rolls over its lumps: the noise's own slope toward the light.
+                    float bump = lpl > 0.05 ? saturate(0.5 + 3.0 * (e1 - eL)) : 0.5;
                     float c0 = sqrt(max(1.0 - sn * sn, 0.0));
                     float ndl = dot(float3(-c0, sn, 0.15), Lu);
                     float direct = saturate(0.6 * ndl + 0.4) * mix(1.0, 0.3 + 1.4 * bump, 0.65 * lumpy);
@@ -829,8 +830,10 @@ enum SkyShaders {
                     // A thin lining where it thins against a light behind it.
                     c += Lc * (lightAmt * 0.9 * back * (1.0 - smoothstep(0.0, 0.6, edge)) * (0.2 + 0.8 * en * en));
                     // Lightning inside lights it from within, its billows showing.
-                    float fd = ((x - spot.y) * (x - spot.y) + (z - spot.z) * (z - spot.z)) / 8.0;
-                    c += flashCol * (glow * 1.1 * (0.25 + 0.75 * en) * (0.12 + exp(-fd)));
+                    if (glow > 0.0) {
+                        float fd = ((x - spot.y) * (x - spot.y) + (z - spot.z) * (z - spot.z)) / 8.0;
+                        c += flashCol * (glow * 1.1 * (0.25 + 0.75 * en) * (0.12 + exp(-fd)));
+                    }
                     // Into the anvil's own shade at its top, so the two are one cloud.
                     c = mix(c, grey * 0.22, smoothstep(kCellAnvil - 3.5, kCellAnvil, z));
                     c = mix(c, u.horizon.rgb * 0.5, 1.0 - exp(-rho / 90.0));
@@ -845,11 +848,15 @@ enum SkyShaders {
         if (T > 0.01 && k > 0.0015) {
             float rho = kCellAnvil / k;
             float2 P = hv * rho;
-            float na = skyFbm2(P * 0.06 + 11.0);
-            float trail = E - P.x - P.y * P.y / 90.0 + 12.0 * (na - 0.5) + 3.0 * (skyNoise2(P * 0.25 + 5.0) - 0.5);
-            // Narrow over the storm, widening as it spreads from it.
-            float side = 14.0 + 0.45 * abs(P.x - D - 4.0) - abs(P.y + 2.0) + 8.0 * (na - 0.5);
+            float na = skyNoise2(P * 0.06 + 11.0);
+            float trail = E - P.x - P.y * P.y / 90.0 + 12.0 * (na - 0.5);
+            // Narrow over the storm (hidden behind its tower), widening as it spreads toward you from it; once the
+            // storm has passed (the late Core, the Clearing) it lies wide over the sky it came from as well.
+            float spread = smoothstep(2.0, -9.0, D);
+            float side = 6.0 + 0.5 * max(D + 4.0 - P.x, 0.0) + 0.5 * spread * max(P.x - D - 4.0, 0.0)
+                       - abs(P.y + 2.0) + 8.0 * (na - 0.5);
             float ed = min(trail, side);
+            if (abs(ed) < 6.0) ed += 3.0 * (skyNoise2(P * 0.25 + 5.0) - 0.5) * (1.0 - smoothstep(4.0, 6.0, abs(ed)));
             float a = smoothstep(-1.0, 4.0, ed);
             if (a > 0.002) {
                 float thin = 1.0 - smoothstep(0.0, 14.0, ed);
@@ -871,20 +878,14 @@ enum SkyShaders {
                     }
                 }
                 c += Lc * (lightAmt * (0.06 + 1.1 * lowSun * reach) * lit);
-                c += flashCol * (glow * 0.5 * exp(-dot(P - spot.xy, P - spot.xy) / 120.0));
+                if (glow > 0.0) c += flashCol * (glow * 0.5 * exp(-dot(P - spot.xy, P - spot.xy) / 120.0));
                 c = mix(c, u.horizon.rgb * 0.75, 1.0 - exp(-rho / 110.0));
                 a *= 1.0 - 0.35 * thin;                                 // its thin edges let the sky through
                 acc += T * a * c; T *= 1.0 - a;
             }
         }
 
-        // The light under the core goes green (a grade of at most 12%); the clear sky behind, through what doesn't
-        // hide it.
-        float3 outCol = acc + T * col;
-        float3 gg = float3(1.0 - 0.9 * 0.12, 1.0 + 0.25 * 0.12, 1.0 - 0.6 * 0.12);
-        outCol *= mix(float3(1.0), gg, green);
-        cover = (1.0 - T) * amount;
-        return mix(col, outCol, amount);
+        return float4(acc, T);
     }
 
     /// The sky's light in direction `d` (alt ≥ 0): gradient, sunset band, stars, Milky Way, aurora, moon, pillars,
@@ -1092,16 +1093,21 @@ enum SkyShaders {
     }
 
     /// The sky's light in direction `d`: skyRadianceBase, with the supercell weather (Fire & Neon §7.2) over it all as
-    /// it comes (over the clouds, the moon and the sun's disc, which it hides). Drawn last, where little else is live, so
-    /// the storm's code costs the clear sky nothing.
+    /// it comes (over the clouds, the moon and the sun's disc, which it hides). The storm is drawn first, where little
+    /// else is live, and the sky behind it only where it shows through (under the storm's dark body none of it is drawn).
     float3 skyRadiance(float3 d, constant SkyU& u, thread float& moonMask, texture2d<float> stars) {
-        float3 col = skyRadianceBase(d, u, moonMask, stars);
-        if (u.cellA.w > 0.001 && d.z > -0.01) {
-            float cover;
-            col = supercellSky(d, col, u, u.forward.w, cover);
-            moonMask *= 1.0 - cover;
-        }
-        return col;
+        float amount = saturate(u.cellA.w);
+        if (amount <= 0.001 || d.z <= -0.01) return skyRadianceBase(d, u, moonMask, stars);
+        float4 storm = supercellSky(d, u, u.forward.w);
+        // The light under the core goes green (a grade of at most 12%).
+        float3 grade = mix(float3(1.0), float3(1.0 - 0.9 * 0.12, 1.0 + 0.25 * 0.12, 1.0 - 0.6 * 0.12),
+                           saturate(u.cellB.x / 0.12)) * amount;
+        float through = 1.0 - amount + amount * storm.a;
+        float3 col = float3(0);
+        moonMask = 0.0;
+        if (through > 0.002) col = skyRadianceBase(d, u, moonMask, stars);
+        moonMask *= through;
+        return col * (1.0 - amount) + grade * (storm.rgb + storm.a * col);
     }
 
     // ---------------------------------------------------------------- rime frost on silhouettes (spec §6.4)
