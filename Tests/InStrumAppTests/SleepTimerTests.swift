@@ -64,6 +64,21 @@ final class SleepTimerTests: XCTestCase {
         XCTAssertEqual(engine.ambienceVolume, 0.4, accuracy: 1e-6)
     }
 
+    /// The canvas reads the dim from the fade itself on every frame, between the ticker's tenths of a second.
+    func testTheLightMovesEveryFrame() {
+        let m = makeModel()
+        XCTAssertEqual(m.frameSceneControls, m.sceneControls, "no timer: the controls as they are")
+        m.setSleepTimer(minutes: 15)
+        tick(m, at: 450)
+        now = 450.05
+        let between = m.frameSceneControls.sleepDim
+        var fade = SleepFade()
+        fade.start(minutes: 15, at: 0)
+        XCTAssertEqual(between, fade.dim(at: 450.05), accuracy: 1e-12, "the fade's dim at this very moment")
+        XCTAssertNotEqual(between, m.sceneControls.sleepDim, "not the last tick's")
+        XCTAssertEqual(m.frameSceneControls.holdPedal, m.sceneControls.holdPedal)
+    }
+
     func testTheEndIsSilentDimAndOff() {
         let m = makeModel()
         m.setSleepTimer(minutes: 15)

@@ -26,6 +26,16 @@ extension AppModel {
     /// True while a timer counts down (the moon fills).
     public var sleepTimerRunning: Bool { sleepRemaining != nil }
 
+    /// The director's controls for the frame being drawn now: the sleep dim read from the fade itself while the timer
+    /// has anything to do, so the light moves on every frame rather than in the ticker's tenths of a second (a wake
+    /// brightens smoothly).
+    public var frameSceneControls: SceneControls {
+        guard sleepTicker != nil else { return sceneControls }
+        var controls = sceneControls
+        controls.sleepDim = sleepFade.dim(at: sleepClock())
+        return controls
+    }
+
     /// The ticker's body (tests call it directly): a key, pedal or click newer than the fade's start wakes the world, as
     /// of when it happened ("You're awake."); then the engine's sleep gain, the director's dim and the time left follow
     /// the fade, and the ticker stops once there is nothing left to do.
