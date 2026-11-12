@@ -83,9 +83,10 @@ final class SkyLayer {
     var starTextureOverride: MTLTexture?
 
     nonisolated static let rippleCount = 8
-    /// SkyU's float4 count: 13 + night, aurora, dust, 8 ripples, still, the 6 meteor slots' three rows and the flash
-    /// (the MSL struct's size / 16: 704 bytes, still one setFragmentBytes).
-    nonisolated static let uniformCount = 44
+    /// SkyU's float4 count: 13 + night, aurora, dust, 8 ripples, still, the 6 meteor slots' three rows and the flash (44),
+    /// then Fire & Neon's (spec §6–§7): the far storm and its flicker, the 3 sprites' two rows, the 4 satellites' three
+    /// rows, the supercell's three and the ash (the MSL struct's size / 16: 1088 bytes, still one setFragmentBytes).
+    nonisolated static let uniformCount = 68
     /// The `still` row's index: iridescence, rime, and the wind on screen.
     nonisolated static let stillRow = 24
     /// The shooting stars' slots (spec §7.2), after `still`: six of each row. A: start direction, head progress 0…1 (a
@@ -93,8 +94,63 @@ final class SkyLayer {
     /// a head … the train's age 0.001…1.
     nonisolated static let meteorSlots = 6
     nonisolated static let meteorARow = 25, meteorBRow = 31, meteorCRow = 37
-    /// A fireball's sky brightening (meteorFlash, 0, 0, 0): the last row.
+    /// A fireball's sky brightening (meteorFlash, 0, 0, 0).
     nonisolated static let flashRow = 43
+    /// Fire & Neon (spec §6.1): the far storm (its bearing as a unit vector east and north, how much of it, its anvil's
+    /// top in degrees) and its in-cloud lightning (level after the limiter, degrees across from its centre, how far up it
+    /// 0…1, its width in degrees); the red sprites' slots, two rows each (A: azimuth°, base°, height°, brightness, 0 for
+    /// an empty slot; B: columns with the streamers × 0.9 in the fraction, spread°, shape, seed).
+    nonisolated static let stormRow = 44, stormFlickerRow = 45
+    nonisolated static let spriteSlots = 3
+    nonisolated static let spriteARow = 46, spriteBRow = 49
+    /// Fire & Neon (spec §6.2): the satellites' slots, three rows each (A: the lead's direction and its light on the stars'
+    /// scale, 0 for an empty slot; B: its motion across the sky as a unit vector × a train's spacing in radians, and its
+    /// member count; C: the train's shadow edge as a member index (−1: none), +1 lit behind it / −1 before it, the real
+    /// stars' footprint (radians), how red the sunlight on it is).
+    nonisolated static let satelliteSlots = 4
+    nonisolated static let satARow = 52, satBRow = 56, satCRow = 60
+    /// Fire & Neon (spec §7): the supercell weather's three rows and the ash's (the last).
+    nonisolated static let cellARow = 64, cellBRow = 65, cellCRow = 66, ashRow = 67
+
+    /// Far storms (and the supercell weather) are staged where the world looks, as an "Always" aurora is: each one stands
+    /// at the view's azimuth plus a seeded offset (±20°) from the moment it appears, and stays put there (the camera's
+    /// drift never moves it); its sprites keep their places about it. Returns the shift (degrees) to add to the sky's
+    /// bearings, and the anchor to keep.
+    nonisolated static func stage(episode: Int, bearing: Float, viewAzimuth: Double,
+                                  anchor: (episode: Int, azimuth: Double)?) -> (shift: Double, anchor: (episode: Int, azimuth: Double)) {
+        var a: (episode: Int, azimuth: Double) = anchor ?? (episode: episode, azimuth: 0.0)
+        if anchor == nil || anchor?.episode != episode {
+            let b = Double(bearing.isFinite ? bearing : 0)
+            let offset = (b - 40 * (b / 40).rounded(.down)) - 20   // −20…20°, seeded by the storm's own bearing
+            a = (episode: episode, azimuth: (viewAzimuth.isFinite ? viewAzimuth : 0) + offset)
+        }
+        var shift = (a.azimuth - Double(bearing.isFinite ? bearing : 0)).truncatingRemainder(dividingBy: 360)
+        if shift < 0 { shift += 360 }
+        return (shift, a)
+    }
+
+    /// The sprite rows for a sprite shifted `shift` degrees (nil: unlit).
+    nonisolated static func spriteRows(_ p: SpriteSlot, shift: Double) -> (a: SIMD4<Float>, b: SIMD4<Float>)? {
+        guard p.brightness.isFinite, p.brightness > 0 else { return nil }
+        var az = (Double(p.azimuth) + shift).truncatingRemainder(dividingBy: 360)
+        if az < 0 { az += 360 }
+        let columns = Float(min(3, max(1, p.columns)))
+        let streamers = min(1, max(0, p.streamers.isFinite ? p.streamers : 0))
+        return (SIMD4(Float(az), p.base, max(0.5, p.height), min(RedSprites.brightest, p.brightness)),
+                SIMD4(columns + 0.9 * streamers, p.spread, min(1, max(0, p.shape)), min(1, max(0, p.seed))))
+    }
+
+    /// The satellite rows (nil: unlit or unusable).
+    nonisolated static func satelliteRows(_ t: SatelliteSlot) -> (a: SIMD4<Float>, b: SIMD4<Float>, c: SIMD4<Float>)? {
+        func usable(_ v: SIMD3<Float>) -> Bool { v.x.isFinite && v.y.isFinite && v.z.isFinite && abs(simd_length(v) - 1) < 0.01 }
+        guard t.light.isFinite, t.light > 0, usable(t.direction) else { return nil }
+        let count = t.kind == .train ? max(1, t.count) : 1
+        let spacing = count > 1 && t.spacing.isFinite ? max(0, t.spacing) : 0
+        let tangent = usable(t.tangent) ? t.tangent : SIMD3<Float>(0, 0, 0)
+        return (SIMD4(t.direction, t.light), SIMD4(tangent * spacing, Float(count)),
+                SIMD4(t.shadowMember.isFinite ? t.shadowMember : -1, t.litBehind ? 1 : -1,
+                      Satellites.footprint(magnitude: t.magnitude.isFinite ? t.magnitude : 6), min(1, max(0, t.redden))))
+    }
 
     /// The wind on screen for rime's windward side (x right, y up: the way it blows, × the sky's wind 0…1). Every
     /// world already draws its weather blowing to the right (the weather layer's tilt and streamers, the chimney
@@ -129,6 +185,10 @@ final class SkyLayer {
         let depression = atan(height / max(out, 1e-3))
         return -tan(depression + pitch) / tanV
     }
+
+    /// Where the current far storm is staged (its episode and azimuth), and the shift last applied (tests read it).
+    private var stormAnchor: (episode: Int, azimuth: Double)?
+    private(set) var stormShift: Double = 0
 
     private let pipeline: MTLRenderPipelineState
     /// A 1×1 black texture bound while the real stars build, so no pass ever lacks texture 0.
@@ -260,6 +320,37 @@ final class SkyLayer {
         for i in slot..<Self.meteorSlots { u[Self.meteorARow + i] = .zero; u[Self.meteorBRow + i] = .zero; u[Self.meteorCRow + i] = .zero }
         let flash = s.meteorFlash.isFinite ? min(0.08, max(0, s.meteorFlash)) : 0
         u[Self.flashRow] = SIMD4(flash, 0, 0, 0)
+
+        // Fire & Neon (spec §6.1): the far storm and its sprites, staged where the world looks.
+        let view = viewAzimuth ?? Self.defaultViewAzimuth(latitude: s.latitude)
+        let staged = Self.stage(episode: s.stormEpisode, bearing: s.stormBearing, viewAzimuth: view, anchor: stormAnchor)
+        stormAnchor = staged.anchor
+        stormShift = staged.shift
+        if let f = s.farStormNow, f.amount.isFinite, f.amount > 0 {
+            let az = (Double(f.bearing) + staged.shift) * .pi / 180
+            u[Self.stormRow] = SIMD4(Float(sin(az)), Float(cos(az)), min(1, f.amount), f.top.isFinite ? f.top : 2)
+            u[Self.stormFlickerRow] = SIMD4(unit(f.flicker), f.flickerAcross.isFinite ? f.flickerAcross : 0,
+                                            unit(f.flickerUp), max(4, f.width.isFinite ? f.width : 20))
+        } else {
+            u[Self.stormRow] = .zero; u[Self.stormFlickerRow] = .zero
+        }
+        var sprite = 0
+        for p in s.sprites where sprite < Self.spriteSlots {
+            guard let rows = Self.spriteRows(p, shift: staged.shift) else { continue }
+            u[Self.spriteARow + sprite] = rows.a; u[Self.spriteBRow + sprite] = rows.b
+            sprite += 1
+        }
+        for i in sprite..<Self.spriteSlots { u[Self.spriteARow + i] = .zero; u[Self.spriteBRow + i] = .zero }
+        // Fire & Neon (spec §6.2): the satellites, among the real stars.
+        var sat = 0
+        for t in s.satellites where sat < Self.satelliteSlots {
+            guard let rows = Self.satelliteRows(t) else { continue }
+            u[Self.satARow + sat] = rows.a; u[Self.satBRow + sat] = rows.b; u[Self.satCRow + sat] = rows.c
+            sat += 1
+        }
+        for i in sat..<Self.satelliteSlots { u[Self.satARow + i] = .zero; u[Self.satBRow + i] = .zero; u[Self.satCRow + i] = .zero }
+        u[Self.cellARow] = .zero; u[Self.cellBRow] = .zero; u[Self.cellCRow] = .zero
+        u[Self.ashRow] = SIMD4(0, 1, 1, 1)
     }
 
     func draw(_ e: MTLRenderCommandEncoder) {

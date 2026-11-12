@@ -30,8 +30,19 @@ final class WorldKitTests: XCTestCase {
         XCTAssertEqual(SkyLayer.meteorBRow, SkyLayer.meteorARow + SkyLayer.meteorSlots)
         XCTAssertEqual(SkyLayer.meteorCRow, SkyLayer.meteorBRow + SkyLayer.meteorSlots)
         XCTAssertEqual(SkyLayer.flashRow, SkyLayer.meteorCRow + SkyLayer.meteorSlots)
-        XCTAssertEqual(SkyLayer.flashRow, SkyLayer.uniformCount - 1)
-        XCTAssertEqual(SkyLayer.uniformCount * MemoryLayout<SIMD4<Float>>.stride, 704)
+        // Fire & Neon (spec §6–§7): after the flash, the far storm and its flicker, the sprites' A and B rows, the
+        // satellites' A, B and C rows, the supercell's three and the ash last: 68 rows, 1088 bytes.
+        XCTAssertEqual(SkyLayer.stormRow, SkyLayer.flashRow + 1)
+        XCTAssertEqual(SkyLayer.stormFlickerRow, SkyLayer.stormRow + 1)
+        XCTAssertEqual(SkyLayer.spriteARow, SkyLayer.stormFlickerRow + 1)
+        XCTAssertEqual(SkyLayer.spriteBRow, SkyLayer.spriteARow + SkyLayer.spriteSlots)
+        XCTAssertEqual(SkyLayer.satARow, SkyLayer.spriteBRow + SkyLayer.spriteSlots)
+        XCTAssertEqual(SkyLayer.satBRow, SkyLayer.satARow + SkyLayer.satelliteSlots)
+        XCTAssertEqual(SkyLayer.satCRow, SkyLayer.satBRow + SkyLayer.satelliteSlots)
+        XCTAssertEqual(SkyLayer.cellARow, SkyLayer.satCRow + SkyLayer.satelliteSlots)
+        XCTAssertEqual([SkyLayer.cellBRow, SkyLayer.cellCRow, SkyLayer.ashRow], [SkyLayer.cellARow + 1, SkyLayer.cellARow + 2, SkyLayer.cellARow + 3])
+        XCTAssertEqual(SkyLayer.ashRow, SkyLayer.uniformCount - 1)
+        XCTAssertEqual(SkyLayer.uniformCount * MemoryLayout<SIMD4<Float>>.stride, 1088)
         // WeatherU: the set's params, then sea smoke's tint and glow (48 bytes, bound for every weather set).
         let w = MTLRenderPipelineDescriptor()
         w.vertexFunction = lib.makeFunction(name: "weather_vertex")

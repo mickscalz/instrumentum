@@ -97,17 +97,23 @@ struct AllSettingsView: View {
 }
 
 /// The Living Sky's extras (every world with a sky): the constellation lines, the aurora's brightness, iridescent
-/// cloud, how fast rime frost builds and melts, and how many shooting stars fall. The Gentle / Dramatic / Dreamy looks
-/// and Reset Advanced (Visuals → World) set these too.
+/// cloud, how fast rime frost builds and melts, how many shooting stars fall, and how often red sprites (with the far
+/// storms they stand over) and satellites show. The Gentle / Dramatic / Dreamy looks and Reset Advanced (Visuals → World)
+/// set these too.
 struct SkyExtrasSection: View {
     @ObservedObject var model: AppModel
 
     nonisolated static let title = "Sky extras"
     /// Searching the settings finds the group by its title or any of its dials.
     nonisolated static func matches(_ search: String) -> Bool {
-        search.isEmpty || "\(title) night sky constellation lines aurora stars iridescence iridescent clouds rime speed frost meteors shooting stars"
+        search.isEmpty || "\(title) night sky constellation lines aurora stars iridescence iridescent clouds rime speed frost meteors shooting stars red sprites far storms satellites flares stations"
             .localizedCaseInsensitiveContains(search)
     }
+    /// The two Fire & Neon rows (spec §6): Off / Natural / Often, Natural by default.
+    nonisolated static let spritesTitle = "Red sprites"
+    nonisolated static let spritesHelp = "Faint red flashes high over far storms on clear nights, and the storms on the horizon"
+    nonisolated static let satellitesTitle = "Satellites"
+    nonisolated static let satellitesHelp = "Satellites crossing after dusk and before dawn, now and then a flare or a station"
     /// The Meteors dial (spec §6.5): SkySettings.meteorRate, 0.5…10 (2 by default).
     nonisolated static let meteorRange: ClosedRange<Double> = 0.5...10
     nonisolated static let meteorHelp = "How many shooting stars, as a multiple of a real night"
@@ -146,6 +152,20 @@ struct SkyExtrasSection: View {
                 Slider(value: Binding(get: { sky.meteorRate }, set: { v in update { $0.meteorRate = v } }), in: Self.meteorRange)
                 Text(Self.meteorHelp).font(.caption).foregroundStyle(.secondary)
             }
+            VStack(alignment: .leading, spacing: 2) {
+                Picker(Self.spritesTitle, selection: Binding(get: { sky.spritesMode }, set: { v in update { $0.spritesMode = v } })) {
+                    ForEach(SkyExtraMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                Text(Self.spritesHelp).font(.caption).foregroundStyle(.secondary)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Picker(Self.satellitesTitle, selection: Binding(get: { sky.satellitesMode }, set: { v in update { $0.satellitesMode = v } })) {
+                    ForEach(SkyExtraMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                Text(Self.satellitesHelp).font(.caption).foregroundStyle(.secondary)
+            }
         } header: {
             HStack {
                 Text(Self.title)
@@ -156,6 +176,7 @@ struct SkyExtrasSection: View {
                         s.constellationLines = d.constellationLines; s.auroraScale = d.auroraScale
                         s.iridescence = d.iridescence; s.rimeSpeed = d.rimeSpeed
                         s.meteorRate = d.meteorRate
+                        s.spritesMode = d.spritesMode; s.satellitesMode = d.satellitesMode
                     }
                 }
                 .buttonStyle(.borderless).font(.caption)

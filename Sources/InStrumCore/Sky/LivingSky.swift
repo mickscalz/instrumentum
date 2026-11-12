@@ -112,6 +112,17 @@ public struct SkyState: Equatable {
     /// (`WorldWeather.supercellStep`). The event's own drawing and weather come with Fire & Neon's Supercell.
     public var supercell: Float = 0
     public var supercellPhase: Float = 0
+    /// Fire & Neon (spec §6.1): the far storm the sky has on its horizon on a clear night (nil: none; a world's own far
+    /// storm and a supercell are not this one), drawn by the shared sky as a dark anvil flickering from inside; and the red
+    /// sprites over a storm now (at most 3), lit for this instant after the sky's flash limiter.
+    public var farStormNow: FarStormNow?
+    public var sprites: [SpriteSlot] = []
+    /// The bearing (degrees) of the storm the sprites stand over, and a number that changes with each new storm, so a
+    /// renderer can stage it where its world looks, once (`SkyLayer`).
+    public var stormBearing: Float = 0
+    public var stormEpisode = 0
+    /// Fire & Neon (spec §6.2): the satellites in the sky now (at most 4, the brightest), lit and dark-sky gated.
+    public var satellites: [SatelliteSlot] = []
 
     public init() {}
 }
@@ -126,11 +137,20 @@ public struct StormInputs: Equatable {
     public var moment: BigMoment?
     public var farStorm: Float
     public var randomExtras: [WeatherKind: Float]
+    /// Fire & Neon (spec §6): a world's own red sprites and satellites modes (nil: the Sky extras settings), and its sky
+    /// flags (`SkyWorldFlags`): a city's skyglow (satellites fainter than this magnitude unseen) and embers in ashfall.
+    public var sprites: SkyExtraMode?
+    public var satellites: SkyExtraMode?
+    public var skyglowLimit: Float?
+    public var emberSource: Bool
 
     public init(crawlers: SkyExtraMode? = nil, sheet: SkyExtraMode? = nil, supercell: SupercellStage? = nil,
-                moment: BigMoment? = nil, farStorm: Float = 0, randomExtras: [WeatherKind: Float] = [:]) {
+                moment: BigMoment? = nil, farStorm: Float = 0, randomExtras: [WeatherKind: Float] = [:],
+                sprites: SkyExtraMode? = nil, satellites: SkyExtraMode? = nil, skyglowLimit: Float? = nil,
+                emberSource: Bool = false) {
         self.crawlers = crawlers; self.sheet = sheet; self.supercell = supercell; self.moment = moment
         self.farStorm = farStorm; self.randomExtras = randomExtras
+        self.sprites = sprites; self.satellites = satellites; self.skyglowLimit = skyglowLimit; self.emberSource = emberSource
     }
 }
 
@@ -170,6 +190,11 @@ public final class LivingSky {
     private var gustCross = 15.0, gustHeight: Float = 11, gustBearing: Float = 0
     private var supercellOn = false
     private var supercellPhase = 0.0
+    /// Fire & Neon: the far storms, the red sprites and the satellites, each on its own streams (internal for their seams
+    /// and tallies).
+    var farStorms: FarStorms
+    var spriteSky: RedSprites
+    var satelliteSky: Satellites
     /// The weathers the current world's Random Beautiful adds (the last step's storm inputs), for tests.
     var randomExtras: [WeatherKind: Float] { weather.extras }
 
@@ -185,6 +210,9 @@ public final class LivingSky {
         crawlerSky = AnvilCrawlers(seed: seed &+ 0xC2A3_71E5)
         sheetSky = SheetLightning(seed: seed &+ 0x5EE7_11E7)
         frontRng = SeededRandom(seed: seed &+ 0x6F00_7F2E)
+        farStorms = FarStorms(seed: seed &+ 0xFA25_7012)
+        spriteSky = RedSprites(seed: seed &+ 0x5B21_7E5D)
+        satelliteSky = Satellites(seed: seed &+ 0x5A7E_1175)
         clock.place(cityID: settings.cityID, homeZone: homeZone)
         nextGust = Double(gustRng.range(3, 8))
     }
@@ -208,6 +236,9 @@ public final class LivingSky {
         crawlerSky = AnvilCrawlers(seed: seed &+ 0xC2A3_71E5)
         sheetSky = SheetLightning(seed: seed &+ 0x5EE7_11E7)
         frontRng = SeededRandom(seed: seed &+ 0x6F00_7F2E)
+        farStorms = FarStorms(seed: seed &+ 0xFA25_7012)
+        spriteSky = RedSprites(seed: seed &+ 0x5B21_7E5D)
+        satelliteSky = Satellites(seed: seed &+ 0x5A7E_1175)
         gustOn = false
         gustElapsed = 0
         supercellOn = false
@@ -391,7 +422,15 @@ public final class LivingSky {
             supercellOn = false
             supercellPhase = 0
         }
-        let far = max(inputs.farStorm.isFinite ? min(1, max(0, inputs.farStorm)) : 0, s.supercell)
+        var far = max(inputs.farStorm.isFinite ? min(1, max(0, inputs.farStorm)) : 0, s.supercell)
+        // Fire & Neon (spec §6.1): a clear night may have a far storm of its own (unless the world or a supercell already
+        // stands one on the horizon); it is a far storm like any other.
+        let clearNight = s.sun.altitude < FarStorms.darkBelow && w.cloud < FarStorms.clearCloud && w.rain < 0.05 && w.snow < 0.05
+            && far < 0.5
+        let spritesMode = inputs.sprites ?? settings.spritesMode
+        let farNow = farStorms.step(dt: dt, mode: spritesMode, eligible: clearNight)
+        s.farStormNow = farNow
+        far = max(far, farNow?.amount ?? 0)
         s.farStorm = far
         let anvil = weather.weight(of: .thunderheads) + weather.weight(of: .storm) + weather.weight(of: .gustFront) + far
         let base = s.supercell > 0 ? max(s.cloudCover, 0.85) : s.cloudCover
@@ -403,25 +442,52 @@ public final class LivingSky {
         let dry = weather.weight(of: .thunderheads) + weather.weight(of: .dryLightning) + weather.weight(of: .virga)
         let dusk = s.sun.altitude < SheetLightning.darkBelow
         let sheets = sheetSky.step(dt: dt, mode: inputs.sheet ?? settings.sheetMode, eligible: dusk && (far >= 0.5 || dry >= 0.5),
-                                   cloud: s.cloudCover, bearing: bearing, call: call)
+                                   cloud: s.cloudCover, bearing: bearing ?? farNow.map { Double($0.bearing) }, call: call)
+
+        // Red sprites (spec §6.1): at night over a storm (this sky's, or a far one), standing over the far storm's bearing
+        // when it has one; the satellites (spec §6.2), lit by the sun from below the horizon.
+        let stormy = weather.weight(of: .storm) + weather.weight(of: .thunderheads) + weather.weight(of: .dryLightning) + far
+        let spriteNight = s.sun.altitude < RedSprites.darkBelow
+        let spriteBearing = farNow.map { Double($0.bearing) }
+        let sprites = spriteSky.step(dt: dt, mode: spritesMode, eligible: spriteNight && stormy >= 0.5, bearing: spriteBearing,
+                                     call: call)
+        if let f = farNow {
+            s.stormBearing = f.bearing
+            s.stormEpisode = f.episode
+        } else {
+            s.stormBearing = Float(spriteSky.bearing)
+            s.stormEpisode = 100_000 + spriteSky.episode
+        }
+        let sats = satelliteSky.step(dt: dt, sun: AnvilCrawlers.enu(s.sun.azimuth, s.sun.altitude), latitude: s.latitude,
+                                     mode: inputs.satellites ?? settings.satellitesMode, skyglow: inputs.skyglowLimit, call: call)
 
         // The sky's own flash limiter takes the fireballs' brightening and the storm light together (the brighter of the
         // crawlers and the sheet: a crawler above 0.25 costs a flash, the sheet never can), and whatever it holds back
         // it holds back from each of them alike.
+        // Fire & Neon's lights ride with them: the sprites (at most 0.04), the far storm's flicker (at most 0.02) and a
+        // satellite's flare (a point: 0.01 at Venus's brightness). None is a flash, but the limiter counts them all.
         let light = max(crawlers.reduce(Float(0)) { max($0, $1.brightness) }, sheets.reduce(Float(0)) { max($0, $1.brightness) })
-        let exposure = flashLimiter.limit(exposure: 1 + m.flash + light, sparkle: 0, dt: dt).exposure
-        if light > 0 {
-            let asked = m.flash + light
+        let spriteLight = sprites.reduce(Float(0)) { max($0, $1.brightness) }
+        let flickerLight = (farNow?.flicker ?? 0) * FarStormNow.flickerLight
+        let flareLight = sats.reduce(Float(0)) { max($0, 0.01 * $1.flare) }
+        let extra = spriteLight + flickerLight + flareLight
+        let exposure = flashLimiter.limit(exposure: 1 + m.flash + light + extra, sparkle: 0, dt: dt).exposure
+        if light + extra > 0 {
+            let asked = m.flash + light + extra
             let share = min(1, min(asked, max(0, exposure - 1)) / asked)
             s.meteorFlash = min(MeteorSky.maxFlash, max(0, m.flash * share))
             s.stormFlash = light * share
             s.crawlers = crawlers.map { c -> CrawlerSlot in var c = c; c.brightness *= share; return c }
             s.sheet = sheets.map { f -> SheetSlot in var f = f; f.brightness *= share; return f }
+            s.sprites = sprites.map { p -> SpriteSlot in var p = p; p.brightness *= share; return p }
+            if var f = farNow { f.flicker *= share; s.farStormNow = f }
         } else {
             s.meteorFlash = min(MeteorSky.maxFlash, max(0, exposure - 1))
             s.crawlers = crawlers
             s.sheet = sheets
+            s.sprites = sprites
         }
+        s.satellites = sats
         return s
     }
 

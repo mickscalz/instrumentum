@@ -470,6 +470,7 @@ public struct SupercellSkyModel: ThemeModel, MoodAware, SkyAware, ExcitementAwar
         s.fireflies = 0
         s.halo = 0
         s.iridescence = 0
+        s.farStormNow = nil      // the storm is the world's own: the shared sky's far storm would stand beside it
 
         // Keys: fence posts lit white while held, then fading.
         let fall = Float(pow(0.5, fdt / (roles[.linger] > 0.5 ? 1.0 : 0.3)))

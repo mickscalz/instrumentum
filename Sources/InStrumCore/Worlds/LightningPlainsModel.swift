@@ -98,6 +98,7 @@ public struct LightningPlainsModel: ThemeModel, MoodAware, SkyAware, ExcitementA
     public mutating func setSky(_ s: SkyState) {
         var warm = WorldWeather.warm(s)
         warm.fireflies = 0
+        warm.farStormNow = nil   // the plain's own storm line stands on its horizon (the shared sky's far storm would double it)
         sky = warm
     }
 

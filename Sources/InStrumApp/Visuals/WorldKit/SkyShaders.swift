@@ -76,6 +76,18 @@ enum SkyShaders {
         float4 meteorB[6];  // end direction, light on the stars' scale (1 = Sirius, before kRealStarGain; 0: the slot is empty)
         float4 meteorC[6];  // colour (linear, brightest channel 1), 0 for a head … the train's age 0.001…1
         float4 flash;       // a fireball's sky brightening (the sky × 1 + x, x ≤ 0.08), unused…
+        // Fire & Neon (spec §6–§7)
+        float4 storm;        // a far storm: its bearing (unit east, north), how much of it 0…1, its anvil's top (degrees)
+        float4 stormFlicker; // its lightning inside: level 0…1, degrees across from its centre, how far up 0…1, width (degrees)
+        float4 spriteA[3];   // red sprites: azimuth (degrees), base altitude (degrees), height (degrees), brightness (0: empty)
+        float4 spriteB[3];   // columns (+ 0.9 × streamers in the fraction), spread (degrees), shape 0 carrot … 1 jellyfish, seed
+        float4 satA[4];      // satellites: the lead's direction (east-north-up), its light on the stars' scale (0: empty)
+        float4 satB[4];      // its motion across the sky (unit) × a train's spacing (radians; 0 for one), member count
+        float4 satC[4];      // a train's shadow edge (member index, −1 none), +1 lit behind it / −1 before, footprint (rad), redden
+        float4 cellA;        // the supercell weather: its bearing (unit east, north), phase 0…1, amount 0…1 (0: none)
+        float4 cellB;        // green 0…0.12, the wall cloud's turn (radians), lightning inside 0…1, hail 0…1
+        float4 cellC;        // the storm's distance (km: + ahead, − behind), the anvil's trailing edge (km), mammatus 0…1, flash spot
+        float4 ash;          // ash 0…1, the sun's and moon's light through it (rgb)
     };
     // eq0.w is 1 when the real star texture is bound (0: a 1×1 placeholder, the procedural stars carry the sky).
 
@@ -376,6 +388,191 @@ enum SkyShaders {
         return sum * (through * smoothstep(0.0, 0.035, alt));
     }
 
+    // ---------------------------------------------------------------- Fire & Neon: red sprites, far storms, satellites
+    /// A sprite's crown at its brightest (HDR per unit of its brightness, ≤ 0.04): a faint red glow, never a flash.
+    constant float kSpriteGain = 7.0;
+    /// A satellite's point at most (HDR): a flare at Venus's brightness stays a hard point under the bloom.
+    constant float kSatPeak = 40.0;
+    constant float3 kSpriteRed = float3(1.0, 0.33, 0.22);
+    constant float3 kSpriteBlue = float3(0.5, 0.36, 1.0);
+
+    /// Degrees right of a bearing (unit east, north) along direction `d`, round the horizon.
+    float degreesRightOf(float3 d, float2 b) {
+        float2 h = d.xy;
+        return toDeg(atan2(h.x * b.y - h.y * b.x, dot(h, b)));
+    }
+
+    /// One sprite column (spec §6.1) in its own units: `x` across and `v` up (0 at the tendrils' ends … 1 at its top),
+    /// both in sprite heights. A diffuse crown two thirds of the way up, brighter and sharper on top; fine tendrils hanging
+    /// under it, each ending at its own length, fanning in under a carrot and hanging straight and wide under a jellyfish,
+    /// turning blue-violet low down; thin streamers reaching up from the crown now and then; a faint halo round it all.
+    float3 spriteColumn(float x, float v, float shape, float streamers, float seed) {
+        if (v < -0.08 || v > 1.35 || abs(x) > 0.7) return float3(0);
+        float vc = mix(0.64, 0.7, shape);
+        float wc = mix(0.09, 0.2, shape);
+        float hc = mix(0.12, 0.085, shape);
+        float dy = v - vc;
+        float ky = dy > 0.0 ? dy / (hc * 0.75) : dy / (hc * 1.5);
+        float crown = exp(-(x * x) / (wc * wc) - ky * ky);
+        float halo = 0.1 * exp(-(x * x) / (6.0 * wc * wc) - (dy * dy) / 0.12);
+        float3 col = kSpriteRed * (crown + halo);
+        // Tendrils under the crown.
+        if (v < vc + 0.04) {
+            float below = saturate((vc - v) / vc);                       // 0 at the crown … 1 at the bottom
+            float width = wc * mix(1.0 - 0.55 * below, 0.95 + 0.1 * below, shape);
+            float s = x / max(width, 1e-3);
+            float q = s * 3.4 + 0.12 * sin(v * 17.0 + seed * 40.0) + 7.0;
+            float j = floor(q), f = fract(q) - 0.5;
+            float jit = (hash13(float3(j, seed * 53.0, 1.3)) - 0.5) * 0.5;
+            float strand = exp(-((f - jit) * (f - jit)) / 0.012);
+            float tip = 0.04 + 0.42 * hash13(float3(j, seed * 53.0, 7.9));      // where it ends, from the bottom
+            float reach = smoothstep(tip - 0.03, tip + 0.14, v);
+            float under = smoothstep(vc + 0.04, vc - 0.1, v);                 // they hang from the crown's underside
+            float across = exp(-s * s * 0.9);
+            float t = strand * reach * under * across * (0.35 + 0.4 * (1.0 - below));
+            float3 tint = mix(kSpriteRed, kSpriteBlue, smoothstep(0.42, 0.08, v));
+            col += tint * t;
+        }
+        // Streamers up from the crown's top, now and then (fainter, narrower).
+        if (streamers > 0.0 && v > vc) {
+            float up = saturate((v - vc) / (1.25 - vc));
+            float s = x / (wc * (0.7 - 0.3 * up));
+            float q = s * 2.6 + 0.1 * sin(v * 23.0 + seed * 17.0) + 3.0;
+            float f = fract(q) - 0.5;
+            float strand = exp(-(f * f) / 0.01) * exp(-s * s * 0.8);
+            col += kSpriteRed * (0.35 * streamers * strand * (1.0 - up) * smoothstep(vc, vc + 0.08, v));
+        }
+        return col;
+    }
+
+    /// The red sprites in the sky along `d` (spec §6.1): each slot a cluster of 1–3 columns of differing sizes, as faint
+    /// as the sky's luminance allows (≤ 0.04), dimmed by mist and low haze like the stars.
+    float3 redSprites(float3 d, float alt, constant SkyU& u) {
+        float3 sum = float3(0);
+        float y = toDeg(alt);
+        float az = toDeg(atan2(d.x, d.y));
+        for (int i = 0; i < 3; i++) {
+            float4 A = u.spriteA[i];
+            if (A.w <= 0.0) continue;
+            float H = max(A.z, 0.5);
+            float v = (y - A.y) / H;
+            if (v < -0.2 || v > 1.5) continue;
+            float dx = az - A.x;
+            dx -= 360.0 * floor((dx + 180.0) / 360.0);
+            float x = dx * cos(alt);
+            float4 B = u.spriteB[i];
+            int columns = clamp(int(B.x), 1, 3);
+            float streamers = fract(B.x) / 0.9, spread = B.y, shape = B.z, seed = B.w;
+            if (abs(x) > 0.5 * spread * float(columns - 1) + 0.8 * H) continue;
+            float3 c = float3(0);
+            for (int k = 0; k < 3; k++) {
+                if (k >= columns) break;
+                float hk = hash13(float3(seed * 91.0, float(k), 3.7));
+                float offset = (float(k) - 0.5 * float(columns - 1)) * spread + (hk - 0.5) * 0.3 * spread;
+                float scale = k == 0 ? 1.0 : 0.65 + 0.35 * hash13(float3(seed * 37.0, float(k), 9.1));
+                float lift = (1.0 - scale) * 0.35;                         // the smaller ones stand a little higher
+                c += spriteColumn((x - offset) / (H * scale), (v - lift) / scale, shape, streamers, seed + 0.37 * float(k))
+                     * (k == 0 ? 1.0 : 0.6 + 0.4 * scale);
+            }
+            sum += c * (A.w * kSpriteGain);
+        }
+        float mist = u.weather.x;
+        return sum * (1.0 - 0.5 * mist) * (1.0 - 0.6 * mist * exp(-alt / 0.12)) * smoothstep(0.0, 0.03, alt);
+    }
+
+    /// A far storm on the horizon (spec §6.1), over `col`: a dark anvil beyond the horizon, its tower and an overshooting
+    /// top on its upwind side, the anvil spreading downwind and thinning, its lower part lost in the horizon's haze; its
+    /// edges billowed. Lightning inside it lights the cloud from within (a bright core where it strikes and a wider glow
+    /// through the cloud, tinted warm by the long air path) and the sky just over it.
+    float3 farStorm(float3 d, float alt, float3 col, constant SkyU& u, float time) {
+        float amount = u.storm.z;
+        if (amount <= 0.001) return col;
+        float W = 0.5 * max(u.stormFlicker.w, 4.0);
+        float T = max(u.storm.w, 0.6);
+        float x = degreesRightOf(d, u.storm.xy) / W;      // −1…1 across it
+        float y = toDeg(alt) / T;                          // 0 at the horizon … 1 at the anvil's top
+        if (abs(x) > 1.35 || y > 2.2 || y < -0.05) return col;
+        // The shape: the tower at xt (left of middle), the anvil from x −0.8 to 1, its top easing down downwind, its base
+        // rising; an overshooting dome over the tower; flanking towers stepping down on the left.
+        float xt = -0.32;
+        float edge = (vnoise3(float3(x * 7.0, y * 3.0, 5.1)) - 0.5) * 0.16 + (vnoise3(float3(x * 19.0, y * 8.0, 2.3)) - 0.5) * 0.06;
+        float top = 1.0 - 0.14 * max(0.0, x - xt) + 0.24 * exp(-((x - xt) * (x - xt)) / 0.012);
+        float bottom = 0.55 + 0.3 * smoothstep(xt, 1.0, x);
+        float ends = min(x + 0.82, 1.0 - x) * W / T;
+        float anvil = min(min(top + edge - y, y - bottom - edge * 0.6), ends * 0.12 + edge);
+        float tw = 0.13 + 0.06 * y;
+        float tower = min(tw - abs(x - xt) + edge * 0.7, top + edge - y);
+        float f1 = 0.5 - y + edge - 3.0 * (x - xt + 0.3) * (x - xt + 0.3);
+        float f2 = 0.33 - y + edge - 4.0 * (x - xt + 0.52) * (x - xt + 0.52);
+        float shape = max(max(anvil, tower), max(f1, f2));
+        float a = smoothstep(-0.02, 0.06, shape) * amount;
+        if (a <= 0.0005) {
+            // Only the air over it, glowing with its flash.
+            float lv = u.stormFlicker.x;
+            if (lv > 0.0 && y > 0.0) {
+                float fx = x - u.stormFlicker.y / W;
+                col += float3(1.0, 0.78, 0.62) * (0.05 * lv * amount * exp(-fx * fx / 0.2) * exp(-max(y - top, 0.0) / 0.6));
+            }
+            return col;
+        }
+        // Lost in the horizon's haze low down; dark against the sky above it.
+        float haze = smoothstep(0.0, 0.5, y);
+        float3 cloud = col * mix(0.82, 0.42, haze) + float3(0.002, 0.0022, 0.003);
+        // Lightning inside: a bright core where it strikes and a glow through the cloud (the thicker, the more it spreads).
+        float lv = u.stormFlicker.x;
+        if (lv > 0.0) {
+            float fx = x - u.stormFlicker.y / W, fy = y - u.stormFlicker.z;
+            float core = exp(-(fx * fx) / 0.02 - (fy * fy) / 0.08);
+            float wide = exp(-(fx * fx) / 0.25 - (fy * fy) / 0.6);
+            float depth = smoothstep(-0.02, 0.2, shape);
+            float3 light = float3(1.0, 0.8, 0.66) * (0.9 * core * depth + 0.22 * wide);
+            cloud += light * (lv * (0.4 + 0.6 * haze));
+        }
+        return mix(col, cloud, a);
+    }
+
+    /// The satellites along `d` (spec §6.2), among the real stars and drawn as they are: a Gaussian footprint the size of
+    /// a star of the same magnitude in the star texture, its light on the stars' scale, twinkling with them; a bright
+    /// flare grows a faint halo instead of a bigger disc. A train is a line of evenly spaced points along its track,
+    /// its members past the shadow's edge unlit. Sunlight through the atmosphere's limb reddens one at the shadow's edge.
+    float3 satelliteLight(float3 d, float3 v, float time, constant SkyU& u) {
+        float3 sum = float3(0);
+        for (int i = 0; i < 4; i++) {
+            float light = u.satA[i].w;
+            if (light <= 0.0) continue;
+            float3 D = u.satA[i].xyz;
+            float3 Tv = u.satB[i].xyz;
+            float count = max(u.satB[i].w, 1.0);
+            float spacing = length(Tv);
+            float R = max(u.satC[i].z, 1e-4);
+            float c = dot(d, D);
+            float reach = 6.0 * R + spacing * (count - 1.0);
+            if (c < 1.0 - 0.5 * reach * reach - 1e-6) continue;
+            float r2, lit = 1.0;
+            if (count > 1.5 && spacing > 1e-7) {
+                float3 Tn = Tv / spacing;
+                float along = atan2(dot(d, Tn), c);
+                float across = dot(d, cross(D, Tn));
+                float k = clamp(floor(-along / spacing + 0.5), 0.0, count - 1.0);
+                float da = along + k * spacing;
+                r2 = da * da + across * across;
+                float edge = u.satC[i].x;
+                if (edge >= 0.0) {
+                    float behind = smoothstep(edge - 0.5, edge + 0.5, k);
+                    lit = u.satC[i].y > 0.0 ? behind : 1.0 - behind;
+                }
+            } else {
+                float3 off = d - D * c;
+                r2 = dot(off, off);
+            }
+            float peak = min(light * kRealStarGain, kSatPeak);
+            float halo = 0.05 * (clamp(light * kRealStarGain / kMeteorPeak, 1.0, 3.0) - 1.0);
+            float3 colour = mix(float3(1.0, 0.97, 0.92), float3(1.0, 0.55, 0.32), u.satC[i].w);
+            sum += colour * (peak * lit) * (exp(-2.0 * r2 / (R * R)) + halo * exp(-r2 / (16.0 * R * R)));
+        }
+        return sum * (0.8 + 0.2 * vnoise3(v * 80.0 + float3(0.0, 0.0, time * 3.0)));
+    }
+
     /// The sky's light in direction `d` (alt ≥ 0): gradient, sunset band, stars, Milky Way, aurora, moon, pillars,
     /// clouds, sun. `moonMask` returns how much of the moon disc covers the ray. Shared by the dome and by reflections.
     /// `stars` is the real star texture (fragment texture 0; a 1×1 placeholder while it builds, with u.eq0.w = 0).
@@ -413,6 +610,10 @@ enum SkyShaders {
                 procedural *= 0.45;
             }
             col += (procedural + catalogue + milkyWay(v, octaves, starVis)) * above;
+            // Satellites (Fire & Neon §6.2): steady points among the stars, as dim as they are dimmed.
+            if (u.satA[0].w > 0.0 || u.satA[1].w > 0.0 || u.satA[2].w > 0.0 || u.satA[3].w > 0.0) {
+                col += satelliteLight(d, v, time, u) * (starVis * above);
+            }
         }
 
         // The aurora, pole-ward, in front of the stars (clouds hide it below).
@@ -423,6 +624,10 @@ enum SkyShaders {
         // Shooting stars (spec §6.3): over the stars and the aurora, under the moon and the clouds (which hide them).
         float3 meteors = alt > 0.0 ? meteorLight(d, alt, u) : float3(0);
         col += meteors;
+        // Red sprites (Fire & Neon §6.1): 50–90 km up, over the far storm; any cloud here hides them.
+        if (alt > 0.0 && (u.spriteA[0].w > 0.0 || u.spriteA[1].w > 0.0 || u.spriteA[2].w > 0.0)) {
+            col += redSprites(d, alt, u);
+        }
 
         // Moon: a lit sphere with its phase terminator toward the sun, plus earthshine.
         float moonR = u.moonInfo.z;
@@ -499,6 +704,9 @@ enum SkyShaders {
             float l = dot(col, float3(0.2126, 0.7152, 0.0722));
             col = mix(col, l * float3(0.8, 0.86, 1.02), 0.6 * shadow) * (1.0 - 0.25 * shadow);
         }
+
+        // A far storm on the horizon (Fire & Neon §6.1), in front of the stars and the moon, behind any cloud here.
+        if (u.storm.z > 0.001 && alt > -0.01) col = farStorm(d, alt, col, u, time);
 
         // Clouds: a drifting layer lit by the sun or the moon.
         if (cloudCover > 0.01 && alt > 0.0) {
