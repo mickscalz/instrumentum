@@ -55,6 +55,7 @@ public struct SpaceshipLoungeModel: ThemeModel, MoodAware, SkyAware {
         s.crawlers = []; s.sheet = []; s.stormFlash = 0; s.outflow = 0; s.gustFront = nil; s.warmthGrade = 0
         s.virga = 0; s.farStorm = 0; s.supercell = 0; s.supercellPhase = 0
         s.farStormNow = nil; s.sprites = []; s.satellites = []
+        s.supercellWeather = nil; s.hail = 0; s.ash = 0; s.embers = 0; s.sunTint = SIMD3(1, 1, 1); s.moonTint = SIMD3(1, 1, 1)
         s.starVisibility = 1
         return s
     }

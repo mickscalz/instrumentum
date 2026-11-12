@@ -126,10 +126,10 @@ final class MoonlitLakeRenderer: ThemeRenderer {
             light = SIMD4(SkyLayer.enu(s.sun), Float(2.5 * sunW * clouds))
             let k = Float(min(1, max(0, sunAlt / 20)))
             let warm = SIMD3<Float>(1, 0.62, 0.35), white = SIMD3<Float>(1, 0.95, 0.85)
-            lightColor = warm + (white - warm) * k
+            lightColor = (warm + (white - warm) * k) * s.sunTint     // reddened and dimmed through ashfall's haze
         } else {
             light = SIMD4(SkyLayer.enu(s.moon), Float(moonW * clouds))
-            lightColor = SIMD3(0.78, 0.85, 1.0)
+            lightColor = SIMD3(0.78, 0.85, 1.0) * s.moonTint
         }
 
         let mood = frame.mood

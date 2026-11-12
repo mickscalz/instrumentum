@@ -123,6 +123,16 @@ public struct SkyState: Equatable {
     public var stormEpisode = 0
     /// Fire & Neon (spec §6.2): the satellites in the sky now (at most 4, the brightest), lit and dark-sky gated.
     public var satellites: [SatelliteSlot] = []
+    /// Fire & Neon (spec §7.2): the supercell weather's staged event (nil without it), and its hail falling here (0…1).
+    public var supercellWeather: SupercellNow?
+    public var hail: Float = 0
+    /// Fire & Neon (spec §7.1): ashfall's ash (0…1), and the embers rising through it where the world is their source
+    /// (0…1: the ash, at an ember source; 0 everywhere else). The sun's and moon's light through the ash's haze, reddened
+    /// and dimmed ((1, 1, 1) without ash): multiply the light a world takes from them by it.
+    public var ash: Float = 0
+    public var embers: Float = 0
+    public var sunTint = SIMD3<Float>(1, 1, 1)
+    public var moonTint = SIMD3<Float>(1, 1, 1)
 
     public init() {}
 }
@@ -195,6 +205,14 @@ public final class LivingSky {
     var farStorms: FarStorms
     var spriteSky: RedSprites
     var satelliteSky: Satellites
+    /// Fire & Neon: the supercell weather's event (its clock, bearing, turn and flicker).
+    private var cellOn = false
+    private var cellElapsed = 0.0
+    private var cellBearing = 0.0
+    private var cellEpisode = 0
+    private var cellTurn = 0.0
+    private var cellRng: SeededRandom
+    private var cellFlicker: StormFlicker
     /// The weathers the current world's Random Beautiful adds (the last step's storm inputs), for tests.
     var randomExtras: [WeatherKind: Float] { weather.extras }
 
@@ -213,6 +231,8 @@ public final class LivingSky {
         farStorms = FarStorms(seed: seed &+ 0xFA25_7012)
         spriteSky = RedSprites(seed: seed &+ 0x5B21_7E5D)
         satelliteSky = Satellites(seed: seed &+ 0x5A7E_1175)
+        cellRng = SeededRandom(seed: seed &+ 0xCE11_5C0F)
+        cellFlicker = StormFlicker(seed: seed &+ 0xCE11_F11C)
         clock.place(cityID: settings.cityID, homeZone: homeZone)
         nextGust = Double(gustRng.range(3, 8))
     }
@@ -239,10 +259,15 @@ public final class LivingSky {
         farStorms = FarStorms(seed: seed &+ 0xFA25_7012)
         spriteSky = RedSprites(seed: seed &+ 0x5B21_7E5D)
         satelliteSky = Satellites(seed: seed &+ 0x5A7E_1175)
+        cellRng = SeededRandom(seed: seed &+ 0xCE11_5C0F)
+        cellFlicker = StormFlicker(seed: seed &+ 0xCE11_F11C)
         gustOn = false
         gustElapsed = 0
         supercellOn = false
         supercellPhase = 0
+        cellOn = false
+        cellElapsed = 0
+        cellTurn = 0
     }
 
     /// `hold` keeps the sun at a chosen altitude for worlds that hold the light; everything else keeps running.
@@ -302,6 +327,43 @@ public final class LivingSky {
         } else {
             gustOn = false
         }
+        // The supercell weather (Fire & Neon spec §7.2) plays its stages from the moment it starts arriving, standing in for
+        // its nominal values by its share of the sky: picked, it runs once and holds its Clearing; in Random Beautiful it
+        // runs to its end (its spell is its length) and moves on. Each one draws its bearing from its own stream.
+        let cellAmount = weather.weight(of: .supercell)
+        var cellNow: SupercellNow?
+        if cellAmount > 0 {
+            if !cellOn {
+                cellOn = true
+                cellElapsed = 0
+                cellBearing = 360 * AnvilCrawlers.unit(&cellRng)
+                cellEpisode += 1
+            }
+            cellElapsed += dt
+            let length = WeatherMachine.supercellSpell(settings)
+            let hold = settings.weatherMode == .pick ? WorldWeather.supercellHeld : 1
+            var c = WorldWeather.supercell(phase: min(hold, cellElapsed / length))
+            let spin: Double = clock.location.latitude >= 0 ? 1 : -1   // anticlockwise from above in the north
+            cellTurn = (cellTurn + spin * dt * 2 * .pi * Double(SupercellNow.rpm) / 60 * Double(c.rotation))
+                .truncatingRemainder(dividingBy: 2 * .pi)
+            c.amount = cellAmount
+            c.bearing = Float(cellBearing)
+            c.episode = cellEpisode
+            c.turn = Float(cellTurn)
+            let n = WeatherKind.supercell.values
+            w.cloud += cellAmount * (c.cloud - n.cloud)
+            w.rain += cellAmount * (c.rain - n.rain)
+            w.mist += cellAmount * (c.mist - n.mist)
+            w.wind += cellAmount * (c.wind - n.wind)
+            w.gust += cellAmount * (c.gust - n.gust)
+            cellNow = c
+        } else {
+            cellOn = false
+        }
+        s.hail = min(1, max(0, (cellNow?.hail ?? 0) * cellAmount))
+        // Ashfall (spec §7.1): the ash, the embers at an ember source, the sun and moon reddened through it.
+        s.ash = min(1, max(0, w.ash.isFinite ? w.ash : 0))
+        s.embers = inputs.emberSource ? s.ash : 0
         s.outflow = min(1, max(0, w.outflow))
         s.virga = min(1, max(0, w.virga))
         s.weather = weather.current
@@ -351,20 +413,41 @@ public final class LivingSky {
 
         // Lightning: a flash every 6–20 s while the storm holds.
         let storm = stormAmount()
-        if storm > 0.5 {
+        // A supercell's Core flashes too, and more often (every 3–10 s): its lightning is staged.
+        let cellStorm = (cellNow?.amount ?? 0) * (cellNow?.lightning ?? 0)
+        if storm > 0.5 || cellStorm > 0.5 {
             nextFlash -= dt
-            if nextFlash <= 0 { lightning = 1; nextFlash = Double(rng.range(6, 20)) / min(3, max(0.25, settings.lightningFrequency)) }
+            if nextFlash <= 0 {
+                lightning = 1
+                let gap = storm > 0.5 ? Double(rng.range(6, 20)) : Double(rng.range(3, 10))
+                nextFlash = gap / min(3, max(0.25, settings.lightningFrequency))
+            }
         } else {
             nextFlash = Double(rng.range(2, 8))
         }
         s.lightning = lightning
         lightning *= Float(exp(-dt / 0.12))
+        // Its in-cloud light: the distant flicker while it approaches or goes, and its own close flashes in its Core.
+        if var c = cellNow {
+            let distant = c.stage != .core
+            let gaps = c.stage == .approach ? 2.0...6.0 : 4.0...10.0
+            let flicker = cellFlicker.step(dt: dt, gaps: gaps, active: distant) * (c.stage == .clearing ? 1 - c.stageProgress : 1)
+            c.glow = min(1, max(flicker * (distant ? 0.8 : 0), s.lightning * c.lightning))
+            c.spot = cellFlicker.spot
+            cellNow = c
+        } else {
+            _ = cellFlicker.step(dt: dt, gaps: 2.0...6.0, active: false)
+        }
+        s.supercellWeather = cellNow
 
         let moonUp = Float(max(0, sin(Astro.rad(s.moon.altitude)))) * Float(s.moonLit)
         let colours = SkyPalette.colours(sunAltitude: s.sun.altitude, cloud: w.cloud, mist: w.mist, moonlight: moonUp, pastel: dawnPastel)
-        s.zenith = colours.zenith; s.horizon = colours.horizon
+        let ashed = WorldWeather.ashSky(zenith: colours.zenith, horizon: colours.horizon, ash: s.ash)
+        s.zenith = ashed.zenith; s.horizon = ashed.horizon
+        s.sunTint = WorldWeather.ashTint(ash: s.ash, altitude: s.sun.altitude)
+        s.moonTint = WorldWeather.ashTint(ash: s.ash, altitude: s.moon.altitude)
         let night = 1 - SkyPalette.smoothstep(-15, -4, Float(s.sun.altitude))
-        s.starVisibility = night * (1 - 0.9 * w.cloud) * (1 - 0.6 * w.mist) * (1 - 0.3 * moonUp)
+        s.starVisibility = night * (1 - 0.9 * w.cloud) * (1 - 0.6 * w.mist) * (1 - 0.3 * moonUp) * (1 - 0.5 * s.ash)
         // Advanced scales (1 = as designed).
         // The value is capped at `hi`; the scale itself may go above 1 (the looks boost up to 1.5, the sliders to 2).
         func scaled(_ v: Float, _ k: Double, _ hi: Double) -> Float { min(Float(hi), v * Float(min(4, max(0, k)))) }
@@ -421,6 +504,10 @@ public final class LivingSky {
         } else {
             supercellOn = false
             supercellPhase = 0
+            if let c = cellNow {
+                s.supercell = c.amount
+                s.supercellPhase = min(c.phase, 0.9999)   // its end is still its Clearing, not the next one's Approach
+            }
         }
         var far = max(inputs.farStorm.isFinite ? min(1, max(0, inputs.farStorm)) : 0, s.supercell)
         // Fire & Neon (spec §6.1): a clear night may have a far storm of its own (unless the world or a supercell already

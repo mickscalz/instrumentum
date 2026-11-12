@@ -48,8 +48,9 @@ public struct FarStorms {
     /// How long each one lasts (seconds), and how long it takes to come onto the horizon and to go.
     public static let durations = 300.0...1200.0
     public static let fadeSeconds = 60.0
-    /// How far off (km): the anvil's top 1.5–3.5° up at these distances, below the horizon past them.
-    public static let distances = 180.0...330.0
+    /// How far off (km): the anvil's top 1.2–3.7° up at these distances (it sinks below the horizon past them), under
+    /// the sprites' 4–9°.
+    public static let distances = 200.0...340.0
     /// The anvil's top (km) and Earth's radius (km), for its height over the horizon.
     public static let anvilKm = 16.0
     public static let earthKm = 6371.0

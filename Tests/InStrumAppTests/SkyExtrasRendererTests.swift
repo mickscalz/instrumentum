@@ -179,12 +179,12 @@ extension WorldPreviewTests {
             let flat = SIMD3<Float>(Float(sin(heading * .pi / 180)), Float(cos(heading * .pi / 180)), 0)
             return simd_normalize(flat - simd_dot(flat, d) * d)
         }
-        let station = at(-8, 34), fading = at(18, 22), trainLead = at(-24, 16), faint = at(10, 40)
+        let station = at(-8, 34), fading = at(8, 19), trainLead = at(-24, 16), faint = at(10, 40)
         dusk.satellites = [
             SatelliteSlot(kind: .station, id: 1, direction: station, tangent: across(station, 60), angularSpeed: 0.012,
                           magnitude: -2.8, light: SatelliteSlot.light(magnitude: -2.8)),
             SatelliteSlot(kind: .satellite, id: 2, direction: fading, tangent: across(fading, 100), angularSpeed: 0.01,
-                          magnitude: 2.2, light: SatelliteSlot.light(magnitude: 2.2) * 0.35, sunlit: 0.35, redden: 0.75),
+                          magnitude: 1.2, light: SatelliteSlot.light(magnitude: 1.2) * 0.35, sunlit: 0.35, redden: 0.75),
             SatelliteSlot(kind: .train, id: 3, direction: trainLead, tangent: across(trainLead, 75), angularSpeed: 0.008,
                           count: 16, spacing: 0.012, magnitude: 2.4, light: SatelliteSlot.light(magnitude: 2.4),
                           shadowMember: 4.5, litBehind: true),
@@ -192,7 +192,7 @@ extension WorldPreviewTests {
                           magnitude: 4.2, light: SatelliteSlot.light(magnitude: 4.2)),
         ]
         try sky("sky-satellites-dusk", dusk)
-        try sky("sky-satellites-dusk-closeup", dusk, view: -14, fov: 24, horizon: -0.5)
+        try sky("sky-satellites-dusk-closeup", dusk, view: -8, fov: 30, horizon: -0.9)
         // A flare: 2 s before its peak, and at it (Venus's brightness), among the stars of a dark sky.
         var flare = T.night(sunAltitude: -14)
         let glint = at(4, 30)
@@ -250,7 +250,16 @@ final class SkyExtrasFrameTimeTests: XCTestCase {
             return SatelliteSlot(kind: k == 0 ? .train : .satellite, id: k, direction: dk, tangent: tan, angularSpeed: 0.01,
                                  count: k == 0 ? 20 : 1, spacing: 0.01, magnitude: 1, light: 2, shadowMember: k == 0 ? 5 : -1)
         }
-        for (label, s) in [("plain-night", T.night()), ("storm-sprites-satellites", busy)] {
+        typealias R = FireNeonWeatherRendererTests
+        var ash = T.night(); ash.ash = 1
+        let cases: [(String, SkyState)] = [
+            ("plain-night", T.night()), ("storm-sprites-satellites", busy),
+            ("plain-golden", R.golden()), ("supercell-approach", R.supercell(R.golden(), phase: 0.2, glow: 0.5)),
+            ("supercell-core", R.supercell(R.golden(), phase: 0.45, glow: 0.8)),
+            ("supercell-clearing", R.supercell(R.golden(), phase: WorldWeather.supercellHeld)),
+            ("ashfall-night", ash),
+        ]
+        for (label, s) in cases {
             let r = try XCTUnwrap(SkyOnlyRenderer(device: device))
             r.sky.viewAzimuth = 0
             for i in 0..<5 { r.update(s, quality: .high, size: size, dt: 1.0 / 30, time: Float(i) / 30, surface: .none) }
@@ -258,5 +267,177 @@ final class SkyExtrasFrameTimeTests: XCTestCase {
             print(String(format: "TIMING sky-extras %@ 1280x720: dome %.3f ms (median of 24)", label, ms))
             XCTAssertGreaterThan(ms, 0)
         }
+    }
+}
+
+/// Fire & Neon Task 9 in the shared layers (spec §7, §12; Review focus 5): ash through the snow's path, embers only at an
+/// ember source, the supercell's hail, its lightning flashing through the limiter and only glowing under gentle visuals,
+/// and the storm drawn in the sky.
+@MainActor
+final class FireNeonWeatherRendererTests: XCTestCase {
+    /// A sky with the supercell staged at `phase` (its own weather values standing in), as the Living Sky has it.
+    nonisolated static func supercell(_ s: SkyState, phase: Double, bearing: Float = 28, glow: Float = 0) -> SkyState {
+        var s = s
+        var c = WorldWeather.supercell(phase: phase)
+        c.amount = 1; c.bearing = bearing; c.episode = 1; c.turn = 0.7; c.glow = glow; c.spot = 0.42
+        s.supercellWeather = c
+        s.supercell = 1; s.supercellPhase = min(Float(phase), 0.9999)
+        s.cloudCover = c.cloud; s.rain = c.rain; s.mist = c.mist; s.wind = c.wind; s.hail = c.hail
+        s.weather = .supercell; s.nextWeather = .supercell; s.weatherBlend = 0
+        let colours = SkyPalette.colours(sunAltitude: s.sun.altitude, cloud: c.cloud, mist: c.mist, moonlight: 0)
+        s.zenith = colours.zenith; s.horizon = colours.horizon
+        s.starVisibility = max(0, s.starVisibility * (1 - 0.9 * c.cloud))
+        return s
+    }
+
+    /// A day sky with the sun 5° up (golden hour).
+    nonisolated static func golden() -> SkyState {
+        var s = SkyExtrasRendererTests.night(sunAltitude: 5)
+        s.sun = SkyDirection(azimuth: 280, altitude: 5)
+        let colours = SkyPalette.colours(sunAltitude: 5, cloud: 0, mist: 0.1, moonlight: 0)
+        s.zenith = colours.zenith; s.horizon = colours.horizon; s.starVisibility = 0
+        return s
+    }
+
+    /// Ash falls through the snow's path as kind 9 (grey flakes), 0.6× the snow's speed; embers only where the sky says
+    /// so (an ember source); the supercell's hail as its own pellets; none of them without their weather.
+    func testAshEmbersAndHailInTheWeatherLayer() throws {
+        guard let device = MTLCreateSystemDefaultDevice() else { throw XCTSkip("No Metal device") }
+        let size = CGSize(width: 640, height: 360)
+        var ash = SkyExtrasRendererTests.night(); ash.ash = 1
+        let w = try XCTUnwrap(WeatherLayer(device: device))
+        for _ in 0..<5 { w.update(ash, quality: .high, size: size, dt: 1.0 / 30, surface: .ground(horizonY: -0.33)) }
+        XCTAssertEqual(w.kind, 9)
+        XCTAssertGreaterThan(w.particleCount, 500)
+        XCTAssertEqual(w.emberCount, 0, "no embers without a source")
+        XCTAssertEqual(w.hailCount, 0)
+        var embers = ash; embers.embers = 1
+        w.update(embers, quality: .high, size: size, dt: 1.0 / 30, surface: .ground(horizonY: -0.33))
+        XCTAssertGreaterThan(w.emberCount, 100)
+        XCTAssertFalse(w.emberInstances.isEmpty)
+        var hail = SkyExtrasRendererTests.night(); hail.hail = 1; hail.rain = 0.9
+        for _ in 0..<30 { w.update(hail, quality: .high, size: size, dt: 1.0 / 30, surface: .ground(horizonY: -0.33)) }
+        XCTAssertGreaterThan(w.hailCount, 200)
+        XCTAssertEqual(w.kind, 0, "it rains with the hail")
+        XCTAssertEqual(w.emberCount, 0)
+        // Ash falls at 0.6× the snow's pace: the same flakes' mean fall over a second.
+        func meanFall(_ s: SkyState) throws -> Float {
+            let layer = try XCTUnwrap(WeatherLayer(device: device))
+            layer.update(s, quality: .lite, size: size, dt: 0, surface: .none)
+            let before = layer.particleYs
+            layer.update(s, quality: .lite, size: size, dt: 0.05, surface: .none)
+            let after = layer.particleYs
+            let falls = zip(before, after).map { $0 - $1 }.filter { $0 > 0 && $0 < 0.5 }
+            return falls.reduce(0, +) / Float(max(1, falls.count))
+        }
+        var snow = SkyExtrasRendererTests.night(); snow.snow = WeatherLayer.ashDensity
+        var still = ash; still.wind = 0; still.gust = 0; snow.wind = 0; snow.gust = 0
+        XCTAssertEqual(try meanFall(still) / meanFall(snow), WeatherLayer.ashSpeed, accuracy: 0.05)
+    }
+
+    /// The supercell's lightning through the weather layer: a flash brightens the scene, the limiter keeping it to three
+    /// large jumps a second at most; under gentle visuals not one large jump, only a glow.
+    func testSupercellLightningFlashesAndOnlyGlowsUnderGentle() throws {
+        guard let device = MTLCreateSystemDefaultDevice() else { throw XCTSkip("No Metal device") }
+        var s = SkySettings(); s.timeMode = .frozen; s.frozenHour = 13; s.cityID = "melbourne"; s.weatherMode = .pick
+        s.weather = .supercell; s.spritesMode = .off; s.satellitesMode = .off
+        let sky = LivingSky(settings: s, homeZone: TimeZone(identifier: "Australia/Melbourne")!)
+        sky.reset(settings: s)
+        let plain = try XCTUnwrap(WeatherLayer(device: device)), gentle = try XCTUnwrap(WeatherLayer(device: device))
+        gentle.gentle = true
+        var plainBoost: [Float] = [], gentleBoost: [Float] = []
+        let dt = 1.0 / 30
+        let start = Date(timeIntervalSince1970: 1_793_000_000)
+        for i in 1...(480 * 30) {
+            let st = sky.step(now: start.addingTimeInterval(Double(i) * dt), dt: dt, meteors: .never)
+            guard i > 150 * 30, i < 330 * 30 else { continue }   // the Core
+            plain.update(st, quality: .lite, size: CGSize(width: 320, height: 180), dt: dt, surface: .none)
+            gentle.update(st, quality: .lite, size: CGSize(width: 320, height: 180), dt: dt, surface: .none)
+            plainBoost.append(plain.exposureBoost); gentleBoost.append(gentle.exposureBoost)
+        }
+        func jumps(_ b: [Float]) -> (count: Int, worstSecond: Int) {
+            var times: [Int] = []
+            for i in 3..<b.count where b[i] - (b[(i - 3)...i].min() ?? 1) > FlashLimiter.flashRise {
+                if times.last.map({ i - $0 > 3 }) ?? true { times.append(i) }
+            }
+            var worst = 0
+            for t in times { worst = max(worst, times.filter { $0 >= t && $0 < t + 30 }.count) }
+            return (times.count, worst)
+        }
+        XCTAssertGreaterThan(plainBoost.max() ?? 1, 1.5, "its lightning brightens the scene")
+        XCTAssertGreaterThan(jumps(plainBoost).count, 5)
+        XCTAssertLessThanOrEqual(jumps(plainBoost).worstSecond, FlashLimiter.maxFlashesPerSecond)
+        XCTAssertEqual(jumps(gentleBoost).count, 0, "gentle: no flash")
+        XCTAssertGreaterThan(gentleBoost.max() ?? 1, 1.02, "only a glow")
+        XCTAssertLessThanOrEqual(gentleBoost.max() ?? 1, 1 + WeatherLayer.gentleLightning + 1e-4)
+    }
+
+    /// The dome draws the storm: its Approach stands on the horizon where the world looks (darker there than the clear
+    /// golden sky), its Core darkens the whole sky, its Clearing leaves the low sky clear under the anvil; the generic
+    /// cloud gives way to it; with nothing in its rows the sky is as it was.
+    func testTheDomeDrawsTheSupercell() throws {
+        guard let device = MTLCreateSystemDefaultDevice() else { throw XCTSkip("No Metal device") }
+        let preview = try XCTUnwrap(PreviewRenderer(width: 320, height: 180))
+        func render(_ s: SkyState) throws -> CGImage {
+            let r = try XCTUnwrap(SkyOnlyRenderer(device: device))
+            r.sky.viewAzimuth = 0
+            for i in 0..<3 { r.update(s, quality: .high, size: CGSize(width: 320, height: 180), dt: 1.0 / 30, time: Float(i) / 30, surface: .none) }
+            return try XCTUnwrap(preview.capture(r))
+        }
+        let clear = try render(Self.golden())
+        let approach = try render(Self.supercell(Self.golden(), phase: 0.2))
+        let core = try render(Self.supercell(Self.golden(), phase: 0.45))
+        let clearing = try render(Self.supercell(Self.golden(), phase: WorldWeather.supercellHeld))
+        let lum = { (i: CGImage) in PreviewRenderer.stats(i).meanLuminance }
+        XCTAssertGreaterThan(PreviewRenderer.difference(clear, approach), 0.02, "the storm stands there")
+        XCTAssertLessThan(lum(core), lum(approach), "the Core darkens it all")
+        XCTAssertGreaterThan(lum(clearing), lum(core), "and it clears")
+        XCTAssertGreaterThan(PreviewRenderer.difference(core, clearing), 0.02)
+    }
+}
+
+/// The weather previews (spec §14): ash over Moonlit Lake (the moon reddened), the supercell's Approach and Core over
+/// Golden Hour Beach, its Clearing with mammatus, and the Approach over the lake by night, lit by its own flicker.
+extension WorldPreviewTests {
+    func testWriteWeatherPreviews() throws {
+        guard let dir = ProcessInfo.processInfo.environment["PREVIEW_DIR"] else { throw XCTSkip("PREVIEW_DIR not set") }
+        guard MTLCreateSystemDefaultDevice() != nil else { throw XCTSkip("No Metal device") }
+        let url = URL(fileURLWithPath: dir, isDirectory: true)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        let preview = try XCTUnwrap(PreviewRenderer(width: 1280, height: 720))
+        func settings(hour: Double, phase: Double, weather: WeatherKind) -> SkySettings {
+            var s = SkySettings(); s.timeMode = .frozen; s.frozenHour = hour; s.frozenPhase = phase; s.cityID = "melbourne"
+            s.weatherMode = .pick; s.weather = weather; s.spritesMode = .off; s.satellitesMode = .off
+            return s
+        }
+        // Ash over the lake: by moonlight, and at dusk.
+        let lakeAsh = try XCTUnwrap(preview.render(themeID: MoonlitLakeModel.id, at: [6], quality: .high,
+                                                   sky: settings(hour: 22, phase: 0.55, weather: .ashfall), mood: .serene).first)
+        try PreviewRenderer.writePNG(lakeAsh, to: url.appendingPathComponent("lake-ashfall-moon.png"))
+        let lakeAshDusk = try XCTUnwrap(preview.render(themeID: MoonlitLakeModel.id, at: [6], quality: .high,
+                                                       sky: settings(hour: 19.2, phase: 0.3, weather: .ashfall), mood: .serene).first)
+        try PreviewRenderer.writePNG(lakeAshDusk, to: url.appendingPathComponent("lake-ashfall-sunset.png"))
+        // The supercell over the beach at golden hour (the beach holds it), at its stages.
+        typealias R = FireNeonWeatherRendererTests
+        let held = ThemeState()
+        let beach = settings(hour: 13, phase: 0.5, weather: .clear)
+        for (name, phase, glow) in [("beach-supercell-approach", 0.2, Float(0)), ("beach-supercell-core", 0.45, Float(0)),
+                                    ("beach-supercell-core-flash", 0.47, Float(0.9)),
+                                    ("beach-supercell-clearing", WorldWeather.supercellHeld, Float(0))] {
+            let image = try XCTUnwrap(preview.render(themeID: GoldenHourBeachModel.id, at: [5], state: held, quality: .high,
+                                                     sky: beach, skyEdit: { s in s = R.supercell(s, phase: phase, glow: glow) }).first)
+            try PreviewRenderer.writePNG(image, to: url.appendingPathComponent("\(name).png"))
+        }
+        // The Approach over the lake by night, flickering; and the Clearing with the stars coming out.
+        let lakeNight = settings(hour: 23, phase: 0.1, weather: .clear)
+        for (name, phase, glow) in [("lake-supercell-approach-night", 0.22, Float(0.8)), ("lake-supercell-clearing-night", 0.85, Float(0))] {
+            let image = try XCTUnwrap(preview.render(themeID: MoonlitLakeModel.id, at: [5], quality: .high, sky: lakeNight, mood: .serene,
+                                                     skyEdit: { s in s = R.supercell(s, phase: phase, glow: glow) }).first)
+            try PreviewRenderer.writePNG(image, to: url.appendingPathComponent("\(name).png"))
+        }
+        // The real thing, staged by the sky: the beach 3 minutes into a picked supercell (its Approach becoming its Core).
+        var live = beach; live.weather = .supercell
+        let image = try XCTUnwrap(preview.render(themeID: GoldenHourBeachModel.id, at: [150], state: held, quality: .high, sky: live).first)
+        try PreviewRenderer.writePNG(image, to: url.appendingPathComponent("beach-supercell-live-t150.png"))
     }
 }

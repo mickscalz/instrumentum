@@ -520,7 +520,7 @@ final class WorldKitTests: XCTestCase {
         defer { cache.withheld = false }
         let r = try XCTUnwrap(SkyOnlyRenderer(device: device))
         XCTAssertEqual(r.sky.uniforms.count, SkyLayer.uniformCount)
-        XCTAssertEqual(SkyLayer.uniformCount, 44)
+        XCTAssertEqual(SkyLayer.uniformCount, 68)
 
         cache.withheld = true
         XCTAssertNil(r.sky.starTexture)

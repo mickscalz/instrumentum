@@ -262,6 +262,8 @@ struct SkyControls: View {
         case .seaSmoke: return "Sea smoke"
         case .gustFront: return "Gust front"
         case .virga: return "Virga"
+        case .ashfall: return "Ashfall"
+        case .supercell: return "Supercell"
         }
     }
 }

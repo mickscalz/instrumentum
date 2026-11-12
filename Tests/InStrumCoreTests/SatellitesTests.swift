@@ -133,14 +133,20 @@ final class SatellitesTests: XCTestCase {
         }
         XCTAssertGreaterThan(flaring.count, 5)
         XCTAssertLessThanOrEqual(flaring.count, 48, "\(flaring.count) in 40 hours")
-        // A big moment flares a pass in view (at most one each 30 s).
-        var called = Satellites(seed: 4)
-        var calledFlares = Set<Int>(), flareTimes: [Double] = []
-        run(&called, seconds: 1800, dt: 0.5, mode: .often, call: 1, altitude: { _ in -9 }) { slots, t, _ in
-            for s in slots where s.flare > 0 && !calledFlares.contains(s.id) { calledFlares.insert(s.id); flareTimes.append(t) }
+        // A big moment flares a pass in view (at most one each 30 s): the flares a called sky has and the same sky uncalled
+        // hasn't (a call draws nothing, so the two skies are otherwise the same).
+        func flares(call: Float?) -> [Int: Double] {
+            var m = Satellites(seed: 4)
+            var first: [Int: Double] = [:]
+            run(&m, seconds: 1800, dt: 0.5, mode: .often, call: call, altitude: { _ in -9 }) { slots, t, _ in
+                for s in slots where s.flare > 0 && first[s.id] == nil { first[s.id] = t }
+            }
+            return first
         }
-        XCTAssertGreaterThan(calledFlares.count, 3)
-        for (a, b) in zip(flareTimes, flareTimes.dropFirst()) { XCTAssertGreaterThanOrEqual(b - a, 29.5) }
+        let natural = flares(call: nil), called = flares(call: 1)
+        let byCalls = called.filter { natural[$0.key] == nil }.values.sorted()
+        XCTAssertGreaterThan(byCalls.count, 3)
+        for (a, b) in zip(byCalls, byCalls.dropFirst()) { XCTAssertGreaterThanOrEqual(b - a, 29.5) }
     }
 
     /// A bright station crosses once or twice an evening (the second one orbit later, when it stays lit), its first pass

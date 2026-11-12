@@ -612,11 +612,12 @@ final class StormSkyTests: XCTestCase {
             let extras = WorldWeather.randomExtras(for: id)
             XCTAssertEqual(extras[.gustFront] != nil, storms.contains(id), id)
             XCTAssertEqual(extras[.virga] != nil, dry.contains(id), id)
-            XCTAssertTrue(Set(extras.keys).isSubset(of: [.gustFront, .virga]), id)
+            XCTAssertTrue(Set(extras.keys).isSubset(of: [.gustFront, .virga, .supercell]), id)
         }
         XCTAssertEqual(WorldWeather.randomExtras(for: "supercell-sky"), [.gustFront: 0.3])
         XCTAssertEqual(WorldWeather.randomExtras(for: "lightning-plains"), [.gustFront: 0.3, .virga: 0.5])
-        XCTAssertEqual(WorldWeather.randomExtras(for: "neon-night-drive"), [.gustFront: 0.3])
+        XCTAssertEqual(WorldWeather.randomExtras(for: "neon-night-drive"), [.gustFront: 0.3, .supercell: 0.25],
+                       "and Fire & Neon's supercell")
         XCTAssertEqual(WorldWeather.randomExtras(for: "nowhere"), [:])
         XCTAssertEqual([WeatherKind.gustFront.beautyWeight, WeatherKind.virga.beautyWeight], [0, 0])
 
@@ -642,6 +643,8 @@ final class StormSkyTests: XCTestCase {
         XCTAssertNil(cabin[.gustFront])
         XCTAssertNil(cabin[.virga])
         XCTAssertEqual(cabin, spells([:]), "a world without a table picks as the shared sky always has")
+        XCTAssertNil(cabin[.supercell])
+        XCTAssertNil(cabin[.ashfall])
         let calm = spells(WorldWeather.randomExtras(for: CoastRoadModel.id), calm: true)
         XCTAssertNil(calm[.gustFront], "a gust front is rough")
         XCTAssertGreaterThan(calm[.virga] ?? 0, 30)

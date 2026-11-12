@@ -189,6 +189,7 @@ final class SkyLayer {
     /// Where the current far storm is staged (its episode and azimuth), and the shift last applied (tests read it).
     private var stormAnchor: (episode: Int, azimuth: Double)?
     private(set) var stormShift: Double = 0
+    private var cellAnchor: (episode: Int, azimuth: Double)?
 
     private let pipeline: MTLRenderPipelineState
     /// A 1×1 black texture bound while the real stars build, so no pass ever lacks texture 0.
@@ -349,8 +350,25 @@ final class SkyLayer {
             sat += 1
         }
         for i in sat..<Self.satelliteSlots { u[Self.satARow + i] = .zero; u[Self.satBRow + i] = .zero; u[Self.satCRow + i] = .zero }
-        u[Self.cellARow] = .zero; u[Self.cellBRow] = .zero; u[Self.cellCRow] = .zero
-        u[Self.ashRow] = SIMD4(0, 1, 1, 1)
+        // Fire & Neon (spec §7.2): the supercell weather, staged where the world looks as its far storms are.
+        if let c = s.supercellWeather, c.amount.isFinite, c.amount > 0 {
+            let cs = Self.stage(episode: c.episode, bearing: c.bearing, viewAzimuth: view, anchor: cellAnchor)
+            cellAnchor = cs.anchor
+            let az = (Double(c.bearing) + cs.shift) * .pi / 180
+            u[Self.cellARow] = SIMD4(Float(sin(az)), Float(cos(az)), unit(c.phase), unit(c.amount))
+            u[Self.cellBRow] = SIMD4(min(SupercellNow.greenest, max(0, c.green.isFinite ? c.green : 0)),
+                                     c.turn.isFinite ? c.turn : 0, unit(c.glow), unit(c.hail))
+            u[Self.cellCRow] = SIMD4(c.distanceKm.isFinite ? c.distanceKm : 30, c.anvilEdgeKm.isFinite ? c.anvilEdgeKm : 38,
+                                     unit(c.mammatus), unit(c.spot))
+        } else {
+            u[Self.cellARow] = .zero; u[Self.cellBRow] = .zero; u[Self.cellCRow] = .zero
+        }
+        // Fire & Neon (spec §7.1): the ash, and the sun's light through it.
+        func tint(_ t: SIMD3<Float>) -> SIMD3<Float> {
+            t.x.isFinite && t.y.isFinite && t.z.isFinite ? SIMD3(unit(t.x), unit(t.y), unit(t.z)) : SIMD3(1, 1, 1)
+        }
+        let sunTint = tint(s.sunTint)
+        u[Self.ashRow] = SIMD4(unit(s.ash), sunTint.x, sunTint.y, sunTint.z)
     }
 
     func draw(_ e: MTLRenderCommandEncoder) {
@@ -416,6 +434,17 @@ final class WeatherLayer {
     private(set) var fireflyInstances: [SIMD4<Float>] = []
     private var crystals: [Crystal] = []
     private(set) var crystalInstances: [SIMD4<Float>] = []
+    /// Embers (where the world is their source) and hail (a supercell's), each with its own stream.
+    private struct Ember { var x, y, vx, vy, age, life, flicker, size: Float }
+    private struct Stone { var x, y, vy, depth, landY: Float; var bounced: Bool }
+    private var embers: [Ember] = []
+    private(set) var emberInstances: [SIMD4<Float>] = []
+    private var hail: [Stone] = []
+    private(set) var hailInstances: [SIMD4<Float>] = []
+    private(set) var emberCount = 0
+    private(set) var hailCount = 0
+    private var emberRng = SeededRandom(seed: 0xE3BE_2500)
+    private var hailRng = SeededRandom(seed: 0x4A11_5702)
     /// Seconds, wrapped at `clockWrap` (tests set it).
     var clock: Float = 0
     private var pixelNDC: Float = 2.0 / 360
@@ -476,12 +505,15 @@ final class WeatherLayer {
     func update(_ s: SkyState, quality: QualityLevel, size: CGSize, dt: Double, surface: WeatherSurface) {
         let fdt = Float(min(dt, 0.1))
         aspect = Float(max(1, size.width) / max(1, size.height))
-        let snowing = s.snow > s.rain
-        let amount = max(s.rain, s.snow)
-        kind = snowing ? 1 : 0
+        // Ashfall (Fire & Neon §7.1) falls through the snow's path: grey, at 0.6× its speed, tumbling more.
+        let ash = s.ash.isFinite ? min(1, max(0, s.ash)) * Self.ashDensity : 0
+        let ashing = ash > max(s.rain, s.snow)
+        let snowing = ashing || s.snow > s.rain
+        let amount = max(s.rain, s.snow, ash)
+        kind = ashing ? 9 : (snowing ? 1 : 0)
         let wanted = Int((Float(Self.baseCount(quality)) * amount).rounded())
         tilt = (snowing ? 0.25 + 1.2 * s.gust : 0.6) * s.wind
-        let gustSpeed: Float = snowing ? 1 + s.gust : 1
+        let gustSpeed: Float = (snowing ? 1 + s.gust : 1) * (ashing ? Self.ashSpeed : 1)
         // Night light is dim: weather glints less.
         brightness = 0.25 + 0.75 * min(1, max(0, Float((s.sun.altitude + 6) / 18))) + 0.15 * Float(s.moonLit)
         let horizon: Float? = { if case let .water(y) = surface { return y }; if case let .ground(y) = surface { return y }; return nil }()
@@ -494,7 +526,8 @@ final class WeatherLayer {
             var d = drops[i]
             if snowing {
                 d.y -= d.speed * gustSpeed * fdt
-                d.x += (tilt * d.speed * gustSpeed + 0.03 * sin(d.y * 9 + d.depth * 20)) * fdt
+                let wobble: Float = ashing ? 0.07 * sin(d.y * 6 + d.depth * 20 + clock * (0.9 + d.depth)) : 0.03 * sin(d.y * 9 + d.depth * 20)
+                d.x += (tilt * d.speed * gustSpeed + wobble) * fdt
             } else {
                 d.y -= d.speed * fdt
                 d.x += tilt * d.speed * fdt / aspect
@@ -507,8 +540,8 @@ final class WeatherLayer {
             }
             if d.x > 1.1 { d.x -= 2.2 } else if d.x < -1.1 { d.x += 2.2 }
             drops[i] = d
-            let alpha = (snowing ? 0.85 : 0.22) * (0.35 + 0.65 * d.depth)
-            let sizeOrLength = snowing ? (0.003 + 0.009 * d.depth) : (0.03 + 0.06 * d.depth)
+            let alpha = (ashing ? 0.7 : (snowing ? 0.85 : 0.22)) * (0.35 + 0.65 * d.depth)
+            let sizeOrLength = snowing ? (0.003 + 0.009 * d.depth) * (ashing ? 0.8 : 1) : (0.03 + 0.06 * d.depth)
             instances.append(SIMD4(d.x, d.y, sizeOrLength, alpha))
         }
 
@@ -568,8 +601,102 @@ final class WeatherLayer {
         updateCrystals(s, quality: quality, dt: fdt)
         updateSteam(s, quality: quality, dt: fdt)
 
+        updateEmbers(s, quality: quality, dt: fdt)
+        updateHail(s, quality: quality, dt: fdt, surface: surface)
+
+        // Lightning brightens the scene through the flash limiter; under gentle visuals it is only a glow (Fire & Neon
+        // Review focus 5: no flash, a rise far under the limiter's).
         limiter.gentle = gentle
-        exposureBoost = limiter.limit(exposure: 1 + 1.2 * s.lightning, sparkle: 0, dt: dt).exposure
+        exposureBoost = limiter.limit(exposure: 1 + (gentle ? Self.gentleLightning : 1.2) * s.lightning, sparkle: 0, dt: dt).exposure
+    }
+
+    /// The main drops' heights this frame (tests: ash falls at 0.6× the snow's pace).
+    var particleYs: [Float] { instances.map(\.y) }
+
+    /// Ashfall's density (its share of the snow's cap at full ash) and its fall (× the snow's speed).
+    static let ashDensity: Float = 0.75, ashSpeed: Float = 0.6
+    /// Lightning's brightening under gentle visuals (a glow; 1.2 otherwise).
+    static let gentleLightning: Float = 0.2
+    static func emberCap(_ q: QualityLevel) -> Int { q == .lite ? 150 : 300 }
+    static func hailCap(_ q: QualityLevel) -> Int { q == .lite ? 150 : 320 }
+
+    /// Embers (spec §7.1), where the world is their source: sparks rising from below the view, slowing, cooling from
+    /// orange to a dull red as they drift on the wind, then falling, each flickering on its own beat.
+    private func updateEmbers(_ s: SkyState, quality: QualityLevel, dt: Float) {
+        emberInstances.removeAll(keepingCapacity: true)
+        let amount = s.embers.isFinite ? min(1, max(0, s.embers)) : 0
+        let wanted = Int((Float(Self.emberCap(quality)) * amount).rounded())
+        while embers.count < wanted { embers.append(newEmber(anywhere: embers.isEmpty)) }
+        if embers.count > wanted { embers.removeLast(embers.count - wanted) }
+        emberCount = embers.count
+        let wind = s.wind.isFinite ? s.wind : 0
+        for i in embers.indices {
+            var e = embers[i]
+            e.age += dt
+            e.vy -= 0.16 * dt
+            e.x += (e.vx + 0.12 * wind) * dt / aspect
+            e.y += e.vy * dt
+            if e.age > e.life || e.y < -1.15 || e.x > 1.2 || e.x < -1.2 { e = newEmber(anywhere: false) }
+            embers[i] = e
+            let k = e.age / e.life
+            let heat = (1 - k) * (0.75 + 0.25 * sin(clock * e.flicker + e.x * 40))
+            let alpha = heat * smoothstep01(0, 0.08, k) * (gentle ? 0.55 : 0.9)
+            guard alpha > 0.01 else { continue }
+            emberInstances.append(SIMD4(e.x, e.y, e.size * pixelNDC * (0.6 + 0.4 * (1 - k)), alpha))
+        }
+    }
+
+    private func smoothstep01(_ a: Float, _ b: Float, _ x: Float) -> Float { Self.smooth(a, b, x) }
+
+    private func newEmber(anywhere: Bool) -> Ember {
+        Ember(x: emberRng.range(-1, 1), y: anywhere ? emberRng.range(-1.05, 0.2) : emberRng.range(-1.1, -0.85),
+              vx: emberRng.range(-0.05, 0.05), vy: emberRng.range(0.22, 0.55), age: anywhere ? emberRng.range(0, 2) : 0,
+              life: emberRng.range(3, 7), flicker: emberRng.range(9, 23), size: emberRng.range(2, 4))
+    }
+
+    /// Hail (spec §7.2): hard pellets falling fast and nearly straight, each bouncing once off the ground (a few
+    /// hundredths of the view) before it rolls away; on water they splash, on glass they strike and are gone.
+    private func updateHail(_ s: SkyState, quality: QualityLevel, dt: Float, surface: WeatherSurface) {
+        hailInstances.removeAll(keepingCapacity: true)
+        let amount = s.hail.isFinite ? min(1, max(0, s.hail)) : 0
+        let wanted = Int((Float(Self.hailCap(quality)) * amount).rounded())
+        let ground: Float? = { if case let .ground(y) = surface { return y }; return nil }()
+        let water: Float? = { if case let .water(y) = surface { return y }; return nil }()
+        while hail.count < wanted { hail.append(newStone(anywhere: hail.isEmpty, horizon: ground ?? water)) }
+        if hail.count > wanted { hail.removeLast(hail.count - wanted) }
+        hailCount = hail.count
+        let lean = 0.25 * (s.wind.isFinite ? s.wind : 0)
+        for i in hail.indices {
+            var h = hail[i]
+            h.vy -= 6 * dt * (h.bounced ? 1 : 0)
+            h.y += h.vy * dt
+            h.x += lean * abs(h.vy) * dt / aspect
+            if !h.bounced, h.y < h.landY {
+                if ground != nil {
+                    h.bounced = true
+                    h.y = h.landY
+                    h.vy = 0.25 + 0.45 * h.depth
+                } else {
+                    if water != nil, rings.count < (quality == .lite ? 64 : 200) {
+                        rings.append(Ring(x: h.x, y: h.landY, age: 0, size: 0.01 + 0.02 * h.depth))
+                    }
+                    h = newStone(anywhere: false, horizon: ground ?? water)
+                }
+            } else if h.bounced, h.y < h.landY - 0.002 {
+                h = newStone(anywhere: false, horizon: ground ?? water)
+            }
+            hail[i] = h
+            let length: Float = h.bounced ? 0.006 : 0.012 + 0.03 * h.depth
+            hailInstances.append(SIMD4(h.x, h.y, length, 0.7 * (0.4 + 0.6 * h.depth)))
+        }
+    }
+
+    private func newStone(anywhere: Bool, horizon: Float?) -> Stone {
+        let depth = hailRng.unit()
+        let landY: Float
+        if let hz = horizon { landY = hz - (hz + 1) * (0.05 + 0.95 * depth) } else { landY = -1.1 }
+        return Stone(x: hailRng.range(-1.1, 1.1), y: anywhere ? hailRng.range(-1, 1.2) : 1.05 + 0.2 * hailRng.unit(),
+                     vy: -(2.2 + 1.4 * depth), depth: depth, landY: landY, bounced: false)
     }
 
     /// A humid night's fireflies: a slow random walk low in the view, each blinking on its own beat.
@@ -812,8 +939,9 @@ final class WeatherLayer {
             (particlePipeline, instances, kind, brightness), (ringPipeline, ringInstances, 0, brightness),
             (particlePipeline, beadInstances, 2, brightness), (particlePipeline, streamerInstances, 3, brightness),
             (particlePipeline, fireflyInstances, 4, 2.2), (particlePipeline, crystalInstances, 5, max(0.7, brightness) * 1.6),
+            (particlePipeline, hailInstances, 10, max(0.45, brightness) * 1.3), (particlePipeline, emberInstances, 8, 2.4),
         ]
-        // This frame's slot in the ring holds all eight sets (256-byte aligned); it grows only when too small.
+        // This frame's slot in the ring holds all ten sets (256-byte aligned); it grows only when too small.
         func aligned(_ n: Int) -> Int { (n + 255) / 256 * 256 }
         let total = sets.reduce(0) { $0 + aligned($1.1.count * MemoryLayout<SIMD4<Float>>.stride) }
         guard total > 0 else { return }
@@ -828,7 +956,10 @@ final class WeatherLayer {
             let bytes = items.count * MemoryLayout<SIMD4<Float>>.stride
             items.withUnsafeBytes { raw in (buf.contents() + offset).copyMemory(from: raw.baseAddress!, byteCount: bytes) }
             // WeatherU (48 bytes): the set's params (kind 7's z is the mist's half height), then the steam's light.
-            var u = (SIMD4<Float>(aspect, kind, kind > 6.5 ? Self.steamMistHalfHeight : tilt, light), steamTint, steamGlow)
+            // Kinds 8 to 10 (embers, ash, hail) carry the weather clock in the tint's x (the ash flakes tumble on it).
+            let tint = kind > 7.5 ? SIMD4<Float>(clock, 0, 0, 0) : steamTint
+            let along: Float = kind > 6.5 && kind < 7.5 ? Self.steamMistHalfHeight : (kind > 9.5 ? 0.25 * tilt : tilt)
+            var u = (SIMD4<Float>(aspect, kind, along, light), tint, steamGlow)
             e.setRenderPipelineState(pipeline)
             e.setVertexBuffer(buf, offset: offset, index: 0)
             withUnsafeBytes(of: &u) { e.setVertexBytes($0.baseAddress!, length: $0.count, index: 1) }
