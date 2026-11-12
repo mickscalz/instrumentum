@@ -106,3 +106,60 @@ final class SkySpecialisationTests: XCTestCase {
         }
     }
 }
+
+/// The plain sky's program against the storm program in the same run (the runners' GPUs vary from run to run): the
+/// Supercell Sky world, the drive and the lake at 1280 × 720 on High, drawn both ways over the same frame, printed as
+/// TIMING lines, with the Lounge (no sky) for scale.
+@MainActor
+final class SkyProgramFrameTimeTests: XCTestCase {
+    static func median(_ renderer: ThemeRenderer, stack: RenderStack, queue: MTLCommandQueue) -> Double {
+        var times: [Double] = []
+        for i in 0..<28 {
+            guard let cb = queue.makeCommandBuffer() else { continue }
+            renderer.render(stack: stack, commandBuffer: cb)
+            cb.commit()
+            cb.waitUntilCompleted()
+            if i >= 4 { times.append((cb.gpuEndTime - cb.gpuStartTime) * 1000) }
+        }
+        times.sort()
+        return times.isEmpty ? 0 : times[times.count / 2]
+    }
+
+    func testPlainAgainstStormProgram() throws {
+        guard let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue() else { throw XCTSkip("No Metal device") }
+        let stack = try XCTUnwrap(RenderStack(device: device, pixelFormat: .bgra8Unorm))
+        stack.resize(width: 1280, height: 720)
+        func both(_ label: String, _ renderer: ThemeRenderer, _ sky: SkyLayer) {
+            sky.forceStormProgram = false
+            let plain = Self.median(renderer, stack: stack, queue: queue)
+            sky.forceStormProgram = true
+            let storm = Self.median(renderer, stack: stack, queue: queue)
+            sky.forceStormProgram = false
+            print(String(format: "TIMING sky-program %@ High 1280x720: plain %.2f ms, storm program %.2f ms (median of 24)",
+                         label, plain, storm))
+            XCTAssertGreaterThan(plain, 0)
+        }
+        let cell = try SupercellSkyRendererTests.renderCell(at: 2, quality: .high, notes: SupercellSkyRendererTests.playing,
+                                                            width: 1280, height: 720, capture: false)
+        both("supercell", cell.renderer, cell.renderer.sky)
+        let drive = try NeonNightDriveRendererTests.renderDrive(at: 2, quality: .high, notes: NeonNightDriveRendererTests.playing,
+                                                                width: 1280, height: 720, capture: false)
+        both("drive", drive.renderer, drive.renderer.sky)
+        let dome = try XCTUnwrap(SkyOnlyRenderer(device: device))
+        dome.sky.viewAzimuth = 0
+        for i in 0..<5 {
+            dome.update(SkyExtrasRendererTests.night(), quality: .high, size: CGSize(width: 1280, height: 720), dt: 1.0 / 30,
+                        time: Float(i) / 30, surface: .none)
+        }
+        both("dome-night", dome, dome.sky)
+        let r = try XCTUnwrap(SpaceshipLoungeRenderer(device: device))
+        let d = SceneDirector(themeID: SpaceshipLoungeModel.id, state: ThemeState(), reaction: ReactionPresets.expressivePianist)
+        for i in 1...60 {
+            if let f = d.step(dt: 1.0 / 60, t: Double(i) / 60, quality: .high) as? LoungeFrame {
+                r.update(f, params: d.parameters, quality: .high, gentle: false, dt: 1.0 / 60, size: CGSize(width: 1280, height: 720))
+            }
+        }
+        print(String(format: "TIMING sky-program lounge-reference High 1280x720: %.2f ms (median of 24)",
+                     Self.median(r, stack: stack, queue: queue)))
+    }
+}

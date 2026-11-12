@@ -196,7 +196,9 @@ final class SkyLayer {
     /// in its rows. Every world drawing the sky in its own pass picks its pipeline by it.
     private(set) var storms = false
     /// Tests: draw with the storm program whatever the sky (a plain sky must look the same either way).
-    var forceStormProgram = false
+    var forceStormProgram = false {
+        didSet { storms = forceStormProgram || SkySpecialisation.needsStorms(u) }
+    }
     /// A 1×1 black texture bound while the real stars build, so no pass ever lacks texture 0.
     private let placeholder: MTLTexture
     private var u = [SIMD4<Float>](repeating: .zero, count: SkyLayer.uniformCount)
