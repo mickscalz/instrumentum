@@ -2,6 +2,8 @@
 
 **Sets 13 & 14, Fire & Neon: Volcano Rim and Neon Night Drive.** Two new sets at the end of the gallery, each a world, a visual, an instrument and a soundscape that belong together. These are the loud ones: play hard and the world answers.
 
+**Safer on Intel Macs** (from build 136): the app times every frame on the graphics chip itself. One frame that keeps it busy for a tenth of a second drops the visuals to Smooth straight away and halves the picture. Frames are never queued behind unfinished work, and Smooth shrinks further while it is still too heavy. On Intel and AMD graphics every quality draws a capped number of pixels, and Ultra is High. The heaviest worlds (Supercell Sky, Volcano Rim, Neon Night Drive) can no longer swamp the Mac.
+
 **This build opens on Neon Night Drive the first time you start it** (the newest set, with its world and instrument loaded), instead of the set you last used; from the next start it reopens on your last set as before.
 
 - **Volcano Rim** (after Kanye West's "Hold My Liquor"; mood: molten). You stand on the rim of a crater at night. Below is a lava lake: black crust plates drifting on slow currents, broken by glowing cracks, two spattering fountains, and a lava river running out through a breach in the far wall. A plume climbs over the lake, lit from beneath and flickering with lightning; beyond lie a dark plain and the stars, and embers drift up past you. The keys are a row of basalt columns along the rim, lit from inside where you play.
