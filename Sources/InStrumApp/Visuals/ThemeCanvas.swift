@@ -3,7 +3,34 @@ import QuartzCore
 import InStrumCore
 import InStrumAudio
 
+/// The graphics chip's side of frame pacing: how many frames are still on the GPU, and how long the slowest finished one
+/// kept it busy since the last look. Written from Metal's completion handlers, read on the main thread.
+final class GPUClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var inFlightCount = 0
+    private var slowest = 0.0
+
+    var inFlight: Int { lock.lock(); defer { lock.unlock() }; return inFlightCount }
+    func committed() { lock.lock(); inFlightCount += 1; lock.unlock() }
+    func finished(gpuSeconds: Double) {
+        lock.lock()
+        inFlightCount = max(0, inFlightCount - 1)
+        if gpuSeconds.isFinite, gpuSeconds > slowest { slowest = gpuSeconds }
+        lock.unlock()
+    }
+    /// The slowest finished frame's GPU time since the last call (0 when none finished).
+    func take() -> Double {
+        lock.lock(); defer { slowest = 0; lock.unlock() }
+        return slowest
+    }
+}
+
 /// Runs the active theme every frame: events → director → theme renderer → finishing → screen.
+///
+/// Frame pacing keeps the graphics chip from ever being swamped (an Intel Mac's GPU kept saturated can freeze the whole
+/// machine): at most two frames are on the GPU at once (one while the safety net is in), a frame is skipped rather than
+/// queued behind them, every frame's GPU time feeds `AutoQuality`, and on an Intel or AMD GPU every quality draws a
+/// capped number of pixels and Ultra is High.
 final class ThemeCanvas: NSObject, MTKViewDelegate {
     private let model: AppModel
     private let queue: MTLCommandQueue
@@ -33,6 +60,9 @@ final class ThemeCanvas: NSObject, MTKViewDelegate {
     /// When the "Meteors tonight" line was last read from the sky (once a second is plenty).
     private var meteorLineTime: CFTimeInterval = -.infinity
     private var level: QualityLevel = .lite
+    private let gpuClock = GPUClock()
+    /// An Apple GPU (Apple silicon); false on an Intel or AMD graphics chip.
+    private let appleGPU: Bool
 
     @MainActor
     init?(view: MTKView, model: AppModel) {
@@ -45,6 +75,7 @@ final class ThemeCanvas: NSObject, MTKViewDelegate {
         self.director = SceneDirector(themeID: model.themeID, state: model.themeState(for: model.themeID),
                                       reaction: model.reaction)
         self.autoQuality = AutoQuality(setting: model.quality)
+        self.appleGPU = device.supportsFamily(.apple7)
         super.init()
         director.sky.reset(settings: model.skySettings)   // launch with the chosen weather, not a blend into it
     }
@@ -74,16 +105,21 @@ final class ThemeCanvas: NSObject, MTKViewDelegate {
 
     @MainActor
     private func drawFrame(_ view: MTKView) {
+        // Never queue a frame behind work the GPU hasn't finished: skip this one instead (the clock below carries the
+        // gap). Two may be in flight normally, one once the safety net has stepped in.
+        if gpuClock.inFlight >= (autoQuality.rescued || autoQuality.pixelScale < 1 ? 1 : 2) { return }
         syncSettings()
         guard let stack else { return }
         let now = CACurrentMediaTime()
         let frameTime = lastTime == 0 ? 0 : max(0, now - lastTime)
         let frameDt = min(0.1, frameTime)
         lastTime = now
-        level = autoQuality.record(frameTime: frameTime)
+        level = autoQuality.record(frameTime: frameTime, gpuTime: gpuClock.take())
+        if !appleGPU && level == .ultra { level = .high }
         let backing = view.window?.backingScaleFactor ?? 2
         let px = RenderScale.pixels(points: (Double(view.bounds.width), Double(view.bounds.height)),
-                                    backingScale: Double(backing), quality: level)
+                                    backingScale: Double(backing), quality: level,
+                                    pixelScale: autoQuality.pixelScale, appleGPU: appleGPU)
         let wanted = CGSize(width: px.width, height: px.height)
         if view.drawableSize != wanted { view.drawableSize = wanted }
         let size = view.drawableSize
@@ -195,6 +231,9 @@ final class ThemeCanvas: NSObject, MTKViewDelegate {
         post.exposure *= director.exposureScale   // the sleep dim, up to a stop
         stack.post(into: pass, commandBuffer: cb, settings: post)
         cb.present(drawable)
+        let clock = gpuClock
+        cb.addCompletedHandler { cb in clock.finished(gpuSeconds: cb.gpuEndTime - cb.gpuStartTime) }
+        clock.committed()
         cb.commit()
     }
 }
