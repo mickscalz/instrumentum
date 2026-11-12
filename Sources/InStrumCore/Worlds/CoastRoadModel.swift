@@ -257,9 +257,15 @@ public struct CoastRoadModel: ThemeModel, MoodAware, SkyAware, ExcitementAware, 
         if let m = x.moment {
             // Turn the nearer beam (they are half a turn apart) round to 1.1 rad short of facing you, quickly while it is
             // still dim, then sweep it across you.
-            var by = (-1.1 - beam).truncatingRemainder(dividingBy: .pi)
-            if by < 0 { by += .pi }
-            sweep = (0, beam, by, ExcitementStep.strength(m))
+            // Never two at once: a moment while a beam sweeps only swells it.
+            let strength = ExcitementStep.strength(m)
+            if let playing = sweep, playing.age < 4 {
+                sweep = (playing.age, playing.from, playing.by, max(playing.strength, strength))
+            } else {
+                var by = (-1.1 - beam).truncatingRemainder(dividingBy: .pi)
+                if by < 0 { by += .pi }
+                sweep = (0, beam, by, strength)
+            }
             if m.isDrop { openAge = 0 }
         }
         if var s = sweep {

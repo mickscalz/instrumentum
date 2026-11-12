@@ -114,6 +114,7 @@ public struct MoonlitLakeModel: ThemeModel, MoodAware, SkyAware, ExcitementAware
     private var liftAge: Float?
     private var dimpleDebt: Float = 0
     private var burstAge: Float?
+    private var burstRadiant = SIMD3<Float>(0, 0, 1)
 
     private static let layout = KeyboardLayout.keys()
     private static let deadRing = Ripple(x: 0, depth: 0, age: 0, strength: 0, lifetime: 0)
@@ -268,18 +269,23 @@ public struct MoonlitLakeModel: ThemeModel, MoodAware, SkyAware, ExcitementAware
     /// from it; at strength 0.6 and over the first two are fireballs ending in a flare (never under gentle visuals, where
     /// every one is a magnitude and a half fainter).
     private mutating func burst(strength s: Float, gentle: Bool, now: Double) {
-        burstAge = 0
+        // Never two at once: a moment while a burst still runs adds two more from its radiant (to free slots only, so
+        // nothing in flight is cut off).
+        let adding = burstAge != nil
+        if !adding { burstAge = 0 }
         let span = Float(Self.burstMost - Self.burstLeast)
-        let count = min(Self.burstMost, Self.burstLeast + Int(((s - 0.15) / 0.85 * span).rounded()))
+        let count = adding ? 2 : min(Self.burstMost, Self.burstLeast + Int(((s - 0.15) / 0.85 * span).rounded()))
         let view = Self.viewAzimuth(sky)
-        let radiant = WorldMeteors.direction(azimuth: view + Double(rng.range(-16, 16)), altitude: Double(rng.range(22, 32)))
+        if !adding { burstRadiant = WorldMeteors.direction(azimuth: view + Double(rng.range(-16, 16)), altitude: Double(rng.range(22, 32))) }
+        let radiant = burstRadiant
         let fainter: Float = gentle ? 1.5 : 0
         for k in 0..<count {
+            if adding, meteors.slots.allSatisfy({ $0 != nil }) { break }
             let f = count > 1 ? Float(k) / Float(count - 1) : 0
-            let offset = 2.4 * Double(f * f.squareRoot())
+            let offset = adding ? Double(k) * 0.2 : 2.4 * Double(f * f.squareRoot())
             let length = rng.range(8, 18) * (0.8 + 0.4 * s)
             let pace = rng.range(18, 32)
-            let fireball = k < 2 && s >= 0.6
+            let fireball = !adding && k < 2 && s >= 0.6
             let magnitude: Float = fireball ? -5 - 3 * (s - 0.6) / 0.4 + Float(k) : -1.2 - 2.6 * s + rng.range(-1, 1.2)
             let m = WorldMeteors.meteor(radiant: radiant, distance: rng.range(5, 22), angle: rng.range(-1.35, 1.35), length: length,
                                         born: now + offset, duration: length / pace, magnitude: magnitude + fainter,
