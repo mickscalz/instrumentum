@@ -492,7 +492,9 @@ final class SubmarineWindowRenderer: ThemeRenderer {
             let b: Float = min(1, max(0, f.z)) * gain * 0.7
             guard b > 0.002 else { continue }
             let flick: Float = 0.8 + 0.2 * sin(time * 5.1 + f.y * 40)
-            push(ndc(SIMD2(f.x, f.y)), 0.008 * unit, .photophore, SIMD3<Float>(0.45, 0.8, 1.0) * (b * flick))
+            let lanternGlow: Float = b * flick
+            let lantern = SIMD3<Float>(0.45 * lanternGlow, 0.8 * lanternGlow, lanternGlow)
+            push(ndc(SIMD2<Float>(f.x, f.y)), 0.008 * unit, .photophore, lantern)
         }
         surpriseSprites += addSurprises(frame, ndc: ndc, unit: unit, gain: gain, time: time, push: push)
 
