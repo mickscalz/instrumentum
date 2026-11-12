@@ -406,8 +406,10 @@ public struct VolcanoRimModel: ThemeModel, MoodAware, SkyAware, ExcitementAware,
     private var shakePhase: Float = 0
     private var surprises: [VolcanoSurprise] = []
     private var fountainPhase: [Float] = [0.3, 1.7]
-    private var thunder: [QueuedThunder] = []
+    /// The soundscape's one-shots this step (the boom, the plume's cracks, a rockfall, a steam blast).
+    private var events: [AmbienceEvent] = []
     private var riverDistance: Float = 0
+    private var fountainBurst: Float = 0
 
     private static let layout = KeyboardLayout.keys()
 
@@ -506,7 +508,7 @@ public struct VolcanoRimModel: ThemeModel, MoodAware, SkyAware, ExcitementAware,
         let surprise = excite.surprise
         excite.moment = nil
         excite.surprise = nil
-        thunder.removeAll(keepingCapacity: true)
+        events.removeAll(keepingCapacity: true)
 
         // Notes: a crack cell lit where the key falls on the lake, spits below C3 (the lake's own visual); veins (Magma
         // Veins); streaks (Galaxy Warp).
@@ -606,6 +608,7 @@ public struct VolcanoRimModel: ThemeModel, MoodAware, SkyAware, ExcitementAware,
             let h = base * (0.45 + 0.55 * burst) * (k == 0 ? 1 : 0.8)
             fountains.append(LavaFountain(position: VolcanoCrater.fountainSites[k], height: h, burst: burst))
         }
+        fountainBurst = fountains.map(\.burst).max() ?? 0
 
         // Embers off the fountains and the lake's margin, and near ones drifting up past you; the wind bends them.
         let windAngle: Float = 2.6   // from the right: the plume leans left, clear of the breach
@@ -694,7 +697,7 @@ public struct VolcanoRimModel: ThemeModel, MoodAware, SkyAware, ExcitementAware,
 
         riverDistance += riverSpeed * fd
         if riverDistance > 100_000 { riverDistance -= 100_000 }
-        let ambience = scene(sky: s, energy: energy, roles: roles)
+        let ambience = scene(sky: s, energy: energy, convection: speed, swell: tension, roles: roles)
         let veinsFrame: VeinsFrame? = veining ? veins.frame(energy: energy, drop: drop, time: time) : nil
         return VolcanoFrame(sky: s, viewAzimuth: Self.viewAzimuth(latitude: s.latitude), cells: cells, blobs: blobs,
                             bombs: bombs, embers: embers, strokes: strokes, fountains: fountains, eruption: eruption,
@@ -780,7 +783,8 @@ public struct VolcanoRimModel: ThemeModel, MoodAware, SkyAware, ExcitementAware,
         billow = 1
         shakeAge = 0
         shakePhase = rng.range(0, 2 * Float.pi)
-        thunder.append(QueuedThunder(delay: 1.6, strength: Double(min(1, 0.6 + 0.4 * strength))))
+        // Its boom reaches the rim as late as the lake is far (about 1.5 s).
+        events.append(AmbienceEvent(source: .eruptionBoom, delay: Self.soundDelay(to: .zero), strength: Double(min(1, max(0.3, strength)))))
     }
 
     private mutating func openBreach() {
@@ -805,7 +809,9 @@ public struct VolcanoRimModel: ThemeModel, MoodAware, SkyAware, ExcitementAware,
         strokes[nextStroke] = PlumeStroke(alive: true, seed: rng.next(), age: -delay, strength: min(1, max(0, strength)),
                                           origin: origin, length: rng.range(45, 120))
         nextStroke = (nextStroke + 1) % Self.strokeCount
-        thunder.append(QueuedThunder.strike(km: 0.55, strength: Double(0.35 + 0.5 * strength)))
+        // Its crack reaches the rim as late as the stroke is far (the picture first, the sound after).
+        events.append(AmbienceEvent(source: .plumeThunder, delay: Double(max(0, delay)) + Self.soundDelay(to: origin),
+                                    strength: Double(min(1, 0.35 + 0.5 * strength)), pan: Self.pan(of: origin)))
     }
 
     private mutating func spawnEmber(fountains: [LavaFountain], wind: SIMD2<Float>) {
@@ -934,38 +940,80 @@ public struct VolcanoRimModel: ThemeModel, MoodAware, SkyAware, ExcitementAware,
         }
         surprises.append(VolcanoSurprise(kind: kind, age: 0, duration: VolcanoSurprise.duration(kind), seed: s.seed, angle: angle))
         if kind == .rockfall {
-            // Hot fragments tumbling down the wall with the dust.
+            // Hot fragments tumbling down the wall with the dust; the rocks heard as late as the wall is far.
             let foot = VolcanoCrater.wallPoint(angle: angle, radius: VolcanoCrater.benchRadius)
             for _ in 0..<10 { sparks(at: SIMD3(foot.x, foot.y, VolcanoCrater.rimHeight * 0.8), count: 1) }
+            let at = SIMD3<Float>(foot.x, foot.y, VolcanoCrater.rimHeight * 0.8)
+            events.append(AmbienceEvent(source: .rockfall, delay: Self.soundDelay(to: at), strength: Double(r.range(0.8, 1)),
+                                        pan: Self.pan(of: at), distance: Self.farness(of: at)))
+        } else if kind == .steamBlast {
+            let vent = VolcanoCrater.wallPoint(angle: angle, radius: VolcanoCrater.footRadius + 10)
+            let at = SIMD3<Float>(vent.x, vent.y, VolcanoCrater.benchHeight * 0.5)
+            events.append(AmbienceEvent(source: .steamVent, delay: Self.soundDelay(to: at), strength: 1, pan: Self.pan(of: at),
+                                        distance: Self.farness(of: at)))
         }
     }
 
     // MARK: - Ambience
 
-    /// The crater's soundscape before the weather's. The volcano's own family (vent rumble, lava hiss, steam vents,
-    /// rockfall, the eruption's boom, the plume's thunder) comes with plan Task 10; until then the nearest existing
-    /// sources stand in: the fire's crackle for the lake's hiss and spatter (louder with Energy), the wind over the rim,
-    /// a breeze, and the thunder roll (which plays the queue: the plume's strokes and the eruption's boom).
-    public static func levels(_ s: SkyState, energy: Float, eruption: Float, breach: Float) -> [AmbienceSource: Double] {
-        let e = Double(energy.isFinite ? min(1, max(0, energy)) : 0)
+    /// How long a sound from a point in the crater takes to reach you on the rim (s, at 343 m/s).
+    public static func soundDelay(to p: SIMD3<Float>) -> Double { Double(simd_length(p - VolcanoCrater.eye) / 343) }
+
+    /// Where a point in the crater sits across your view, −1 left … 1 right (its bearing's sine, a little widened).
+    public static func pan(of p: SIMD3<Float>) -> Double {
+        let d = SIMD2<Float>(p.x - VolcanoCrater.eye.x, p.y - VolcanoCrater.eye.y)
+        let length = simd_length(d)
+        guard length > 1 else { return 0 }
+        return Double(min(1, max(-1, 1.3 * d.x / length)))
+    }
+
+    /// How far a point is for the soundscape: 0 at 500 m (the lake) … 1 at 1.5 km (the air takes the top off).
+    public static func farness(of p: SIMD3<Float>) -> Double {
+        Double(min(1, max(0, (simd_length(p - VolcanoCrater.eye) - 500) / 1000)))
+    }
+
+    /// The crater's soundscape before the weather's (spec §8.3): the volcano family and the wind over the rim. The levels
+    /// hold steady; the lake's life reaches the sound through `lake(...)` (the vent rumble surging, the lava hiss
+    /// brightening) and the world's events (the eruption's boom, the plume's cracks, a rockfall, a steam blast). The steam
+    /// vents and the rockfall also go now and then by themselves, small and far.
+    public static func levels(_ s: SkyState) -> [AmbienceSource: Double] {
         let wind = Double(s.wind.isFinite ? min(1, max(0, s.wind)) : 0)
-        var levels: [AmbienceSource: Double] = [:]
-        // TASK 10 (Fire & Neon plan): replace these stand-ins with .ventRumble, .lavaHiss, .steamVent, .rockfall,
-        // .eruptionBoom and .plumeThunder.
-        levels[.fire] = min(1, 0.35 + 0.4 * e + 0.25 * Double(max(eruption, breach)))
-        levels[.wind] = min(1, 0.2 + 0.4 * wind)
-        levels[.breeze] = 0.2
-        levels[.thunderRoll] = 0.9
+        var levels: [AmbienceSource: Double] = [
+            .ventRumble: 0.85,
+            .lavaHiss: 0.75,
+            .steamVent: 0.55,
+            .rockfall: 0.7,
+            .eruptionBoom: 1,
+            .plumeThunder: 0.85,
+            .wind: min(1, 0.15 + 0.35 * wind),
+        ]
         WeatherAmbience.levels(s, base: &levels)
         return levels
     }
 
-    private func scene(sky s: SkyState, energy: Float, roles: RoleValues) -> AmbienceScene {
-        let levels = Self.levels(s, energy: energy, eruption: eruption?.light ?? 0, breach: breach)
+    /// The lake as the soundscape hears it, 0…1 each. Its surge (the vent rumble): the convection (m/s at the margin),
+    /// tension's swell, the fountains bursting, and above all an eruption (its light) or a breach pouring. Its glow (the
+    /// lava hiss): the notes' light in the cracks (the brightest cells), Energy, an eruption and the breach's new river.
+    public static func lake(convection: Float, swell: Float, burst: Float, cells: [CrackCell], energy: Float, eruption: Float,
+                            breach: Float) -> (surge: Double, glow: Double) {
+        func unit(_ v: Float) -> Float { v.isFinite ? min(1, max(0, v)) : 0 }
+        let conv = unit(convection / 2.5)
+        let surge = unit(0.2 + 0.25 * conv + 0.3 * unit(swell) + 0.15 * unit(burst) + 0.6 * unit(eruption) + 0.3 * unit(breach))
+        var lit: Float = 0
+        for c in cells { lit += c.glow.isFinite ? max(0, c.glow) : 0 }
+        let notes = unit(lit / 4)
+        let glow = unit(0.15 + 0.35 * unit(energy) + 0.35 * notes + 0.5 * unit(eruption) + 0.3 * unit(breach))
+        return (Double(surge), Double(glow))
+    }
+
+    private func scene(sky s: SkyState, energy: Float, convection: Float, swell: Float, roles: RoleValues) -> AmbienceScene {
+        let levels = Self.levels(s)
         let activity = min(1, 0.6 * roles[.energy] + 0.4 * roles[.density])
+        let lake = Self.lake(convection: convection, swell: swell, burst: fountainBurst, cells: cells, energy: energy,
+                             eruption: eruption?.light ?? 0, breach: breach)
         return AmbienceScene(levels: levels, nightCool: 0, activity: activity, thunder: nil,
                              closeness: MoodLook.ambienceCloseness(base: 0.5, mood), density: MoodLook.ambienceDensity(mood),
-                             wetness: Double(s.wetness), thunderQueue: thunder)
+                             wetness: Double(s.wetness), events: events, lakeSurge: lake.surge, lakeGlow: lake.glow)
     }
 }
 

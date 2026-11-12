@@ -314,7 +314,7 @@ final class VolcanoRimTests: XCTestCase {
             let f = run(&m, seconds: 200, each: { frame in
                 for ft in frame.fountains { fountain += ft.height }
                 embers = max(embers, self.aliveEmbers(frame.embers))
-                strokes += frame.ambience.thunderQueue.count
+                strokes += frame.ambience.events.filter { $0.source == .plumeThunder }.count
                 steps += 1
             })
             results.append((fountain / Float(2 * steps), f.river, embers, strokes, f.convection))
@@ -511,19 +511,72 @@ final class VolcanoRimTests: XCTestCase {
         }
     }
 
+    /// The volcano family (spec §8.3; plan Task 10): its six sources up and the stand-ins gone; the lake's surge and glow
+    /// rising with the convection, tension, Energy, lit cracks, an eruption and a breach; an eruption sends its boom as
+    /// late as the lake is far (510 m from the rim: 1.49 s) and the plume's cracks theirs (1.2–2 s, where each stroke is).
     func testVolcanoAmbience() {
-        let levels = VolcanoRimModel.levels(night(), energy: 0.5, eruption: 0, breach: 0)
-        XCTAssertNotNil(levels[.fire])
-        XCTAssertNotNil(levels[.thunderRoll], "the roll plays the queue")
-        let quiet = VolcanoRimModel.levels(night(), energy: 0, eruption: 0, breach: 0)
-        let loud = VolcanoRimModel.levels(night(), energy: 1, eruption: 1, breach: 0)
-        XCTAssertGreaterThan(loud[.fire] ?? 0, quiet[.fire] ?? 0)
-        // The eruption queues its boom; each stroke its thunder.
+        let levels = VolcanoRimModel.levels(night())
+        for source: AmbienceSource in [.ventRumble, .lavaHiss, .steamVent, .rockfall, .eruptionBoom, .plumeThunder] {
+            XCTAssertGreaterThan(levels[source] ?? 0, 0, "\(source) is up")
+        }
+        for standIn: AmbienceSource in [.fire, .breeze, .thunderRoll] { XCTAssertNil(levels[standIn], "the stand-in \(standIn) is gone") }
+        XCTAssertNotNil(levels[.wind], "the wind over the rim")
+        let calm = VolcanoRimModel.lake(convection: 0.35, swell: 0, burst: 0, cells: [], energy: 0, eruption: 0, breach: 0)
+        let wild = VolcanoRimModel.lake(convection: 3, swell: 1, burst: 1, cells: [], energy: 1, eruption: 1, breach: 1)
+        XCTAssertLessThan(calm.surge, 0.3)
+        XCTAssertLessThan(calm.glow, 0.3)
+        XCTAssertEqual(wild.surge, 1, accuracy: 1e-9)
+        XCTAssertEqual(wild.glow, 1, accuracy: 1e-9)
+        var lit = VolcanoRimModel().cells
+        for i in 0..<4 { lit[i].glow = 1 }
+        let notes = VolcanoRimModel.lake(convection: 0.35, swell: 0, burst: 0, cells: lit, energy: 0, eruption: 0, breach: 0)
+        XCTAssertGreaterThan(notes.glow, calm.glow + 0.3, "notes lighting the cracks brighten the hiss")
+        XCTAssertEqual(VolcanoRimModel.soundDelay(to: .zero), 1.486, accuracy: 0.005)
+
         var m = model()
-        run(&m, seconds: 0.2)
+        let before = run(&m, seconds: 0.2)
         m.setExcitement(moment(1))
         let f = run(&m, seconds: 1.0 / 60)
-        XCTAssertGreaterThanOrEqual(f.ambience.thunderQueue.count, 1)
+        let boom = f.ambience.events.filter { $0.source == .eruptionBoom }
+        XCTAssertEqual(boom.count, 1, "the eruption's boom")
+        XCTAssertEqual(boom.first?.delay ?? 0, 1.486, accuracy: 0.005)
+        XCTAssertEqual(boom.first?.strength ?? 0, 1, accuracy: 1e-6)
+        let cracks = f.ambience.events.filter { $0.source == .plumeThunder }
+        XCTAssertGreaterThanOrEqual(cracks.count, 1, "the lightning cluster's first crack")
+        for c in cracks {
+            XCTAssertTrue((1.2...2.0).contains(c.delay), "a crack \(c.delay) s late")
+            XCTAssertTrue((-1...1).contains(c.pan))
+        }
+        XCTAssertGreaterThan(f.ambience.lakeSurge, before.ambience.lakeSurge + 0.4, "the eruption surges the lake")
+        XCTAssertGreaterThan(f.ambience.lakeGlow, before.ambience.lakeGlow + 0.3, "and lights it")
+        XCTAssertTrue(f.ambience.thunderQueue.isEmpty, "no storm thunder: the plume's cracks are its own")
+        let next = run(&m, seconds: 1.0 / 60)
+        XCTAssertTrue(next.ambience.events.filter { $0.source == .eruptionBoom }.isEmpty, "a boom is sent once")
+    }
+
+    /// The surprises' sounds (plan Task 10): a rockfall and a steam blast each send their one-shot once, from where on the
+    /// wall they are (left or right, as the picture has it), as late as the wall is far (1.2–3 s) and darker the farther.
+    func testRockfallAndSteamBlastSoundWhereTheyAre() {
+        for kind in [VolcanoSurprise.Kind.rockfall, .steamBlast] {
+            let source: AmbienceSource = kind == .rockfall ? .rockfall : .steamVent
+            for seed: UInt64 in 1...6 {
+                var m = model()
+                run(&m, seconds: 0.2)
+                var e = excitement(energy: 0.4)
+                e.surprise = WorldSurprise(index: kind.rawValue, seed: seed &* 0x9E37 &+ 5)
+                m.setExcitement(e)
+                let f = run(&m, seconds: 1.0 / 60)
+                let sent = f.ambience.events.filter { $0.source == source }
+                XCTAssertEqual(sent.count, 1, "\(kind), seed \(seed)")
+                guard let one = sent.first, let surprise = f.surprises.first(where: { $0.kind == kind }) else { continue }
+                XCTAssertTrue((1.2...3).contains(one.delay), "\(kind): \(one.delay) s late")
+                XCTAssertEqual(one.pan < 0, surprise.angle < 0, "\(kind): heard on its side (angle \(surprise.angle), pan \(one.pan))")
+                XCTAssertTrue((0...1).contains(one.distance))
+                XCTAssertGreaterThan(one.strength, 0.75)
+                let later = run(&m, seconds: 1)
+                XCTAssertTrue(later.ambience.events.filter { $0.source == source }.isEmpty, "\(kind): sent once")
+            }
+        }
     }
 
     // MARK: - Magma Veins
