@@ -6,7 +6,8 @@ import InStrumCore
 /// the soft pedal too.
 struct HoldPad: View {
     @ObservedObject var model: AppModel
-    @State private var pressing = false
+    /// True while the hourglass is held down; it resets by itself when the press ends or is cancelled.
+    @GestureState private var pressing = false
 
     static let help = "Hold the moment: press and hold, or double-click to keep it held (⌘⇧H)"
     /// The app's warm accent, as the title and the toast use it.
@@ -24,18 +25,9 @@ struct HoldPad: View {
             .shadow(color: lit ? Self.glow.opacity(0.35) : Color.clear, radius: 4)
             .contentShape(shape)
             .gesture(TapGesture(count: 2).onEnded { model.toggleHold() })
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { _ in
-                        guard !pressing else { return }
-                        pressing = true
-                        model.setHoldPressed(true)
-                    }
-                    .onEnded { _ in
-                        pressing = false
-                        model.setHoldPressed(false)
-                    }
-            )
+            .simultaneousGesture(DragGesture(minimumDistance: 0).updating($pressing) { _, down, _ in down = true })
+            .onChange(of: pressing) { down in model.setHoldPressed(down) }
+            .onDisappear { model.setHoldPressed(false) }
             .animation(.easeOut(duration: 0.18), value: lit)
             .help(Self.help)
             .accessibilityElement()
