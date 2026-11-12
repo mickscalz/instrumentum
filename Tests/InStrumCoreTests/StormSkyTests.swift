@@ -604,7 +604,8 @@ final class StormSkyTests: XCTestCase {
     /// shared table, so a world without a table picks exactly as before. Over thousands of spells: the road sees both, the
     /// lake only the gust front, the cabin neither, and Calm never a gust front.
     func testRandomBeautifulTables() {
-        let storms: Set<String> = [MoonlitLakeModel.id, GoldenHourBeachModel.id, CoastRoadModel.id, SupercellSkyModel.id]
+        let storms: Set<String> = [MoonlitLakeModel.id, GoldenHourBeachModel.id, CoastRoadModel.id, SupercellSkyModel.id,
+                                   NeonNightDriveModel.id]
         let dry: Set<String> = [CoastRoadModel.id]
         let registered: Set<String> = [LightningPlainsModel.id]   // Storms' worlds as they are registered (Task 11)
         for (id, _) in ThemeRegistry.all where !registered.contains(id) {
