@@ -315,7 +315,7 @@ enum NeonNightDriveShaders {
             float tint = hash12(float2(fl * 0.7 + seed, floor(col / 7.0)));
             wc = h5 < 0.7 ? (tint < 0.6 ? float3(0.74, 0.9, 1.0) : float3(0.95, 0.96, 0.9)) : float3(1.0, 0.84, 0.62);
             // Desks and partitions break the floor's light up; its ceiling panels are the brightest.
-            bright = (0.34 + 0.4 * hash12(float2(fl, seed))) * (0.3 + 1.2 * hash12(float2(floor(u / 0.9), fl + seed)));
+            bright = (0.48 + 0.5 * hash12(float2(fl, seed))) * (0.3 + 1.2 * hash12(float2(floor(u / 0.9), fl + seed)));
         } else {
             float winLit = hash12(float2(col * 1.7 + seed * 5.0, fl * 3.1 + seed));
             lit = step(winLit, litShare);
@@ -1135,8 +1135,8 @@ enum NeonNightDriveShaders {
                             float pos = fract((car + 0.6) / 2.2) * 2.2 - 0.725;
                             float hw = hash12(float2(floor((car + 0.6) / 2.2), carIdx + 7.0));
                             float vin = saturate((yt - 9.7) / 1.4);
-                            float3 tint = hash11(carIdx * 3.1 + 0.4) < 0.6 ? float3(0.82, 0.94, 1.0) : float3(1.0, 0.84, 0.62);
-                            float inside = (0.32 + 0.3 * hw) * (0.7 + 0.5 * vin) + 0.7 * smoothstep(0.86, 0.97, vin);
+                            float3 tint = hash11(carIdx * 3.1 + 0.4) < 0.45 ? float3(0.82, 0.94, 1.0) : float3(1.0, 0.84, 0.62);
+                            float inside = (0.5 + 0.45 * hw) * (0.7 + 0.5 * vin) + 1.1 * smoothstep(0.86, 0.97, vin);
                             float c0 = (hw - 0.5) * 0.7;
                             float headD = length(float2(pos - c0, yt - 10.42)) - 0.12;
                             float shoulders = max(abs(pos - c0) - 0.26, yt - 10.24);
