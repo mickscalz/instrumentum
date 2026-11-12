@@ -10,6 +10,52 @@ public enum AmbienceSource: String, Codable, CaseIterable {
     /// rolls the scene's `thunderQueue`.
     case grassWind, hailOnTin, birdsFlee, thunderRoll, inflowRoar, rainOnDust
     case dryCicadas, windmill, cattleGrid, dustTicks, shimmerHum, farTruck
+    /// Fire & Neon (Sets 13 & 14, spec §8.3, §9.3): the volcano family, then the drive family. The eruption's boom, the
+    /// plume's thunder, the wipers and the drive's passing cars sound only on the world's events (`AmbienceScene.events`);
+    /// the steam vent and the rockfall also go now and then by themselves. The drive's engine and passing cars are the
+    /// drive's own, beside the coast road's `.engine` and `.passingCar` (which keep their sound).
+    case ventRumble, lavaHiss, steamVent, rockfall, eruptionBoom, plumeThunder
+    case wetTyres, wipers, driveEngine, drivePassingCar, roofRain, farSiren
+}
+
+/// A one-shot a world sets going (Fire & Neon spec §8.3, §9.3): the eruption's boom, a crack of the plume's thunder, a
+/// rockfall, a steam blast, a car passing beside you, a wiper's sweep. It is due `delay` seconds from now (the picture
+/// first, the sound after: 3 s a kilometre, capped at 12 s) and heard only while its source is up; the engine holds 32 (a
+/// 33rd drops the oldest), and a world switch or a panic drops those still waiting. Each source reads its own fields
+/// (InStrumDSP.h, `isd_ambience_post_event`): strength 0…1 for all; pan −1 left … 1 right (the plume's cracks, a
+/// rockfall, a steam blast, which side a car passes); distance 0 near … 1 far (a rockfall, a steam blast) or a car's
+/// lateral metres; speed a car's closing speed (m/s) or a wiper's sweep time (s); kind 1 for a truck.
+public struct AmbienceEvent: Equatable {
+    public var source: AmbienceSource
+    public var delay: Double
+    public var strength: Double
+    public var pan: Double
+    public var speed: Double
+    public var distance: Double
+    public var kind: Int
+
+    public init(source: AmbienceSource, delay: Double = 0, strength: Double = 1, pan: Double = 0, speed: Double = 0,
+                distance: Double = 0, kind: Int = 0) {
+        self.source = source
+        self.delay = delay
+        self.strength = strength
+        self.pan = pan
+        self.speed = speed
+        self.distance = distance
+        self.kind = kind
+    }
+
+    /// A car passing beside you, at its closest `in` seconds from now (it is heard from 3 s before): closing at `closing`
+    /// m/s, `lateral` metres to the side (< 0 on your left), a truck or a car.
+    public static func passingCar(in delay: Double, closing: Double, lateral: Double, truck: Bool, strength: Double = 1) -> AmbienceEvent {
+        AmbienceEvent(source: .drivePassingCar, delay: delay, strength: strength, pan: lateral < 0 ? -1 : 1, speed: closing,
+                      distance: abs(lateral), kind: truck ? 1 : 0)
+    }
+
+    /// A wiper's sweep (up and back) taking `seconds`, starting `in` seconds from now, on glass `wet` (0 dry … 1 streaming).
+    public static func sweep(in delay: Double, seconds: Double, wet: Double) -> AmbienceEvent {
+        AmbienceEvent(source: .wipers, delay: delay, strength: wet, speed: seconds)
+    }
 }
 
 /// A strike's thunder on its way (Storms spec §3): the roll starts `delay` seconds from now (the picture first, the sound
@@ -75,11 +121,17 @@ public struct AmbienceScene: Equatable {
     /// only while the world's thunder roll is up; the engine holds 16 (a 17th drops the oldest), and a world switch or a
     /// panic clears them.
     public var thunderQueue: [QueuedThunder]
+    /// One-shots: the world's events seen this frame (Fire & Neon), each due by its delay. Heard only while its source is up.
+    public var events: [AmbienceEvent]
+    /// The volcano's lake, 0…1 each: how hard it surges (the vent rumble) and how brightly its cracks glow (the lava hiss).
+    public var lakeSurge: Double
+    public var lakeGlow: Double
 
     public init(levels: [AmbienceSource: Double] = [:], nightCool: Double = 0, activity: Double = 0, thunder: Double? = nil,
                 closeness: Double = 0.5, density: Double = 1, wave: Double? = nil, speed: Double = 0, surfDistance: Double = 0,
                 indoors: Double = 0, wetness: Double = 0, snowOnGlass: Double = 0, key: AmbienceKey? = nil,
-                bubbleBurst: Double? = nil, thunderQueue: [QueuedThunder] = []) {
+                bubbleBurst: Double? = nil, thunderQueue: [QueuedThunder] = [], events: [AmbienceEvent] = [],
+                lakeSurge: Double = 0, lakeGlow: Double = 0) {
         self.levels = levels
         self.nightCool = nightCool
         self.activity = activity
@@ -95,6 +147,9 @@ public struct AmbienceScene: Equatable {
         self.key = key
         self.bubbleBurst = bubbleBurst
         self.thunderQueue = thunderQueue
+        self.events = events
+        self.lakeSurge = lakeSurge
+        self.lakeGlow = lakeGlow
     }
 
     public static let silent = AmbienceScene()
