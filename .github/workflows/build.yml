@@ -34,7 +34,9 @@ jobs:
     # without waiting for the full test run, and publishes them to `previews-<branch>` (this container cannot download
     # artifacts, so the main session reads the PNGs from that branch). Integration branches use the previews job below.
     if: github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref != 'refs/heads/storms' && github.ref != 'refs/heads/fire-neon'
-    runs-on: macos-15
+    # On GitHub's Intel Macs (12 Nov: the arm64 queue dropped every job for hours; and Michael's Mac is Intel, so these
+    # frame times are nearer his than Apple silicon's).
+    runs-on: macos-15-intel
     permissions:
       contents: write
     steps:
