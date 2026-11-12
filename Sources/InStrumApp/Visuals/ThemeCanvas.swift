@@ -26,6 +26,7 @@ final class ThemeCanvas: NSObject, MTKViewDelegate {
     private var reef: GreatBarrierReefRenderer?
     private var plains: LightningPlainsRenderer?
     private var supercell: SupercellSkyRenderer?
+    private var volcano: VolcanoRimRenderer?
     private var autoQuality: AutoQuality
     private var lastTime: CFTimeInterval = 0
     private var seenVersion = -1
@@ -180,6 +181,10 @@ final class ThemeCanvas: NSObject, MTKViewDelegate {
             if supercell == nil { supercell = SupercellSkyRenderer(device: device) }
             supercell?.update(f, params: director.parameters, quality: level, gentle: gentle, dt: dt, size: size)
             renderer = supercell
+        } else if let f = frame as? VolcanoFrame {
+            if volcano == nil { volcano = VolcanoRimRenderer(device: device) }
+            volcano?.update(f, params: director.parameters, quality: level, gentle: gentle, dt: dt, size: size)
+            renderer = volcano
         } else {
             renderer = nil
         }
