@@ -611,25 +611,20 @@ enum SkyShaders {
         return exp(-float3(0.05, 0.085, 0.13) * (ash * airmass));
     }
 
-    // ---------------------------------------------------------------- Fire & Neon: the supercell weather (spec §7.2)
-    // The staged storm over any sky world, drawn at the shared sky's cost: no ray march, each part one closed-form hit,
-    // composited front to back, its texture 2D value noise (four hashes a sample, at most two octaves). In the storm's
-    // own frame (km): u along its bearing from you, v to its right (mirrored in the south, where they turn the other
-    // way).
-    // Two level planes: the rain-free base 1.5 km up, and the anvil's underside 9.5 km up spreading over you. Three
-    // upright sheets facing you at the storm (it stands tens of km off, so a sheet loses no parallax worth having): the
-    // rain curtain on its forward flank (left), the wall cloud hanging under the updraft (right of it), and the storm's
-    // body: the striated skirt flaring over the base, plate on plate, the billowed tower leaning into the anvil, the
-    // forward flank's cloud to its left and the flanking line stepping down to its right. Overhead (the Core) the sheets
-    // give way to the base over you and the rain all round; as it clears, mammatus hang from the anvil (Supercell Sky's
-    // smooth sum of rounded bumps: no cell-switch creases), lit low from the clear side.
-    constant float kCellBase = 1.5;
-    constant float kCellAnvil = 9.5;
-
+    // ---------------------------------------------------------------- shared cloud shapes (Supercell Sky and the sky)
+    // Supercell Sky's storm and the shared sky's supercell are drawn from the same shapes: the smooth sum of rounded
+    // bumps (the tower's cauliflower, the mammatus pouches), the striations, the anvil melting up out of the tower, the
+    // base's ragged rim and the inflow bands. The world reads them on its 3D shapes; the sky on its planes and sheets,
+    // with fewer bumps and less detail at a distance.
     float skyHash12(float2 p) {
         float3 p3 = fract(float3(p.x, p.y, p.x) * 0.1031);
         p3 += dot(p3, p3.yzx + 33.33);
         return fract((p3.x + p3.y) * p3.z);
+    }
+    float2 skyHash22(float2 p) {
+        float3 p3 = fract(float3(p.x, p.y, p.x) * float3(0.1031, 0.1030, 0.0973));
+        p3 += dot(p3, p3.yzx + 33.33);
+        return fract((p3.xx + p3.yz) * p3.zy);
     }
     float skyNoise2(float2 p) {
         float2 i = floor(p), f = fract(p);
@@ -638,19 +633,37 @@ enum SkyShaders {
         float c = skyHash12(i + float2(0, 1)), e = skyHash12(i + float2(1, 1));
         return mix(mix(a, b, w.x), mix(c, e, w.x), w.y);
     }
+    /// Up to three octaves of skyNoise2, normalised.
+    float skyFbm2(float2 p, int octaves) {
+        float s = 0.0, a = 0.5, n = 0.0;
+        for (int i = 0; i < 3; i++) {
+            if (i >= octaves) break;
+            s += a * skyNoise2(p);
+            n += a;
+            p = p * 2.03 + float2(17.1, 9.2);
+            a *= 0.5;
+        }
+        return s / n;
+    }
 
-    /// A smooth sum of rounded bumps over a jittered grid at `g` (3×3 cells): its height, and its slope in `grad`.
-    float cellBumps(float2 g, float size, thread float2& grad) {
+    /// Cauliflower and pouches: a smooth sum of rounded bumps over a jittered grid at `g` (3×3 cells: each cell one
+    /// bump, its centre 0.15–0.85 across it from `seedV`, its size s0 … s0 + sA cells from `seedS`, its sharpness
+    /// kNum / size²), and its slope (per cell) in `grad`. The slope comes from the sum, so the light rolls round every
+    /// bump and the folds between them shade softly (the nearest-bump switch drew hard creases). `period` wraps the
+    /// grid's x every so many cells (round a tower, so there is no seam as it turns; 0: no wrap).
+    float cloudBumps(float2 g, float period, float2 seedV, float2 seedS, float s0, float sA, float kNum,
+                     thread float2& grad) {
         float2 gi = floor(g), gf = fract(g);
         float H = 0.0;
         grad = float2(0);
         for (int y = -1; y <= 1; y++) {
             for (int x = -1; x <= 1; x++) {
                 float2 cell = float2(float(x), float(y));
-                float3 hh = hash33(float3(gi + cell, 7.0));
-                float2 v = gf - (cell + 0.1 + 0.8 * hh.xy);
-                float sz = size * (0.7 + 0.6 * hh.z);
-                float kk = 1.8 / (sz * sz);
+                float2 id = gi + cell;
+                if (period > 0.0) id.x -= period * floor(id.x / period);
+                float2 v = gf - (cell + 0.15 + 0.7 * skyHash22(id + seedV));
+                float s = s0 + sA * skyHash12(id + seedS);
+                float kk = kNum / (s * s);
                 float e = exp(-dot(v, v) * kk);
                 H += e;
                 grad -= 2.0 * kk * v * e;
@@ -658,6 +671,67 @@ enum SkyShaders {
         }
         return H;
     }
+
+    /// A supercell's striations at band coordinate `k` (one band a unit) and `strength` 0…1: each band a lip catching
+    /// the light over a soft shadow under it. Returns the shade (× the cloud's light) and in `lip` the thread of light
+    /// on its lip.
+    float cloudStriation(float k, float strength, thread float& lip) {
+        float b = 0.5 + 0.5 * sin(6.2831853 * k);
+        lip = strength * b * b * b;
+        return 1.0 + strength * (0.32 * b * b - 0.32 * (1.0 - b) * (1.0 - b));
+    }
+
+    /// How far a tower's cloud at height `z` (km) has gone up into its anvil (0…1), the anvil's underside at `anvilZ`
+    /// over it and the tower's turrets `lumps` (0…1): the join is lumpy and below the anvil's own plane, so the anvil's
+    /// smooth line is lost in cloud of one colour. `junction` is where it begins.
+    float cloudAnvilMelt(float z, float anvilZ, float lumps, thread float& junction) {
+        junction = anvilZ - 1.5 + 1.8 * (lumps - 0.5);
+        return smoothstep(junction - 0.35, junction + 0.5, z);
+    }
+
+    /// A storm base's ragged rim at angle `a` round it (radians), about 0.2–0.7: lumps along the circumference (seen
+    /// edge-on they notch it rather than streak it).
+    float cloudRagged(float a, int octaves) {
+        return 0.65 * skyFbm2(float2(a * 4.0, 21.0), octaves) + 0.35 * skyNoise2(float2(a * 11.0, 5.0));
+    }
+
+    /// An inflow band's cloud `off` km from its line (`width` km), clumped along it by `streak` (0…1): a soft-edged band,
+    /// never a thread. Its profile across (squared) in `profile`.
+    float cloudInflow(float off, float width, float streak, thread float& profile) {
+        profile = 1.0 - smoothstep(0.0, 1.3 * width, off);
+        profile *= profile;
+        return profile * smoothstep(0.3, 0.65, streak);
+    }
+
+    /// Mammatus at `g` (pouch cells): round pouches of jittered sizes summed smoothly, each sagging most at its middle.
+    /// Returns the underside's normal (x, y along g; z up), tilted by the pouches' slope × `tilt` × `amount`, and in
+    /// `dome` how near a pouch's rounded middle it is (0 the creases … 1).
+    float3 mammatusNormal(float2 g, float amount, float tilt, thread float& dome) {
+        float2 grad;
+        float H = cloudBumps(g, 0.0, float2(0.0), float2(7.0), 0.48, 0.3, 1.7, grad);
+        dome = smoothstep(0.1, 1.0, H);
+        return normalize(float3(-tilt * amount * grad, -1.0));
+    }
+
+    // ---------------------------------------------------------------- Fire & Neon: the supercell weather (spec §7.2)
+    // The staged storm over any sky world at the shared sky's cost: no ray march, each part one closed-form hit,
+    // composited front to back, its texture 2D value noise. In the storm's own frame (km): u along its bearing from you,
+    // v to its right (mirrored in the south, where they turn the other way). Supercell Sky's shapes on planes and sheets:
+    // - level planes: the rain-free base 1.1 km up (from tens of km it sits on the horizon), the inflow bands streaming
+    //   in under it, and the anvil's underside 9.5 km up, from its leading edge (ahead of the storm as it comes,
+    //   overhead by the Core) back to its trailing edge;
+    // - sheets facing you at the storm (it stands tens of km off, so a sheet loses no parallax worth having): what falls
+    //   under it (the forward flank's rain and hail reaching the ground, the rear flank's lighter rain and the shaded
+    //   air under the rest of the base, the inflow notch lighter between them: no daylight under the storm), the wall
+    //   cloud hanging from the base, and its body: the striated skirt, the cauliflower tower leaning into the anvil with
+    //   an overshooting top, the anvil's flat top spreading both ways with rounded, feathered ends, the forward flank's
+    //   cloud and the flanking line stepping down, all one field of rounded lumps at their edges.
+    // Edges are as sharp as a pixel (a km of softness blurred it into a cut-out). Backlit, the cloud is silver-lined
+    // where it thins; lightning lights it from inside round the strike (its billows showing), with a little light all
+    // over, through the sky layer's flash limiter.
+    constant float kCellBase = 1.1;
+    constant float kCellAnvil = 9.5;
+    constant float kCellTop = 11.4;
 
     /// The supercell along `d`: its light (premultiplied) in rgb, and in a how much of the sky behind it shows through.
     float4 supercellSky(float3 d, constant SkyU& u, float time) {
@@ -667,9 +741,12 @@ enum SkyShaders {
         float hl = length(d.xy);
         float2 hv = hl > 1e-5 ? float2(dot(d.xy, b), dot(d.xy, rgt) * mirror) / hl : float2(1.0, 0.0);
         float k = max(d.z, 0.0) / max(hl, 1e-4);              // km up per km out
+        float3 dS = float3(hv * hl, d.z);                       // the view in the storm's frame
         float D = u.cellC.x, E = u.cellC.y, phase = u.cellA.z;
         float turn = u.cellB.y * mirror, glow = saturate(u.cellB.z);
         float mam = saturate(u.cellC.z);
+        float pa = max(u.weather.w, 2e-4);                      // a pixel (radians)
+        int oct = int(u.weather.z + 0.5);
         float sunAlt = u.sun.w;
         bool day = sunAlt > -6.0;
         float3 Lw = day ? u.sun.xyz : u.moon.xyz;
@@ -681,217 +758,350 @@ enum SkyShaders {
         float lowSun = day ? (1.0 - smoothstep(3.0, 14.0, sunAlt)) * smoothstep(-5.0, -1.0, sunAlt) : 0.0;
         float3 amb = mix(u.zenith.rgb, u.horizon.rgb, 0.5);
         float3 grey = float3(0.86, 0.92, 1.04) * dot(amb, float3(0.2126, 0.7152, 0.0722));
+        float3 haze = mix(u.horizon.rgb, grey * 1.6, 0.35) * 0.5;
         float toward = saturate(dot(d, Lw));
-        float back = toward * toward; back *= back; back *= back;   // forward scattering toward a light behind it
-        // Lightning inside: a spot in the storm (u, v, height), lighting the cloud round it.
-        float3 spot = float3(D + (u.cellC.w - 0.5) * 8.0, (fract(u.cellC.w * 7.31) - 0.5) * 10.0,
-                             2.5 + 5.0 * fract(u.cellC.w * 3.17));
+        float wideBack = toward * toward;
+        float back = wideBack * wideBack; back *= back;            // forward scattering toward a light behind it
+        // Lightning inside: a spot in the storm (u, v, height). Seen along this view it lights a heart round the strike
+        // and a wider glow, and a little light all over (never a wash).
+        // (A little ahead of its middle, so overhead in its Core it strikes where you look, not straight above you.)
+        float3 spot = float3(D + 3.0 + (u.cellC.w - 0.5) * 8.0,
+                             (fract(u.cellC.w * 7.31) - 0.5) * mix(6.0, 10.0, saturate((D - 9.0) / 10.0)),
+                             2.0 + 4.5 * fract(u.cellC.w * 3.17));
         const float3 flashCol = float3(0.62, 0.66, 0.85);
+        float sl = length(spot);
+        float sd = sl > 1e-3 ? dot(dS, spot / sl) : 1.0;
+        float flashHere = glow * (0.04 + 0.5 * exp((sd - 1.0) / 0.015) + 0.22 * exp((sd - 1.0) / 0.09));
         float3 acc = float3(0);
         float T = 1.0;
         float baseHit = k > 1e-4 ? kCellBase / k : 1e4;
+        float fwd = hv.x;
 
         // The rain all round you under its core (the schedule's rain at this phase): a grey murk thickening toward the
-        // horizon, paler low down and toward the light; the Core's flashes light it.
+        // horizon, paler low down and toward the light, in shafts; the Core's flashes light it round the strike.
         float q2 = saturate(phase * 3.0 - 1.0), q3 = saturate(phase * 3.0 - 2.0);
         float rainNow = phase < 1.0 / 3.0 ? 0.0
                       : (phase < 2.0 / 3.0 ? smoothstep(0.0, 0.3, q2) * (1.0 - 0.2 * smoothstep(0.6, 1.0, q2))
                                            : 0.8 * (1.0 - smoothstep(0.0, 0.45, q3)));
         if (rainNow > 0.01) {
             float a = rainNow * 0.97 * (1.0 - exp(-min(baseHit, 9.0) / 2.2));
-            float3 c = grey * (0.3 + 0.28 * (1.0 - saturate(k * 3.0))) + Lc * (lightAmt * 0.3 * back)
-                     + flashCol * (glow * 0.3);
+            float shafts = skyNoise2(float2(atan2(hv.y, hv.x) * 7.0, time * 0.04 + 3.0));
+            float3 c = grey * (0.27 + 0.26 * (1.0 - saturate(k * 3.0))) * (0.85 + 0.3 * shafts)
+                     + Lc * (lightAmt * 0.3 * back) + flashCol * (0.55 * flashHere);
             acc += T * a * c; T *= 1.0 - a;
         }
 
-        float fwd = hv.x;
-        // The rain curtain on its forward flank: from the base to the ground, streaked as it falls, a paler hail shaft at
-        // its right; the inflow notch between it and the wall cloud stays open to the horizon.
+        // What falls under the storm, on a sheet just in front of its middle, from the ground to the base: the forward
+        // flank's rain (left of the wall cloud) streaked as it falls with a paler hail shaft, the rear flank's lighter
+        // rain and the shaded air under the rest of the base (right), and between them the inflow notch, lighter, a
+        // little of the horizon's light through it.
         float Dr = D - 1.0;
         if (Dr > 2.5 && fwd > 0.2) {
             float rho = Dr / fwd;
             float x = rho * hv.y, z = rho * k;
-            if (z < kCellBase + 0.3 && x > -17.0 && x < -2.0) {
+            if (z < kCellBase + 0.3 && x > -20.0 && x < 20.0) {
                 float n = skyNoise2(float2(x * 1.3 + z * 0.4, z * 0.12 - time * 0.03));
-                float dens = smoothstep(-16.0, -10.0, x + 2.0 * n) * (1.0 - smoothstep(-6.0, -3.2, x + 0.8 * n))
-                           * (1.0 - smoothstep(kCellBase - 0.3, kCellBase + 0.2, z));
-                float a = dens * (0.65 + 0.3 * n) * smoothstep(2.5, 6.0, Dr);
+                float n2 = skyNoise2(float2(x * 0.35 + 4.0, 1.7));
+                float span = smoothstep(-19.0, -13.0, x + 3.0 * n2) * (1.0 - smoothstep(15.0, 19.0, x + 3.0 * n2));
+                float rain = 1.0 - smoothstep(-1.6, 0.9, x + 0.8 * n);
+                float rear = smoothstep(4.0, 5.6, x + 0.8 * n);
+                float notch = saturate(1.0 - rain - rear);
+                float under = 1.0 - smoothstep(kCellBase - 0.3, kCellBase + 0.15, z);
+                float dens = rain * (0.88 + 0.12 * n) + rear * (0.74 + 0.2 * n) * (1.0 - 0.35 * smoothstep(9.0, 15.0, x))
+                           + notch * 0.58;
+                float a = saturate(dens * span * under) * smoothstep(2.5, 6.0, Dr);
                 if (a > 0.002) {
-                    float hail = exp(-(x + 5.0) * (x + 5.0) / 2.5);
-                    float3 c = grey * (0.24 + 0.16 * hail) + Lc * (lightAmt * (0.06 + 0.35 * back));
-                    if (glow > 0.0) c += flashCol * (glow * 0.35 * exp(-(x - spot.y) * (x - spot.y) / 16.0));
-                    c = mix(c, u.horizon.rgb * 0.5, 1.0 - exp(-rho / 80.0));
+                    float hail = rain * exp(-(x + 4.5) * (x + 4.5) / 2.5);
+                    float3 c = grey * (0.15 + 0.06 * n + 0.12 * hail) * (1.0 - 0.25 * rear);
+                    float thinR = 1.0 - saturate(dens * span);
+                    c += Lc * (lightAmt * (0.04 + 0.45 * back * thinR * thinR) * (0.6 + 0.6 * notch));
+                    c = mix(c, haze * (0.9 + 0.5 * notch), 0.25 * notch * (1.0 - z / kCellBase));
+                    c += flashCol * (flashHere * (0.5 + 0.3 * hail));
+                    c = mix(c, haze, 0.6 * (1.0 - exp(-rho / 80.0)));
                     acc += T * a * c; T *= 1.0 - a;
                 }
             }
         }
 
-        // The wall cloud: an abrupt lowering under the updraft, rounded and ragged at its foot, streaked as it turns.
+        // The wall cloud: an abrupt lowering hanging from the base under the updraft, rounded and ragged at its foot
+        // (scud tags), streaked as it turns.
         float Dw = D - 0.5;
-        if (Dw > 2.5 && fwd > 0.2) {
+        if (T > 0.01 && Dw > 2.5 && fwd > 0.2) {
             float rho = Dw / fwd;
             float x = rho * hv.y - 2.5, z = rho * k;
-            if (z < kCellBase + 0.1 && abs(x) < 2.6) {
-                float s = clamp(x / 1.8, -1.0, 1.0);
-                float n = skyNoise2(float2((s * 1.4 + turn) * 2.2, z * 2.5));
-                float foot = kCellBase - 0.9 + 0.55 * s * s + 0.2 * (n - 0.5);
-                float edge = min(1.8 - 0.4 * saturate((kCellBase - z) / 0.9) + 0.3 * (n - 0.5) - abs(x),
+            float px = rho * pa;
+            if (z < kCellBase + 0.1 && abs(x) < 2.9) {
+                float s = clamp(x / 2.1, -1.0, 1.0);
+                float n = skyNoise2(float2((s * 1.4 + turn) * 2.2, z * 3.0));
+                float tags = skyNoise2(float2(x * 3.1 + turn, 7.0));
+                float foot = kCellBase - 0.85 + 0.55 * s * s + 0.16 * (n - 0.5) + 0.12 * (tags - 0.5);
+                float edge = min(2.05 - 0.45 * saturate((kCellBase - z) / 0.8) + 0.25 * (n - 0.5) - abs(x),
                                  3.0 * (z - foot));
-                float a = smoothstep(-0.15, 0.25, edge) * smoothstep(2.5, 6.0, Dw);
+                float a = smoothstep(-max(px, 0.03), max(px, 0.03) + 0.06, edge) * smoothstep(2.5, 6.0, Dw);
                 if (a > 0.002) {
                     float ndl = saturate(dot(float3(-sqrt(1.0 - s * s), s, 0.0), Lu) * 0.7 + 0.3);
-                    float3 c = grey * (0.11 + 0.07 * n) + Lc * (lightAmt * 0.22 * ndl * (0.6 + 0.4 * n));
-                    if (glow > 0.0) c += flashCol * (glow * 0.7 * exp(-(x + 2.5 - spot.y) * (x + 2.5 - spot.y) / 10.0));
-                    c = mix(c, u.horizon.rgb * 0.5, 1.0 - exp(-rho / 80.0));
+                    float3 c = grey * (0.1 + 0.07 * n) + Lc * (lightAmt * 0.2 * ndl * (0.6 + 0.4 * n));
+                    c += Lc * (lightAmt * 0.6 * back * (1.0 - smoothstep(0.0, 0.25, edge)));   // its rim, backlit
+                    if (glow > 0.0) c += flashCol * (flashHere * 0.8 * (0.6 + 0.4 * n));
+                    c = mix(c, haze, 1.0 - exp(-rho / 80.0));
                     acc += T * a * c; T *= 1.0 - a;
+                }
+            }
+        }
+
+        // The inflow bands: low bands of cloud 0.8 km up streaming in from the right toward the wall cloud, each a log
+        // spiral round it, converging in perspective (Supercell Sky's bands); they fade as they lie edge-on at the
+        // horizon, and are gone once the storm is overhead.
+        if (T > 0.01 && k > 0.02 && D > 5.0) {
+            float t = 0.8 / k;
+            float2 q = hv * t - float2(D - 0.5, 2.5);
+            float r = length(q);
+            if (r > 2.2 && r < 16.0) {
+                float centre = atan2(6.0, -(D - 0.5));
+                float ang = atan2(q.y, q.x) + 0.3 * mirror * log(r / 1.8) - centre;
+                ang -= 6.2831853 * floor((ang + 3.14159265) / 6.2831853);
+                float f = ang / 0.32 + 3.0;
+                float kb = floor(f + 0.5);
+                float off = abs(f - kb) * 0.32 * r;
+                float width = 0.22 + 0.05 * r;
+                if (kb >= 0.0 && kb <= 6.0 && off < 1.3 * width) {
+                    float streak = skyNoise2(float2(r * 0.55 - time * 0.02, kb * 3.7));
+                    float profile;
+                    float dens = cloudInflow(off, width, streak, profile) * smoothstep(2.2, 4.5, r)
+                               * (1.0 - smoothstep(9.0, 15.0, r)) * smoothstep(0.03, 0.1, k) * smoothstep(5.0, 9.0, D) * 0.4;
+                    if (dens > 0.002) {
+                        float3 c = grey * (0.2 + 0.12 * streak) + Lc * (lightAmt * (0.08 + 0.5 * back) * (0.6 + 0.4 * streak));
+                        c = mix(c, haze, 1.0 - exp(-t / 80.0));
+                        acc += T * dens * c; T *= 1.0 - dens;
+                    }
                 }
             }
         }
 
         // The storm's base, under its body from its front back to its far side: rain-free round the updraft, darker over
-        // the forward flank's rain; a dark mottled underside, its rim catching a low light beyond it; overhead (the Core)
-        // it is near, scud racing under it.
+        // the forward flank's rain; a dark mottled underside, its ragged rim catching a low light beyond it; overhead (the
+        // Core) it is near, scud racing under it.
         if (T > 0.01 && k > 0.004 && baseHit < 400.0) {
             float2 P = hv * baseHit;
-            float2 qa = (P - float2(D + 0.5, 1.0)) * float2(0.9, 1.0);
-            float2 qf = (P - float2(D - 0.5, -6.5)) * float2(1.0, 1.1);
-            float nb = skyNoise2(P * 0.22 + 3.0);
-            float edge = min(min(P.x - (D - 3.6), D + 7.0 - P.x), min(P.y + 14.0, 9.0 - P.y)) + 2.4 * (nb - 0.5);
-            float a = smoothstep(-0.8, 1.0, edge);
+            float2 qc = (P - float2(D + 1.5, -2.5)) / float2(5.6, 11.5);
+            float rr = length(qc);
+            float pxb = baseHit * pa / max(k, 0.03) * 0.5;          // a pixel across its rim, seen edge-on (km)
+            float a = 0.0;
+            if (rr < 1.25 + pxb * 0.2) {
+                float rag = cloudRagged(atan2(qc.y, qc.x), oct);
+                float edge = (1.0 - rr) * 5.6 + 1.1 * (rag - 0.3);
+                a = smoothstep(-max(pxb, 0.15), max(pxb, 0.15) + 0.3, edge);
+            }
             if (a > 0.002) {
+                float edge = (1.0 - rr) * 5.6;
+                float nb = skyNoise2(P * 0.22 + 3.0);
+                float2 qf = (P - float2(D - 0.5, -6.5)) * float2(1.0, 1.1);
                 float near = 1.0 - smoothstep(4.0, 9.0, baseHit);
                 float scud = near > 0.0 ? skyNoise2(P * 1.3 + float2(time * 0.015, time * 0.006)) : 0.5;
-                float3 c = grey * (0.1 + 0.06 * nb + 0.08 * near * (scud - 0.5))
-                         * (1.0 - 0.3 * exp(-dot(qf, qf) / 45.0));
+                float3 c = grey * (0.1 + 0.06 * nb + 0.08 * near * (scud - 0.5)) * (1.0 - 0.3 * exp(-dot(qf, qf) / 45.0));
                 float2 Ld = Lu.xy / max(length(Lu.xy), 1e-3);
-                float2 qn = qa / max(length(qa), 1e-3);
-                c += Lc * (lowSun * lightAmt * 0.55 * smoothstep(3.0, 0.0, edge) * saturate(dot(qn, Ld)) * (0.5 + nb));
-                if (glow > 0.0) c += flashCol * (glow * 0.5 * nb * exp(-dot(P - spot.xy, P - spot.xy) / 16.0));
-                c = mix(c, u.horizon.rgb * 0.5, 1.0 - exp(-baseHit / 80.0));
+                float2 qn = qc / max(rr, 1e-3);
+                c += Lc * (lightAmt * (0.05 * back + 0.55 * lowSun * saturate(dot(qn, Ld))) * smoothstep(3.0, 0.0, edge) * (0.5 + nb));
+                if (glow > 0.0) c += flashCol * (glow * (0.05 + 0.7 * nb * exp(-dot(P - spot.xy, P - spot.xy) / 30.0)));
+                c = mix(c, haze, 1.0 - exp(-baseHit / 80.0));
                 acc += T * a * c; T *= 1.0 - a;
             }
         }
 
-        // The storm's body, one sheet facing you at its front.
+        // The storm's body, one sheet facing you at its front, and the anvil's underside over you: each found, then the
+        // nearer laid first (the anvil's leading edge overhangs the body as it comes).
+        float4 body = float4(0.0);
+        float bodyT = 1e9;
         float Df = D - 3.0;
         if (T > 0.01 && Df > 1.5 && fwd > 0.15) {
             float rho = Df / fwd;
             float x = rho * hv.y, z = rho * k;
             float hz = z - kCellBase;
-            if (hz > -0.3 && z < kCellAnvil + 1.0 && abs(x) < 26.0) {
+            float px = rho * pa;                                    // a pixel at the sheet (km)
+            // A cheap bound first (the boxes the skirt and tower, the forward flank and the flanking line can reach with
+            // their widest lumps), so the sky beside the storm costs a few sums.
+            float xa = 1.0 - 0.2 * max(hz - 3.0, 0.0);              // the updraft's axis, leaning downshear as it rises
+            float bound = max(max(8.5 - abs(x - xa), min(min(x - xa + 15.0, xa + 1.0 - x), 9.0 - z)),
+                              min(min(x - 4.5, 15.2 - x), 7.8 - z));
+            if (hz > -0.3 && z < kCellAnvil + 3.0 && bound > -0.1) {
                 float2 p = float2(x, z) * 0.8 + 7.0;
-                // Its texture (two octaves), and the first octave again a step toward the light: the slope the light
-                // rolls over, and a finer fray at its edges.
-                float2 Lp = float2(Lu.y, Lu.z);
-                float lpl = length(Lp);
                 float e1 = skyNoise2(p);
-                float eL = skyNoise2(p + (lpl > 0.05 ? Lp / lpl : float2(0.0, 1.0)) * 0.45);
                 float en = 0.6667 * e1 + 0.3333 * skyNoise2(p * 2.03 + float2(17.1, 9.2));
-                float xa = 1.0 - 0.22 * max(hz - 3.0, 0.0);          // the updraft's axis, leaning left as it rises
-                float upper = smoothstep(2.6, 4.2, hz);              // 0 the striated skirt … 1 the tower
-                float flare = smoothstep(kCellAnvil - kCellBase - 2.4, kCellAnvil - kCellBase, hz);
-                float W0 = mix(6.0 - 1.8 * smoothstep(0.0, 2.6, hz), 3.5, upper) + 1.5 * flare;
+                // The cauliflower: one field of rounded lumps over the sheet (Supercell Sky's sum of bumps), warped so
+                // they never line up in rows, larger the farther the storm stands (fewer bumps at a distance).
+                float bs = max(0.7, rho * 0.035);
+                float2 gw = float2(x - 0.2 * turn, z) / bs + 0.9 * float2(e1, skyNoise2(p * 0.5 + 3.3));
+                float2 gb;
+                float Hb = cloudBumps(gw, 0.0, float2(17.0), float2(3.0), 0.5, 0.3, 2.2, gb);
+                float lump = Hb - 0.55;
+                // At the outline the lumps are rounded lobes with sharp folds between them (cauliflower, not a wave).
+                float lobe = smoothstep(0.08, 0.9, Hb) - 0.5;
+                // The striated skirt flaring over the base (smooth, laminar, plate on plate, each plate a lip over the
+                // next, sagging at the sides and winding as it turns), and the cauliflower tower above it rising into
+                // the anvil in turrets (its ceiling covers the join).
+                float upper = smoothstep(2.3, 3.6, hz);
+                float Ws = 6.4 - 2.2 * smoothstep(0.0, 2.5, hz);
+                float Wt = 3.0 + 1.4 * smoothstep(5.0, 8.4, hz);
+                float W0 = mix(Ws, Wt, upper);
                 float s = clamp((x - xa) / W0, -1.0, 1.0);
-                // The skirt's plates: rings round it, each a lip over the next; seen from below a ring sags at the sides
-                // (they are farther off there), and they wind a little as it turns.
                 float zr = hz * (1.0 + (W0 / Df) * (1.0 - sqrt(1.0 - s * s)));
-                float f = fract(zr * 1.35 + 0.12 * (s + turn) + 0.6 * (en - 0.5));
-                float W = W0 + (1.0 - upper) * 0.5 * (1.0 - f) * (1.0 - f) + (0.35 + 1.6 * upper) * (en - 0.5);
-                float edge = W - abs(x - xa), sn = s;
-                float stri = (1.0 - upper) * smoothstep(0.15, 0.7, hz) * smoothstep(0.25, 0.7, en);
+                float kb = zr * 1.6 + 0.12 * (s + turn) + 0.5 * (en - 0.5);
+                float fb = fract(kb);
+                float W = W0 + (1.0 - upper) * 0.5 * (1.0 - fb) * (1.0 - fb) + 0.25 * (en - 0.5) + upper * 0.8 * lobe * bs;
+                float edge = min(W - abs(x - xa), kCellAnvil + 0.8 + 0.9 * lobe * bs - z);
+                float sn = s, nz = 0.1, stri = (1.0 - upper) * smoothstep(0.1, 0.5, hz) * smoothstep(0.2, 0.6, en);
                 float lumpy = upper;
-                // The forward flank's cloud to its left, from the base into the anvil, its top a shoulder falling away
-                // from the updraft, lumpy at its edge and top.
-                float eF = min(min(x - xa + 14.0 - 0.35 * hz, xa + 1.5 - x), 9.0 - 0.22 * max(xa - x, 0.0) - z)
-                         + 2.4 * (en - 0.5) + 0.8 * (eL - 0.5);
+                // The forward flank's cloud beside it (left, downshear): a lower, flatter shelf over the rain, from a
+                // couple of km up to a shoulder falling away from the updraft, its lumps smoothed.
+                float eF = min(min(x - xa + 11.0 - 0.3 * hz, xa - 2.0 + 0.25 * hz - x),
+                               min(6.0 - 0.2 * max(xa - x, 0.0) - z, 2.0 * (hz - 0.8)))
+                         + 1.2 * (en - 0.5) + 0.4 * lobe * bs;
                 if (eF > edge) {
                     float w = saturate((eF - edge) * 2.0);
-                    sn = mix(sn, -0.35, w); stri *= 1.0 - w; lumpy = mix(lumpy, 0.6, w); edge = eF;
+                    sn = mix(sn, -0.3, w); nz = mix(nz, 0.3, w); stri *= 1.0 - w; lumpy = mix(lumpy, 0.35, w); edge = eF;
                 }
-                // The flanking line: towers stepping down to its right, domed, tapering and lumpy, each its own size.
+                // The flanking line: cumulus towers stepping down to its right, each its own size, cauliflower all over.
                 for (int i = 0; i < 3; i++) {
-                    float3 t = i == 0 ? float3(6.8, 2.4, 7.0) : (i == 1 ? float3(9.7, 1.8, 5.4) : float3(12.3, 1.4, 4.0));
+                    float3 t = i == 0 ? float3(7.2, 1.9, 6.9) : (i == 1 ? float3(10.8, 1.5, 5.3) : float3(13.8, 1.15, 4.0));
                     float xc = t.x, wc = t.y, top = t.z;
                     float sx = (x - xc) / wc;
-                    float e = min(wc * (1.3 - 0.6 * saturate(hz / (top - kCellBase))) - abs(x - xc),
-                                  top - z - 1.2 * wc * sx * sx) + 1.8 * (en - 0.5) + 0.9 * (eL - 0.5);
+                    float e = min(wc * (1.2 - 0.45 * saturate(hz / (top - kCellBase))) - abs(x - xc), top - z - wc * sx * sx)
+                            + 0.9 * lobe * bs + 0.3 * (en - 0.5);
                     if (e > edge) {
                         float w = saturate((e - edge) * 2.0);
-                        sn = mix(sn, clamp(sx, -1.0, 1.0), w); stri *= 1.0 - w; lumpy = mix(lumpy, 1.0, w); edge = e;
+                        sn = mix(sn, clamp(sx, -1.0, 1.0), w); nz = mix(nz, saturate(1.0 - (top - z) / 1.5), w);
+                        stri *= 1.0 - w; lumpy = mix(lumpy, 1.0, w); edge = e;
                     }
                 }
-                float a = smoothstep(-0.3, 0.35, edge) * smoothstep(-0.3, 0.05, hz) * smoothstep(1.5, 5.0, Df)
-                        * (1.0 - smoothstep(kCellAnvil - 1.1, kCellAnvil + 0.3, z));
+                // As sharp as a pixel (a km of softness blurred it into a cut-out).
+                float soft = max(1.1 * px, 0.025);
+                float a = smoothstep(-soft, soft, edge) * smoothstep(-0.3, 0.05, hz) * smoothstep(1.5, 5.0, Df);
+                float thinA = 1.0 - smoothstep(0.0, 1.0, edge);
                 if (a > 0.002) {
-                    // The light rolls over its lumps: the noise's own slope toward the light.
-                    float bump = lpl > 0.05 ? saturate(0.5 + 3.0 * (e1 - eL)) : 0.5;
+                    // The normal: the shape's curve round its axis, tilted gently by its lumps (their slope from the
+                    // sum): each lump lighter on top in the sky's light, darker under, the creases between them soft.
                     float c0 = sqrt(max(1.0 - sn * sn, 0.0));
-                    float ndl = dot(float3(-c0, sn, 0.15), Lu);
-                    float direct = saturate(0.6 * ndl + 0.4) * mix(1.0, 0.3 + 1.4 * bump, 0.65 * lumpy);
-                    // Each plate dark under the lip above it, brightening up to its own lip (a crisp line between).
-                    float g = smoothstep(0.0, 0.92, f) * (1.0 - smoothstep(0.96, 1.0, f));
-                    float bandShade = 1.0 + stri * (0.34 * g - 0.2);
-                    float3 body = grey * float3(0.84, 0.9, 1.0) * (0.14 + 0.07 * en)
-                                * mix(0.6, 1.0, smoothstep(0.0, 3.0, hz));
+                    float2 slope = gb * (0.16 * lumpy / bs);
+                    float3 N = normalize(float3(-c0, sn - slope.x, nz - slope.y));
+                    float fold = smoothstep(0.1, 0.9, Hb);
+                    float occl = mix(1.0, 0.75 + 0.25 * fold, lumpy);
+                    float ndl = dot(N, Lu);
+                    float direct = saturate(0.75 * ndl + 0.25) * occl;
+                    float strLip;
+                    float bandShade = cloudStriation(kb, stri, strLip);
+                    float skyLit = (0.72 + 0.45 * saturate(N.z + 0.25)) * occl;
+                    float3 body3 = grey * float3(0.82, 0.9, 1.02) * (0.14 + 0.05 * en) * skyLit
+                                 * mix(0.62, 1.0, smoothstep(0.0, 3.0, hz));
                     float3 warm = Lc * (lightAmt * direct * (0.5 + 0.5 * smoothstep(0.5, 6.0, hz)));
-                    float3 c = (body * (1.0 - 0.3 * direct) + warm) * bandShade;
-                    // A thin lining where it thins against a light behind it.
-                    c += Lc * (lightAmt * 0.9 * back * (1.0 - smoothstep(0.0, 0.6, edge)) * (0.2 + 0.8 * en * en));
-                    // Lightning inside lights it from within, its billows showing.
+                    float3 c = (body3 * (1.0 - 0.3 * direct) + warm) * bandShade;
+                    c += Lc * (lightAmt * 0.08 * strLip * saturate(ndl + 0.4));
+                    // The silver lining: where it thins at its edge against a light behind it the light comes through, a
+                    // bright rim a few pixels wide and a softer glow within, most on the tops; not a drawn outline: thick
+                    // sides keep only a thread, the thin turrets glow. A little comes through its lumps' thinner tops, so
+                    // its structure shows on the dark side.
+                    float rimW = max(3.0 * px, 0.05);
+                    float rim = 1.0 - smoothstep(0.0, rimW, edge);
+                    float vary = smoothstep(0.3, 0.75, en + 0.35 * (fold - 0.5));
+                    float lining = (0.75 * rim + 0.25 * thinA) * (0.3 + 0.7 * saturate(N.z + 0.5)) * (0.2 + 1.1 * vary);
+                    c += Lc * (lightAmt * (1.5 * back + 0.25 * wideBack) * lining);
+                    c += Lc * (lightAmt * 0.07 * back * fold * saturate(N.z + 0.5) * (0.4 + en));
+                    // Lightning inside lights it from within round the strike: its lumps bulge bright, the creases stay
+                    // dark, its thin edges glow; a little light all over.
                     if (glow > 0.0) {
-                        float fd = ((x - spot.y) * (x - spot.y) + (z - spot.z) * (z - spot.z)) / 8.0;
-                        c += flashCol * (glow * 1.1 * (0.25 + 0.75 * en) * (0.12 + exp(-fd)));
+                        float2 fs = float2(x - spot.y, z - spot.z);
+                        float fd = dot(fs, fs);
+                        float inner = (1.1 * exp(-fd / 5.0) + 0.3 * exp(-fd / 36.0))
+                                    * (0.62 + 0.38 * fold * saturate(N.z + 0.6)) * (0.7 + 0.6 * thinA) * (0.55 + 0.45 * en);
+                        c += flashCol * (glow * (0.03 + inner));
                     }
-                    // Into the anvil's own shade at its top, so the two are one cloud.
-                    c = mix(c, grey * 0.22, smoothstep(kCellAnvil - 3.5, kCellAnvil, z));
-                    c = mix(c, u.horizon.rgb * 0.5, 1.0 - exp(-rho / 90.0));
-                    acc += T * a * c; T *= 1.0 - a;
+                    // Up into the anvil's own shade, so the tower and the anvil overhead are one cloud.
+                    float junction;
+                    float into = cloudAnvilMelt(z, kCellAnvil, 0.5 + 0.4 * lump, junction);
+                    c = mix(c, grey * (0.18 + 0.05 * en), 0.8 * into);
+                    c = mix(c, haze, 1.0 - exp(-rho / 90.0));
+                    body = float4(c * a, a);
+                    bodyT = rho;
                 }
             }
         }
 
-        // The anvil's underside, over you and back to its trailing edge (beyond it the clear sky): dark, smoother than
-        // the tower, paler and thinner toward its edges; as it clears, mammatus hang from it, lit low from the clear side
-        // by a sun beyond its edge (and after sunset from below).
+        float4 anvil = float4(0.0);
+        float anvilT = 1e9;
         if (T > 0.01 && k > 0.0015) {
+            // The anvil's underside, a ceiling over you from far off the view's sides back to its trailing edge behind
+            // the storm (as Supercell Sky's): it sags toward the tower it spreads from (one step of the sag at the level
+            // plane's hit), so the two meet; its trailing edge is rounded and ragged, feathered into fibres.
             float rho = kCellAnvil / k;
             float2 P = hv * rho;
+            float2 top = float2(D - 3.0, -0.75);
+            float sag = (2.2 + 1.6 * (skyNoise2(P * 0.45 + 1.0) - 0.5)) * exp(-length(P - top) / 6.0);
+            rho = (kCellAnvil - sag) / k;
+            P = hv * rho;
             float na = skyNoise2(P * 0.06 + 11.0);
-            float trail = E - P.x - P.y * P.y / 90.0 + 12.0 * (na - 0.5);
-            // Narrow over the storm (hidden behind its tower), widening as it spreads toward you from it; once the
-            // storm has passed (the late Core, the Clearing) it lies wide over the sky it came from as well.
+            float trail = E - P.x - P.y * P.y / 60.0 + 20.0 * (na - 0.5);
             float spread = smoothstep(2.0, -9.0, D);
-            float side = 6.0 + 0.5 * max(D + 4.0 - P.x, 0.0) + 0.5 * spread * max(P.x - D - 4.0, 0.0)
+            float side = 30.0 + 0.6 * max(D + 4.0 - P.x, 0.0) + 0.5 * spread * max(P.x - D - 4.0, 0.0)
                        - abs(P.y + 2.0) + 8.0 * (na - 0.5);
             float ed = min(trail, side);
-            if (abs(ed) < 6.0) ed += 3.0 * (skyNoise2(P * 0.25 + 5.0) - 0.5) * (1.0 - smoothstep(4.0, 6.0, abs(ed)));
-            float a = smoothstep(-1.0, 4.0, ed);
+            if (abs(ed) < 6.0) {
+                float fade = 1.0 - smoothstep(4.0, 6.0, abs(ed));
+                ed += (2.6 * (skyNoise2(P * 0.25 + 5.0) - 0.5) + 1.1 * (skyNoise2(P * float2(0.9, 1.7) + 2.0) - 0.5)) * fade;
+            }
+            // As sharp as a pixel (seen edge-on its edge is foreshortened), its fibres doing the feathering.
+            float pxA = rho * pa / max(k, 0.05) * 0.6;
+            float a = smoothstep(-max(pxA, 0.05), max(pxA, 0.05) + 0.35, ed);
             if (a > 0.002) {
-                float thin = 1.0 - smoothstep(0.0, 14.0, ed);
-                float3 c = grey * (0.16 + 0.1 * na + 0.14 * thin);
-                // A low light gets under it from the clear side; after sunset it lights it from below.
-                float reach = exp(-max(trail, 0.0) / 18.0) * saturate(Lu.x * 2.0 + 0.4);
+                float thin = 1.0 - smoothstep(0.0, 10.0, ed);
+                // Its underside's texture in a frame where a shape stays round on screen at any distance (across, the
+                // arc round you; outward, 9.5·asinh(ρ/9.5)): broad soft billows, lit a little on their side toward the
+                // light, and the outflow's fibres radiating from the tower.
+                float phi = atan2(P.y, P.x);
+                float outward = kCellAnvil * log(rho / kCellAnvil + sqrt(rho * rho / (kCellAnvil * kCellAnvil) + 1.0));
+                float2 gq = float2(rho * phi, outward);
+                float bil = skyNoise2(gq * 0.2 + 3.0);
+                float2 Lq = normalize(float2(Lu.y, Lu.x) + float2(1e-4, 0.0));
+                float bilL = skyNoise2((gq + Lq * 1.2) * 0.2 + 3.0);
+                float2 qt = P - top;
+                float fib = skyNoise2(float2(atan2(qt.y, qt.x) * 9.0 + 2.0 * bil, length(qt) * 0.08 + 2.0));
+                float3 c = grey * (0.11 + 0.13 * bil + 0.015 * fib + 0.06 * na + 0.14 * thin);
+                // A low light gets under it from the clear side beyond its trailing edge (warmest near the edge); after
+                // sunset it lights it from below.
+                float reach = exp(-max(trail, 0.0) / 14.0) * saturate(Lu.x * 2.0 + 0.4);
                 float under = saturate(0.3 - 5.0 * Lu.z);
-                float lit = under;
-                if (mam > 0.01) {
-                    float pm = mam * smoothstep(0.38, 0.58, na) * (1.0 - smoothstep(14.0, 30.0, trail))
-                             * smoothstep(0.0, 4.0, trail);
-                    if (pm > 0.01) {
-                        float2 gr;
-                        float H = cellBumps(P / 2.4 + 0.6 * float2(na, skyNoise2(P * 0.09 + 4.0)), 0.66, gr);
-                        float3 nrm = normalize(float3(-0.55 * pm * gr, -1.0));
-                        // Each pouch shaded round: its side toward the light bright, the far side and the folds dark.
-                        lit = mix(lit, saturate(0.45 + 1.1 * dot(nrm, Lu) + under), pm);
-                        c *= 1.0 - 0.45 * pm * (1.0 - smoothstep(0.15, 1.2, H));
-                    }
+                float lit = under * (0.7 + 0.6 * saturate(0.5 + 2.0 * (bilL - bil)));
+                float pm = mam * smoothstep(0.38, 0.58, na) * (1.0 - smoothstep(14.0, 30.0, trail)) * smoothstep(0.0, 4.0, trail);
+                float dome = 0.5;
+                if (pm > 0.01) {
+                    // Mammatus: round pouches in the same frame, lit low from the clear side, the folds between dark.
+                    float2 gm = gq / 2.1 + 0.6 * float2(na, skyNoise2(P * 0.09 + 4.0));
+                    // (The low light reaches them from under the anvil's edge: their rounded undersides lit, the near
+                    // sides and the folds in shade.)
+                    // (Supercell Sky's sum of bumps, a little narrower here, so seen from far below each pouch stands
+                    // apart from the next.)
+                    float2 gmg;
+                    float Hm = cloudBumps(gm, 0.0, float2(0.0), float2(7.0), 0.42, 0.22, 3.0, gmg);
+                    dome = smoothstep(0.12, 0.9, Hm);
+                    float3 nm = normalize(float3(-0.9 * pm * gmg, -1.0));
+                    float3 nrm = float3(nm.y, nm.x, nm.z);
+                    float3 Lp = normalize(float3(0.35 * Lu.x, 0.35 * Lu.y, -1.0));
+                    lit = mix(lit, saturate(1.6 * dot(nrm, Lp) - 0.35 + under) * (0.35 + 0.65 * dome), pm);
+                    c *= 1.0 - 0.55 * pm * (1.0 - dome);
                 }
-                c += Lc * (lightAmt * (0.06 + 1.1 * lowSun * reach) * lit);
-                if (glow > 0.0) c += flashCol * (glow * 0.5 * exp(-dot(P - spot.xy, P - spot.xy) / 120.0));
-                c = mix(c, u.horizon.rgb * 0.75, 1.0 - exp(-rho / 110.0));
-                a *= 1.0 - 0.35 * thin;                                 // its thin edges let the sky through
-                acc += T * a * c; T *= 1.0 - a;
+                c += Lc * float3(1.0, 0.82, 0.68) * (lightAmt * (0.04 + 1.2 * lowSun * reach) * lit * (0.8 + 0.4 * dome));
+                // Its edges, thin, glow against a light behind them (silver, then gold low down).
+                float edgeBand = 1.0 - smoothstep(0.0, 2.0, ed);
+                c += Lc * (lightAmt * (1.2 * back + 0.12 * wideBack) * edgeBand * (0.5 + 0.7 * fib));
+                if (glow > 0.0) c += flashCol * (glow * (0.03 + 0.45 * exp(-dot(P - spot.xy, P - spot.xy) / 110.0)));
+                c = mix(c, haze, 1.0 - exp(-rho / 110.0));
+                anvil = float4(c * a, a);
+                anvilT = rho;
             }
         }
+        // Where the two meet they cross-fade over a km or so (a hard order drew a straight line where the tower's sheet
+        // meets the anvil's ceiling).
+        float wA = smoothstep(-1.2, 1.2, bodyT - anvilT);
+        float3 rgb = mix(body.rgb + (1.0 - body.a) * anvil.rgb, anvil.rgb + (1.0 - anvil.a) * body.rgb, wA);
+        acc += T * rgb; T *= (1.0 - body.a) * (1.0 - anvil.a);
 
         return float4(acc, T);
     }

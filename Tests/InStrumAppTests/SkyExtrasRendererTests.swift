@@ -335,8 +335,10 @@ final class FireNeonWeatherRendererTests: XCTestCase {
         XCTAssertEqual(try meanFall(still) / meanFall(snow), WeatherLayer.ashSpeed, accuracy: 0.05)
     }
 
-    /// The supercell's lightning through the weather layer: a flash brightens the scene, the limiter keeping it to three
-    /// large jumps a second at most; under gentle visuals not one large jump, only a glow.
+    /// The supercell's lightning through the weather layer: a flash lifts the scene a little (its cloud carries the
+    /// flash, never a pale wash over everything), the limiter keeping it to three large jumps a second at most; under
+    /// gentle visuals not one large jump, only a glow. Its light in the cloud goes through the sky layer's limiter: three
+    /// jumps a second at most, and under gentle visuals a glow no brighter than `gentleCellGlow`.
     func testSupercellLightningFlashesAndOnlyGlowsUnderGentle() throws {
         guard let device = MTLCreateSystemDefaultDevice() else { throw XCTSkip("No Metal device") }
         var s = SkySettings(); s.timeMode = .frozen; s.frozenHour = 13; s.cityID = "melbourne"; s.weatherMode = .pick
@@ -345,7 +347,10 @@ final class FireNeonWeatherRendererTests: XCTestCase {
         sky.reset(settings: s)
         let plain = try XCTUnwrap(WeatherLayer(device: device)), gentle = try XCTUnwrap(WeatherLayer(device: device))
         gentle.gentle = true
+        let plainSky = try XCTUnwrap(SkyLayer(device: device)), gentleSky = try XCTUnwrap(SkyLayer(device: device))
+        gentleSky.gentle = true
         var plainBoost: [Float] = [], gentleBoost: [Float] = []
+        var plainGlow: [Float] = [], gentleGlow: [Float] = [], asked: [Float] = []
         let dt = 1.0 / 30
         let start = Date(timeIntervalSince1970: 1_793_000_000)
         for i in 1...(480 * 30) {
@@ -353,8 +358,13 @@ final class FireNeonWeatherRendererTests: XCTestCase {
             // Both layers run from the start (their limiters settled at the scene's exposure); the Core is recorded.
             plain.update(st, quality: .lite, size: CGSize(width: 320, height: 180), dt: dt, surface: .none)
             gentle.update(st, quality: .lite, size: CGSize(width: 320, height: 180), dt: dt, surface: .none)
+            let clock = Float((Double(i) * dt).truncatingRemainder(dividingBy: 3600))
+            plainSky.update(st, quality: .lite, size: CGSize(width: 320, height: 180), time: clock)
+            gentleSky.update(st, quality: .lite, size: CGSize(width: 320, height: 180), time: clock)
             guard i > 150 * 30, i < 330 * 30 else { continue }   // the Core
             plainBoost.append(plain.exposureBoost); gentleBoost.append(gentle.exposureBoost)
+            plainGlow.append(1 + plainSky.cellGlowOut); gentleGlow.append(1 + gentleSky.cellGlowOut)
+            asked.append(st.supercellWeather?.glow ?? 0)
         }
         func jumps(_ b: [Float]) -> (count: Int, worstSecond: Int) {
             var times: [Int] = []
@@ -365,12 +375,21 @@ final class FireNeonWeatherRendererTests: XCTestCase {
             for t in times { worst = max(worst, times.filter { $0 >= t && $0 < t + 30 }.count) }
             return (times.count, worst)
         }
-        XCTAssertGreaterThan(plainBoost.max() ?? 1, 1.5, "its lightning brightens the scene")
+        XCTAssertGreaterThan(plainBoost.max() ?? 1, 1 + 0.8 * WeatherLayer.cellLightning, "its lightning lifts the scene")
+        XCTAssertLessThanOrEqual(plainBoost.max() ?? 1, 1 + WeatherLayer.cellLightning + 1e-4, "a little: the cloud flashes")
         XCTAssertGreaterThan(jumps(plainBoost).count, 5)
         XCTAssertLessThanOrEqual(jumps(plainBoost).worstSecond, FlashLimiter.maxFlashesPerSecond)
         XCTAssertEqual(jumps(gentleBoost).count, 0, "gentle: no flash")
         XCTAssertGreaterThan(gentleBoost.max() ?? 1, 1.02, "only a glow")
         XCTAssertLessThanOrEqual(gentleBoost.max() ?? 1, 1 + WeatherLayer.gentleLightning + 1e-4)
+        // In the cloud: it flashes, within the limiter; under gentle visuals it only glows.
+        XCTAssertGreaterThan(asked.max() ?? 0, 0.5)
+        XCTAssertGreaterThan(plainGlow.max() ?? 1, 1.5, "the cloud lights up")
+        XCTAssertGreaterThan(jumps(plainGlow).count, 3)
+        XCTAssertLessThanOrEqual(jumps(plainGlow).worstSecond, FlashLimiter.maxFlashesPerSecond)
+        XCTAssertEqual(jumps(gentleGlow).count, 0, "gentle: the cloud never flashes")
+        XCTAssertGreaterThan(gentleGlow.max() ?? 1, 1.02, "it glows")
+        XCTAssertLessThanOrEqual(gentleGlow.max() ?? 1, 1 + SkyLayer.gentleCellGlow + 1e-4)
     }
 
     /// The dome draws the storm: its Approach stands on the horizon where the world looks (darker there than the clear

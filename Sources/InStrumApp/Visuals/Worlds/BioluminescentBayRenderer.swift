@@ -148,6 +148,7 @@ final class BioluminescentBayRenderer: ThemeRenderer {
         // overhead near the poles: above this nearly level view).
         var shown = s
         shown.auroraAltitude = AuroraFjordRenderer.framedAltitude(s.auroraAltitude)
+        sky.gentle = gentle
         sky.update(shown, quality: quality, size: size, time: Float(frame.time))
         // Sea smoke over the bay, from the waterline out to the horizon (spec §6.4).
         let shore = SkyLayer.waterY(out: Self.waterline, height: Self.cameraHeight, horizonY: horizon, verticalFOV: sky.verticalFOV)

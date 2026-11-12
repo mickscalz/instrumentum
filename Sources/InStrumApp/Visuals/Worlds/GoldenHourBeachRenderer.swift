@@ -88,6 +88,7 @@ final class GoldenHourBeachRenderer: ThemeRenderer {
         let horizonY = keyTop + (1 - keyTop) * 0.4
         sky.viewAzimuth = viewAzimuth
         sky.horizonY = horizonY
+        sky.gentle = gentle
         sky.update(s, quality: quality, size: size, time: Float(frame.time))
         // Sea smoke over the sea, from the waterline out to the horizon (spec §6.4).
         let shore = SkyLayer.waterY(out: Self.waterline, height: Self.cameraHeight, horizonY: horizonY, verticalFOV: sky.verticalFOV)

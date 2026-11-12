@@ -238,6 +238,7 @@ final class GreatBarrierReefRenderer: ThemeRenderer {
         sky.viewAzimuth = frame.cameraAzimuth
         sky.horizonY = horizonY
         sky.verticalFOV = Self.verticalFOV
+        sky.gentle = gentle
         sky.update(s, quality: quality, size: size, time: t)
         weather.gentle = gentle
         weather.update(s, quality: quality, size: size, dt: dt, surface: .water(horizonY: horizonY))

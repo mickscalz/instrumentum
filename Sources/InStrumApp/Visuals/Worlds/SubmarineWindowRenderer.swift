@@ -274,6 +274,7 @@ final class SubmarineWindowRenderer: ThemeRenderer {
         sky.viewAzimuth = viewAz
         sky.verticalFOV = Double(2 * atan(tanR / max(R, 0.05)) * 180 / .pi)
         sky.horizonY = 0
+        sky.gentle = gentle
         sky.update(s, quality: quality, size: size, time: time)
         showWarp = frame.warp != nil
         let sparkleScale = FlashLimiter.sparkleScale(gentle: gentle)

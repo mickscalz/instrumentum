@@ -180,6 +180,7 @@ final class BedroomDawnRenderer: ThemeRenderer {
         }
         sky.viewAzimuth = viewAzimuth
         sky.horizonY = horizonY
+        sky.gentle = gentle
         sky.update(s, quality: quality, size: size, time: Float(frame.time))
         weather.gentle = gentle
         weather.update(s, quality: quality, size: size, dt: dt, surface: .glass)

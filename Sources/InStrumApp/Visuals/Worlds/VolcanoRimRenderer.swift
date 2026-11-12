@@ -201,6 +201,7 @@ final class VolcanoRimRenderer: ThemeRenderer {
         sky.viewAzimuth = frame.viewAzimuth
         sky.horizonY = Self.horizonY
         sky.verticalFOV = Self.verticalFOV
+        sky.gentle = gentle
         sky.update(s, quality: quality, size: size, time: t)
         weather.gentle = gentle
         weather.update(s, quality: quality, size: size, dt: dt, surface: .ground(horizonY: Self.horizonY))

@@ -120,6 +120,7 @@ final class CoastRoadRenderer: ThemeRenderer {
         sky.viewAzimuth = viewAzimuth
         sky.horizonY = horizonY
         sky.roll = frame.roll
+        sky.gentle = gentle
         sky.update(s, quality: quality, size: size, time: Float(frame.time))
         // Sea smoke over the sea below the cliffs, inside the window: from the scrub's highest tops (the shader's scrub
         // line, bottom + 0.34 + up to 0.116) to the horizon. It passes right to left with the car, like the sea about

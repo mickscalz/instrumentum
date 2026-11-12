@@ -220,6 +220,7 @@ final class AuroraFjordRenderer: ThemeRenderer {
         shown.auroraAltitude = Self.framedAltitude(s.auroraAltitude)
         let tense = frame.tensePulse.isFinite ? min(max(frame.tensePulse, 0), 1) : 0
         shown.auroraStorm = max(s.auroraStorm, Self.tenseFlare * tense * sparkle)
+        sky.gentle = gentle
         sky.update(shown, quality: quality, size: size, time: skyTime)
         let cam = sky.camera(latitude: s.latitude, aspect: aspect)
 

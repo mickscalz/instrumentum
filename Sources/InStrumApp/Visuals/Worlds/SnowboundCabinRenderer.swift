@@ -121,6 +121,7 @@ final class SnowboundCabinRenderer: ThemeRenderer {
 
         sky.horizonY = horizonY
         sky.viewAzimuth = nil
+        sky.gentle = gentle
         sky.update(s, quality: quality, size: size, time: Float(frame.time))
         weather.gentle = gentle
         weather.update(s, quality: quality, size: size, dt: dt, surface: .ground(horizonY: horizonY))

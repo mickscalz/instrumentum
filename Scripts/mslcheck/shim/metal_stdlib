@@ -277,8 +277,8 @@ using metal::uint;
 #define uint4(...) metal::mk_u4(__VA_ARGS__)
 
 // Function constants: `constant T name [[function_constant(i)]];` reads as a global (its attribute ignored), and
-// is_function_constant_defined(name) as a bool (any specialisation type-checks the same).
-#define is_function_constant_defined(name) ((void)(name), true)
+// is_function_constant_defined(name) as false (unspecialised: the defaults; any specialisation type-checks the same).
+#define is_function_constant_defined(name) ((void)(name), false)
 
 #define M_PI_F 3.14159265358979f
 #define M_PI_2_F 1.57079632679490f

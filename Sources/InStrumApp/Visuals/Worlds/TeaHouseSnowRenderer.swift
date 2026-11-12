@@ -233,6 +233,7 @@ final class TeaHouseSnowRenderer: ThemeRenderer {
 
         sky.horizonY = l.horizon
         sky.viewAzimuth = nil   // face the equator: the sun crosses the screens at midday
+        sky.gentle = gentle
         sky.update(s, quality: quality, size: size, time: Float(frame.time))
         weather.gentle = gentle
         weather.update(s, quality: quality, size: size, dt: dt, surface: .ground(horizonY: l.horizon))

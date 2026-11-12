@@ -147,6 +147,7 @@ final class NeonNightDriveRenderer: ThemeRenderer {
         let fov = frame.fov.isFinite ? min(60, max(36, frame.fov)) : 47
         sky.verticalFOV = Double(fov)
         sky.horizonY = Self.horizonY
+        sky.gentle = gentle
         sky.update(s, quality: quality, size: size, time: t)
         // The falling rain (none in the tunnel: the frame's sky has none there), slowed while the drop's release hangs it.
         rainSpeed = 1 - 0.85 * Self.unit(frame.rainSlow)

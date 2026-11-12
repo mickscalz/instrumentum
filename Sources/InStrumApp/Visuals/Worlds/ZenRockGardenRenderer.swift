@@ -253,6 +253,7 @@ final class ZenRockGardenRenderer: ThemeRenderer {
         sky.verticalFOV = lens.verticalFOV
         sky.horizonY = horizonY
         sky.viewAzimuth = Self.viewAzimuth(latitude: s.latitude)
+        sky.gentle = gentle
         sky.update(s, quality: quality, size: size, time: Float(frame.time))
         let cam = sky.camera(latitude: s.latitude, aspect: aspect)
         camera = cam
