@@ -212,6 +212,27 @@ typedef enum {
     /// (Swift keeps names), so a merge with Fire & Neon's twelve may renumber them.
     ISD_AMB_GRASS_WIND, ISD_AMB_HAIL_TIN, ISD_AMB_BIRDS_FLEE, ISD_AMB_THUNDER_ROLL, ISD_AMB_INFLOW_ROAR, ISD_AMB_RAIN_ON_DUST,
     ISD_AMB_DRY_CICADAS, ISD_AMB_WINDMILL, ISD_AMB_CATTLE_GRID, ISD_AMB_DUST_TICKS, ISD_AMB_SHIMMER_HUM, ISD_AMB_FAR_TRUCK,
+    /// Fire & Neon (Sets 13 & 14; spec 2026-11-05-fire-and-neon-design.md §8.3, §9.3). The volcano family, all outdoor:
+    /// VENT_RUMBLE the lake's deep roar at 20–60 Hz, felt more than heard, wandering slowly, now and then a deep chuff,
+    /// surging with the lake (isd_ambience_set_lake), near −35 dBFS RMS at 1 (−31 surging), at least 10 dB under Magma
+    /// Bass; LAVA_HISS the lake's convection roar (380–900 Hz) with sparse crackle clusters, glassy tinkles of cooling
+    /// crust and now and then a gas burst's "blorp" and its spatter, brighter and busier with the lake's glow; STEAM_VENT a
+    /// fumarole's jet (builds, roars, fades, a little whistle) by itself every 8–30 s, and a steam blast of about 6 s as
+    /// an event; ROCKFALL rocks of every size bouncing down the crater wall, slowing, farther and darker, then a dusty
+    /// trickle: a small far one every 45–150 s, a big one as an event; ERUPTION_BOOM (events only) a deep blast with a
+    /// crack, the column's roar and a long crackling tail, its echoes back off the crater walls 90–290 ms later and bombs
+    /// landing on the far rim; PLUME_THUNDER (events only) short, dry, close cracks from the plume's lightning, no roll.
+    /// The drive family (inside a car): WET_TYRES tyre roar and wet spray rising with the speed, a deck joint's two
+    /// thumps (front and rear axle) every 36–60 m; WIPERS (events only) a sweep: rubber on the glass (a swish when wet,
+    /// a squeak as it dries) and a muted thunk at each end (indoor); DRIVE_ENGINE a modern engine heard from inside,
+    /// its firing note following the speed through an eight-speed automatic and dropping at each shift (indoor);
+    /// DRIVE_PASSING_CAR (events only) a car or now and then a truck passing in the next lanes, with its Doppler,
+    /// tyre hiss and spray, swinging out to its side; ROOF_RAIN the rain synthesis on the windscreen through a cabin's
+    /// filter with drops drumming on the roof, as heavy as the level (indoor); FAR_SIREN rare (every 90–240 s), far and
+    /// wordless: a soft wail gliding slowly between the key's pentatonic tones (A3–G♯4 up to its octave and a step),
+    /// never two tones back and forth, through the distance and the room.
+    ISD_AMB_VENT_RUMBLE, ISD_AMB_LAVA_HISS, ISD_AMB_STEAM_VENT, ISD_AMB_ROCKFALL, ISD_AMB_ERUPTION_BOOM, ISD_AMB_PLUME_THUNDER,
+    ISD_AMB_WET_TYRES, ISD_AMB_WIPERS, ISD_AMB_DRIVE_ENGINE, ISD_AMB_DRIVE_PASSING_CAR, ISD_AMB_ROOF_RAIN, ISD_AMB_FAR_SIREN,
     ISD_AMB_COUNT
 } ISDAmbienceSource;
 
@@ -225,7 +246,10 @@ float isd_ambience_debug_tone_hz(float hz, float sampleRate, float seconds);
 /// its groans and ticks together; the whale its units; the bubbles their bursts; the shrimp their snaps; the fish
 /// their calls; the grass nothing; the hail its stones; the birds their calls; the thunder roll its rolls; the rain on
 /// dust its drops; the cicadas their phrases; the windmill its strokes; the cattle grid and the far truck their
-/// passes; the dust its ticks).
+/// passes; the dust its ticks; Fire & Neon: the vent rumble its chuffs; the lava hiss its crackles; the steam vent its
+/// jets; the rockfall its impacts; the eruption boom its booms; the plume thunder its cracks; the wet tyres the deck
+/// joints; the wipers their sweeps; the drive's engine its shifts; the passing cars their passes; the roof rain its
+/// drops on the roof; the far siren its calls).
 int isd_ambience_debug_events(const ISDAmbience *ambience, ISDAmbienceSource source);
 /// The same seed gives the same ambience.
 ISDAmbience *isd_ambience_create(double sampleRate, int maxFrames, uint64_t seed);
@@ -248,14 +272,16 @@ void isd_ambience_trigger_thunder(ISDAmbience *ambience, float distance);
 /// 17th drops the oldest); a world switch (isd_ambience_clear_thunder, or the roll's level going to 0) and
 /// isd_ambience_all_sound_off clear it.
 void isd_ambience_queue_thunder(ISDAmbience *ambience, float delaySeconds, float strength);
-/// Any thread. A world switch: every roll still waiting in the queue (queued before this call) is dropped; rolls
-/// already sounding fade out with the world's levels.
+/// Any thread. A world switch: every roll still waiting in the queue (queued before this call) is dropped, and every
+/// one-shot still waiting (isd_ambience_post_event); rolls and one-shots already sounding fade out with the world's levels.
 void isd_ambience_clear_thunder(ISDAmbience *ambience);
 /// Any thread. Panic: the thunder queue is cleared and every roll and clap still sounding (queued or triggered) fades
-/// out within 40 ms. The beds carry on: they are the world, not a stuck note.
+/// out within 40 ms; so are the one-shots on their way, and the volcano's sounding ones (boom, cracks, rockfall, steam)
+/// fade with the thunder. The beds carry on, and so do the drive's cars and wipers: they are the world, not a stuck note.
 void isd_ambience_all_sound_off(ISDAmbience *ambience);
 /// Internal (tests): a source's next event happens at the next render (the birds take flight, a truck crosses the
-/// cattle grid, a far truck passes); ignored by sources without events of their own.
+/// cattle grid, a far truck passes; Fire & Neon: a steam blast, a rockfall, a boom, a crack, a car passing 2 s on, a
+/// wiper's sweep, a call of the far siren); ignored by sources without events of their own.
 void isd_ambience_debug_trigger(ISDAmbience *ambience, ISDAmbienceSource source);
 /// Any thread. A wave breaks on the shore (strength 0…1): a crash, a wash up the sand and a backwash. Silent
 /// unless the surf is up.
@@ -299,6 +325,27 @@ void isd_ambience_debug_ping_sonar(ISDAmbience *ambience);
 float isd_ambience_debug_sonar_hz(const ISDAmbience *ambience);
 /// Internal (tests): the whale starts singing now, from where its song left off.
 void isd_ambience_debug_start_whale(ISDAmbience *ambience);
+/// Any thread (Fire & Neon). A one-shot for `source`, due `delaySeconds` (0…12) after the next render begins (the
+/// picture first, the sound after: 3 s a kilometre). Heard only while the source is up; 32 wait at most (a 33rd drops the
+/// oldest); a world switch (isd_ambience_clear_thunder), a panic (isd_ambience_all_sound_off) or the source's level going
+/// to 0 drops those still waiting. Each source reads its own fields (anything else is ignored):
+/// - ERUPTION_BOOM: `strength` 0.3…1 (louder, deeper and longer, more bombs).
+/// - PLUME_THUNDER: `strength` 0…1, `pan` −1…1.
+/// - ROCKFALL, STEAM_VENT: `strength` 0…1 (a bigger fall; a longer, louder blast), `pan`, `distance` 0 near … 1 far.
+/// - DRIVE_PASSING_CAR: due at its closest approach (it is heard from 3 s before); `speed` how fast it closes on you
+///   (m/s: an oncoming car's speed and yours, or the difference with one in your direction), `distance` how far to the
+///   side it passes (m), `pan` which side (< 0 left), `kind` 1 for a truck, `strength` 0…1.
+/// - WIPERS: a sweep (up and back) starting when due: `speed` its time (s), `strength` how wet the glass is (0 dry …
+///   1 streaming).
+void isd_ambience_post_event(ISDAmbience *ambience, ISDAmbienceSource source, float delaySeconds, float strength,
+                             float pan, float speed, float distance, int kind);
+/// Any thread (Fire & Neon). The volcano's lake, 0…1 each (gliding over 0.3 s): the vent rumble surges with `surge`,
+/// the lava hiss brightens and cracks more with `glow`.
+void isd_ambience_set_lake(ISDAmbience *ambience, float surge, float glow);
+/// Internal (tests): the pitch (Hz) a tonal source is sounding, as of the last render: the drive's engine its firing
+/// note, a passing car's engine as heard (its Doppler included), the far siren its wail; 0 for any other source, or while
+/// it is silent. Any thread.
+float isd_ambience_debug_hz(const ISDAmbience *ambience, ISDAmbienceSource source);
 /// Render thread. Overwrites `left`/`right`.
 void isd_ambience_render(ISDAmbience *ambience, float *left, float *right, int frames);
 

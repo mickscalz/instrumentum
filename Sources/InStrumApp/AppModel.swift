@@ -230,7 +230,7 @@ public final class AppModel: ObservableObject {
 
     public func panic() {
         engine.panic()
-        ambienceLive.withLockUnchecked { $0.pendingThunder = nil; $0.pendingThunderQueue.removeAll() }   // nothing on its way
+        ambienceLive.withLockUnchecked { $0.pendingThunder = nil; $0.pendingThunderQueue.removeAll(); $0.pendingEvents.removeAll() }   // nothing on its way
         live.withLockUnchecked { l in l.events += l.state.reset() }
     }
 
@@ -493,7 +493,7 @@ public final class AppModel: ObservableObject {
         guard resolved != themeID else { return }
         stopTheArp()
         // Storms Review focus 4: no thunder queued in the last world arrives in this one, whatever this one plays.
-        ambienceLive.withLockUnchecked { $0.pendingThunderQueue.removeAll() }
+        ambienceLive.withLockUnchecked { $0.pendingThunderQueue.removeAll(); $0.pendingEvents.removeAll() }   // nor any one-shot
         engine.clearAmbienceThunder()
         themeID = resolved
         settings.themeID = resolved
@@ -627,10 +627,14 @@ public final class AppModel: ObservableObject {
         var pendingBubbles: Double?
         /// Thunder on its way, held by the throttle, with when the world asked (its delay runs from then).
         var pendingThunderQueue: [(thunder: QueuedThunder, at: Double)] = []
+        /// The world's one-shots (Fire & Neon), held the same way.
+        var pendingEvents: [(event: AmbienceEvent, at: Double)] = []
         var closeness = 0.5
     }
     /// The engine's thunder queue holds 16: so does the throttle's.
     nonisolated static let thunderQueueLimit = 16
+    /// The engine holds 32 one-shots waiting: so does the throttle.
+    nonisolated static let ambienceEventLimit = 32
     nonisolated private let ambienceLive = OSAllocatedUnfairLock(uncheckedState: AmbienceLive())
 
     public var ambienceSettings: AmbienceSettings { settings.ambience }
@@ -643,7 +647,8 @@ public final class AppModel: ObservableObject {
     /// new world): a beach's wave never crashes in the next world, and the submarine's bubbles never rise in it. Queued
     /// thunder held back goes next time too, every roll of it (16 at most, the oldest giving way), its delay shortened by
     /// the time it waited, so it still arrives when the strike's distance says; it stays behind when the next scene has
-    /// no thunder roll.
+    /// no thunder roll. The world's one-shots (Fire & Neon: a boom, a crack, a rockfall, a car passing, a wiper's sweep)
+    /// go the same way (32 at most), each staying behind when the next scene has its source silent.
     public nonisolated func updateAmbience(_ s: AmbienceScene, at t: Double = ProcessInfo.processInfo.systemUptime) {
         let out: AmbienceScene? = ambienceLive.withLockUnchecked { a in
             var scene = s
@@ -659,21 +664,33 @@ public final class AppModel: ObservableObject {
                 if over > 0 { a.pendingThunderQueue.removeFirst(over) }
             }
             if s.level(.thunderRoll) <= 0 { a.pendingThunderQueue.removeAll() }   // and its thunder
+            if !s.events.isEmpty {
+                a.pendingEvents += s.events.map { (event: $0, at: t) }
+                let over = a.pendingEvents.count - Self.ambienceEventLimit
+                if over > 0 { a.pendingEvents.removeFirst(over) }
+            }
+            a.pendingEvents.removeAll { s.level($0.event.source) <= 0 }   // and its one-shots
             scene.thunder = a.pendingThunder
             scene.wave = a.pendingWave
             scene.bubbleBurst = a.pendingBubbles
             scene.thunderQueue = a.pendingThunderQueue.map {
                 QueuedThunder(delay: max(0, $0.thunder.delay - max(0, t - $0.at)), strength: $0.thunder.strength)
             }
+            scene.events = a.pendingEvents.map { held in
+                var e = held.event
+                e.delay = max(0, e.delay - max(0, t - held.at))
+                return e
+            }
             guard t - a.lastSend >= Self.ambienceInterval - 1e-9 else { return nil }
-            if scene.thunder == nil, scene.wave == nil, scene.bubbleBurst == nil, scene.thunderQueue.isEmpty, let previous = a.sent,
-               !Self.ambienceChanged(previous, scene) { return nil }
+            if scene.thunder == nil, scene.wave == nil, scene.bubbleBurst == nil, scene.thunderQueue.isEmpty, scene.events.isEmpty,
+               let previous = a.sent, !Self.ambienceChanged(previous, scene) { return nil }
             a.sent = scene
             a.lastSend = t
             a.pendingThunder = nil
             a.pendingWave = nil
             a.pendingBubbles = nil
             a.pendingThunderQueue.removeAll()
+            a.pendingEvents.removeAll()
             return scene
         }
         if let out { engine.setAmbience(out) }
@@ -685,6 +702,7 @@ public final class AppModel: ObservableObject {
         if abs(a.activity - b.activity) > 0.05 { return true }
         if abs(a.speed - b.speed) > 0.02 || abs(a.surfDistance - b.surfDistance) > 0.01 { return true }
         if abs(a.indoors - b.indoors) > 0.01 || abs(a.wetness - b.wetness) > 0.01 || abs(a.snowOnGlass - b.snowOnGlass) > 0.01 { return true }
+        if abs(a.lakeSurge - b.lakeSurge) > 0.02 || abs(a.lakeGlow - b.lakeGlow) > 0.02 { return true }   // the volcano's lake
         if a.key != b.key { return true }   // the temple bell and the sonar retune at their next strike or ping
         return abs(a.nightCool - b.nightCool) > 0.01 || abs(a.closeness - b.closeness) > 0.01 || abs(a.density - b.density) > 0.01
     }

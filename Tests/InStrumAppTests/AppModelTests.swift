@@ -464,6 +464,79 @@ final class AppModelTests: XCTestCase {
         XCTAssertTrue(engine.scenes.allSatisfy { $0.thunderQueue.isEmpty })
     }
 
+    /// Fire & Neon (plan Task 10), the app's half: the world's one-shots held back by the throttle still go, each delay
+    /// shortened by the time it waited (a wiper's sweep still lands with the blades), and go once; at most 32 go, the
+    /// newest; one whose source the next scene has silent stays behind; a world switch and a panic drop what is held; and
+    /// the volcano's lake reaches the engine when it moves.
+    func testAmbienceEventsSurviveTheThrottleButNotASwitch() {
+        let drive = AmbienceScene(levels: [.wipers: 0.75, .drivePassingCar: 0.8, .wetTyres: 0.8])
+        let m = makeModel()
+        m.updateAmbience(drive, at: 3)
+        engine.scenes.removeAll()
+        var one = drive; one.events = [.sweep(in: 0.25, seconds: 1.2, wet: 0.6)]
+        var two = drive; two.events = [.passingCar(in: 2.5, closing: 50, lateral: 13, truck: false), .sweep(in: 0.2, seconds: 1.2, wet: 0.6)]
+        m.updateAmbience(one, at: 3.01)   // too soon: held back, not dropped
+        m.updateAmbience(two, at: 3.05)
+        m.updateAmbience(drive, at: 3.11)
+        let sent = engine.scenes.flatMap(\.events)
+        XCTAssertEqual(sent.map(\.source), [.wipers, .drivePassingCar, .wipers], "every one goes, in order")
+        XCTAssertEqual(sent.first?.delay ?? -1, 0.25 - 0.1, accuracy: 1e-9, "shortened by the 0.1 s it waited")
+        XCTAssertEqual(sent.dropFirst().first?.delay ?? -1, 2.5 - 0.06, accuracy: 1e-9)
+        XCTAssertEqual(sent.last?.delay ?? -1, 0.2 - 0.06, accuracy: 1e-9)
+        XCTAssertEqual(sent.dropFirst().first?.distance ?? -1, 13, accuracy: 1e-9)
+        m.updateAmbience(drive, at: 3.3)
+        XCTAssertEqual(engine.scenes.flatMap(\.events).count, 3, "and goes once")
+
+        // A busy moment: forty inside a tenth of a second, thirty-two go, the newest.
+        let crowd = makeModel()
+        crowd.updateAmbience(drive, at: 5)
+        engine.scenes.removeAll()
+        for i in 0..<40 {
+            var s = drive; s.events = [.passingCar(in: 3, closing: Double(10 + i), lateral: 4, truck: false)]
+            crowd.updateAmbience(s, at: 5.001 + 0.001 * Double(i))
+        }
+        crowd.updateAmbience(drive, at: 5.2)
+        let cars = engine.scenes.flatMap(\.events)
+        XCTAssertEqual(cars.count, AppModel.ambienceEventLimit)
+        XCTAssertEqual(cars.first?.speed ?? -1, 18, accuracy: 1e-9, "the eight oldest gave way")
+
+        // The next scene has the source silent: its one-shot stays behind.
+        let gone = makeModel()
+        gone.updateAmbience(drive, at: 7)
+        engine.scenes.removeAll()
+        gone.updateAmbience(one, at: 7.01)
+        let lake = AmbienceScene(levels: [.water: 0.8, .crickets: 0.6])
+        gone.updateAmbience(lake, at: 7.05)
+        gone.updateAmbience(lake, at: 7.2)
+        XCTAssertFalse(engine.scenes.isEmpty)
+        XCTAssertTrue(engine.scenes.allSatisfy { $0.events.isEmpty }, "the drive's wipers never sweep by the lake")
+
+        // A world switch and a panic drop what the throttle holds.
+        let switched = makeModel()
+        switched.updateAmbience(drive, at: 9)
+        engine.scenes.removeAll()
+        switched.updateAmbience(one, at: 9.01)
+        switched.setTheme(MoonlitLakeModel.id)
+        switched.updateAmbience(drive, at: 9.2)
+        XCTAssertTrue(engine.scenes.allSatisfy { $0.events.isEmpty }, "nothing held arrives in the next world")
+        let panicked = makeModel()
+        panicked.updateAmbience(drive, at: 11)
+        engine.scenes.removeAll()
+        panicked.updateAmbience(one, at: 11.01)
+        panicked.panic()
+        panicked.updateAmbience(drive, at: 11.2)
+        XCTAssertTrue(engine.scenes.allSatisfy { $0.events.isEmpty })
+
+        // The volcano's lake: a move of more than 0.02 is sent.
+        let rim = makeModel()
+        var still = AmbienceScene(levels: [.ventRumble: 0.85, .lavaHiss: 0.75]); still.lakeSurge = 0.3; still.lakeGlow = 0.3
+        rim.updateAmbience(still, at: 13)
+        engine.scenes.removeAll()
+        var surging = still; surging.lakeSurge = 0.9
+        rim.updateAmbience(surging, at: 13.2)
+        XCTAssertEqual(engine.scenes.last?.lakeSurge ?? -1, 0.9, accuracy: 1e-9, "the eruption's surge reaches the engine")
+    }
+
     func testAmbienceSettingsPersist() async {
         let m = makeModel()
         m.setAmbienceVolume(0.4)

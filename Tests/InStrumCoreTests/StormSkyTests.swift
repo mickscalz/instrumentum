@@ -612,7 +612,7 @@ final class StormSkyTests: XCTestCase {
             let extras = WorldWeather.randomExtras(for: id)
             XCTAssertEqual(extras[.gustFront] != nil, storms.contains(id), id)
             XCTAssertEqual(extras[.virga] != nil, dry.contains(id), id)
-            XCTAssertTrue(Set(extras.keys).isSubset(of: [.gustFront, .virga, .supercell]), id)
+            XCTAssertTrue(Set(extras.keys).isSubset(of: [.gustFront, .virga, .supercell, .ashfall]), id)
         }
         XCTAssertEqual(WorldWeather.randomExtras(for: "supercell-sky"), [.gustFront: 0.3])
         XCTAssertEqual(WorldWeather.randomExtras(for: "lightning-plains"), [.gustFront: 0.3, .virga: 0.5])

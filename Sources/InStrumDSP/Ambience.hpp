@@ -1,8 +1,9 @@
-// Ambience: fifty sources generated live (never loops), each gliding to its level over 2.5 s, through a
+// Ambience: sixty-two sources generated live (never loops), each gliding to its level over 2.5 s, through a
 // small room whose amount follows "closeness", ducking under the instrument while you play. Outdoor sources can be
 // heard through a window ("indoors"): darker and quieter, while the indoor ones stay close. In-key sources (the
-// temple bell, the sonar, the inflow roar, the heat shimmer) follow the key the player is in. Thunder can be queued to
-// arrive late by its distance (the picture first, the sound after).
+// temple bell, the sonar, the inflow roar, the heat shimmer, the far siren) follow the key the player is in. Thunder can
+// be queued to arrive late by its distance (the picture first, the sound after), and so can the world's one-shots
+// (Fire & Neon: the eruption's boom, the plume's cracks, a rockfall, a steam blast, a car passing, a wiper's sweep).
 // Everything is preallocated; the setters are lock-free atomics read at the start of each render.
 #pragma once
 #include "DSPCommon.hpp"
@@ -23,6 +24,15 @@ struct AmbienceContext {
     float snowOnGlass = 0.f; // rain on the glass becomes soft snow ticks
     int keyRoot = 4;         // the key the player is in (C = 0; E until one is sensed), for in-key sources
     bool keyMajor = true;
+    float lakeSurge = 0.f;   // the volcano's lake: how hard it surges (the vent rumble) and how brightly its cracks
+    float lakeGlow = 0.f;    // glow (the lava hiss), 0…1, gliding over 0.3 s
+};
+
+/// A one-shot the world sets going (Fire & Neon): what each field means is the source's own (InStrumDSP.h,
+/// isd_ambience_post_event).
+struct AmbienceEvent {
+    float strength = 1.f, pan = 0.f, speed = 0.f, distance = 0.f;
+    int kind = 0;
 };
 
 /// One generator. `render` adds its sound (calibrated for level 1) into `l`/`r`.
@@ -33,6 +43,15 @@ public:
     virtual void wake(const AmbienceContext &) {}
     /// Its next event now (tests): the birds take flight, a truck crosses the grid, a far truck passes. Most have none.
     virtual void triggerNow(const AmbienceContext &) {}
+    /// How long before its moment a posted event is handed over (seconds): a passing car is heard coming. Most: 0.
+    virtual float lead() const { return 0.f; }
+    /// A posted event, handed over `ahead` seconds before its moment (0 unless the source has a lead).
+    virtual void event(const AmbienceEvent &, float /* ahead */, const AmbienceContext &) {}
+    /// Panic: the source's one-shots fade out within 40 ms (the volcano's); beds and the drive's traffic carry on.
+    virtual void silence(float sr) { (void)sr; }
+    /// The pitch a tonal source is sounding now (Hz; tests): the drive's engine its firing note, a passing car's engine
+    /// as heard (Doppler and all), the far siren its wail; 0 for the rest, or while silent.
+    virtual float hz() const { return 0.f; }
     virtual void render(float *l, float *r, int n, const AmbienceContext &c) = 0;
     float direct = 1.f, send = 0.5f;   // how much goes straight out and how much into the room
     /// Indoors (or at the glass itself): never muffled by the window.
@@ -65,8 +84,17 @@ public:
     void queueThunder(float delaySeconds, float strength);
     /// A world switch: every roll still waiting is dropped (those already rolling fade with the world).
     void clearThunder();
-    /// Panic: the queue is dropped and every roll and clap fades out within 40 ms; the beds carry on.
+    /// Panic: the queue is dropped and every roll and clap fades out within 40 ms; the beds carry on. The world's
+    /// one-shots on their way are dropped too, and the volcano's sounding ones fade out with the thunder.
     void allSoundOff();
+    /// A one-shot for a source (Fire & Neon), due `delaySeconds` (0…12) from now: handed to the source that long later
+    /// (less its lead). Heard only while the source is up; 32 wait at most (a 33rd drops the oldest); a world switch
+    /// (clearThunder) or the source's level going to nothing drops those still waiting.
+    void postEvent(int source, float delaySeconds, const AmbienceEvent &e);
+    /// The volcano's lake (0…1 each): the vent rumble surges with `surge`, the lava hiss brightens with `glow`.
+    void setLake(float surge, float glow) { lakeSurgeTarget = clamp01(surge); lakeGlowTarget = clamp01(glow); }
+    /// The pitch a tonal source is sounding now (tests), or 0 while it is silent.
+    float sourceHz(int source) const;
     /// A source's next event now (tests), waking it first if it is silent.
     void triggerNow(int source);
     void setSpeed(float s) { speedTarget = clamp01(s); }
@@ -120,8 +148,16 @@ private:
     };
 
     void processBlock(float *left, float *right, int n);
+    void deliverEvents(int n);
+    void clearEvents(int source = -1);
 
     double sr;
+    struct Pending { bool on = false; int source = 0, left = 0; uint32_t serial = 0; AmbienceEvent e; };
+    static constexpr int kEvents = 32;
+    Pending pending[kEvents];
+    uint32_t eventSerial = 0;
+    bool eventsWaiting = false;
+    float lakeSurgeTarget = 0, lakeGlowTarget = 0;
     AmbienceContext ctx;
     std::unique_ptr<AmbienceSource> sources[ISD_AMB_COUNT];
     std::unique_ptr<Thunder> thunder;
