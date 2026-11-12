@@ -66,9 +66,17 @@ public enum SetLibrary {
                                                    mood: .plainsVast, worldID: LightningPlainsModel.id, visual: "Strike Lines",
                                                    patchID: "single-note-grand", ambience: AmbienceSettings(),
                                                    creditID: CreditLibrary.runaway.id)
+    /// Sets 13 and 14 ("Fire & Neon", spec §2, §11), after the storms at the end of the gallery: the volcano after "Hold My
+    /// Liquor" on Magma Bass; the drive born from its place (a place card) on Replicant Brass, Chrome Bass split at C3.
+    public static let volcanoRim = InStrumSet(id: "volcano-rim", name: "Volcano Rim", moodName: "Molten", mood: .molten,
+                                              worldID: VolcanoRimModel.id, visual: "Lava Lake", patchID: "magma-bass",
+                                              ambience: AmbienceSettings(), creditID: CreditLibrary.holdMyLiquor.id)
+    public static let neonNightDrive = InStrumSet(id: "neon-night-drive", name: "Neon Night Drive", moodName: "Wired", mood: .wired,
+                                                  worldID: NeonNightDriveModel.id, visual: "Light Trails", patchID: "replicant-brass",
+                                                  ambience: AmbienceSettings(), creditID: nil)
     public static let all: [InStrumSet] = [moonlitLake, spaceshipLounge, goldenHourBeach, coastRoad, snowboundCabin, bedroomDawn,
                                            auroraFjord, bioluminescentBay, teaHouseSnow, zenRockGarden, submarineWindow,
-                                           greatBarrierReef, supercellSky, lightningPlains]
+                                           greatBarrierReef, supercellSky, lightningPlains, volcanoRim, neonNightDrive]
 
     /// The newest set, the last in the gallery: the first launch of a build that adds sets opens on it ("opens on what's
     /// new", `AppSettings.opensOnWhatsNew`).

@@ -127,14 +127,24 @@ final class SettingsStoreTests: XCTestCase {
         old.markSetsSeen()
         let newestID = old.lastNewestSetID
         let count = old.lastSetCount
-        XCTAssertEqual(newestID, "lightning-plains")
-        XCTAssertEqual(count, 14)
+        XCTAssertEqual(newestID, "neon-night-drive")
+        XCTAssertEqual(count, 16)
         XCTAssertFalse(old.opensOnWhatsNew)
         try store.save(old)
         let again = store.load()
         XCTAssertEqual(again, old)
         XCTAssertFalse(again.opensOnWhatsNew)
 
+        // The storms build's gallery (Sets 17 & 18, the previous gallery: fourteen sets, Lightning Plains the newest): this
+        // build's first launch opens on what's new, Neon Night Drive (Fire & Neon).
+        var storms = AppSettings.default
+        storms.lastNewestSetID = "lightning-plains"
+        storms.lastSetCount = 14
+        XCTAssertTrue(storms.opensOnWhatsNew)
+        storms.markSetsSeen()
+        XCTAssertFalse(storms.opensOnWhatsNew)
+        XCTAssertEqual(storms.lastNewestSetID, SetLibrary.neonNightDrive.id)
+        XCTAssertEqual(storms.lastSetCount, SetLibrary.all.count)
         // The twelve-set build's gallery, had it kept one: its newest was the reef.
         var twelve = AppSettings.default
         twelve.lastNewestSetID = "great-barrier-reef"
@@ -142,10 +152,10 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertTrue(twelve.opensOnWhatsNew)
         // The same newest but more sets than it counted, or a newer newest at the same count, is new too.
         var fewer = AppSettings.default
-        fewer.lastSetCount = 13
+        fewer.lastSetCount = 15
         XCTAssertTrue(fewer.opensOnWhatsNew)
         var other = AppSettings.default
-        other.lastNewestSetID = "supercell-sky"
+        other.lastNewestSetID = "volcano-rim"
         XCTAssertTrue(other.opensOnWhatsNew)
 
         // A first install (no file) starts with this build's own record.

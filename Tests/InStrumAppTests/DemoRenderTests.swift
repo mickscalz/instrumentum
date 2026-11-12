@@ -63,6 +63,8 @@ final class DemoRenderTests: XCTestCase {
             ("single-note-grand", ISD_ENGINE_SINGLE_NOTE_GRAND, DemoPhrases.singleNoteGrand),
             ("blue-depth", ISD_ENGINE_BLUE_DEPTH, DemoPhrases.blueDepth),
             ("endless-rise", ISD_ENGINE_ENDLESS_RISE, DemoPhrases.endlessRise),
+            ("magma-bass", ISD_ENGINE_MAGMA_BASS, DemoPhrases.magmaBass),
+            ("replicant-brass", ISD_ENGINE_REPLICANT_BRASS, DemoPhrases.replicantBrass),
         ]
         var written = 0
         for (name, engine, phrase) in demos {
@@ -314,6 +316,152 @@ final class DemoRenderTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(Double(blinking), 0.6 * Double(rises.count), "only \(blinking) of \(rises.count) sixteenths re-attack")
         let median = rises.sorted()[rises.count / 2]
         XCTAssertGreaterThanOrEqual(median, 1.5, "the median sixteenth rises \(median) dB")
+    }
+
+    /// Fire & Neon's two demos on their own (the task branch's look filter renders just these): magma-bass-demo and
+    /// replicant-brass-demo, with their spectrograms, when DEMO_DIR is set. A release writes them with the rest
+    /// (`testWriteDemoAudio`).
+    func testWriteFireNeonDemos() throws {
+        guard let dir = ProcessInfo.processInfo.environment["DEMO_DIR"] else { throw XCTSkip("DEMO_DIR not set") }
+        let url = URL(fileURLWithPath: dir, isDirectory: true)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        let demos: [(String, ISDEngine, [(time: Double, message: MIDIMessage)])] = [
+            ("magma-bass", ISD_ENGINE_MAGMA_BASS, DemoPhrases.magmaBass),
+            ("replicant-brass", ISD_ENGINE_REPLICANT_BRASS, DemoPhrases.replicantBrass),
+        ]
+        for (name, engine, phrase) in demos {
+            let audio = try XCTUnwrap(Self.render(engine, phrase, tail: 6), name)
+            let wav = url.appendingPathComponent("\(name)-demo.wav")
+            try Self.writeWAV(audio, to: wav)
+            let png = url.appendingPathComponent("\(name)-spectrogram.png")
+            try PreviewRenderer.writePNG(Spectrogram.image(left: audio.l, sampleRate: Self.rate, width: 1400, height: 500), to: png)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: wav.path), name)
+        }
+    }
+
+    /// Mean power (dB) of `x` between two times (s).
+    nonisolated static func power(_ x: [Float], _ a: Double, _ b: Double) -> Double {
+        let i0 = max(0, Int(a * rate)), i1 = min(x.count, Int(b * rate))
+        var sum = 0.0
+        for k in i0..<max(i0, i1) { sum += Double(x[k]) * Double(x[k]) }
+        return 10 * log10(max(sum / Double(max(1, i1 - i0)), 1e-30))
+    }
+
+    /// Magma Bass's demo, E Phrygian at 104 (DemoPhrases.magmaBass, Fire & Neon spec §4.2): two bars of a growl line in
+    /// the left hand, then the eruption riff: four hard low chords (three or more notes within 40 ms at a mean velocity
+    /// over 0.8, their mean pitch below C3: the rule the engine's swell and the world's eruption share), a riff answering
+    /// the first, a climb, a growl line again and a last chord pressed into. About 15 s, inside E0–C6, everything let go.
+    /// Rendered as the release renders it, it is finite; the engine's limiter holds the fff chords at its 0.9 ceiling
+    /// (they would reach 1.48 without it on the g++ mirror, the growl line 0.65); and the eruption is heard: the 30–80 Hz
+    /// band 0.3–1.2 s after the first hard chord 2 dB or more over the second before it (3.6 on the mirror), the whole mix
+    /// 2 dB or more louder (3.2).
+    func testMagmaBassDemoRenders() throws {
+        let phrase = DemoPhrases.magmaBass
+        let ePhrygian: Set<Int> = [4, 5, 7, 9, 11, 0, 2]   // E F G A B C D
+        var held = Set<UInt8>(), pressure: UInt8 = 0, swell: UInt8 = 0
+        var onsets: [(t: Double, n: UInt8, v: UInt8)] = []
+        for (time, m) in phrase {
+            switch m {
+            case let .noteOn(_, n, v):
+                XCTAssertTrue(ePhrygian.contains(Int(n) % 12), "note \(n) is outside E Phrygian")
+                XCTAssertTrue((16...84).contains(Int(n)), "note \(n) is outside E0–C6")
+                held.insert(n)
+                onsets.append((t: time, n: n, v: v))
+            case let .noteOff(_, n, _): held.remove(n)
+            case let .channelPressure(_, p): swell = max(swell, p); pressure = p
+            case .pitchBend: XCTFail("the wheel isn't used")
+            default: break
+            }
+        }
+        XCTAssertTrue(held.isEmpty, "everything let go")
+        XCTAssertEqual(pressure, 0)
+        XCTAssertGreaterThan(swell, 50, "the last chord pressed into")
+        let end = phrase.last?.time ?? 0
+        XCTAssertTrue(end > 14 && end < 17, "about 15 s: \(end)")
+        // The hard low chords.
+        var hard: [Double] = []
+        for (k, o) in onsets.enumerated() {
+            let chord = onsets[k...].prefix { $0.t - o.t <= 0.040 }
+            let loud: Double = chord.map { Double($0.v) / 127 }.reduce(0, +) / Double(chord.count)
+            let pitch: Double = chord.map { Double($0.n) }.reduce(0, +) / Double(chord.count)
+            if chord.count >= 3, loud > 0.8, pitch < 48, !hard.contains(where: { abs($0 - o.t) <= 0.040 }) { hard.append(o.t) }
+        }
+        XCTAssertEqual(hard.count, 4, "four hard low chords: \(hard)")
+        let beat = 60.0 / 104
+        let first = hard.first ?? 0
+        XCTAssertEqual(first, 0.3 + 8 * beat, accuracy: 1e-6, "after two bars of the growl line")
+        let line = onsets.filter { $0.t < first - 1e-6 }
+        XCTAssertGreaterThanOrEqual(line.count, 12, "a growl line first")
+        XCTAssertTrue(line.allSatisfy { $0.n < 48 }, "low")
+
+        let audio = try XCTUnwrap(Self.render(ISD_ENGINE_MAGMA_BASS, phrase, tail: 6), "Magma Bass is not in the Sound Core")
+        XCTAssertTrue(audio.l.allSatisfy { $0.isFinite } && audio.r.allSatisfy { $0.isFinite })
+        let peak = max(audio.l.map(abs).max() ?? 0, audio.r.map(abs).max() ?? 0)
+        XCTAssertLessThanOrEqual(peak, 0.9001, "the limiter holds the fff chords at its ceiling")
+        XCTAssertGreaterThan(peak, 0.5)
+        let mono = zip(audio.l, audio.r).map { $0.0 + $0.1 }
+        var h1 = DemoHighPass(30), h2 = DemoHighPass(30), l1 = DemoLowPass(80), l2 = DemoLowPass(80)
+        let low = mono.map { Float(l2.process(l1.process(h2.process(h1.process(Double($0)))))) }
+        let rumble = Self.power(low, first + 0.3, first + 1.2) - Self.power(low, first - 1.0, first - 0.05)
+        XCTAssertGreaterThanOrEqual(rumble, 2, "the eruption swells the low end")
+        let louder = Self.power(mono, first + 0.1, first + 1.0) - Self.power(mono, first - 1.0, first - 0.05)
+        XCTAssertGreaterThanOrEqual(louder, 2, "and the whole sound")
+    }
+
+    /// Replicant Brass's demo, A minor at 120 (DemoPhrases.replicantBrass, Fire & Neon spec §4.3, the Replicant preset):
+    /// the left hand holds a root, fifth and octave below the C3 split for Chrome Bass's arp; it plays alone for a bar,
+    /// then the brass swells in over it, every two bars the hands move together (A, F, G, A), and the last chord is struck
+    /// at full velocity. About 14 s, everything let go. Rendered as the release renders it, it is finite and under the
+    /// engine's limiter (0.84 at the blare on the g++ mirror); the arp plays the held notes on the sixteenths at 120
+    /// through the first bar, every step re-attacking by 1.5 dB or more (all 14, median 19.2 dB on the mirror); and the
+    /// brass swells: above 1.5 kHz, 0.3–0.6 s into its first chord is 8 dB or more over its first 80 ms (16.9).
+    func testReplicantBrassDemoRenders() throws {
+        let phrase = DemoPhrases.replicantBrass
+        let aMinor: Set<Int> = [9, 11, 0, 2, 4, 5, 7]   // A B C D E F G
+        var held = Set<UInt8>(), left = 0, right = 0, loudest: UInt8 = 0, swell: UInt8 = 0, pressure: UInt8 = 0
+        for (_, m) in phrase {
+            switch m {
+            case let .noteOn(_, n, v):
+                XCTAssertTrue(aMinor.contains(Int(n) % 12), "note \(n) is outside A minor")
+                if n < 48 { left += 1 } else { right += 1; loudest = max(loudest, v) }
+                held.insert(n)
+            case let .noteOff(_, n, _): held.remove(n)
+            case let .channelPressure(_, p): swell = max(swell, p); pressure = p
+            case .pitchBend: XCTFail("the wheel isn't used")
+            default: break
+            }
+        }
+        XCTAssertGreaterThanOrEqual(left, 12, "the left hand under the split, for Chrome Bass")
+        XCTAssertGreaterThanOrEqual(right, 14, "the brass above it")
+        XCTAssertEqual(loudest, 127, "the blare")
+        XCTAssertGreaterThan(swell, 90, "a real pressure swell")
+        XCTAssertTrue(held.isEmpty, "everything let go")
+        XCTAssertEqual(pressure, 0)
+        let end = phrase.last?.time ?? 0
+        XCTAssertTrue(end > 13 && end < 16, "about 14 s: \(end)")
+        let beat = 0.5
+        let start = phrase.first?.time ?? 0
+        let brassIn: Double = phrase.first { (event: (time: Double, message: MIDIMessage)) -> Bool in
+            if case let .noteOn(_, n, _) = event.message { return n >= 48 }
+            return false
+        }?.time ?? 0
+        XCTAssertEqual(brassIn, start + 4 * beat, accuracy: 1e-6, "the arp alone for a bar")
+
+        let audio = try XCTUnwrap(Self.render(ISD_ENGINE_REPLICANT_BRASS, phrase, tail: 6), "Replicant Brass is not in the Sound Core")
+        XCTAssertTrue(audio.l.allSatisfy { $0.isFinite } && audio.r.allSatisfy { $0.isFinite })
+        let peak = max(audio.l.map(abs).max() ?? 0, audio.r.map(abs).max() ?? 0)
+        XCTAssertLessThan(peak, 0.88, "under the limiter's 0.9")
+        XCTAssertGreaterThan(peak, 0.2)
+        let mono = zip(audio.l, audio.r).map { $0.0 + $0.1 }
+        let rises = Self.stepRises(mono, start: start, step: beat / 4, steps: 1...14)
+        let blinking = rises.filter { $0 >= 1.5 }.count
+        XCTAssertGreaterThanOrEqual(blinking, 12, "only \(blinking) of \(rises.count) sixteenths re-attack")
+        let median = rises.sorted()[rises.count / 2]
+        XCTAssertGreaterThanOrEqual(median, 6, "the median sixteenth rises \(median) dB")
+        var a = DemoHighPass(1500), b = DemoHighPass(1500)
+        let high = mono.map { Float(b.process(a.process(Double($0)))) }
+        let swelled = Self.power(high, brassIn + 0.3, brassIn + 0.6) - Self.power(high, brassIn, brassIn + 0.08)
+        XCTAssertGreaterThanOrEqual(swelled, 8, "the brass swells open")
     }
 
     /// Renders a phrase as the app plays it (Storms spec §3): frames of 1/60 s (800 samples). At each frame's start a
@@ -1140,6 +1288,22 @@ struct DemoHighPass {
         let w: Double = 2 * Double.pi * hz / DemoRenderTests.rate
         let al: Double = sin(w) / (2 * q), c: Double = cos(w), a0: Double = 1 + al
         b0 = (1 + c) / 2 / a0; b1 = -(1 + c) / a0; b2 = b0; a1 = -2 * c / a0; a2 = (1 - al) / a0
+    }
+    mutating func process(_ x: Double) -> Double {
+        let y = b0 * x + z1
+        z1 = b1 * x - a1 * y + z2
+        z2 = b2 * x - a2 * y
+        return y
+    }
+}
+
+/// A second-order low-pass (RBJ), for the demos' band checks.
+struct DemoLowPass {
+    var b0 = 1.0, b1 = 0.0, b2 = 0.0, a1 = 0.0, a2 = 0.0, z1 = 0.0, z2 = 0.0
+    init(_ hz: Double, q: Double = 0.7071) {
+        let w: Double = 2 * Double.pi * hz / DemoRenderTests.rate
+        let al: Double = sin(w) / (2 * q), c: Double = cos(w), a0: Double = 1 + al
+        b0 = (1 - c) / 2 / a0; b1 = (1 - c) / a0; b2 = b0; a1 = -2 * c / a0; a2 = (1 - al) / a0
     }
     mutating func process(_ x: Double) -> Double {
         let y = b0 * x + z1

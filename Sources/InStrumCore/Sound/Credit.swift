@@ -58,8 +58,15 @@ public enum CreditLibrary {
     public static let fade = Credit(id: "fade", song: "FADE", artist: "Kanye West", album: "The Life of Pablo", year: 2016,
                                     trackNumber: nil, key: "", tempoBPM: 124,
                                     line: "A relentless pulse under a rise that never resolves.")
+    /// "Hold My Liquor" (Fire & Neon spec §2, §11): Volcano Rim's song. Credits carry only verified facts: its place on
+    /// *Yeezus*, track 5, is one. Its key and tempo come only from key-detection sites (A♭ major at 104), which are
+    /// machine-detected, so it states no key, and the card breathes at 104 until Michael checks both by ear (the release
+    /// notes ask him to); the card's liner notes read "TRACK 5 · 104 BPM".
+    public static let holdMyLiquor = Credit(id: "hold-my-liquor", song: "Hold My Liquor", artist: "Kanye West", album: "Yeezus",
+                                            year: 2013, trackNumber: 5, key: "", tempoBPM: 104,
+                                            line: "A heavy, slow-burning pulse with distortion glowing under it like heat.")
     public static let all: [Credit] = [comeBackToEarth, innerbloom, musicToWatchBoysTo, highByTheBeach, stay, dunno, wings,
-                                       happinessIsAButterfly, underwater, fade, runaway]
+                                       happinessIsAButterfly, underwater, fade, runaway, holdMyLiquor]
 
     public static func credit(id: String) -> Credit? { all.first { $0.id == id } }
 }

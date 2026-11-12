@@ -46,4 +46,7 @@ public struct Mood: Codable, Equatable {
 public extension Mood {
     /// Lightning Plains: dramatic, vast, lonely (Storms spec §11).
     static let plainsVast = Mood(energy: 0.45, warmth: 0.3, brightness: 0.4, space: 1.0, motion: 0.4)
+    /// Neon Night Drive: wired (Fire & Neon spec §10), the most energetic and the fastest-moving mood in the app. Its pair,
+    /// Volcano Rim's `molten`, is declared beside its world (`VolcanoRimModel.swift`).
+    static let wired = Mood(energy: 0.9, warmth: 0.3, brightness: 0.8, space: 0.55, motion: 0.95)
 }

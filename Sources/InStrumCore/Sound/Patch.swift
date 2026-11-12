@@ -29,6 +29,21 @@ public enum BuiltInEngine: String, Codable, CaseIterable {
         case .endlessRise: return "Endless Rise"
         }
     }
+
+    /// The dials that run the instrument's arpeggiator, in the order the instrument panel's Arp row shows them (Fire & Neon
+    /// spec §4.4): Blue Depth's own arp (Blink, how much the held chord blinks, and Tempo) and Replicant Brass's shared one,
+    /// which plays Chrome Bass in the left hand (Arp, the mode; Rate; Tempo; Split, where the left hand ends). Empty for an
+    /// engine with no arp: Magma Bass has none, nor do the others.
+    public var arpDials: [String] {
+        switch self {
+        case .blueDepth: return ["blink", "tempo"]
+        case .replicantBrass: return ["arp", "rate", "tempo", "split"]
+        default: return []
+        }
+    }
+
+    /// Whether the instrument has an arpeggiator, so its panel shows an Arp row.
+    public var supportsArp: Bool { !arpDials.isEmpty }
 }
 
 /// A recipe for a built-in instrument: which engine, and its dial values (keyed by parameter identifier).
@@ -108,12 +123,12 @@ public enum PatchLibrary {
         Patch(id: "marble-hall", name: "Marble Hall", engine: .singleNoteGrand, values: singleNoteGrand(hall: 1.0, felt: 0.20, morph: 0, octaveDown: 0.50, breakDrive: 0.50, width: 0.70, space: 0.70), creditID: "runaway"),
         Patch(id: "broken-voice", name: "Broken Voice", engine: .singleNoteGrand, values: singleNoteGrand(hall: 0.70, felt: 0.20, morph: 0.60, octaveDown: 0.50, breakDrive: 0.90, width: 0.40, space: 0.40), creditID: "runaway"),
         Patch(id: "dry-grand", name: "Dry Grand", engine: .singleNoteGrand, values: singleNoteGrand(hall: 0.10, felt: 0.20, morph: 0, octaveDown: 0.50, breakDrive: 0.50, width: 0.45, space: 0.25), creditID: "runaway"),
-        // Magma Bass (Fire & Neon spec §4.2; brief magma-bass.md). Mono is 0 or 1. Its "Hold My Liquor" credit comes with
-        // its card (Task 15): every credit needs card art.
-        Patch(id: "magma-bass", name: "Magma", engine: .magmaBass, values: magma(growl: 0.55, heat: 0.50, erupt: 0.70, rumble: 0.35, grit: 0.25, flow: 0.20, shape: 0.15, mono: 0, spark: 0.40, res: 0.35)),
-        Patch(id: "basalt", name: "Basalt", engine: .magmaBass, values: magma(growl: 0.40, heat: 0.30, erupt: 0.55, rumble: 0.70, grit: 0.15, flow: 0.35, shape: 0.05, mono: 1, spark: 0.20, res: 0.25)),
-        Patch(id: "fissure", name: "Fissure", engine: .magmaBass, values: magma(growl: 0.65, heat: 0.70, erupt: 0.80, rumble: 0.20, grit: 0.35, flow: 0.10, shape: 0.40, mono: 0, spark: 0.50, res: 0.60)),
-        Patch(id: "ember-glide", name: "Ember Glide", engine: .magmaBass, values: magma(growl: 0.50, heat: 0.55, erupt: 0.60, rumble: 0.30, grit: 0.20, flow: 0.70, shape: 0.25, mono: 1, spark: 0.30, res: 0.40)),
+        // Magma Bass (Fire & Neon spec §4.2; brief magma-bass.md), after "Hold My Liquor" (Volcano Rim's song, spec §11).
+        // Mono is 0 or 1.
+        Patch(id: "magma-bass", name: "Magma", engine: .magmaBass, values: magma(growl: 0.55, heat: 0.50, erupt: 0.70, rumble: 0.35, grit: 0.25, flow: 0.20, shape: 0.15, mono: 0, spark: 0.40, res: 0.35), creditID: "hold-my-liquor"),
+        Patch(id: "basalt", name: "Basalt", engine: .magmaBass, values: magma(growl: 0.40, heat: 0.30, erupt: 0.55, rumble: 0.70, grit: 0.15, flow: 0.35, shape: 0.05, mono: 1, spark: 0.20, res: 0.25), creditID: "hold-my-liquor"),
+        Patch(id: "fissure", name: "Fissure", engine: .magmaBass, values: magma(growl: 0.65, heat: 0.70, erupt: 0.80, rumble: 0.20, grit: 0.35, flow: 0.10, shape: 0.40, mono: 0, spark: 0.50, res: 0.60), creditID: "hold-my-liquor"),
+        Patch(id: "ember-glide", name: "Ember Glide", engine: .magmaBass, values: magma(growl: 0.50, heat: 0.55, erupt: 0.60, rumble: 0.30, grit: 0.20, flow: 0.70, shape: 0.25, mono: 1, spark: 0.30, res: 0.40), creditID: "hold-my-liquor"),
         // Replicant Brass with Chrome Bass (spec §4.3; brief replicant-brass.md). Neon Night Drive is place-born, so no
         // credit. Arp: 0 off, 1 up, 2 down, 3 up-down, 4 played, 5 random. Rate: 0 1/4 … 3 1/16 … 5 1/32. Split: a
         // note number (below 28: no split). Tempo in BPM (70…170).
