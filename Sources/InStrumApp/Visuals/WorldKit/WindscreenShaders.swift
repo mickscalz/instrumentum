@@ -280,8 +280,9 @@ enum WindscreenShaders {
                         float on = step(0.0, ky) * step(ky, 1.0) * edge;
                         // Unlit, a white key is a faint pale slot brighter towards its front edge; a black key darker.
                         float3 dim = k.y > 0.5 ? float3(0.004, 0.004, 0.006)
-                                               : (float3(0.03, 0.03, 0.038) + outside * 0.12) * (0.6 + 0.6 * (1.0 - saturate(ky)));
-                        col = mix(col, dim + u.keyInfo.rgb * glow * 2.4, on * 0.95);
+                                               : (float3(0.045, 0.045, 0.055) + outside * 0.12) * (0.6 + 0.6 * (1.0 - saturate(ky)));
+                        float3 hot = mix(u.keyInfo.rgb, float3(1.0), 0.3 * glow);
+                        col = mix(col, dim + hot * glow * 2.6, on * 0.95);
                         float halo = exp(-max(max(-ky, ky - 1.0), 0.0) * 3.0) * glow * 0.25;
                         col += u.keyInfo.rgb * halo * (1.0 - on);
                     }

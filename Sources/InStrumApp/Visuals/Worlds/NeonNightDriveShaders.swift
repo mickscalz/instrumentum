@@ -956,6 +956,19 @@ enum NeonNightDriveShaders {
             float tray = boxCover(p.y, 4.6, 4.9, fv);
             col = mix(tile, float3(0.02), tray) * E;
             col *= smoothstep(0.0, 0.6, p.y) * 0.5 + 0.5;
+            // The glazed tiles mirror the lamps going by: soft highlights sliding along the wall (not on the grout).
+            float3 n = float3(p.x > 0.0 ? -1.0 : 1.0, 0.0, 0.0);
+            float3 R = d - 2.0 * dot(d, n) * n;
+            float3 spec = float3(0);
+            // The lamps the mirrored ray passes: where it crosses their line.
+            float tr = abs(R.x) > 1e-4 ? (1.6 - p.x) / R.x : 0.0;
+            float kr = round((p.z + R.z * max(tr, 0.0) + u.route2.z) / spacing);
+            for (int j = -1; j <= 1; j++) {
+                float zl = (kr + float(j)) * spacing - u.route2.z;
+                float3 L = normalize(float3(1.6, kTunnelCeiling - 0.15, zl) - p);
+                spec += lampC * exp(-(1.0 - dot(R, L)) / 0.004);
+            }
+            col += spec * 0.38 * tiles * (1.0 - tray);
         }
         return col;
     }
