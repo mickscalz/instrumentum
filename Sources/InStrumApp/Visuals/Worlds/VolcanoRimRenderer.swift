@@ -401,7 +401,7 @@ final class VolcanoRimRenderer: ThemeRenderer {
         for b in frame.bombs where b.alive {
             let fade: Float = b.landed.map { max(0, 1 - $0 / 3) } ?? 1
             add(b.position, b.landed == nil ? b.velocity : .zero, size: b.size * 0.4, kelvin: b.temperature, light: 1.7 * fade,
-                soft: 0, blur: 0.6)
+                soft: 0, blur: 1.0 / 30)
         }
         sparkCount = sparkInstances.count / 2
     }

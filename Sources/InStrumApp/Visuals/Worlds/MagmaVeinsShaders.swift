@@ -196,12 +196,12 @@ enum MagmaVeinsShaders {
         // runs on unbroken across the strokes' joints).
         float wv = vn2(p * 38.0 + 3.0);
         float w = max(in.info.x * (0.7 + 0.6 * wv), view.w * 1.2);
-        float torn = (vn2(p * 160.0) - 0.5) * 0.5 * w;
+        float torn = (vn2(p * 70.0) - 0.5) * 0.3 * w;
         float x = max(dist + torn, 0.0) / w;
-        float pulse = 0.7 + 0.3 * vn2(p * 22.0 + 9.0);
+        float pulse = 0.8 + 0.2 * vn2(p * 12.0 + 9.0);
         float T = in.info.y - 100.0 * (1.0 - pulse) - 420.0 * smoothstep(0.3, 1.0, x);
         float inChan = 1.0 - smoothstep(0.92, 1.05, x);
-        float cover = 1.0 - smoothstep(1.45, 1.8, x + 0.3 * (vn2(p * 90.0) - 0.5));
+        float cover = 1.0 - smoothstep(1.45, 1.8, x + 0.2 * (vn2(p * 50.0) - 0.5));
         float3 levee = float3(0.022, 0.017, 0.014) * (0.6 + 0.7 * vn2(p * 120.0))
                      + blackbody(in.info.y - 380.0) * (0.35 * exp(-max(x - 1.0, 0.0) / 0.2));
         float3 c = mix(levee, blackbody(T) * 0.85, inChan);

@@ -169,8 +169,8 @@ enum VolcanoRimShaders {
     float lakeEdge(float2 p, constant VolcanoU& u) {
         float R = u.lake.x;
         float arc = atan2(p.y, p.x) * R;
-        return R + 30.0 * (vn2(float2(arc * 0.006, 1.3)) - 0.5) + 12.0 * (vn2(float2(arc * 0.024, 4.1)) - 0.5)
-                 + 4.0 * (vn2(float2(arc * 0.1, 7.7)) - 0.5);
+        return R + 46.0 * (vn2(float2(arc * 0.007, 1.3)) - 0.5) + 18.0 * (vn2(float2(arc * 0.022, 4.1)) - 0.5)
+                 + 6.0 * (vn2(float2(arc * 0.09, 7.7)) - 0.5);
     }
 
     Hit craterHit(float3 o, float3 d, constant VolcanoU& u) {
@@ -481,8 +481,8 @@ enum VolcanoRimShaders {
         float3 tangent = float3(inward.y, -inward.x, 0.0);
         // Stacked lava flows, each a terrace: a colonnade of basalt columns below, a rubbly red-brown top, and a ledge
         // where the next flow steps back, its lip catching the lake's light. Their thickness wanders.
-        float wob = (vn2(float2(arc * 0.01, 3.0)) - 0.5) * 10.0 + (vn2(float2(arc * 0.045, 5.0)) - 0.5) * 3.0;
-        float lz = (z + wob) / 21.0 + 0.7 * vn2(float2(z * 0.02, 2.0)) + 0.25 * vn2(float2(arc * 0.004, 6.0));
+        float wob = (vn2(float2(arc * 0.006, 3.0)) - 0.5) * 22.0 + (vn2(float2(arc * 0.03, 5.0)) - 0.5) * 5.0;
+        float lz = (z + wob) / 21.0 + 0.7 * vn2(float2(z * 0.02, 2.0)) + 0.6 * vn2(float2(arc * 0.004 + z * 0.006, 6.0));
         float Li = floor(lz), f = lz - Li;
         float seedL = hash12(float2(Li, 3.3));
         // Columns: each flow's own width, wandering a little; the face of each column turns at its edge, so the two
@@ -548,8 +548,9 @@ enum VolcanoRimShaders {
             float body = smoothstep(front - 12.0, front + 20.0, P.z) * (1.0 - smoothstep(0.55, 1.0, pr));
             float n = fbm2(float2(da * 0.07, P.z * 0.04 + pr * 5.0), oct);
             float dust = saturate(spread * body * (0.45 + 1.1 * n));
-            float3 dustLit = u.glow.rgb * float3(1.0, 0.88, 0.78) * (2.4 * exp(-max(z, 0.0) / 160.0) * (0.55 + 0.7 * n))
-                           + float3(0.03, 0.03, 0.032) + u.skyL.rgb * 0.6;
+            float warm = lum(u.glow.rgb);
+            float3 dustLit = mix(float3(warm), u.glow.rgb, 0.45) * float3(1.0, 0.9, 0.82) * (2.2 * exp(-max(z, 0.0) / 160.0) * (0.55 + 0.7 * n))
+                           + float3(0.035, 0.033, 0.032) + u.skyL.rgb * 0.6;
             col = mix(col, dustLit, dust * 0.85);
             float debris = smoothstep(0.82, 0.95, vn2(float2(da * 0.25, P.z * 0.18 + pr * 40.0))) * spread * body;
             col += blackbody(1000.0) * (0.4 * debris);
@@ -621,7 +622,7 @@ enum VolcanoRimShaders {
             float vz = sqrt(2.0 * g * h);
             float vs = length(float2(vz * T, vz - g * sPix));
             float alongM = (rel - j + 0.8 * (hash12(float2(fk * 2.3 + j * 0.57, 9.1)) - 0.5)) * spacing * vs;
-            float halfLen = 0.5 * pace * vs / 30.0;
+            float halfLen = min(pace, 2.0) * vs / 60.0;
             float rad = size * (0.25 + 1.6 * sq(sq(rj)));
             float off = (rk - 0.5) * 2.0 * (size + 0.03 * ub);
             float la = lat - off;
@@ -691,8 +692,9 @@ enum VolcanoRimShaders {
                    * (1.0 - smoothstep(0.55, 1.0, pr)) * smoothstep(0.3, 0.7, n + 0.25 * (1.0 - abs(s)));
         dens = saturate(dens * 1.4);
         float under = saturate(0.6 + 1.5 * (vn2(m + wq * 1.4) - vn2(m + wq * 1.4 - float2(0.0, 0.25))));
-        float3 lit = u.glow.rgb * float3(1.0, 0.92, 0.85) * (1.8 * exp(-max(z, 0.0) / 120.0)) * (0.4 + 0.7 * under)
-                   + float3(0.035, 0.036, 0.04) * (0.6 + 0.4 * under);
+        float warmS = lum(u.glow.rgb);
+        float3 lit = mix(float3(warmS), u.glow.rgb, 0.4) * (2.4 * exp(-max(z, 0.0) / 130.0)) * (0.4 + 0.7 * under)
+                   + float3(0.05, 0.052, 0.058) * (0.6 + 0.4 * under) + u.skyL.rgb;
         return float4(lit * dens, dens);
     }
 
@@ -745,8 +747,8 @@ enum VolcanoRimShaders {
         float3 light = blackbody(Tcore) * core;
         float cover = core;
         int n = oct >= 3 ? 24 : 14;
-        float4 cl = clotArcs(x, z, fp, 35.0, 230.0 + 90.0 * sp, peak, 0.45, 0.55 + 0.7 * sp, n, 0.05, 4.5, age, 3.0,
-                             7.0, 1250.0, 110.0);
+        float4 cl = clotArcs(x, z, fp, 30.0, 190.0 + 80.0 * sp, peak, 0.62, 0.8 + 0.8 * sp, n, 0.018, 4.5, age, 3.0,
+                             7.0, 1250.0, 130.0);
         light += cl.rgb * (0.8 + 0.3 * sp);
         cover = max(cover, cl.a);
         // Its light in the gas round the vent.
@@ -766,7 +768,7 @@ enum VolcanoRimShaders {
         float zz = max(z, 0.0);
         float bend = u.plume.z * zz * zz;
         float x = P.x - bend;
-        float W = (46.0 + 0.34 * zz) * (0.8 + 0.4 * amount) * (1.0 + 0.3 * u.plume.y);
+        float W = (46.0 + 0.34 * zz) * (0.8 + 0.4 * amount) * (1.0 + 0.15 * u.plume.y);
         float s = x / W;
         if (abs(s) > 1.9) return float4(0);
         float2 m = float2(x * 0.017, (z - u.plume.w) * 0.011);
@@ -875,12 +877,12 @@ enum VolcanoRimShaders {
                 float fk = float(k);
                 float h1 = hash12(float2(fk * 3.7, u.sprites.z * 17.0 + 1.0));
                 float h2 = hash12(float2(fk * 5.3, u.sprites.z * 11.0 + 2.0));
-                float ox = b + (fk - 1.5) * 0.011 + (h1 - 0.5) * 0.008;
-                float crownEl = 0.168 + 0.022 * h2;
-                float W = 0.0035 + 0.003 * h1;
+                float ox = b + (fk - 1.5) * 0.014 + (h1 - 0.5) * 0.008;
+                float crownEl = 0.15 + 0.016 * h2;
+                float W = 0.0026 + 0.002 * h1;
                 float dx = (az - ox) / W;
-                float below = (crownEl - el) / 0.04;
-                float crown = exp(-dx * dx * 0.35 - sq((el - crownEl) / 0.012));
+                float below = (crownEl - el) / 0.03;
+                float crown = exp(-dx * dx * 0.3 - sq((el - crownEl) / 0.008));
                 float carrot = below > 0.0 ? exp(-sq(dx / max(1.0 - 0.75 * saturate(below), 0.15))) * exp(-below * 2.2) : 0.0;
                 float f1 = 0.5 + 0.5 * cos(dx * 6.0 + h2 * 20.0);
                 float f2 = 0.5 + 0.5 * cos(dx * 11.0 + h1 * 30.0);
@@ -890,7 +892,7 @@ enum VolcanoRimShaders {
                 float stream = above > 0.0 ? sq(sq(f2)) * exp(-above * 2.5) * smoothstep(1.2, 0.2, abs(dx)) * 0.35 : 0.0;
                 float3 salmon = float3(1.0, 0.36, 0.27);
                 float3 tc = mix(salmon, float3(0.45, 0.33, 1.0), smoothstep(0.3, 1.4, below));
-                acc += (salmon * (crown * 0.9 + carrot * 0.7 + stream) + tc * (tend * 0.45)) * (0.6 + 0.4 * h2);
+                acc += (salmon * (crown * 0.7 + carrot * 0.8 + stream) + tc * (tend * 0.5)) * (0.6 + 0.4 * h2);
             }
             col += acc * (u.sprites.x * 0.35);
         }

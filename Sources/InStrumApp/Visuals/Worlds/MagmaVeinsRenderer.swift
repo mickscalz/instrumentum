@@ -138,7 +138,7 @@ final class MagmaVeinsRenderer: ThemeRenderer {
             let reach = v.reach
             let steps = Float(path.count - 1)
             // A channel opening as it bursts through: wider the harder the note, widening as it grows.
-            let width = pixel * (3.0 + 7.0 * v.strength) * (0.55 + 0.45 * v.reach)
+            let width = pixel * (4.5 + 9.0 * v.strength) * (0.55 + 0.45 * v.reach)
             let light: Float = soft
             var drawn = false
             for i in 0..<(path.count - 1) {
