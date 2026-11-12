@@ -1,5 +1,17 @@
 **Install:** download the **.dmg** below and open it, drag *In Strum Meants* onto *Applications* (choose **Replace** if asked), then right-click the app → **Open** → **Open** (first time only). The .zip is a fallback.
 
+**In-app updates: this is the last build you install by hand.** From now on In Strum Meants looks for a new build when it starts (at most once an hour), and any time you choose **In Strum Meants → Check for Updates…**. It shows what's new, **Install Update** replaces the app in place and reopens it on what's new, and your settings, presets and keeps stay exactly as they are.
+
+**Storms, polished** (Sets 17 & 18):
+- **Supercell Sky:** the storm's tower now melts up into its anvil (no pale cap with a stepped edge on top), its cauliflower lumps are soft and round (no hard polygon creases), and the mammatus pouches under the anvil in the clearing are round pouches catching the low sun instead of a honeycomb. The base's rim is ragged cloud rather than a saucer's lip, the inflow bands are soft and dim (no thin orange thread across the base), and the double rainbow's colours now run into each other as a real bow's do. On Smooth the second tower of the flanking line is left out, so it draws faster.
+- **Lightning Plains:** the anvils are flat-topped and end bluntly (no comet tails), the windmill stands three-quarters into the wind with pitched sails that catch the light and a tower with depth, the lightning channels kink and fork the way real ones do instead of running in straight lines, and the drop's downpour falls in fine streaks instead of wide bands.
+
+**Deep Water, polished:** bubble bursts are now heard through the submarine's hull (they were all but silent) and on the reef, and the reef's dusk crackle of snapping shrimp no longer peaks near full scale.
+
+**Your basses are in already:** **Magma Bass** (a growling, erupting bass on the vintage-synth core) and **Replicant Brass** (huge swelling brass with **Chrome Bass** under it, split at C3, with an arpeggiator) are in the instrument list now (Sound → Instrument). Their worlds, Volcano Rim and Neon Night Drive, are being built for the next updates.
+
+<!-- older -->
+
 **Sets 17 & 18 — Storms: Supercell Sky and Lightning Plains.** Two new sets at the end of the gallery, each a world, a visual, an instrument and a soundscape that belong together, and in both your playing is the weather. (Sets 13 to 16 are still to come; these two were built first, so they follow the reef.)
 
 **This build opens on Lightning Plains the first time you start it** (the newest set, with its world and instrument loaded), instead of the set you last used; from the next start it reopens on your last set as before. Every build that adds sets will do the same.
