@@ -1,7 +1,7 @@
 import SwiftUI
 import InStrumCore
 
-/// The ✦ Visuals panel: theme, macros, the theme's hero settings, quality and comfort.
+/// The ✦ Visuals panel: theme, macros, the theme's hero settings, Excitement, quality and comfort.
 struct SettingsPanel: View {
     @ObservedObject var model: AppModel
     @State private var showAdvanced = false
@@ -51,6 +51,9 @@ struct SettingsPanel: View {
                     section("World") {
                         SkyControls(model: model)
                     }
+                }
+                section(ExcitementPanel.title) {
+                    ExcitementControls(model: model)
                 }
                 section("Display") {
                     Picker("Quality", selection: Binding(get: { model.quality }, set: { model.setQuality($0) })) {

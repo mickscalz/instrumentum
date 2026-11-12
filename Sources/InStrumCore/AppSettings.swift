@@ -53,6 +53,9 @@ public struct AppSettings: Codable, Equatable {
     public var breath = AmbienceBreathSettings()
     /// Follow the Mac's Reduce Motion (spec §6).
     public var followReduceMotion = true
+    /// Excitement's controls (Fire & Neon spec §5): Energy, Big moments, Surprises, Build and drop. The app's, not a
+    /// set's, so applying a set leaves them alone; saved before Excitement existed, they load as the defaults.
+    public var excitement = ExcitementSettings()
     /// The gallery the last launch saw ("opens on what's new", the owner's standing rule): its newest set and how many
     /// sets it held. A build with a newer newest set, or more sets, opens on its newest once (`opensOnWhatsNew`). Settings
     /// saved before the rule have neither (nil), so they open on it once too; a first install starts with this build's
@@ -67,7 +70,7 @@ public struct AppSettings: Codable, Equatable {
     enum CodingKeys: String, CodingKey {
         case instrument, themeID, masterVolume, touchCurve, bufferFrames, themeStates, quality, gentleVisuals, reaction, reactionName,
              qualityVersion, sky, ambience, activeSetID, outputDeviceUID, midiChannel, disabledMIDISources
-        case holdPedal, keyboardRange, breath, followReduceMotion
+        case holdPedal, keyboardRange, breath, followReduceMotion, excitement
         case lastNewestSetID, lastSetCount
     }
 
@@ -110,6 +113,7 @@ public struct AppSettings: Codable, Equatable {
         keyboardRange = (try? c.decodeIfPresent(KeyboardRange.self, forKey: .keyboardRange)) ?? d.keyboardRange
         breath = (try? c.decodeIfPresent(AmbienceBreathSettings.self, forKey: .breath)) ?? d.breath
         followReduceMotion = (try? c.decodeIfPresent(Bool.self, forKey: .followReduceMotion)) ?? d.followReduceMotion
+        excitement = (try? c.decodeIfPresent(ExcitementSettings.self, forKey: .excitement)) ?? d.excitement
         // Absent (saved before "opens on what's new"): nil, not this build's, so the next launch opens on the newest once.
         lastNewestSetID = (try? c.decodeIfPresent(String.self, forKey: .lastNewestSetID)) ?? nil
         lastSetCount = (try? c.decodeIfPresent(Int.self, forKey: .lastSetCount)) ?? nil

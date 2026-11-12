@@ -80,6 +80,7 @@ struct AllSettingsView: View {
                     }
                 }
                 if SkyExtrasSection.matches(search) && Self.hasNightSky(model.themeID) { SkyExtrasSection(model: model) }
+                if ExcitementPanel.matches(search) { ExcitementSection(model: model) }
             }
         }
     }

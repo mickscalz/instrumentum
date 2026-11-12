@@ -759,6 +759,20 @@ public final class AppModel: ObservableObject {
         gentleVisuals = on; settings.gentleVisuals = on; visualsVersion += 1; autosave()
     }
 
+    /// Excitement's controls (Fire & Neon spec §5), saved with the app's settings; the canvas hands them to the director.
+    public var excitementSettings: ExcitementSettings { settings.excitement }
+
+    /// Changes Excitement's controls: the manual dial is kept within 0…1, and the canvas picks them up at its next frame.
+    public func setExcitementSettings(_ e: ExcitementSettings) {
+        var next = e
+        next.manualEnergy = next.manualEnergy.isFinite ? min(1, max(0, next.manualEnergy)) : ExcitementSettings().manualEnergy
+        guard next != settings.excitement else { return }
+        objectWillChange.send()   // `settings` isn't published: tell the panel
+        settings.excitement = next
+        visualsVersion += 1
+        scheduleSave()   // the Energy dial drags this
+    }
+
     // MARK: - Presets
 
     public func allReactions() -> [ReactionPreset] {

@@ -89,7 +89,7 @@ public struct Excitement {
     public var settings = ExcitementSettings()
     /// Gentle visuals: big moments no more than Some, surprises no more than Rare.
     public var gentle = false
-    /// Reduce Motion: `visualEnergy` capped at 0.5.
+    /// Reduce Motion: `visualEnergy` capped at 0.5, and moments at half strength.
     public var reduceMotion = false
     /// Hold the Moment: nothing changes and nothing fires.
     public var holding = false
@@ -108,6 +108,8 @@ public struct Excitement {
     public static func surpriseMean(_ s: ExcitementSettings.Surprises) -> Double { s == .often ? 75 : 240 }
     public static func surpriseGap(_ s: ExcitementSettings.Surprises) -> Double { s == .often ? 30 : 90 }
     public static let playedWithin = 20.0
+    /// Reduce Motion: a moment's strength is scaled by this (spec §5: half strength).
+    public static let reducedMoment: Float = 0.5
 
     private var time = 0.0
     private var onsets: [(t: Double, note: Int, velocity: Double)] = []
@@ -237,7 +239,12 @@ public struct Excitement {
         frame.reduceMotion = reduceMotion
         frame.tension = Float(tension)
         frame.drop = Float(drop)
-        frame.moment = pending
+        // Reduce Motion plays a moment at half its strength (spec §5); its kind, pitch and drop stand.
+        frame.moment = pending.map { m -> BigMoment in
+            var out = m
+            if reduceMotion { out.strength = m.strength * Self.reducedMoment }
+            return out
+        }
         frame.surprise = surprise
         pending = nil
         return frame

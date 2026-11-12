@@ -522,13 +522,15 @@ public final class SceneDirector {
 
     /// Steps Excitement by the world's dt, hands its frame to the theme, and works out the instrument's tension and cue
     /// (Storms spec §3, §4.1). A drop is cued only on the step its moment arrives, so it reaches the engine once. Held
-    /// time freezes it; the sleep fade turns its moments and surprises off.
+    /// time freezes it; the sleep fade turns its moments and surprises off; gentle visuals hold big moments to Some and
+    /// surprises to Rare (spec §5), and Reduce Motion caps the drawn Energy at 0.5 and plays moments at half strength.
     private func stepExcitement(dt: Double) {
         excitement.holding = holding
         excitement.sleeping = controls.sleepDim > 0
         excitement.reduceMotion = controls.reduceMotion
+        excitement.gentle = controls.gentle
         var e = excitement.step(dt: dt, surpriseCount: box.surpriseCount)
-        e.gentle = controls.gentle   // for the worlds' sound (the drive's far siren); Excitement's own pacing is untouched
+        e.gentle = controls.gentle   // the worlds hold back their flashes (glows only) and their alarms (the far siren)
         excitementFrame = e
         box.setExcitement(e)
         let p = pressure
