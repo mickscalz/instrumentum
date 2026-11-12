@@ -34,7 +34,9 @@ jobs:
     # without waiting for the full test run, and publishes them to `previews-<branch>` (this container cannot download
     # artifacts, so the main session reads the PNGs from that branch). Integration branches use the previews job below.
     if: github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref != 'refs/heads/storms' && github.ref != 'refs/heads/fire-neon'
-    runs-on: macos-15
+    # On GitHub's Intel Macs (12 Nov: the arm64 queue dropped every job for hours; and Michael's Mac is Intel, so these
+    # frame times are nearer his than Apple silicon's).
+    runs-on: macos-15-intel
     permissions:
       contents: write
     steps:
@@ -189,7 +191,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SPARKLE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
         run: |
-          { echo "**$(git log -1 --pretty=%s)**"; echo; cat Packaging/release-notes.md; } > notes.md
+          # The release's title: the newest notes' `<!-- title: … -->` line, else the commit subject.
+          TITLE=$(sed -n 's/^<!-- title: \(.*\) -->$/\1/p' Packaging/release-notes.md | head -n 1)
+          [ -n "$TITLE" ] || TITLE="$(git log -1 --pretty=%s)"
+          { echo "**$TITLE**"; echo; cat Packaging/release-notes.md; } > notes.md
           ZIP=$(ls dist/*.zip | head -n 1)
           ASSETS=(dist/*.dmg "$ZIP" dist/demo/*.m4a)
           # The in-app updater's feed: the zip signed with the EdDSA key (a repo secret), and the appcast that points the
@@ -201,7 +206,7 @@ jobs:
             SIG=$(sparkle/bin/sign_update --ed-key-file ed.key "$ZIP")
             rm -f ed.key
             echo "signed: $SIG"
-            python3 Scripts/make-appcast.py "$GITHUB_RUN_NUMBER" "$ZIP" "$SIG" Packaging/release-notes.md "$(git log -1 --pretty=%s)" dist/appcast.xml
+            python3 Scripts/make-appcast.py "$GITHUB_RUN_NUMBER" "$ZIP" "$SIG" Packaging/release-notes.md "$TITLE" dist/appcast.xml
             ASSETS+=(dist/appcast.xml)
           else
             echo "::warning title=no update feed::SPARKLE_ED_PRIVATE_KEY is not set, so this release has no appcast"

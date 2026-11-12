@@ -3,6 +3,8 @@
 
     python3 Scripts/make-appcast.py <build> <zip> "<sign_update output>" <release-notes.md> "<headline>" <out.xml>
 
+The heading is the newest notes' `<!-- title: … -->` line when there is one, else <headline> (the commit subject).
+
 The appcast has one item, the build: its zip on the build's GitHub release, the zip's EdDSA signature and length, and
 the release notes (the newest part of Packaging/release-notes.md, before `<!-- older -->`) as the "what's new" HTML the
 update window shows. Sparkle only needs the newest build to offer it.
@@ -46,6 +48,12 @@ def main():
         sys.exit(f"no EdDSA signature in: {signed!r}")
     length = os.path.getsize(zip_path)
     notes = open(notes_path, encoding="utf-8").read().split("<!-- older -->")[0]
+    # A `<!-- title: … -->` line in the newest notes is the update window's heading (the build's commit subject is only
+    # the fallback: it may be a technical line, as build 159's was).
+    title = re.search(r"<!--\s*title:\s*(.+?)\s*-->", notes)
+    if title:
+        headline = title.group(1)
+        notes = notes.replace(title.group(0), "")
     # The install paragraph is for the release page, not the update window.
     notes = "\n\n".join(b for b in re.split(r"\n\s*\n", notes) if not b.startswith("**Install:**"))
     body = f"<h3>{inline(headline)}</h3>\n" + markdown_to_html(notes)

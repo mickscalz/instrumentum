@@ -1,3 +1,4 @@
+<!-- title: Fire & Neon: Volcano Rim and Neon Night Drive -->
 **Install:** download the **.dmg** below and open it, drag *In Strum Meants* onto *Applications* (choose **Replace** if asked), then right-click the app → **Open** → **Open** (first time only). The .zip is a fallback.
 
 **Sets 13 & 14, Fire & Neon: Volcano Rim and Neon Night Drive.** Two new sets at the end of the gallery, each a world, a visual, an instrument and a soundscape that belong together. These are the loud ones: play hard and the world answers.
