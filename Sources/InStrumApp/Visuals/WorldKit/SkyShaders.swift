@@ -846,7 +846,8 @@ enum SkyShaders {
                 if (a > 0.002) {
                     float ndl = saturate(dot(float3(-sqrt(1.0 - s * s), s, 0.0), Lu) * 0.7 + 0.3);
                     float3 c = grey * (0.1 + 0.07 * n) + Lc * (lightAmt * 0.2 * ndl * (0.6 + 0.4 * n));
-                    c += Lc * (lightAmt * 0.3 * back * (1.0 - smoothstep(0.0, 0.25, edge)));   // its rim, backlit
+                    // Its rim, backlit, from afar only (near, its thin rim drew a bright hook across the view).
+                    c += Lc * (lightAmt * 0.3 * back * (1.0 - smoothstep(0.0, 0.25, edge)) * smoothstep(8.0, 14.0, Dw));
                     if (glow > 0.0) c += flashCol * (flashHere * 0.8 * (0.6 + 0.4 * n));
                     c = mix(c, haze, 1.0 - exp(-rho / 80.0));
                     acc += T * a * c; T *= 1.0 - a;
