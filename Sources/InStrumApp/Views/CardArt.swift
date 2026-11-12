@@ -2463,8 +2463,8 @@ extension CardArt {
             let u: Double = cycle - floor(cycle)   // 0 as it leaves … 1 four beats later
             let age: Double = 4 * u               // beats since it left
             let drift: Double = 0.10 + 0.05 * hash(j, 611)
-            let x: Double = Double(start.x) - drift * u * u - 0.012 * sin(2 * Double.pi * (1.5 * u + hash(j, 612)))
-            let rise: Double = (0.05 + 0.40 * u) * (0.9 + 0.2 * hash(j, 613)) * min(1, 0.5 + u)
+            let x: Double = Double(start.x) - drift * u * u - 0.02 * u * sin(2 * Double.pi * (1.5 * u + hash(j, 612)))
+            let rise: Double = (0.02 + 0.43 * u) * (0.9 + 0.2 * hash(j, 613)) * min(1, 0.5 + u)
             let light: Double = min(1, age / 0.15) * (1 - max(0, (u - 0.7) / 0.3))
             return (x: x, y: Double(start.y) - rise, heat: 1 - u, light: light)
         }
@@ -2602,12 +2602,12 @@ extension CardArt {
         ctx.stroke(lip, with: .color(Color(red: 0.60, green: 0.20, blue: 0.06).opacity(0.30)), lineWidth: 0.7 * k)
 
         // The crater floor: old black flows from the wall's foot to the lake, warmed by it; the heat glow over the lake.
-        var floor = Path()
-        floor.move(to: CGPoint(x: 0, y: h))
-        for p in profile(size, count: 120, { liquorWallFoot($0) }) { floor.addLine(to: p) }
-        floor.addLine(to: CGPoint(x: w, y: h))
-        floor.closeSubpath()
-        ctx.fill(floor, with: .linearGradient(
+        var craterFloor = Path()
+        craterFloor.move(to: CGPoint(x: 0, y: h))
+        for p in profile(size, count: 120, { liquorWallFoot($0) }) { craterFloor.addLine(to: p) }
+        craterFloor.addLine(to: CGPoint(x: w, y: h))
+        craterFloor.closeSubpath()
+        ctx.fill(craterFloor, with: .linearGradient(
             Gradient(stops: [.init(color: Color(red: 0.20, green: 0.06, blue: 0.025), location: 0),
                              .init(color: Color(red: 0.07, green: 0.025, blue: 0.018), location: 0.35),
                              .init(color: Color(red: 0.03, green: 0.014, blue: 0.012), location: 1)]),
