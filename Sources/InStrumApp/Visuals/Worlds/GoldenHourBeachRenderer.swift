@@ -385,7 +385,8 @@ final class GoldenHourBeachRenderer: ThemeRenderer {
                 let hx = radius / (c.z * cam.tanH), hy = radius / (c.z * cam.tanV)
                 let thick = (0.16 + 0.34 * day) * min(1, t / 0.4) * (1 - u * u) * lightScale
                 let skyLit: SIMD3<Float> = s.horizon * (0.55 + 0.4 * day)
-                let sunLit: SIMD3<Float> = SIMD3<Float>(0.3, 0.28, 0.25) * (sunLight * day)
+                let sunAmount: Float = Float(sunLight) * day
+                let sunLit = SIMD3<Float>(0.3 * sunAmount, 0.28 * sunAmount, 0.25 * sunAmount)
                 let flashLit: SIMD3<Float> = vivid * (0.25 * sh.brightness * exp(-t / 0.5) * glowScale * lightScale)
                 let lit: SIMD3<Float> = skyLit + sunLit + flashLit
                 smokeSprites.append(BeachSprite(rect: SIMD4(c.x - hx, c.y - hy, c.x + hx, c.y + hy), local: SIMD4(-1, -1, 1, 1),
