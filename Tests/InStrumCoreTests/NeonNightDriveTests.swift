@@ -635,27 +635,119 @@ final class NeonNightDriveTests: XCTestCase {
 
     // MARK: - Ambience
 
+    /// The drive family (spec §9.3; plan Task 10): wet tyres, the drive's engine, passing cars, the wipers, the roof rain
+    /// (the rain on the glass) and the far siren up, the coast road's road, engine, cars and rain on the glass gone; the
+    /// siren off under gentle visuals and in the tunnel (where the rain and the street are gone too); the wind round the
+    /// windscreen rising with the speed; the frame's scene carrying the car's speed (the tyres and the engine follow it in
+    /// the engine) and the gentle flag from Excitement.
     func testAmbienceFollowsTheDrive() {
         let s = night()
-        let slow = NeonNightDriveModel.levels(s, speed: 0.25, glassRain: 0.5, traffic: 0.5, inTunnel: false)
-        let fast = NeonNightDriveModel.levels(s, speed: 1, glassRain: 0.5, traffic: 0.5, inTunnel: false)
-        let slowRoad = slow[.road] ?? 0, fastRoad = fast[.road] ?? 0
-        let slowEngine = slow[.engine] ?? 0, fastEngine = fast[.engine] ?? 0
-        XCTAssertGreaterThan(fastRoad, slowRoad)
-        XCTAssertGreaterThan(fastEngine, slowEngine)
-        XCTAssertEqual(slow[.rainOnGlass] ?? 0, 0.5, accuracy: 1e-9)
-        let busy = NeonNightDriveModel.levels(s, speed: 0.5, glassRain: 0.5, traffic: 1, inTunnel: false)
-        let empty = NeonNightDriveModel.levels(s, speed: 0.5, glassRain: 0.5, traffic: 0, inTunnel: false)
-        let busyCars = busy[.passingCar] ?? 0, emptyCars = empty[.passingCar] ?? 0
-        XCTAssertGreaterThan(busyCars, emptyCars)
-        let tunnel = NeonNightDriveModel.levels(s, speed: 0.5, glassRain: 0, traffic: 0.5, inTunnel: true)
-        XCTAssertNil(tunnel[.rainOnGlass])
+        let drive = NeonNightDriveModel.levels(s, speed: 0.6, glassRain: 0.5, inTunnel: false, gentle: false)
+        for source: AmbienceSource in [.wetTyres, .driveEngine, .drivePassingCar, .wipers, .roofRain, .farSiren] {
+            XCTAssertGreaterThan(drive[source] ?? 0, 0, "\(source) is up")
+        }
+        for old: AmbienceSource in [.road, .engine, .passingCar, .rainOnGlass] { XCTAssertNil(drive[old], "the coast road's \(old) is gone") }
+        XCTAssertEqual(drive[.roofRain] ?? 0, 0.5, accuracy: 1e-9)
+        let gentle = NeonNightDriveModel.levels(s, speed: 0.6, glassRain: 0.5, inTunnel: false, gentle: true)
+        XCTAssertNil(gentle[.farSiren], "the far siren is off under gentle visuals")
+        XCTAssertEqual(gentle[.wetTyres] ?? 0, drive[.wetTyres] ?? -1, accuracy: 1e-9, "and nothing else changes")
+        let tunnel = NeonNightDriveModel.levels(s, speed: 0.6, glassRain: 0, inTunnel: true, gentle: false)
+        XCTAssertNil(tunnel[.roofRain])
+        XCTAssertNil(tunnel[.farSiren], "no far siren in the tunnel")
         XCTAssertEqual(tunnel[.street] ?? 0, 0)
-        // The frame's scene carries the car's speed.
+        let slow = NeonNightDriveModel.levels(s, speed: 0.25, glassRain: 0.5, inTunnel: false, gentle: false)
+        let fast = NeonNightDriveModel.levels(s, speed: 1, glassRain: 0.5, inTunnel: false, gentle: false)
+        XCTAssertGreaterThan(fast[.windowWind] ?? 0, slow[.windowWind] ?? 1)
         var m = model()
         m.setExcitement(excitement(energy: 1))
         let f = run(&m, seconds: 10)
         XCTAssertEqual(f.ambience.speed, Double(f.speed), accuracy: 0.01)
-        XCTAssertGreaterThan(f.ambience.level(.road), 0.6)
+        XCTAssertGreaterThan(f.ambience.level(.wetTyres), 0.5)
+        XCTAssertGreaterThan(f.ambience.level(.farSiren), 0)
+        var g = model()
+        var calm = excitement(energy: 1)
+        calm.gentle = true
+        g.setExcitement(calm)
+        XCTAssertEqual(run(&g, seconds: 1).ambience.level(.farSiren), 0, "off under gentle")
+    }
+
+    /// The wipers' sweeps reach the soundscape with the blades (plan Task 10): once the rain has settled (15 s on), each
+    /// sweep the wipers make has exactly one sweep event due within two frames of its start (sent at most 0.25 s before
+    /// it, so the throttle never makes it late), carrying the sweep's time and how wet the glass is; dry, there are none.
+    func testWiperSweepsSoundWithTheBlades() {
+        for rain in [0.12, 0.5, 0.9] {
+            var m = model()
+            var sent: [(due: Double, event: AmbienceEvent)] = []
+            var starts: [Double] = []
+            var wasSweeping = false, lastSweeps = 0
+            run(&m, seconds: 40, ["rain": .number(rain)]) { i, f in
+                let t = Double(i + 1) / 60
+                for e in f.ambience.events where e.source == .wipers { sent.append((t + e.delay, e)) }
+                if f.wipers.sweeping, !wasSweeping || f.wipers.sweeps != lastSweeps {
+                    starts.append(t - Double(f.wipers.phase * f.wipers.sweepSeconds))
+                }
+                wasSweeping = f.wipers.sweeping
+                lastSweeps = f.wipers.sweeps
+            }
+            let settled = starts.filter { $0 > 15 && $0 < 39.5 }
+            XCTAssertGreaterThan(settled.count, 1, "rain \(rain): the wipers sweep")
+            for start in settled {
+                let near = sent.filter { abs($0.due - start) <= 2.0 / 60 }
+                XCTAssertEqual(near.count, 1, "rain \(rain): one sweep sound for the sweep at \(start) s")
+                guard let e = near.first?.event else { continue }
+                XCTAssertEqual(e.speed, Double(Wipers.sweepTime(rain: Float(rain))), accuracy: 0.02, "the sweep's time")
+                XCTAssertEqual(e.strength, rain, accuracy: 0.02, "how wet the glass is")
+            }
+            for s in sent { XCTAssertLessThanOrEqual(s.event.delay, 0.25 + 1e-9) }
+        }
+        var dry = model()
+        var any = 0
+        run(&dry, seconds: 20, ["rain": .number(0)]) { _, f in any += f.ambience.events.filter { $0.source == .wipers }.count }
+        XCTAssertEqual(any, 0, "dry: the wipers rest and make no sound")
+    }
+
+    /// Cars passing in the other lanes reach the soundscape (plan Task 10): on a busy road at least ten in 40 s, each sent
+    /// up to 3 s before it comes alongside, with how fast it closes (an oncoming car at its speed and yours), which side
+    /// and how far it passes; the law: oncoming cars close at the sum, cars your way at the difference (one catching you
+    /// from behind, or one you are catching), none once past, none pulling away, and never your own lane's.
+    func testCarsPassingSoundAsTheyComeAlongside() throws {
+        var m = model()
+        m.setExcitement(excitement(energy: 0.6))
+        var sent: [AmbienceEvent] = []
+        run(&m, seconds: 40, ["traffic": .number(1)]) { _, f in sent += f.ambience.events.filter { $0.source == .drivePassingCar } }
+        XCTAssertGreaterThanOrEqual(sent.count, 10, "a busy road: \(sent.count) passes")
+        let oncoming = sent.filter { $0.distance > 11 }
+        XCTAssertGreaterThanOrEqual(oncoming.count, 3, "oncoming cars beyond the median")
+        XCTAssertGreaterThanOrEqual(sent.count - oncoming.count, 1, "and cars in the lanes beside you")
+        for e in sent {
+            XCTAssertTrue((0...3.01).contains(e.delay), "sent \(e.delay) s before it comes alongside")
+            XCTAssertGreaterThan(e.speed, 0.5)
+            XCTAssertTrue(e.pan == -1 || e.pan == 1)
+            XCTAssertTrue((3...21).contains(e.distance), "\(e.distance) m to the side")
+        }
+        for e in oncoming {
+            XCTAssertGreaterThan(e.speed, 30, "an oncoming car closes at its speed and yours")
+            XCTAssertEqual(e.pan, 1, "on your right")
+        }
+        let mps: Float = 25
+        func car(_ lane: Int, _ ahead: Float, _ speed: Float) -> DriveCar {
+            DriveCar(lane: lane, ahead: ahead, speed: speed, seed: 7, brake: 0, lightBar: false)
+        }
+        let onc = try XCTUnwrap(NeonNightDriveModel.pass(of: car(4, 60, 25), mps: mps))
+        XCTAssertEqual(onc.after, 1.2, accuracy: 1e-5)
+        XCTAssertEqual(onc.closing, 50, accuracy: 1e-5)
+        XCTAssertEqual(onc.lateral, DriveRoad.laneCentre(4), accuracy: 1e-6)
+        let catching = try XCTUnwrap(NeonNightDriveModel.pass(of: car(2, -16, 30), mps: mps))
+        XCTAssertEqual(catching.after, 3.2, accuracy: 1e-5)
+        XCTAssertEqual(catching.closing, 5, accuracy: 1e-5)
+        let caught = try XCTUnwrap(NeonNightDriveModel.pass(of: car(0, 40, 20), mps: mps))
+        XCTAssertEqual(caught.after, 8, accuracy: 1e-5)
+        XCTAssertLessThan(caught.lateral, 0, "on your left")
+        XCTAssertNil(NeonNightDriveModel.pass(of: car(4, -5, 25), mps: mps), "an oncoming car already past")
+        XCTAssertNil(NeonNightDriveModel.pass(of: car(2, 30, 30), mps: mps), "one pulling away")
+        XCTAssertNil(NeonNightDriveModel.pass(of: car(1, 50, 20), mps: mps), "your own lane's")
+        var trucks = 0
+        for seed: UInt64 in 0..<900 where DriveCar(lane: 2, ahead: 0, speed: 20, seed: seed, brake: 0, lightBar: false).truck { trucks += 1 }
+        XCTAssertEqual(trucks, 100, "a truck now and then: one in nine")
     }
 }

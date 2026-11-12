@@ -1,6 +1,7 @@
 import XCTest
 import AVFoundation
 @testable import InStrumApp
+@testable import InStrumAudio
 @testable import InStrumCore
 import InStrumDSP
 
@@ -841,6 +842,262 @@ final class DemoRenderTests: XCTestCase {
         }
     }
 
+    // MARK: - Fire & Neon (spec §8.3, §9.3; plan Task 10)
+
+    /// Volcano Rim's eruption in its demo: 8 s in (its boom, from the lake 510 m off and below, arrives 1.49 s later).
+    nonisolated static let volcanoEruptionAt = 8.0
+    /// The drive's demo climbs from 66 km/h (speed 0.2) to 130 (speed 1) between these times (s), so the box shifts up.
+    nonisolated static let driveClimb: ClosedRange<Double> = 9...17
+
+    /// The Fire & Neon ambience demos, mixed as the worlds mix them (`VolcanoRimModel.levels` and `.lake`, and
+    /// `NeonNightDriveModel.levels`, `.pass` and the wipers' timing), with the one-shots each world sends, from the start.
+    /// - `volcano-rim-ambience`: the crater at night, a light wind (.3) over the rim: the vent rumble, the lava lake's hiss,
+    ///   the steam vents and the rockfall up, the eruption's boom and the plume's thunder ready. The lake convects gently
+    ///   (1 m/s at the margin, a little swell, Energy .5). At 3 s a steam blast from a vent at the left wall's foot (heard
+    ///   2.2 s later, from the left, a quarter of the way to far). At 8 s an eruption (strength .8): the lake surges and
+    ///   glows with its light, its boom arrives 1.49 s later, and three cracks of the plume's lightning follow it (0.4,
+    ///   1.1 and 2.3 s after, each heard 1.4–1.5 s after its stroke). At 14 s a rockfall down the right wall (strength .9,
+    ///   heard 2.2 s later).
+    /// - `neon-night-drive-ambience`: the expressway at night in the rain (.5 on the glass, the road wet), from the passenger
+    ///   seat (indoors .55), in D major: the wet tyres, the engine, the roof rain, the wind round the windscreen and the far
+    ///   city. The wipers sweep without rest at the rain's rate (one sweep every 1.21 s, each sent a moment ahead, as the
+    ///   drive sends them). From 9 s to 17 s the car climbs from 66 to 130 km/h (the box shifts up through the gears).
+    ///   Four cars come alongside (each sent 3 s ahead): one oncoming across the median at 6.5 s, one overtaking you 4 m to
+    ///   the right at 13 s, a truck oncoming at 18.5 s, and one you overtake 3 m to the left at 22.5 s. The far siren
+    ///   calls from 6 s (it is rare: here it is set going).
+    static func fireNeonAmbience(_ name: String, seconds: Double) -> FireNeonDemo {
+        var actions: [AmbienceAction] = []
+        var heard: [(source: AmbienceSource, at: Double)] = []
+        func at(_ t: Double, _ apply: @escaping (OpaquePointer) -> Void) { actions.append((t, apply)) }
+        func levels(_ map: [AmbienceSource: Double], at t: Double = 0) {
+            for (source, value) in map {
+                let c = AmbienceAU.cSource(source), v = Float(value)
+                at(t) { isd_ambience_set_level($0, c, v) }
+            }
+        }
+        func post(_ e: AmbienceEvent, at t: Double) {
+            let c = AmbienceAU.cSource(e.source), delay = Float(e.delay), strength = Float(e.strength), pan = Float(e.pan)
+            let speed = Float(e.speed), distance = Float(e.distance), kind = Int32(e.kind)
+            at(t) { isd_ambience_post_event($0, c, delay, strength, pan, speed, distance, kind) }
+            heard.append((e.source, t + e.delay))
+        }
+        var key: (root: Int32, major: Int32)?
+        var engineHz: [Float] = []
+        switch name {
+        case "volcano-rim-ambience":
+            var sky = SkyState()
+            sky.wind = 0.3
+            levels(VolcanoRimModel.levels(sky))
+            at(0) { isd_ambience_set_closeness($0, 0.5) }
+            for k in 0..<Int(seconds * 10) {
+                let t = Double(k) / 10, since = Float(t - volcanoEruptionAt)
+                let light: Float = since >= 0 ? Eruption(age: since, strength: 0.8).light : 0
+                let lake = VolcanoRimModel.lake(convection: 1, swell: 0.2, burst: 0, cells: [], energy: 0.5, eruption: light, breach: 0)
+                let surge = Float(lake.surge), glow = Float(lake.glow)
+                at(t) { isd_ambience_set_lake($0, surge, glow) }
+            }
+            func wall(_ angle: Float, _ radius: Float, _ z: Float) -> SIMD3<Float> {
+                let p = VolcanoCrater.wallPoint(angle: angle, radius: radius)
+                return SIMD3(p.x, p.y, z)
+            }
+            func fromWall(_ source: AmbienceSource, _ p: SIMD3<Float>, strength: Double, at t: Double) {
+                post(AmbienceEvent(source: source, delay: VolcanoRimModel.soundDelay(to: p), strength: strength,
+                                   pan: VolcanoRimModel.pan(of: p), distance: VolcanoRimModel.farness(of: p)), at: t)
+            }
+            fromWall(.steamVent, wall(-0.75, VolcanoCrater.footRadius + 10, VolcanoCrater.benchHeight * 0.5), strength: 1, at: 3)
+            post(AmbienceEvent(source: .eruptionBoom, delay: VolcanoRimModel.soundDelay(to: .zero)), at: volcanoEruptionAt)
+            let strokes: [(after: Double, origin: SIMD3<Float>, strength: Double)] = [
+                (0.4, SIMD3(20, 10, 120), 0.8), (1.1, SIMD3(-35, -15, 190), 0.6), (2.3, SIMD3(45, 20, 80), 0.9),
+            ]
+            for stroke in strokes {
+                post(AmbienceEvent(source: .plumeThunder, delay: VolcanoRimModel.soundDelay(to: stroke.origin),
+                                   strength: min(1, 0.35 + 0.5 * stroke.strength), pan: VolcanoRimModel.pan(of: stroke.origin)),
+                     at: volcanoEruptionAt + stroke.after)
+            }
+            fromWall(.rockfall, wall(0.8, VolcanoCrater.benchRadius, VolcanoCrater.rimHeight * 0.8), strength: 0.9, at: 14)
+        case "neon-night-drive-ambience":
+            key = (root: 2, major: 1)
+            var sky = SkyState()
+            sky.rain = 0.5
+            sky.wetness = 0.8
+            let glass: Float = 0.5
+            let climb = driveClimb
+            func speed(at t: Double) -> Float {
+                let along: Double = (t - climb.lowerBound) / (climb.upperBound - climb.lowerBound)
+                return Float(0.2 + 0.8 * min(1, max(0, along)))
+            }
+            at(0) { a in
+                isd_ambience_set_indoors(a, 0.55)
+                isd_ambience_set_wetness(a, 0.8)
+                isd_ambience_set_closeness(a, 0.6)
+            }
+            for k in 0..<Int(seconds * 10) {
+                let t = Double(k) / 10, v = speed(at: t)
+                levels(NeonNightDriveModel.levels(sky, speed: v, glassRain: glass, inTunnel: false, gentle: false), at: t)
+                at(t) { isd_ambience_set_speed($0, v) }
+                at(t) { engineHz.append(isd_ambience_debug_hz($0, ISD_AMB_DRIVE_ENGINE)) }
+            }
+            // The wipers: back to back at the rain's rate, each sweep sent a moment before it begins.
+            let sweep = Double(Wipers.sweepTime(rain: glass)), lead = Double(NeonNightDriveModel.sweepLead)
+            var start = 1.0
+            while start + sweep < seconds {
+                post(.sweep(in: lead, seconds: sweep, wet: Double(glass)), at: start - lead)
+                start += sweep
+            }
+            // The traffic: each car placed so it comes alongside 3 s on (`passLead`), as the drive sends it.
+            let traffic: [(at: Double, lane: Int, seed: UInt64, mps: Float, ofYours: Bool)] = [
+                (3.5, 4, 1, 25, false), (10, 2, 2, 1.2, true), (15.5, 5, 4, 22, false), (19.5, 0, 3, 0.85, true),
+            ]
+            for c in traffic {
+                let you: Float = NeonNightDriveModel.metresPerSecond(speed(at: c.at))
+                let own: Float = c.ofYours ? c.mps * you : c.mps
+                var car = DriveCar(lane: c.lane, ahead: 0, speed: own, seed: c.seed, brake: 0, lightBar: false)
+                let closing: Float = car.oncoming ? own + you : abs(own - you)
+                let ahead: Float = car.oncoming || own < you ? 1 : -1   // ahead of you, or (overtaking you) behind
+                car.ahead = ahead * closing * NeonNightDriveModel.passLead
+                if let p = NeonNightDriveModel.pass(of: car, mps: you) {
+                    post(.passingCar(in: Double(p.after), closing: Double(p.closing), lateral: Double(p.lateral), truck: car.truck), at: c.at)
+                }
+            }
+            at(6) { isd_ambience_debug_trigger($0, ISD_AMB_FAR_SIREN) }
+        default:
+            return FireNeonDemo(l: [], r: [], heard: [], engineHz: [], counts: [:])
+        }
+        var counts: [AmbienceSource: Int32] = [:]
+        let counted: [AmbienceSource] = [.steamVent, .eruptionBoom, .plumeThunder, .rockfall, .wipers, .drivePassingCar, .farSiren]
+        at(seconds) { a in
+            for source in counted { counts[source] = isd_ambience_debug_events(a, AmbienceAU.cSource(source)) }
+        }
+        let audio = renderTimedAmbience(seconds: seconds, key: key, actions: actions)
+        return FireNeonDemo(l: audio.l, r: audio.r, heard: heard, engineHz: engineHz, counts: counts)
+    }
+
+    /// The power (dB) of `x` between `t0` and `t1` seconds through a band-pass from `lo` to `hi` Hz (an RBJ band-pass at
+    /// their geometric middle, its bandwidth their octaves, run twice).
+    nonisolated static func bandDB(_ x: [Float], _ lo: Double, _ hi: Double, from t0: Double, to t1: Double) -> Double {
+        let f0 = (lo * hi).squareRoot(), bw = log2(hi / lo), w0 = 2 * Double.pi * f0 / rate
+        let alpha = sin(w0) * sinh(log(2) / 2 * bw * w0 / sin(w0)), a0 = 1 + alpha
+        let b0 = alpha / a0, b2 = -alpha / a0, a1 = -2 * cos(w0) / a0, a2 = (1 - alpha) / a0
+        let a = max(0, Int(t0 * rate)), b = min(x.count, Int(t1 * rate))
+        guard a < b else { return -300 }
+        // From a second before the window, so the filters have settled.
+        var z = [0.0, 0.0, 0.0, 0.0], sum = 0.0
+        for i in max(0, a - Int(rate))..<b {
+            let v = Double(x[i])
+            let y1 = b0 * v + z[0]
+            z[0] = -a1 * y1 + z[1]; z[1] = b2 * v - a2 * y1
+            let y2 = b0 * y1 + z[2]
+            z[2] = -a1 * y2 + z[3]; z[3] = b2 * y1 - a2 * y2
+            if i >= a { sum += y2 * y2 }
+        }
+        return 10 * log10(max(sum / Double(b - a), 1e-30))
+    }
+
+    /// A demo's common checks and its summary in the log (per second: the level, 20–200 Hz, 2–6 kHz and the balance),
+    /// then the WAV and its spectrogram when DEMO_DIR is set.
+    func checkAndWrite(_ demo: FireNeonDemo, name: String, seconds: Double) throws {
+        XCTAssertEqual(demo.l.count, Int(seconds * Self.rate), name)
+        XCTAssertTrue(demo.l.allSatisfy(\.isFinite) && demo.r.allSatisfy(\.isFinite), name)
+        let peak = max(demo.l.map(abs).max() ?? 0, demo.r.map(abs).max() ?? 0)
+        XCTAssertLessThan(peak, 0.6, "\(name) stays under the limiter")
+        let mid: [Float] = zip(demo.l, demo.r).map { 0.5 * ($0 + $1) }
+        var power = 0.0
+        for v in mid { power += Double(v) * Double(v) }
+        let rms: Double = 10 * log10(max(power / Double(max(1, mid.count)), 1e-30))
+        XCTAssertGreaterThan(rms, -50, name)
+        print("\(name): peak \(String(format: "%.1f", 20 * log10(Double(max(peak, 1e-9))))) dBFS")
+        for (source, t) in demo.heard { print("  \(source.rawValue) heard at \(String(format: "%.2f", t)) s") }
+        print("  counted: " + demo.counts.map { "\($0.key.rawValue) \($0.value)" }.sorted().joined(separator: ", "))
+        print("   sec  level  20-200  2k-6k  R-L(300-3k)")
+        for t in 0..<Int(seconds) {
+            let a = Double(t), b = a + 1
+            var second = 0.0
+            for i in Int(a * Self.rate)..<Int(b * Self.rate) { second += Double(mid[i]) * Double(mid[i]) }
+            let level: Double = 10 * log10(max(second / Self.rate, 1e-30))
+            let balance = Self.bandDB(demo.r, 300, 3000, from: a, to: b) - Self.bandDB(demo.l, 300, 3000, from: a, to: b)
+            print(String(format: "  %4ld %6.1f %7.1f %6.1f %+6.1f", t, level, Self.bandDB(mid, 20, 200, from: a, to: b),
+                         Self.bandDB(mid, 2000, 6000, from: a, to: b), balance))
+        }
+        guard let dir = ProcessInfo.processInfo.environment["DEMO_DIR"] else { return }
+        let url = URL(fileURLWithPath: dir, isDirectory: true)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        try Self.writeWAV((l: demo.l, r: demo.r), to: url.appendingPathComponent("\(name).wav"))
+        try PreviewRenderer.writePNG(Spectrogram.image(left: demo.l, sampleRate: Self.rate, width: 1400, height: 500),
+                                     to: url.appendingPathComponent("\(name)-spectrogram.png"))
+    }
+
+    /// When the demo's one-shot from `source` is heard (its first).
+    func heard(_ demo: FireNeonDemo, _ source: AmbienceSource) -> Double { demo.heard.first { $0.source == source }?.at ?? -1 }
+
+    /// Volcano Rim's demo (plan Task 10): 24 s with a steam blast, an eruption's boom and the plume's cracks, and a
+    /// rockfall, each heard when its sound arrives. The boom's first second lifts 20–200 Hz by 5 dB or more over the second
+    /// before it (the lake already surging with the eruption's light); the steam lifts 2–6 kHz by 6 dB from 0.7 s after it
+    /// arrives; the rockfall's first half-second stands 3 dB over the lake's bed at 800–3200 Hz; and every one-shot sounds.
+    /// (The g++ mirror, eight seeds: the boom +7.0 to +10.0 dB, the steam +8.9 to +13.1, the rockfall +4.2 to +6.1; peaks
+    /// −5.6 to −8.9 dBFS.)
+    func testRenderVolcanoAmbience() throws {
+        let name = "volcano-rim-ambience", seconds = 24.0
+        let demo = Self.fireNeonAmbience(name, seconds: seconds)
+        let mid: [Float] = zip(demo.l, demo.r).map { 0.5 * ($0 + $1) }
+        let boom = heard(demo, .eruptionBoom), steam = heard(demo, .steamVent), rock = heard(demo, .rockfall)
+        XCTAssertEqual(boom, Self.volcanoEruptionAt + 1.49, accuracy: 0.01)
+        let thump = Self.bandDB(mid, 20, 200, from: boom + 0.05, to: boom + 1) - Self.bandDB(mid, 20, 200, from: boom - 0.95, to: boom - 0.05)
+        XCTAssertGreaterThanOrEqual(thump, 5, "the eruption's boom arrives at \(boom) s")
+        let hiss = Self.bandDB(mid, 2000, 6000, from: steam + 0.7, to: steam + 1.8) - Self.bandDB(mid, 2000, 6000, from: steam - 1.2, to: steam - 0.1)
+        XCTAssertGreaterThanOrEqual(hiss, 6, "the steam blast arrives at \(steam) s")
+        let clatter = Self.bandDB(mid, 800, 3200, from: rock, to: rock + 0.5) - Self.bandDB(mid, 800, 3200, from: rock - 1.2, to: rock - 0.1)
+        XCTAssertGreaterThanOrEqual(clatter, 3, "the rockfall arrives at \(rock) s")
+        XCTAssertEqual(demo.counts[.eruptionBoom], 1)
+        XCTAssertEqual(demo.counts[.plumeThunder], 3)
+        XCTAssertGreaterThanOrEqual(demo.counts[.steamVent] ?? 0, 1)
+        XCTAssertGreaterThanOrEqual(demo.counts[.rockfall] ?? 0, 1)
+        print("volcano: boom +\(String(format: "%.1f", thump)) dB, steam +\(String(format: "%.1f", hiss)) dB, rockfall +\(String(format: "%.1f", clatter)) dB")
+        try checkAndWrite(demo, name: name, seconds: seconds)
+    }
+
+    /// Neon Night Drive's demo (plan Task 10): 24 s in the rain with the wipers, four cars passing and a climb to 130 km/h.
+    /// Every sweep sent is heard (one each 1.21 s); all four cars come alongside, each pulling the balance (at 300–3000 Hz)
+    /// to its side as it passes: the near ones (4 m right, 3 m left) by 3 dB or more against the first seconds, the
+    /// oncoming one across the median by 1.5; the engine's pitch falls at least once by 8% within 0.4 s through the
+    /// climb (an upshift) and ends near 8th's 64.7 Hz at 130 km/h. (The g++ mirror, eight seeds: 19 sweeps; the cars +3.0
+    /// to +3.6, +7.6 to +8.6, the truck 16.7 m off +0.6 to +2.6, and −5.4 to −6.2 dB; shifts at 10.2, 13.0 and 15.9 s;
+    /// peaks −9.9 to −12.1 dBFS.)
+    func testRenderDriveAmbience() throws {
+        let name = "neon-night-drive-ambience", seconds = 24.0
+        let demo = Self.fireNeonAmbience(name, seconds: seconds)
+        let sweeps = demo.heard.filter { $0.source == .wipers }.count
+        XCTAssertGreaterThanOrEqual(sweeps, 18)
+        XCTAssertEqual(demo.counts[.wipers], Int32(sweeps), "every sweep is heard")
+        let cars = demo.heard.filter { $0.source == .drivePassingCar }.map { $0.at }
+        XCTAssertEqual(cars.count, 4)
+        XCTAssertEqual(demo.counts[.drivePassingCar], 4)
+        func balance(_ t0: Double, _ t1: Double) -> Double {
+            Self.bandDB(demo.r, 300, 3000, from: t0, to: t1) - Self.bandDB(demo.l, 300, 3000, from: t0, to: t1)
+        }
+        let base = balance(1, 5)
+        let swings = cars.map { balance($0 - 0.1, $0 + 0.1) - base }
+        if swings.count == 4 {
+            XCTAssertGreaterThanOrEqual(swings[0], 1.5, "the oncoming car across the median passes on the right")
+            XCTAssertGreaterThanOrEqual(swings[1], 3, "the car overtaking you passes on the right")
+            XCTAssertLessThanOrEqual(swings[3], -3, "the car you overtake passes on the left")
+        }
+        // The upshifts: 0.1 s apart, the firing pitch dropping 8% or more within 0.4 s.
+        var shifts: [Double] = []
+        var k = 4
+        while k < demo.engineHz.count {
+            let before = demo.engineHz[(k - 4)..<k].max() ?? 0
+            if before > 0, demo.engineHz[k] < 0.92 * before { shifts.append(Double(k) / 10); k += 8 } else { k += 1 }
+        }
+        let inClimb = shifts.filter { Self.driveClimb.lowerBound...(Self.driveClimb.upperBound + 2) ~= $0 }
+        XCTAssertGreaterThanOrEqual(inClimb.count, 1, "the box shifts up as the car climbs (shifts at \(shifts))")
+        let end = Double(demo.engineHz.suffix(20).reduce(0, +)) / 20
+        let eighth: Double = 2.0 * 1000 * 130 / 67 / 60   // firing (two a revolution) at 130 km/h, 67 km/h a 1000 rpm
+        XCTAssertEqual(end, eighth, accuracy: 1.5, "130 km/h in 8th")
+        print("drive: \(sweeps) sweeps, cars swing " + swings.map { String(format: "%+.1f", $0) }.joined(separator: " ")
+              + " dB, shifts at \(shifts), engine \(String(format: "%.1f", end)) Hz at the end")
+        try checkAndWrite(demo, name: name, seconds: seconds)
+    }
+
     func testSpectrogramShowsATone() {
         let tone = (0..<48_000).map { Float(sin(2 * Double.pi * 1000 * Double($0) / Self.rate)) * 0.5 }
         let image = Spectrogram.image(left: tone, sampleRate: Self.rate, width: 200, height: 100)
@@ -848,6 +1105,15 @@ final class DemoRenderTests: XCTestCase {
         XCTAssertEqual(image.height, 100)
         XCTAssertGreaterThan(PreviewRenderer.stats(image).variance, 0.0005)
     }
+}
+
+/// A Fire & Neon demo (`DemoRenderTests.fireNeonAmbience`): its audio, when each one-shot sent is heard, the drive
+/// engine's firing pitch every 0.1 s (Hz; empty for the volcano), and how many one-shots each source had begun by the end.
+struct FireNeonDemo {
+    var l: [Float], r: [Float]
+    var heard: [(source: AmbienceSource, at: Double)]
+    var engineHz: [Float]
+    var counts: [AmbienceSource: Int32]
 }
 
 /// A storm demo (`DemoRenderTests.stormAmbience`): its audio, and at each look how many thunder rolls had started and how

@@ -89,7 +89,9 @@ final class ThemeCanvas: NSObject, MTKViewDelegate {
         if view.drawableSize != wanted { view.drawableSize = wanted }
         let size = view.drawableSize
         stack.resize(width: Int(size.width), height: Int(size.height))
-        director.controls = model.sceneControls   // hold, the sleep dim, Reduce Motion and breathing, before the events
+        var controls = model.sceneControls   // hold, the sleep dim, Reduce Motion and breathing, before the events
+        controls.gentle = model.effectiveGentleVisuals   // and gentle visuals: the drive's far siren rests
+        director.controls = controls
         director.handle(model.drainEvents(), at: now)
         let sound = model.soundReading
         let hub = director.hub

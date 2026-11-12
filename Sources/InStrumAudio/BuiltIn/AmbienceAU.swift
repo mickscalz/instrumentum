@@ -47,7 +47,7 @@ public final class AmbienceAU: AUAudioUnit {
 
     public func setScene(_ scene: AmbienceScene) {
         state.withLockUnchecked { $0.scene = scene }
-        apply(thunder: scene.thunder, wave: scene.wave, bubbles: scene.bubbleBurst, thunderQueue: scene.thunderQueue)
+        apply(thunder: scene.thunder, wave: scene.wave, bubbles: scene.bubbleBurst, thunderQueue: scene.thunderQueue, events: scene.events)
     }
 
     /// A world switch (Storms Review focus 4): thunder still on its way from the last world never arrives in the next
@@ -73,7 +73,8 @@ public final class AmbienceAU: AUAudioUnit {
         if changed { apply(thunder: nil) }
     }
 
-    private func apply(thunder: Double?, wave: Double? = nil, bubbles: Double? = nil, thunderQueue: [QueuedThunder] = []) {
+    private func apply(thunder: Double?, wave: Double? = nil, bubbles: Double? = nil, thunderQueue: [QueuedThunder] = [],
+                       events: [AmbienceEvent] = []) {
         guard let a = box.ambience else { return }
         let s = state.withLockUnchecked { $0 }
         for source in AmbienceSource.allCases {
@@ -89,6 +90,7 @@ public final class AmbienceAU: AUAudioUnit {
         isd_ambience_set_indoors(a, Float(s.scene.indoors))
         isd_ambience_set_wetness(a, Float(s.scene.wetness))
         isd_ambience_set_snow_on_glass(a, Float(s.scene.snowOnGlass))
+        isd_ambience_set_lake(a, Float(s.scene.lakeSurge), Float(s.scene.lakeGlow))
         // The temple bell and the sonar take a new key at their next strike or ping; while the key can't be sensed
         // they stay where they are.
         if let key = s.scene.key { isd_ambience_set_key(a, Int32(clamping: key.root), key.major ? 1 : 0) }
@@ -97,6 +99,13 @@ public final class AmbienceAU: AUAudioUnit {
         if let strength = bubbles, s.enabled { isd_ambience_trigger_bubbles(a, Float(strength)) }
         // After the levels: the engine hears a roll only while the thunder roll is up.
         if s.enabled { for roll in thunderQueue { isd_ambience_queue_thunder(a, Float(roll.delay), Float(roll.strength)) } }
+        // The world's one-shots, after the levels too: each is heard only while its source is up.
+        if s.enabled {
+            for e in events {
+                isd_ambience_post_event(a, Self.cSource(e.source), Float(e.delay), Float(e.strength), Float(e.pan), Float(e.speed),
+                                        Float(e.distance), Int32(clamping: e.kind))
+            }
+        }
     }
 
     static func cSource(_ s: AmbienceSource) -> ISDAmbienceSource {
@@ -151,6 +160,18 @@ public final class AmbienceAU: AUAudioUnit {
         case .dustTicks: return ISD_AMB_DUST_TICKS
         case .shimmerHum: return ISD_AMB_SHIMMER_HUM
         case .farTruck: return ISD_AMB_FAR_TRUCK
+        case .ventRumble: return ISD_AMB_VENT_RUMBLE
+        case .lavaHiss: return ISD_AMB_LAVA_HISS
+        case .steamVent: return ISD_AMB_STEAM_VENT
+        case .rockfall: return ISD_AMB_ROCKFALL
+        case .eruptionBoom: return ISD_AMB_ERUPTION_BOOM
+        case .plumeThunder: return ISD_AMB_PLUME_THUNDER
+        case .wetTyres: return ISD_AMB_WET_TYRES
+        case .wipers: return ISD_AMB_WIPERS
+        case .driveEngine: return ISD_AMB_DRIVE_ENGINE
+        case .drivePassingCar: return ISD_AMB_DRIVE_PASSING_CAR
+        case .roofRain: return ISD_AMB_ROOF_RAIN
+        case .farSiren: return ISD_AMB_FAR_SIREN
         }
     }
 

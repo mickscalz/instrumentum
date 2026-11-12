@@ -95,14 +95,18 @@ public struct SceneControls: Equatable {
     /// The Mac's Reduce Motion, when the app follows it.
     public var reduceMotion: Bool
     public var breath: AmbienceBreathSettings
+    /// Gentle visuals as the canvas draws them (yours, or Reduce Motion's while the app follows it): worlds hold back their
+    /// alarms (the drive's far siren). It reaches them on the Excitement frame.
+    public var gentle: Bool
 
     public init(holdRequested: Bool = false, holdPedal: HoldPedal = .soft, sleepDim: Double = 0.0, reduceMotion: Bool = false,
-                breath: AmbienceBreathSettings = AmbienceBreathSettings()) {
+                breath: AmbienceBreathSettings = AmbienceBreathSettings(), gentle: Bool = false) {
         self.holdRequested = holdRequested
         self.holdPedal = holdPedal
         self.sleepDim = Self.clampedDim(sleepDim)
         self.reduceMotion = reduceMotion
         self.breath = breath
+        self.gentle = gentle
     }
 
     static func clampedDim(_ dim: Double) -> Double { min(1, max(0, dim)) }
