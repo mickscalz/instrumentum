@@ -762,16 +762,17 @@ public struct VolcanoRimModel: ThemeModel, MoodAware, SkyAware, ExcitementAware,
         eruption = Eruption(age: still ? Eruption.rise : 0, strength: strength)
         let n = Eruption.bombs(strength: strength)
         for k in 0..<n {
-            // Spread along the far rim, flying 6–9 s from high in the column.
+            // Spread along the far rim, flying 5–9 s from anywhere up the column's foot, each thrown a little after the
+            // last (a burst, never a ring).
             let angle = -1.0 + 2.0 * (Float(k) + rng.range(0.1, 0.9)) / Float(max(n, 1))
             let target = VolcanoCrater.rimPoint(angle: angle * 0.95)
-            let start = SIMD3<Float>(rng.range(-20, 20), rng.range(-20, 20), rng.range(60, 160))
-            let flight = rng.range(6, 9)
+            let start = SIMD3<Float>(rng.range(-20, 20), rng.range(-20, 20), rng.range(40, 220))
+            let flight = rng.range(5, 9)
             let need = (target - start) / flight
             let v = SIMD3<Float>(need.x, need.y, need.z + 0.5 * Self.gravity * flight)
             var b = LavaParticle(alive: true, position: start, velocity: v, age: 0, size: rng.range(2.5, 6) * (0.6 + 0.4 * strength),
                                  temperature: 1420, landed: nil)
-            if still { advance(&b, by: 1.2) }
+            advance(&b, by: (still ? 1.2 : 0) + rng.range(0, 1.1))
             bombs[nextBomb] = b
             nextBomb = (nextBomb + 1) % Self.bombCount
         }
@@ -926,9 +927,9 @@ public struct VolcanoRimModel: ThemeModel, MoodAware, SkyAware, ExcitementAware,
         let angle: Float
         switch kind {
         case .fireball: angle = r.range(-25, 25)
-        case .rockfall: angle = r.range(-0.55, 0.15)
-        case .steamBlast: angle = r.range(-0.6, 0.6)
-        case .redSprites: angle = r.range(-28, -12)
+        case .rockfall: angle = r.unit() < 0.6 ? r.range(-1.0, -0.62) : r.range(0.62, 0.95)
+        case .steamBlast: angle = r.unit() < 0.5 ? r.range(-0.95, -0.55) : r.range(0.5, 0.72)
+        case .redSprites: angle = r.range(-35, -28)
         case .lavaTree: angle = r.range(0.35, 0.75)
         }
         surprises.append(VolcanoSurprise(kind: kind, age: 0, duration: VolcanoSurprise.duration(kind), seed: s.seed, angle: angle))

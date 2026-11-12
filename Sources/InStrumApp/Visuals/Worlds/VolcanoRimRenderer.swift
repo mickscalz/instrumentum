@@ -53,6 +53,7 @@ final class VolcanoRimRenderer: ThemeRenderer {
     private var view = SIMD4<Float>(16.0 / 9, 0, 0, 0)
     private var columnLight = SIMD4<Float>(1, 1, 1, 1)
     private var limiter = FlashLimiter()
+    private var primed = false
     private var rise: Float = 0
     private var eruptGlow: Float = 0
     private(set) var post = PostSettings()
@@ -142,7 +143,7 @@ final class VolcanoRimRenderer: ThemeRenderer {
     /// the lake's activity, the fountains, the column and the breach.
     nonisolated static func lakeLight(energy: Float, activity: Float, fountains: Float, eruption: Float, breach: Float) -> SIMD3<Float> {
         let e = unit(energy), a = unit(activity)
-        let level: Float = 0.38 + 0.3 * e + 0.15 * a + 0.12 * unit(fountains) + 1.1 * unit(eruption) + 0.5 * unit(breach)
+        let level: Float = 0.38 + 0.3 * e + 0.15 * a + 0.12 * unit(fountains) + 0.4 * unit(eruption) + 0.5 * unit(breach)
         let warm = blackbody(1150)
         return warm * level
     }
@@ -211,8 +212,13 @@ final class VolcanoRimRenderer: ThemeRenderer {
         let mood = frame.mood
         let base: Float = MoodLook.exposure(mood) * (1 + 0.55 * night)
         let request = Self.unit(frame.flashRequest)
-        let asked: Float = gentle ? min(0.16, 0.4 * request) : 0.9 * request
+        let asked: Float = gentle ? min(0.12, 0.4 * request) : 0.9 * request
         limiter.gentle = gentle
+        if !primed {
+            // The limiter starts from black: settle it on the scene's own exposure first, so arriving is never a flash.
+            primed = true
+            for _ in 0..<16 { _ = limiter.limit(exposure: base, sparkle: 1, dt: 1) }
+        }
         let limited = limiter.limit(exposure: base * (1 + asked), sparkle: 1, dt: dt)
         exposureOut = limited.exposure
         let passed: Float = asked > 1e-4 ? Self.unit((limited.exposure / base - 1) / asked) : 1
@@ -384,8 +390,8 @@ final class VolcanoRimRenderer: ThemeRenderer {
         }
         for b in frame.bombs where b.alive {
             let fade: Float = b.landed.map { max(0, 1 - $0 / 3) } ?? 1
-            add(b.position, b.landed == nil ? b.velocity : .zero, size: b.size * 0.5, kelvin: b.temperature, light: 2.4 * fade,
-                soft: 0, blur: 0.3)
+            add(b.position, b.landed == nil ? b.velocity : .zero, size: b.size * 0.4, kelvin: b.temperature, light: 2.2 * fade,
+                soft: 0, blur: 0.45)
         }
         sparkCount = sparkInstances.count / 2
     }
