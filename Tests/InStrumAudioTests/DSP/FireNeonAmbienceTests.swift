@@ -171,18 +171,20 @@ extension AmbienceTests {
         let truck = pass(closing: 50, lateral: 13, side: 1, truck: true)
         XCTAssertLessThan(at(truck.hz, closest - 1), 0.8 * at(car.hz, closest - 1), "a truck is lower")
         // Longer: overtaking you at 10 m/s, 4 m off, a truck is alongside for its 20 m; a car only passes.
-        func alongside(_ x: (l: [Float], r: [Float])) -> Double {
+        func heardBeside(_ x: (l: [Float], r: [Float])) -> Double {
             let frames = Self.stereoFrames(x, ms: 50, from: 0, to: 8)
             var smooth: [Double] = []
             for i in frames.indices {
-                let window = frames[max(0, i - 2)...min(frames.count - 1, i + 2)].map { pow(10, $0 / 10) }
-                smooth.append(10 * log10(window.reduce(0, +) / Double(window.count)))
+                var power = 0.0
+                let near = max(0, i - 2)...min(frames.count - 1, i + 2)
+                for j in near { power += pow(10, frames[j] / 10) }
+                smooth.append(10 * log10(power / Double(near.count)))
             }
             let top = smooth.max() ?? -200
             return Double(smooth.filter { $0 >= top - 3 }.count) * 0.05
         }
         let carBeside = pass(closing: 10, lateral: 4, side: 1, truck: false), truckBeside = pass(closing: 10, lateral: 4, side: 1, truck: true)
-        XCTAssertGreaterThanOrEqual(alongside(truckBeside.out), 1.5 * alongside(carBeside.out), "and longer alongside")
+        XCTAssertGreaterThanOrEqual(heardBeside(truckBeside.out), 1.5 * heardBeside(carBeside.out), "and longer alongside")
         for x in [car.out, overtaking.out, truck.out, carBeside.out, truckBeside.out] { XCTAssertTrue(x.l.allSatisfy(\.isFinite) && x.r.allSatisfy(\.isFinite)) }
     }
 
@@ -199,7 +201,11 @@ extension AmbienceTests {
             ])
             let hz = run.hz.map(Double.init)
             let tonic = 4 * Self.tonic(root), steps = major ? [0, 2, 4, 7, 9] : [0, 3, 5, 7, 10]
-            let tones = (0...7).map { tonic * pow(2, Double(12 * ($0 / 5) + steps[$0 % 5]) / 12) }
+            var tones: [Double] = []
+            for k in 0...7 {
+                let semis = Double(12 * (k / 5) + steps[k % 5])
+                tones.append(tonic * pow(2, semis / 12))
+            }
             var rests: [(start: Double, length: Double, hz: Double)] = []
             var i = 0
             while i < hz.count {

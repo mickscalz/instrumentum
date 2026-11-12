@@ -272,7 +272,8 @@ final class CPUBudgetTests: XCTestCase {
     /// 2.15%: about 2.4% there.)
     func testFireNeonAmbienceBudget() {
         typealias A = AmbienceTests
-        let scene = A.fireNeon.map { A.level($0, 0.6) } + Self.fireNeonEvents
+        var scene: [A.Action] = A.fireNeon.map { A.level($0, 0.6) }
+        scene += Self.fireNeonEvents
         let seconds = bestOfThree { _ = A.render(seconds: 10, actions: scene) }
         XCTAssertLessThan(seconds / 10, 0.08, "the Fire & Neon ambience used \(String(format: "%.1f", seconds * 10))% of real time")
     }
@@ -280,14 +281,24 @@ final class CPUBudgetTests: XCTestCase {
     /// The events of `testFireNeonAmbienceBudget` (with the lake, the speed and the wet road they play over).
     static var fireNeonEvents: [AmbienceTests.Action] {
         typealias A = AmbienceTests
-        var e: [A.Action] = [A.lake(surge: 0.6, glow: 0.6), A.speed(0.5), A.wetness(0.8), A.trigger(ISD_AMB_FAR_SIREN, at: 0),
-                             A.post(ISD_AMB_ERUPTION_BOOM, at: 0.2, delay: 1), A.post(ISD_AMB_STEAM_VENT, at: 0.5, delay: 0.5, pan: 0.3, distance: 0.2),
-                             A.post(ISD_AMB_ROCKFALL, at: 1, delay: 0.5, pan: -0.3, distance: 0.3)]
-        e += (0..<4).map { A.post(ISD_AMB_PLUME_THUNDER, at: 0.3 + 2 * Double($0), delay: 1.6, strength: 0.7, pan: 0.2) }
-        e += (0..<8).map { A.post(ISD_AMB_WIPERS, at: 0.2 + 1.2 * Double($0), strength: 0.7, speed: 1.2) }
-        e += (0..<4).map { k in
-            A.post(ISD_AMB_DRIVE_PASSING_CAR, at: 0.2 + 2 * Double(k), delay: 2.5, pan: k % 2 == 1 ? 1 : -1, speed: k % 2 == 1 ? 56 : 8,
-                   distance: k % 2 == 1 ? 13 : 3.6, kind: k == 3 ? 1 : 0)
+        var e: [A.Action] = [A.lake(surge: 0.6, glow: 0.6), A.speed(0.5), A.wetness(0.8), A.trigger(ISD_AMB_FAR_SIREN, at: 0)]
+        e.append(A.post(ISD_AMB_ERUPTION_BOOM, at: 0.2, delay: 1))
+        e.append(A.post(ISD_AMB_STEAM_VENT, at: 0.5, delay: 0.5, pan: 0.3, distance: 0.2))
+        e.append(A.post(ISD_AMB_ROCKFALL, at: 1, delay: 0.5, pan: -0.3, distance: 0.3))
+        for k in 0..<4 {
+            let t: Double = 0.3 + 2 * Double(k)
+            e.append(A.post(ISD_AMB_PLUME_THUNDER, at: t, delay: 1.6, strength: 0.7, pan: 0.2))
+        }
+        for k in 0..<8 {
+            let t: Double = 0.2 + 1.2 * Double(k)
+            e.append(A.post(ISD_AMB_WIPERS, at: t, strength: 0.7, speed: 1.2))
+        }
+        for k in 0..<4 {
+            // Oncoming across the median on the right, and overtaking on the left; the last a truck.
+            let right = k % 2 == 1, t: Double = 0.2 + 2 * Double(k)
+            let pan: Float = right ? 1 : -1, closing: Float = right ? 56 : 8, lateral: Float = right ? 13 : 3.6
+            let kind: Int32 = k == 3 ? 1 : 0
+            e.append(A.post(ISD_AMB_DRIVE_PASSING_CAR, at: t, delay: 2.5, pan: pan, speed: closing, distance: lateral, kind: kind))
         }
         return e
     }

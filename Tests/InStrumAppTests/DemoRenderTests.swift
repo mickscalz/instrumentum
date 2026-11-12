@@ -923,7 +923,8 @@ final class DemoRenderTests: XCTestCase {
             let glass: Float = 0.5
             let climb = driveClimb
             func speed(at t: Double) -> Float {
-                Float(0.2 + 0.8 * min(1, max(0, (t - climb.lowerBound) / (climb.upperBound - climb.lowerBound))))
+                let along: Double = (t - climb.lowerBound) / (climb.upperBound - climb.lowerBound)
+                return Float(0.2 + 0.8 * min(1, max(0, along)))
             }
             at(0) { a in
                 isd_ambience_set_indoors(a, 0.55)
@@ -948,10 +949,12 @@ final class DemoRenderTests: XCTestCase {
                 (3.5, 4, 1, 25, false), (10, 2, 2, 1.2, true), (15.5, 5, 4, 22, false), (19.5, 0, 3, 0.85, true),
             ]
             for c in traffic {
-                let you = NeonNightDriveModel.metresPerSecond(speed(at: c.at)), own = c.ofYours ? c.mps * you : c.mps
+                let you: Float = NeonNightDriveModel.metresPerSecond(speed(at: c.at))
+                let own: Float = c.ofYours ? c.mps * you : c.mps
                 var car = DriveCar(lane: c.lane, ahead: 0, speed: own, seed: c.seed, brake: 0, lightBar: false)
-                let closing = car.oncoming ? own + you : abs(own - you)
-                car.ahead = (car.oncoming || own < you ? 1 : -1) * closing * NeonNightDriveModel.passLead
+                let closing: Float = car.oncoming ? own + you : abs(own - you)
+                let ahead: Float = car.oncoming || own < you ? 1 : -1   // ahead of you, or (overtaking you) behind
+                car.ahead = ahead * closing * NeonNightDriveModel.passLead
                 if let p = NeonNightDriveModel.pass(of: car, mps: you) {
                     post(.passingCar(in: Double(p.after), closing: Double(p.closing), lateral: Double(p.lateral), truck: car.truck), at: c.at)
                 }
@@ -997,8 +1000,10 @@ final class DemoRenderTests: XCTestCase {
         XCTAssertTrue(demo.l.allSatisfy(\.isFinite) && demo.r.allSatisfy(\.isFinite), name)
         let peak = max(demo.l.map(abs).max() ?? 0, demo.r.map(abs).max() ?? 0)
         XCTAssertLessThan(peak, 0.6, "\(name) stays under the limiter")
-        let mid = zip(demo.l, demo.r).map { 0.5 * ($0 + $1) }
-        let rms = 10 * log10(max(mid.reduce(0) { $0 + Double($1) * Double($1) } / Double(max(1, mid.count)), 1e-30))
+        let mid: [Float] = zip(demo.l, demo.r).map { 0.5 * ($0 + $1) }
+        var power = 0.0
+        for v in mid { power += Double(v) * Double(v) }
+        let rms: Double = 10 * log10(max(power / Double(max(1, mid.count)), 1e-30))
         XCTAssertGreaterThan(rms, -50, name)
         print("\(name): peak \(String(format: "%.1f", 20 * log10(Double(max(peak, 1e-9))))) dBFS")
         for (source, t) in demo.heard { print("  \(source.rawValue) heard at \(String(format: "%.2f", t)) s") }
@@ -1006,7 +1011,9 @@ final class DemoRenderTests: XCTestCase {
         print("   sec  level  20-200  2k-6k  R-L(300-3k)")
         for t in 0..<Int(seconds) {
             let a = Double(t), b = a + 1
-            let level = 10 * log10(max(mid[Int(a * Self.rate)..<Int(b * Self.rate)].reduce(0) { $0 + Double($1) * Double($1) } / Self.rate, 1e-30))
+            var second = 0.0
+            for i in Int(a * Self.rate)..<Int(b * Self.rate) { second += Double(mid[i]) * Double(mid[i]) }
+            let level: Double = 10 * log10(max(second / Self.rate, 1e-30))
             let balance = Self.bandDB(demo.r, 300, 3000, from: a, to: b) - Self.bandDB(demo.l, 300, 3000, from: a, to: b)
             print(String(format: "  %4ld %6.1f %7.1f %6.1f %+6.1f", t, level, Self.bandDB(mid, 20, 200, from: a, to: b),
                          Self.bandDB(mid, 2000, 6000, from: a, to: b), balance))
@@ -1031,7 +1038,7 @@ final class DemoRenderTests: XCTestCase {
     func testRenderVolcanoAmbience() throws {
         let name = "volcano-rim-ambience", seconds = 24.0
         let demo = Self.fireNeonAmbience(name, seconds: seconds)
-        let mid = zip(demo.l, demo.r).map { 0.5 * ($0 + $1) }
+        let mid: [Float] = zip(demo.l, demo.r).map { 0.5 * ($0 + $1) }
         let boom = heard(demo, .eruptionBoom), steam = heard(demo, .steamVent), rock = heard(demo, .rockfall)
         XCTAssertEqual(boom, Self.volcanoEruptionAt + 1.49, accuracy: 0.01)
         let thump = Self.bandDB(mid, 20, 200, from: boom + 0.05, to: boom + 1) - Self.bandDB(mid, 20, 200, from: boom - 0.95, to: boom - 0.05)
@@ -1084,7 +1091,8 @@ final class DemoRenderTests: XCTestCase {
         let inClimb = shifts.filter { Self.driveClimb.lowerBound...(Self.driveClimb.upperBound + 2) ~= $0 }
         XCTAssertGreaterThanOrEqual(inClimb.count, 1, "the box shifts up as the car climbs (shifts at \(shifts))")
         let end = Double(demo.engineHz.suffix(20).reduce(0, +)) / 20
-        XCTAssertEqual(end, 2 * 1000 * 130 / 67 / 60, accuracy: 1.5, "130 km/h in 8th")
+        let eighth: Double = 2.0 * 1000 * 130 / 67 / 60   // firing (two a revolution) at 130 km/h, 67 km/h a 1000 rpm
+        XCTAssertEqual(end, eighth, accuracy: 1.5, "130 km/h in 8th")
         print("drive: \(sweeps) sweeps, cars swing " + swings.map { String(format: "%+.1f", $0) }.joined(separator: " ")
               + " dB, shifts at \(shifts), engine \(String(format: "%.1f", end)) Hz at the end")
         try checkAndWrite(demo, name: name, seconds: seconds)
