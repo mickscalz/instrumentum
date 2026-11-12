@@ -771,8 +771,8 @@ enum SkyShaders {
         float Wt = 4.3 + 0.5 * exp(-(hz - 4.8) * (hz - 4.8) / 3.0) + 2.0 * smoothstep(6.0, 8.8, hz);
         float dome = kCellAnvil + 1.0 + 1.9 * exp(-(x - xa - 0.5) * (x - xa - 0.5) / 5.0);
         float e = min(mix(Ws, Wt, upper) - sqrt((x - xa) * (x - xa) + 1.0), dome - z);
-        float eF = min(min(x - xa + 11.0 - 0.3 * hz, xa - 2.0 + 0.25 * hz - x),
-                       min(6.0 - 0.2 * max(xa - x, 0.0) - z, 2.0 * (hz - 0.8)));
+        float eF = min(min(x - xa + 10.0 - 0.7 * (z - 3.4) * (z - 3.4), xa - 2.0 + 0.25 * hz - x),
+                       min(6.0 - 0.2 * max(xa - x, 0.0) - 0.1 * max(xa - x - 5.5, 0.0) - z, 2.0 * (hz - 0.8 - 0.12 * max(xa - x - 6.0, 0.0))));
         float fx = x - xa;
         float crest = -1e3;
         for (int i = 0; i < 4; i++) {
@@ -1029,9 +1029,9 @@ enum SkyShaders {
                 float sn = s, nz = 0.12, lumpy = upper;
                 // The forward flank's cloud beside it (left, downshear): a lower, flatter shelf over the rain, from a
                 // couple of km up to a shoulder falling away from the updraft, its lumps smoothed.
-                float eF = min(min(x - xa + 11.0 - 0.3 * hz, xa - 2.0 + 0.25 * hz - x),
-                               min(6.0 - 0.2 * max(xa - x, 0.0) - z, 2.0 * (hz - 0.8)))
-                         + 1.2 * (en - 0.5) + 0.7 * turret;
+                float eF = min(min(x - xa + 10.0 - 0.7 * (z - 3.4) * (z - 3.4), xa - 2.0 + 0.25 * hz - x),
+                               min(6.0 - 0.2 * max(xa - x, 0.0) - 0.1 * max(xa - x - 5.5, 0.0) - z, 2.0 * (hz - 0.8 - 0.12 * max(xa - x - 6.0, 0.0))))
+                         + 1.2 * (en - 0.5) + 0.5 * turret;
                 if (eF > edge - 1.0) {
                     float w = smoothstep(-1.0, 1.0, eF - edge);
                     sn = mix(sn, -0.3, w); nz = mix(nz, 0.3, w); stri *= 1.0 - w; lumpy = mix(lumpy, 0.5, w); edge = max(edge, eF);
@@ -1058,7 +1058,7 @@ enum SkyShaders {
                     stri *= 1.0 - w; lumpy = mix(lumpy, 1.0, w); edge = max(edge, eL);
                 }
                 // As sharp as a pixel (a km of softness blurred it into a cut-out).
-                float soft = max(1.1 * px, 0.025);
+                float soft = max((fine > 0.5 ? 0.75 : 1.1) * px, 0.025);
                 float a = smoothstep(-soft, soft, edge) * smoothstep(-0.3, 0.05, hz) * smoothstep(1.5, 5.0, Df);
                 float thinA = 1.0 - smoothstep(0.0, 1.2, edge);
                 if (a > 0.002) {
