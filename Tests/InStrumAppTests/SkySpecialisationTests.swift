@@ -84,8 +84,9 @@ final class SkySpecialisationTests: XCTestCase {
     }
 
     /// The supercell's impostor (Fire & Neon fix pass): none for a plain sky. In the app no frame draws more than a
-    /// strip of it: the storm's first window is filled a strip a frame and shown once whole (16 frames), then refreshed a
-    /// strip a frame. Previews draw a new window whole at once, and again when the clock jumps. The rows say where it is.
+    /// strip of it: the storm's first snapshot is filled a strip a frame and shown once whole (`cellStrips` frames),
+    /// then the next a strip a frame. Previews draw a snapshot whole at once, and again when the clock jumps. The rows
+    /// say where it is.
     func testTheSupercellImpostorIsDrawnInStrips() throws {
         guard let device = MTLCreateSystemDefaultDevice() else { throw XCTSkip("No Metal device") }
         let preview = try XCTUnwrap(PreviewRenderer(width: 160, height: 90))
@@ -102,7 +103,7 @@ final class SkySpecialisationTests: XCTestCase {
         for i in 0..<SkyLayer.cellStrips {
             r.update(cell, quality: .high, size: size, dt: 1.0 / 60, time: Float(i) / 60, surface: .none)
             _ = preview.capture(r)
-            XCTAssertEqual(r.sky.uniforms[SkyLayer.flashRow].w, i == SkyLayer.cellStrips - 1 ? 1 : 0, "frame \(i)")
+            XCTAssertEqual(r.sky.uniforms[SkyLayer.flashRow].w > 0.5, i == SkyLayer.cellStrips - 1, "frame \(i)")
         }
         XCTAssertNotNil(r.sky.cellTexture, "whole after its strips")
         for i in 0..<4 {
@@ -112,7 +113,7 @@ final class SkySpecialisationTests: XCTestCase {
         XCTAssertEqual(r.sky.cellWholeDraws, 0, "never all at once in the app")
         XCTAssertEqual(r.sky.cellStripDraws, SkyLayer.cellStrips + 4, "a strip a frame")
         let rows = r.sky.uniforms
-        XCTAssertEqual(rows[SkyLayer.flashRow].w, 1, "the rows read it")
+        XCTAssertGreaterThan(rows[SkyLayer.flashRow].w, 0.5, "the rows read it")
         XCTAssertGreaterThan(rows[10].w, 0.5, "its half-width (radians) covers the view")
         XCTAssertLessThan(rows[SkyLayer.flashRow].y, 0, "from under the horizon")
         XCTAssertGreaterThan(rows[SkyLayer.flashRow].z, 0.5, "to over the view's top")
@@ -123,7 +124,7 @@ final class SkySpecialisationTests: XCTestCase {
         p.update(cell, quality: .high, size: size, dt: 1.0 / 30, time: 0, surface: .none)
         _ = preview.capture(p)
         XCTAssertEqual(p.sky.cellWholeDraws, 1)
-        XCTAssertEqual(p.sky.uniforms[SkyLayer.flashRow].w, 1, "shown in its first frame")
+        XCTAssertGreaterThan(p.sky.uniforms[SkyLayer.flashRow].w, 0.5, "shown in its first frame")
         p.update(cell, quality: .high, size: size, dt: 1.0 / 30, time: 30, surface: .none)
         _ = preview.capture(p)
         XCTAssertEqual(p.sky.cellWholeDraws, 2)

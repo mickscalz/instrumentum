@@ -1014,7 +1014,7 @@ enum SkyShaders {
                          + 0.5 * skyNoise2(float2(swirl * 3.0 + 0.3 * turn, zr * 0.45 + 9.0));
                 float fb = fract(kb);
                 float stri = (1.0 - upper) * smoothstep(0.05, 0.45, hz) * smoothstep(0.15, 0.7, side + 0.3 * en)
-                           * smoothstep(5.0, 11.0, Df)
+                           * smoothstep(2.0, 4.0, Df)
                            * (0.3 + 0.7 * smoothstep(0.25, 0.75, skyNoise2(float2(floor(kb) * 3.7 + 1.0, swirl * 5.0 + 0.2 * turn))));
                 // (Each band's foot is a lip standing out from the one under it: the skirt's outline steps.)
                 float lipOut = (1.0 - upper) * 0.42 * (1.0 - fb) * (1.0 - fb) * smoothstep(0.1, 0.5, hz);
@@ -1078,6 +1078,16 @@ enum SkyShaders {
                     float direct = saturate(0.7 * ndl + 0.3) * occl;
                     float strLip;
                     float bandShade = cloudStriation(kb, stri, strLip);
+                    // Near, each band's foot is a crisp lip (a pixel or two, not a soft swell), lit, over the shadow it
+                    // casts on the top of the band under it.
+                    float near = 1.0 - smoothstep(9.0, 16.0, Df);
+                    if (near > 0.0 && stri > 0.0) {
+                        float wl = clamp(px * 1.05 * 3.0, 0.05, 0.22);
+                        float lipB = exp(-fb / wl);
+                        float shadowB = smoothstep(1.0 - 6.0 * wl, 1.0, fb);
+                        bandShade = mix(bandShade, (1.0 + 0.45 * stri * lipB) * (1.0 - 0.5 * stri * shadowB * shadowB), near);
+                        strLip = mix(strLip, stri * lipB, near);
+                    }
                     // The sky's light on it: steel blue-grey, lighter on the tops, darker low down in the base's shade.
                     float skyLit = (0.7 + 0.5 * saturate(N.z + 0.25)) * occl;
                     float3 body3 = grey * float3(0.8, 0.9, 1.05) * (0.15 + 0.05 * en) * skyLit
@@ -1145,6 +1155,11 @@ enum SkyShaders {
             // As sharp as a pixel (seen edge-on its edge is foreshortened), its fibres doing the feathering.
             float pxA = rho * pa / max(k, 0.05) * 0.6;
             float a = smoothstep(-max(pxA, 0.05), max(pxA, 0.05) + 0.35, ed);
+            // Its edges thin cirrus: translucent over their last few km, in fibres (no cut-out cliff against the sky).
+            if (a > 0.002 && ed < 6.0) {
+                float fe = skyNoise2(float2(atan2(P.y - top.y, P.x - top.x) * 14.0, length(P - top) * 0.05 + 4.0));
+                a *= 0.15 + 0.85 * smoothstep(-0.5, 5.0, ed + 3.0 * (fe - 0.5));
+            }
             if (a > 0.002) {
                 float thin = 1.0 - smoothstep(0.0, 10.0, ed);
                 // Its underside's texture in a frame where a shape stays round on screen at any distance (across, the
@@ -1230,12 +1245,13 @@ enum SkyShaders {
 
         // Crepuscular rays: with the low sun behind the storm's body (from far off), its towers cast their shadows
         // through the hazy air toward you and the light streams between them, beams fanning out round it.
-        if (day && lowSun > 0.0 && T > 0.01 && Df > 4.0 && Lu.x > 0.2 && fine > 0.5) {
+        float sunAng = acos(clamp(dot(d, u.sun.xyz), -1.0, 1.0));
+        if (day && lowSun > 0.0 && T > 0.01 && Df > 4.0 && Lu.x > 0.2 && fine > 0.5 && sunAng < 2.2) {
             float rs = Df / Lu.x;
             float hidden = smoothstep(-0.3, 0.6, supercellMass(rs * Lu.y, rs * Lu.z));
             if (hidden > 0.0) {
                 float3 S = u.sun.xyz;
-                float ang = acos(clamp(dot(d, S), -1.0, 1.0));
+                float ang = sunAng;
                 float3 e1 = normalize(cross(S, float3(0.0, 0.0, 1.0)) + float3(1e-4, 0.0, 0.0));
                 float psi = atan2(dot(d, cross(e1, S)), dot(d, e1));
                 float beams = smoothstep(0.3, 0.75, skyNoise2(float2(psi * 9.0, 2.0 + time * 0.002)))
@@ -1486,9 +1502,19 @@ enum SkyShaders {
 
     // The supercell's impostor (Fire & Neon fix pass; SkyLayer.prepare draws it): a window in azimuth and altitude round
     // the view, its centre's azimuth in eq1.w and its half-width in eq2.w, its bottom and top altitudes in flash.y and
-    // flash.z (radians), flash.w 1 when it is drawn. The upper half of its rows is the storm's light and how much sky
-    // shows through; the lower half how its cloud takes the lightning's light.
+    // flash.z (radians); flash.w 1 + (3 × the older snapshot + the newer) + 0.9 × how far from the older to the newer
+    // (0: none drawn). The texture holds three snapshots, each two halves: the storm's light and how much sky shows
+    // through, then how its cloud takes the lightning's light.
     constexpr sampler cellImpostorSampler(filter::linear, address::clamp_to_edge);
+
+    /// Snapshot `slot` at (x, y) 0…1 in the window: the storm, and in `recept` how it takes the lightning.
+    float4 cellSnapshot(texture2d<float> cell, float x, float y, float slot, thread float& recept) {
+        float rows = float(cell.get_height());
+        float H = rows / 6.0;
+        float r = clamp(y * H, 0.5, H - 0.5) + 2.0 * slot * H;
+        recept = cell.sample(cellImpostorSampler, float2(x, (r + H) / rows)).r;
+        return cell.sample(cellImpostorSampler, float2(x, r / rows));
+    }
 
     /// The supercell along `d` from its impostor (as supercellSky gives it), and in `recept` how it takes the lightning.
     float4 supercellImpostor(float3 d, constant SkyU& u, texture2d<float> cell, thread float& recept) {
@@ -1499,10 +1525,16 @@ enum SkyShaders {
         float x = 0.5 + 0.5 * da / hw;
         float y = (asin(clamp(d.z, -1.0, 1.0)) - lo) / (hi - lo);
         if (x <= 0.0 || x >= 1.0 || y <= 0.0 || y >= 1.0) return float4(0.0, 0.0, 0.0, 1.0);
-        float H = float(cell.get_height()) * 0.5;
-        float yy = clamp(y * H, 0.5, H - 0.5) / (2.0 * H);
-        float4 s = cell.sample(cellImpostorSampler, float2(x, yy));
-        recept = cell.sample(cellImpostorSampler, float2(x, yy + 0.5)).r;
+        // The older snapshot cross-fading into the newer.
+        float q = max(u.flash.w - 1.0, 0.0);
+        float idx = floor(q);
+        float blend = saturate((q - idx) / 0.9);
+        float older = floor(idx / 3.0), newer = idx - 3.0 * older;
+        float r0, r1;
+        float4 s0 = cellSnapshot(cell, x, y, older, r0);
+        float4 s1 = cellSnapshot(cell, x, y, newer, r1);
+        float4 s = mix(s0, s1, blend);
+        recept = mix(r0, r1, blend);
         // (Its sides fade over the last 2%, past the view's own edge.)
         float fade = smoothstep(0.0, 0.02, x) * smoothstep(1.0, 0.98, x);
         recept *= fade;
@@ -1608,8 +1640,9 @@ enum SkyShaders {
         return out;
     }
 
-    /// The supercell's impostor (SkyLayer.prepare): rows job.x, job.x + job.y, … of job.z in each half, every column; the
-    /// storm along each texel's direction in the window the sky's rows carry, at the impostor's own detail.
+    /// The supercell's impostor (SkyLayer.prepare): rows job.x, job.x + job.y, … of job.z in each half of the snapshot
+    /// from row job.w, every column; the storm along each texel's direction in the window the sky's rows carry, at the
+    /// impostor's own detail.
     kernel void sky_cell_impostor(texture2d<float, access::write> out [[texture(0)]], constant SkyU& u [[buffer(0)]],
                                   constant uint4& job [[buffer(1)]], uint2 gid [[thread_position_in_grid]]) {
         uint W = out.get_width(), H = job.z;
@@ -1624,8 +1657,8 @@ enum SkyShaders {
         float recept = 0.0;
         float4 s = float4(0.0, 0.0, 0.0, 1.0);
         if (d.z > -0.03 && u.cellA.w > 0.0) s = supercellSky(d, u, u.forward.w, texel, 1.0, recept);
-        out.write(s, uint2(gid.x, y));
-        out.write(float4(recept, 0.0, 0.0, 1.0), uint2(gid.x, y + H));
+        out.write(s, uint2(gid.x, y + job.w));
+        out.write(float4(recept, 0.0, 0.0, 1.0), uint2(gid.x, y + job.w + H));
     }
 
     // ---------------------------------------------------------------- weather
