@@ -37,8 +37,8 @@ public enum VolcanoCrater {
     public static let topRadius: Float = 470
     /// The breach: a notch in the far wall, its middle this far round from straight ahead (radians, right positive,
     /// measured at the wall centre) and this wide each side.
-    public static let breachAngle: Float = 0.36
-    public static let breachHalfWidth: Float = 0.055
+    public static let breachAngle: Float = 0.85
+    public static let breachHalfWidth: Float = 0.075
     /// The two spattering fountains on the lake.
     public static let fountainSites: [SIMD2<Float>] = [SIMD2(-78, 46), SIMD2(96, -38)]
     /// Where the lake's crust wells up (the spreading centre the plates drift away from).
@@ -608,7 +608,7 @@ public struct VolcanoRimModel: ThemeModel, MoodAware, SkyAware, ExcitementAware,
         }
 
         // Embers off the fountains and the lake's margin, and near ones drifting up past you; the wind bends them.
-        let windAngle: Float = 0.6
+        let windAngle: Float = 2.6   // from the right: the plume leans left, clear of the breach
         let windSpeed: Float = 3 + 6 * min(1, max(0, rawSky.wind.isFinite ? rawSky.wind : 0))
         let wind = SIMD2<Float>(cos(windAngle), sin(windAngle) * 0.3) * windSpeed
         emberDebt += Self.emberRate(energy: energy) * (0.6 + 0.8 * activity) * fd

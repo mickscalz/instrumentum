@@ -153,14 +153,15 @@ enum VolcanoRimShaders {
     float notchCut(float theta, constant VolcanoU& u) {
         float off = abs(theta - u.dims2.w);
         float hw = u.dims3.x;
-        return smoothstep(hw * 0.45, hw * 1.15, off);
+        return smoothstep(hw * 0.7, hw * 1.05, off);
     }
 
     /// The cliffs' ragged top edges (m above their nominal tops): boulders and spatter on the lip.
     float lipRag(float theta, float scale) {
         float a = theta * 57.0;
-        return (vn2(float2(a, scale)) - 0.5) * 6.0 + (vn2(float2(a * 4.3, scale + 3.0)) - 0.5) * 2.4
-             + smoothstep(0.62, 0.9, vn2(float2(a * 0.37, scale + 7.0))) * 7.0;
+        return (vn2(float2(a * 0.09, scale + 11.0)) - 0.5) * 34.0 + (vn2(float2(a * 0.3, scale + 5.0)) - 0.5) * 12.0
+             + (vn2(float2(a, scale)) - 0.5) * 6.0 + (vn2(float2(a * 4.3, scale + 3.0)) - 0.5) * 2.4
+             + smoothstep(0.6, 0.9, vn2(float2(a * 0.37, scale + 7.0))) * 9.0;
     }
 
     /// The lake's edge (its radius, m) toward a point: a ragged shore of old spatter, never a drawn ellipse.
@@ -213,10 +214,12 @@ enum VolcanoRimShaders {
             float3 p = o + d * tB;
             float2 q = p.xy - C;
             float th = atan2(q.x, q.y);
-            float top = rimH + lipRag(th, 5.0);
+            float topFull = rimH + lipRag(th, 5.0);
             float cut = notchCut(th, u);
-            top = mix(lakeZ - 1.0, top, cut);
+            float top = mix(lakeZ - 1.0, topFull, cut);
             if (p.z >= u.dims.y - 2.0 && p.z <= top) { h.kind = 3; h.t = tB; h.p = p; h.theta = th; }
+            else if (h.kind == 0 && p.z < u.dims.y - 2.0 && p.z > lakeZ - 1.0) { h.kind = 3; h.t = tB; h.p = p; h.theta = th; }
+            else if (h.kind == 0 && cut < 0.999 && p.z < topFull) { h.kind = 5; h.t = tB; h.p = p; h.theta = th; }
         }
         return h;
     }
@@ -224,7 +227,7 @@ enum VolcanoRimShaders {
     // ---------------------------------------------------------------- the lava lake
     /// The crust's Voronoi through a two-scale warp: the nearest seed `i1`, the neighbour across the nearest crack `i2`,
     /// the distance to it (m) and the crack's normal (in the lake's plane).
-    struct Plates { int i1; int i2; float border; float2 n; float2 q; };
+    struct Plates { int i1; int i2; int i3; float border; float border2; float2 n; float2 n2; float2 q; };
 
     Plates plates(float2 p, constant VolcanoU& u) {
         float2 q0 = p * 0.042;
@@ -242,20 +245,30 @@ enum VolcanoRimShaders {
             if (dd < best) { best = dd; i1 = k; }
         }
         float2 c1 = u.cellA[i1].xy;
-        float border = 1e9;
-        int i2 = i1;
-        float2 nrm = float2(1, 0);
+        float d1 = sqrt(best);
+        float border = 1e9, border2 = 1e9;
+        int i2 = i1, i3 = i1;
+        float2 nrm = float2(1, 0), nrm2 = float2(0, 1);
         for (int k = 0; k < 64; k++) {
             if (k == i1) continue;
             float2 c = u.cellA[k].xy;
+            // A seed this far off is at least (D − d1)/2 from its crack: past the second nearest, skip it.
+            float2 cq = c - q;
+            float D = sqrt(dot(cq, cq));
+            if (0.5 * (D - d1) > border2) continue;
             float2 n = c - c1;
             float ln = length(n);
             if (ln < 1e-3) continue;
             n /= ln;
             float dist = dot(0.5 * (c1 + c) - q, n);
-            if (dist < border) { border = dist; i2 = k; nrm = n; }
+            if (dist < border) {
+                border2 = border; i3 = i2; nrm2 = nrm;
+                border = dist; i2 = k; nrm = n;
+            } else if (dist < border2) {
+                border2 = dist; i3 = k; nrm2 = n;
+            }
         }
-        r.i1 = i1; r.i2 = i2; r.border = max(border, 0.0); r.n = nrm;
+        r.i1 = i1; r.i2 = i2; r.i3 = i3; r.border = max(border, 0.0); r.border2 = max(border2, 0.0); r.n = nrm; r.n2 = nrm2;
         return r;
     }
 
@@ -275,8 +288,8 @@ enum VolcanoRimShaders {
             }
         }
         float edge = 9.0;
-        for (int y = -2; y <= 2; y++) {
-            for (int x = -2; x <= 2; x++) {
+        for (int y = -1; y <= 1; y++) {
+            for (int x = -1; x <= 1; x++) {
                 float2 cell = mg + float2(float(x), float(y));
                 float2 r = cell + hash22(gi + cell) * 0.85 - gf;
                 float2 dr = r - mr;
@@ -292,29 +305,37 @@ enum VolcanoRimShaders {
         float2 p = P.xy;
         float energy = u.play.x;
         Plates pl = plates(p, u);
-        float4 A = u.cellA[pl.i1], B = u.cellA[pl.i2];
-        float4 Ab = u.cellB[pl.i1], Bb = u.cellB[pl.i2];
-        // The pixel's footprint across the crack.
-        float fn = length(float2(dot(Jx, pl.n), dot(Jy, pl.n)));
+        float4 A = u.cellA[pl.i1];
+        float4 Ab = u.cellB[pl.i1];
         float foot = max(length(Jx), length(Jy));
-        // This crack's character: most run thin and dull, a few wide and white-hot (spreading), each wandering in
-        // width and heat along its length.
-        float lo = float(min(pl.i1, pl.i2)), hi = float(max(pl.i1, pl.i2));
-        float pair = hash12(float2(lo * 7.13, hi * 3.71));
-        float wide = smoothstep(0.72, 0.95, pair);
-        float heat = 0.5 * (A.w + B.w);
-        float note = max(A.z, B.z);
-        float along = vn2(pl.q * 0.07 + pair * 31.0);
-        float along2 = vn2(pl.q * 0.31 + pair * 7.0);
-        float width = u.lake.z * (0.18 + 0.35 * pair + 1.1 * wide) * (0.6 + 0.8 * heat) * (0.3 + 1.4 * along * along2);
-        // A crack between two plates just split apart opens as they part.
-        bool twins = int(Ab.y) == pl.i2 || int(Bb.y) == pl.i1;
-        float open = twins ? smoothstep(0.0, 1.0, min(Ab.x, Bb.x)) : 1.0;
-        float T = u.temps.x + 60.0 * pair + 150.0 * wide + 110.0 * heat + 120.0 * energy + 250.0 * note + 90.0 * u.play.w
-                + 80.0 * (along - 0.5);
-        float3 crack = blackbody(T) * lineLight(pl.border, width, fn)
-                     + blackbody(T - 200.0) * (0.45 * lineLight(pl.border, width * 4.0 + 0.8, fn));
-        crack *= open;
+        float note = A.z;
+        // Each of the two nearest cracks, its own character (so a junction never steps): most run thin and dull, a few
+        // wide and white-hot (spreading), each wandering in width and heat along its length; the brighter one shows.
+        float heatA = A.w;
+        float3 crack = float3(0);
+        for (int c = 0; c < 2; c++) {
+            int j = c == 0 ? pl.i2 : pl.i3;
+            float bd = c == 0 ? pl.border : pl.border2;
+            float2 nn = c == 0 ? pl.n : pl.n2;
+            float4 Bj = u.cellA[j];
+            float4 Bjb = u.cellB[j];
+            float fnj = length(float2(dot(Jx, nn), dot(Jy, nn)));
+            float lo = float(min(pl.i1, j)), hi = float(max(pl.i1, j));
+            float pair = hash12(float2(lo * 7.13, hi * 3.71));
+            float wide = smoothstep(0.72, 0.95, pair);
+            float heat = 0.5 * (heatA + Bj.w);
+            float note = max(A.z, Bj.z);
+            float along = vn2(pl.q * 0.07 + pair * 31.0);
+            float along2 = vn2(pl.q * 0.31 + pair * 7.0);
+            float width = u.lake.z * (0.18 + 0.35 * pair + 1.1 * wide) * (0.6 + 0.8 * heat) * (0.3 + 1.4 * along * along2);
+            // A crack between two plates just split apart opens as they part.
+            bool twins = int(Ab.y) == j || int(Bjb.y) == pl.i1;
+            float open = twins ? smoothstep(0.0, 1.0, min(Ab.x, Bjb.x)) : 1.0;
+            float T = u.temps.x + 60.0 * pair + 150.0 * wide + 110.0 * heat + 120.0 * energy + 250.0 * note
+                    + 90.0 * u.play.w + 80.0 * (along - 0.5);
+            float3 cj = blackbody(T) * lineLight(bd, width, fnj) + blackbody(T - 200.0) * (0.45 * lineLight(bd, width * 4.0 + 0.8, fnj));
+            crack = max(crack, cj * open);
+        }
         // The crust: old plates black, young ones (near the spreading centre) a dull red, thinner (glowing) toward the
         // cracks; the fine cracks of the plate's skin, livelier with Energy.
         float2 local = p - A.xy + float2(hash12(float2(float(pl.i1), 1.7)) * 97.0, hash12(float2(float(pl.i1), 4.1)) * 61.0);
@@ -322,9 +343,11 @@ enum VolcanoRimShaders {
         float Tc = mix(u.temps.z, u.temps.y, A.w) + 90.0 * (skin - 0.5) + 50.0 * energy;
         Tc += 140.0 * exp(-pl.border / (1.2 + 2.5 * A.w));
         float3 crust = blackbody(Tc);
-        float fine = fineCracks(local, 6.0 + 6.0 * (1.0 - A.w));
-        float fineT = Tc + 200.0 + 110.0 * u.temps.w + 80.0 * note;
-        crust += blackbody(fineT) * (0.5 * lineLight(fine, 0.12 + 0.1 * A.w, foot)) * (0.25 + 0.75 * u.temps.w);
+        if (oct >= 3) {
+            float fine = fineCracks(local, 6.0 + 6.0 * (1.0 - A.w));
+            float fineT = Tc + 200.0 + 110.0 * u.temps.w + 80.0 * note;
+            crust += blackbody(fineT) * (0.5 * lineLight(fine, 0.12 + 0.1 * A.w, foot)) * (0.25 + 0.75 * u.temps.w);
+        }
         // Sheen: the glassy crust mirrors the plume's glow above, more at grazing angles, less where it's rough.
         float grazing = 1.0 - saturate(-d.z);
         float g2 = grazing * grazing;
@@ -379,17 +402,17 @@ enum VolcanoRimShaders {
         float3 albedo = float3(0.04, 0.036, 0.034) * (0.55 + 0.5 * rope + 0.2 * block);
         float3 N = normalize(float3((rope - 0.5) * 0.5, (block - 0.5) * 0.5, 1.0));
         float3 col = albedo * (craterLight(P, N, u) + u.skyL.rgb);
-        float sky = smoothstep(0.8, 0.9, vn2(p * 0.05 + float2(7.0, 2.0))) * smoothstep(0.4, 0.8, vn2(p * 0.4));
-        col += blackbody(980.0 + 120.0 * u.play.x) * (0.3 * sky);
+        float sky = smoothstep(0.86, 0.93, vn2(p * 0.03 + float2(7.0, 2.0))) * smoothstep(0.5, 0.8, vn2(p * 0.12));
+        col += blackbody(980.0 + 120.0 * u.play.x) * (0.25 * sky);
         // The river: a channel of crusted lava (bright where its crust tears) running to the breach, its levees lit.
         float2 rd = riverDistance(p, u);
         float flow = u.river.x, breach = u.river.z;
-        float halfW = 4.0 + 4.0 * flow + 18.0 * breach;
+        float halfW = (4.0 + 4.0 * flow + 16.0 * breach) * (0.7 + 0.6 * vn2(float2(rd.y * 9.0, 3.0)) + 0.25 * (vn2(p * 0.15) - 0.5));
         float inside = 1.0 - smoothstep(halfW - max(1.0, foot), halfW + max(1.0, foot), rd.x);
         if (inside > 0.0) {
             float along = rd.y * 120.0 - u.river.y * 0.6;
             float2 rp = float2(along, rd.x * 0.35);
-            float crustNet = fineCracks(rp + float2(13.0, 5.0), 3.0);
+            float crustNet = oct >= 3 ? fineCracks(rp + float2(13.0, 5.0), 3.0) : 3.0 * abs(vn2(rp * 0.5) - 0.5);
             float run = vn2(float2(along * 0.4, rd.x * 0.2));
             float Tr = 720.0 + 230.0 * flow + 560.0 * breach + 80.0 * run;
             float3 river = blackbody(Tr) + blackbody(1120.0 + 70.0 * flow + 220.0 * breach) * lineLight(crustNet, 0.3, foot) * 0.8;
@@ -415,14 +438,14 @@ enum VolcanoRimShaders {
         // a talus of rubble at each cliff's foot.
         float wob = (fbm2(float2(arc * 0.015, z * 0.008), oct) - 0.5) * 16.0;
         float layer = z + wob;
-        float band = vn2(float2(layer * 0.16, arc * 0.002 + 3.0));
+        float band = vn2(float2(layer * 0.1, arc * 0.003 + 3.0)) * 0.7 + vn2(float2(layer * 0.37, arc * 0.006)) * 0.3;
         float fineBand = vn2(float2(layer * 0.35, arc * 0.01 + 9.0));
         float gully = fbm2(float2(arc * 0.03 + 0.4 * wob, z * 0.006 + 4.0), oct);
         float buttress = vn2(float2(arc * 0.006, 7.0)) * 0.65 + vn2(float2(arc * 0.017, z * 0.004 + 2.0)) * 0.35;
         float3 basalt = mix(float3(0.055, 0.05, 0.048), float3(0.085, 0.062, 0.05), smoothstep(0.6, 0.85, band));
         basalt *= 0.8 + 0.25 * fineBand;
         // Relief: the face leans with the gullies and buttresses, the ledges between the flows step out.
-        float ledge = smoothstep(0.3, 0.7, fract(layer * 0.06 + 0.3 * band)) - 0.5;
+        float ledge = smoothstep(0.42, 0.58, vn2(float2(layer * 0.075, arc * 0.004 + 1.0))) - 0.5;
         float3 inward = float3(-q / max(r, 1e-3), 0.0);
         float3 tangent = float3(inward.y, -inward.x, 0.0);
         float lean = (gully - 0.5) * 1.6 + (buttress - 0.5) * 2.6;
@@ -452,6 +475,24 @@ enum VolcanoRimShaders {
     }
 
     // ---------------------------------------------------------------- fountains, the column and the plume
+    /// Flung clots: round drops scattered on a jittered grid (each its own size, some cells empty), 0…1 cover.
+    float clotField(float2 g, float fill) {
+        float2 gi = floor(g), gf = fract(g);
+        float best = 0.0;
+        for (int y = 0; y <= 1; y++) {
+            for (int x = 0; x <= 1; x++) {
+                float2 c = float2(float(x), float(y)) - step(0.5, gf) + float2(0.0);
+                float2 id = gi + c;
+                float2 h = hash22(id + 3.1);
+                float keep = step(1.0 - fill, hash12(id + 9.7));
+                float r = 0.12 + 0.2 * hash12(id + 5.3);
+                float dd = length(c + h - gf);
+                best = max(best, keep * (1.0 - smoothstep(r * 0.55, r, dd)));
+            }
+        }
+        return best;
+    }
+
     /// A fountain's spatter dome on its own plane through its site, facing the camera: a bright jet in the middle and
     /// clots flung out to its parabolic envelope; returns light (rgb) and cover (a).
     float4 fountain(float3 o, float3 d, float4 f, constant VolcanoU& u, float tMax) {
@@ -461,16 +502,20 @@ enum VolcanoRimShaders {
         float3 P = o + d * t;
         float x = P.x - f.x;
         float z = P.z - u.eye.w;
-        float H = f.z, W = 0.55 * f.z + 6.0;
-        if (z < -2.0 || z > H * 1.2 || abs(x) > W * 1.4) return float4(0);
+        float H = f.z, W = 0.85 * f.z + 9.0;
+        if (z < -2.0 || z > H * 1.35 || abs(x) > W * 1.6) return float4(0);
         float s = x / W;
         float env = H * (1.0 - s * s);
-        float body = smoothstep(env + 1.5, env - 4.0, z) * smoothstep(-1.5, 1.5, z) * (1.0 - smoothstep(0.9, 1.15, abs(s)));
-        float core = exp(-s * s / 0.06) * smoothstep(H * 1.05, H * 0.5, z);
-        float clots = smoothstep(0.62, 0.9, vn2(float2(x * 0.9, z * 0.9 - u.a.y * 9.0) + f.w * 5.0));
-        float dens = saturate(0.85 * core + 0.9 * clots * body + 0.25 * body);
-        float T = 1180.0 + 230.0 * core + 60.0 * f.w - 160.0 * saturate(z / max(H, 1.0)) * (1.0 - core);
-        return float4(blackbody(T) * dens, dens);
+        // A dome of spatter: a bright jet in the middle, sheets of it bursting outward, clots flung to its envelope.
+        float body = smoothstep(env + 2.0, env - 0.35 * H - 2.0, z) * smoothstep(-1.5, 1.0, z) * (1.0 - smoothstep(0.85, 1.2, abs(s)));
+        float core = exp(-s * s / 0.05) * smoothstep(H * 1.1, H * 0.35, z);
+        float sheet = smoothstep(0.45, 0.8, vn2(float2(x * 0.22, z * 0.3 - u.a.y * 6.0) + f.w * 3.0)) * body;
+        float clots = clotField(float2(x * 0.32, z * 0.2 - u.a.y * 2.2) + f.w * 5.0, 0.5)
+                    * smoothstep(1.35 * H, 0.2 * H, z) * (1.0 - smoothstep(1.0, 1.5, abs(s)));
+        float dens = saturate(0.9 * core + 0.7 * sheet + 0.9 * clots + 0.12 * body);
+        float T = 1160.0 + 230.0 * core + 70.0 * f.w + 50.0 * sheet - 140.0 * saturate(z / max(H, 1.0)) * (1.0 - core);
+        float glow = exp(-length(float2(x, z * 1.6)) / (0.6 * W)) * 0.25;
+        return float4(blackbody(T) * dens + blackbody(1150.0) * glow * (0.5 + 0.5 * f.w), saturate(dens));
     }
 
     /// The eruption's column, out of the lake's middle to far above the frame: a white-hot core, ragged orange edges
@@ -480,17 +525,20 @@ enum VolcanoRimShaders {
         if (H <= 1.0) return float4(0);
         float z = P.z - u.eye.w;
         if (z < -2.0 || z > H) return float4(0);
-        float w = 24.0 + 0.03 * z + 14.0 * u.erupt.w;
-        float wob = (vn2(float2(z * 0.03 - u.a.y * 3.0, 1.0)) - 0.5) * 18.0;
+        float w = 26.0 + 0.05 * z + 16.0 * u.erupt.w;
+        float wob = (vn2(float2(z * 0.02 - u.a.y * 2.5, 1.0)) - 0.5) * 14.0;
         float x = P.x - wob;
         float s = x / w;
-        float rag = vn2(float2(z * 0.08 - u.a.y * 12.0, x * 0.2));
-        float body = smoothstep(1.0 + 0.5 * rag, 0.4, abs(s));
-        float clots = smoothstep(0.7, 0.92, vn2(float2(x * 0.25, z * 0.2 - u.a.y * 30.0))) * smoothstep(2.2, 0.9, abs(s));
-        float topFade = 1.0 - smoothstep(H * 0.8, H, z);
-        float dens = saturate(body + 0.8 * clots) * topFade;
-        float T = 1250.0 + 220.0 * exp(-s * s / 0.15) - 120.0 * saturate(abs(s) - 0.6);
-        return float4(blackbody(T) * dens * (0.6 + 0.4 * u.erupt.y), dens);
+        // Its body: a white-hot core, ragged orange sheath; clots flung out of its sides and falling back.
+        float rag = vn2(float2(z * 0.07 - u.a.y * 10.0, x * 0.15));
+        float body = smoothstep(1.0 + 0.6 * rag, 0.3, abs(s));
+        float clots = clotField(float2(x * 0.09, z * 0.045 - u.a.y * 1.4), 0.35) * smoothstep(2.4, 0.9, abs(s))
+                    * smoothstep(0.0, 40.0, z);
+        float topFade = 1.0 - smoothstep(H * 0.75, H, z);
+        float dens = saturate(body + 0.85 * clots) * topFade;
+        float core = exp(-s * s / 0.12);
+        float T = 1150.0 + 230.0 * core + 60.0 * rag - 90.0 * clots * saturate(abs(s) - 0.8) - 80.0 * smoothstep(0.0, H, z);
+        return float4(blackbody(T) * dens * (0.5 + 0.5 * u.erupt.y), dens);
     }
 
     /// Billows: a field of rounded lumps (cells of `cell` metres, each its own size) and the normal of the domes under
@@ -536,15 +584,16 @@ enum VolcanoRimShaders {
         float2 m = float2(x, z - u.plume.w);
         float2 wq = float2(vn2(m * 0.012 + float2(4.0, 1.0)), vn2(m * 0.012 + float2(9.0, 2.0))) - 0.5;
         m += wq * 46.0;
-        float c1, c2;
+        float c1, c2 = 0.0;
         float3 n1 = lumps(m, 64.0 + 0.12 * max(z, 0.0), 0.0, c1);
-        float3 n2 = lumps(m * 1.0 + float2(17.0, 5.0), 26.0, 11.0, c2);
+        float3 n2 = float3(0, 0, 1);
+        if (oct >= 3) n2 = lumps(m * 1.0 + float2(17.0, 5.0), 26.0, 11.0, c2);
         float soft = fbm2(m * 0.02, oct);
         float profile = smoothstep(1.2, 0.1, abs(s) + 0.45 * (soft - 0.5) - 0.25 * c1);
         float base = smoothstep(-5.0, 35.0, z);
-        float body = 0.25 + 0.75 * smoothstep(15.0, 170.0, z);
+        float body = 0.12 + 0.88 * smoothstep(25.0, 190.0, z);
         float lumpy = smoothstep(-0.05, 0.55, c1 + 0.3 * c2 + 0.5 * (soft - 0.5));
-        float dens = saturate(profile * base * (0.6 + 0.7 * amount) * mix(0.55 + 0.5 * soft, 1.6 * lumpy, body));
+        float dens = saturate(profile * base * (0.6 + 0.7 * amount) * mix(0.35 + 0.4 * soft, 1.6 * lumpy, body));
         if (dens <= 0.002) return float4(0);
         float chord = sqrt(saturate(1.0 - s * s * 0.5));
         float alpha = 1.0 - exp(-dens * chord * 2.8);
@@ -559,9 +608,9 @@ enum VolcanoRimShaders {
         lit += float3(0.012, 0.014, 0.02) * u.skyL.w + u.skyL.rgb * 0.5;
         // Lightning inside it: a violet-white glow round the stroke.
         float2 b = float2(x + bend - u.bolt.y, z - u.bolt.z);
-        lit += float3(0.75, 0.72, 1.0) * (u.bolt.x * 2.5 * exp(-dot(b, b) / (2.0 * 75.0 * 75.0)));
+        lit += float3(0.72, 0.7, 1.0) * (u.bolt.x * 0.7 * exp(-dot(b, b) / (2.0 * 38.0 * 38.0)) * (0.4 + 0.6 * shade));
         // The column inside it lights it hard.
-        lit += u.glow.rgb * (u.erupt.y * 0.5 * exp(-abs(P.x) / 140.0) * smoothstep(u.erupt.x + 60.0, 0.0, z));
+        lit += u.glow.rgb * (u.erupt.y * 0.35 * exp(-abs(P.x) / 90.0) * smoothstep(u.erupt.x + 60.0, 0.0, z) * (0.3 + 0.7 * shade));
         return float4(lit * alpha, alpha);
     }
 
@@ -594,10 +643,19 @@ enum VolcanoRimShaders {
         float az = atan2(d.x, d.y);
         if (dE.z >= 0.0) {
             float moonMask = 0.0;
-            col = skyRadiance(dE, sky, moonMask, stars);
+            // A long exposure's sky: the stars and the Milky Way come up over the glow.
+            col = skyRadiance(dE, sky, moonMask, stars) * 1.9;
         } else {
             // The dark plain far below, the horizon's haze over it.
-            col = sky.horizon.rgb * 0.25 * exp(dE.z * 40.0);
+            col = sky.horizon.rgb * 0.3 * exp(dE.z * 30.0);
+        }
+        // Far volcanoes on the plain's horizon: low dark ranges and a broad cone, hazed by distance, hiding the stars.
+        float range = 0.006 + 0.012 * vn2(float2(az * 9.0, 2.0)) + 0.006 * vn2(float2(az * 31.0, 5.0));
+        float cone = 0.034 * smoothstep(0.32, 0.0, abs(az - 0.55)) * (1.0 - 0.15 * vn2(float2(az * 60.0, 1.0)));
+        float ridge = max(range, cone);
+        if (el < ridge) {
+            float haze = exp(-(ridge - el) / 0.01);
+            col = mix(sky.horizon.rgb * 0.18, sky.horizon.rgb * 0.45, haze * 0.5);
         }
         // The plume's glow on the low sky round it (the air scatters the lit plume).
         float bendX = u.plume.z * 200.0 * 200.0;
@@ -609,11 +667,13 @@ enum VolcanoRimShaders {
         // inside, red sprites above them (a surprise).
         float st = u.sprites.w;
         if (st > 0.0 && el > -0.01 && el < 0.09) {
-            float sx = (az + 0.62) / 0.16;
-            float tower = smoothstep(1.0, 0.2, abs(sx)) * smoothstep(0.06 + 0.02 * vn2(float2(sx * 3.0, 1.0)), 0.0, el);
+            float sx = (az + 0.42) / 0.14;
+            float top = 0.05 + 0.02 * vn2(float2(sx * 3.0, 1.0)) + 0.025 * smoothstep(0.7, 0.0, abs(sx - 0.2));
+            float tower = smoothstep(1.0, 0.3, abs(sx)) * smoothstep(top, top - 0.012, el);
             float flick = u.sprites.x > 0.0 ? u.sprites.x : 0.0;
-            col = mix(col, col * 0.4, tower * 0.7 * st);
-            col += float3(0.7, 0.72, 1.0) * (tower * flick * 0.25);
+            float inner = vn2(float2(sx * 2.0 + u.a.y * 0.3, el * 40.0));
+            col = mix(col, sky.horizon.rgb * 0.22, tower * st);
+            col += float3(0.7, 0.72, 1.0) * (tower * (flick * 0.35 + 0.02 * inner * st));
         }
         if (u.sprites.x > 0.0) {
             float b = u.sprites.y * 0.0174533;
@@ -623,7 +683,7 @@ enum VolcanoRimShaders {
             float crown = exp(-sy * sy) * smoothstep(-2.5, 0.0, sy);
             float tendril = exp(-sq(sy + 1.6) / 1.2) * (0.5 + 0.5 * sin(sxp * 9.0));
             float3 red = float3(1.0, 0.12, 0.25) * crown + float3(0.45, 0.25, 1.0) * tendril * 0.35;
-            col += red * (col1 * u.sprites.x * 0.04);
+            col += red * (col1 * u.sprites.x * 0.35);
         }
         // A fireball (a surprise): a bright head and a fading train across the sky.
         if (u.fireball.x >= 0.0) {
@@ -689,6 +749,13 @@ enum VolcanoRimShaders {
             depth = 0.7;
         } else {
             col = beyond(dE, d, sky, u, stars, ndc);
+            if (h.kind == 5) {
+                // Through the breach: the river pouring over its lip lights the fume in the gap from below.
+                float zz = h.p.z - u.eye.w;
+                float lip = exp(-max(zz, 0.0) / (30.0 + 60.0 * u.river.z));
+                col += u.glow.rgb * float3(1.0, 0.8, 0.6) * ((0.25 + 0.6 * u.river.x + 3.5 * u.river.z) * lip);
+                col += blackbody(1150.0 + 150.0 * u.river.z) * (exp(-max(zz, 0.0) / 4.0) * (0.15 + 0.3 * u.river.x + 1.5 * u.river.z));
+            }
         }
         // What stands over the lake, nearest last: the fountains, then the column and the plume on the middle plane.
         float tHit = h.kind == 0 ? 1e9 : h.t;
@@ -705,14 +772,16 @@ enum VolcanoRimShaders {
             mid = column(P, u);
             pl = plume(P, u, oct, u.glow.rgb);
         }
+        // The column stands inside the plume: the gas veils it a little, its light shows through.
+        float veil = 1.0 - 0.45 * pl.a;
         if (farT > tm) {
             col = col * (1.0 - farF.a) + farF.rgb;
-            col = col * (1.0 - mid.a) + mid.rgb;
             col = col * (1.0 - pl.a) + pl.rgb;
+            col = col * (1.0 - mid.a * veil) + mid.rgb * veil;
             col = col * (1.0 - nearF.a) + nearF.rgb;
         } else {
-            col = col * (1.0 - mid.a) + mid.rgb;
             col = col * (1.0 - pl.a) + pl.rgb;
+            col = col * (1.0 - mid.a * veil) + mid.rgb * veil;
             col = col * (1.0 - farF.a) + farF.rgb;
             col = col * (1.0 - nearF.a) + nearF.rgb;
         }
@@ -817,31 +886,32 @@ enum VolcanoRimShaders {
         bool black = in.info.x > 0.5;
         float glow = in.info.y;
         float x = in.uv.x, y = in.uv.y;
-        float s1 = in.seed, s2 = fract(s1 * 7.31), s3 = fract(s1 * 13.17);
-        // A basalt column seen from the side: its faces (a lit one and a shaded one), its top broken off at a slant,
-        // the joints across it; a black key's column stands shorter and further back.
-        float halfW = 0.42 + 0.05 * s2;
-        float cx = 0.5 + (s3 - 0.5) * 0.08;
+        float s1 = in.seed, s2 = fract(s1 * 7.31), s3 = fract(s1 * 13.17), s4 = fract(s1 * 5.17);
+        // A basalt column seen from behind, against the crater's glow: each its own width, lean and height, its top
+        // broken off at a slant; its sides and top edge catching the glow (rim light), its face toward us in shade.
+        float halfW = 0.36 + 0.1 * s2;
+        float cx = 0.5 + (s3 - 0.5) * 0.12 + (s4 - 0.5) * 0.06 * y;
         float across = (x - cx) / halfW;
-        float aa = 1.5 / max(in.size.x * 1000.0, 1.0);
+        float aa = 1.6 / max(in.size.x * 900.0, 1.0);
         float body = smoothstep(1.0 + aa, 1.0 - aa, abs(across));
-        float top = 0.93 - 0.05 * s3 - 0.06 * across * (s2 > 0.5 ? 1.0 : -1.0);
-        body *= smoothstep(top + 0.01, top - 0.01, y);
+        float top = 0.72 + 0.24 * s3 - 0.07 * across * (s2 > 0.5 ? 1.0 : -1.0);
+        float ay = 1.6 / max(in.size.y * 900.0, 1.0);
+        body *= smoothstep(top + ay, top - ay, y);
         if (body < 0.004) discard_fragment();
-        float face = across < (s2 - 0.5) * 0.4 ? 0.55 : 1.0;
-        float joint = smoothstep(0.03, 0.0, abs(fract(y * 3.0 + s1 * 3.0) - 0.5) - 0.47);
-        float grain = vn2(float2(across * 5.0 + s1 * 30.0, y * 18.0));
-        float3 rock = float3(0.05, 0.046, 0.044) * (0.7 + 0.6 * grain) * face * (1.0 - 0.5 * joint) * (black ? 0.75 : 1.0);
-        // Lit by the crater ahead: the top edge catches the glow.
-        float rim = exp(-(top - y) / 0.06);
-        float3 c = rock * (light.rgb * (0.35 + 1.4 * rim)) ;
-        // A note lights its column from inside: lava in its joints and its broken top, cooling as it fades.
-        float T = 820.0 + 520.0 * glow;
+        // Rim light: the glow from beyond wraps the edges and the broken top.
+        float edgeD = min(1.0 - abs(across), (top - y) * 3.0);
+        float rim = exp(-max(edgeD, 0.0) / 0.07);
+        float joint = smoothstep(0.035, 0.0, abs(fract(y * 2.6 + s1 * 3.0) - 0.5) - 0.465);
+        float grain = vn2(float2(across * 4.0 + s1 * 30.0, y * 14.0));
+        float3 rock = float3(0.04, 0.037, 0.035) * (0.7 + 0.6 * grain) * (1.0 - 0.4 * joint) * (black ? 0.8 : 1.0);
+        float3 c = rock * (light.rgb * (0.12 + 0.6 * smoothstep(0.0, 1.0, y)) + light.rgb * (1.6 * rim));
+        // A note lights it from inside: lava in its joints and its broken top, a seam up its middle, cooling as it fades.
+        float T = 800.0 + 470.0 * glow;
         float inv = 1.0 / T;
         float3 bb = float3(1.0, exp(0.38 - 1848.0 * inv), exp(2.036 - 8727.0 * inv)) * exp((T - 1150.0) * 0.0086957);
-        float seams = joint * smoothstep(0.0, 0.3, glow) + exp(-abs(y - top + 0.02) / 0.03) * glow;
-        float crack = smoothstep(0.08, 0.0, abs(across - 0.3 * sin(y * 7.0 + s1 * 6.0)) - 0.02) * glow;
-        c += bb * (seams + 0.8 * crack) * glow;
+        float seam = smoothstep(0.06, 0.0, abs(across - 0.25 * sin(y * 6.0 + s1 * 6.0)) - 0.015);
+        float lit = joint * 0.8 + seam * 0.9 + exp(-max(top - y, 0.0) / 0.04) * 0.7;
+        c += bb * (lit * smoothstep(0.0, 0.25, glow) * (0.4 + 0.6 * glow));
         ColorDepth o;
         o.color = float4(c * body, body);
         o.depth = float4(0.05, 0, 0, 1);

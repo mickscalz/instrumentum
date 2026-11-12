@@ -90,7 +90,7 @@ final class MagmaVeinsRenderer: ThemeRenderer {
         let octaves: Float = quality == .lite ? 2 : 3
         veinsU[0] = SIMD4(aspect, t, octaves, 1 / height)
         veinsU[1] = SIMD4(splitShown, Self.unit(frame.energy), Self.unit(frame.drop), 0)
-        veinsU[2] = SIMD4(1080, 840, 610, Self.metresPerView)
+        veinsU[2] = SIMD4(1080, 770, 560, Self.metresPerView)
         for k in 0..<MagmaVeins.plateCount {
             if k < frame.plates.count {
                 let p = frame.plates[k]

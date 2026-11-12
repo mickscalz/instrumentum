@@ -142,7 +142,7 @@ final class VolcanoRimRenderer: ThemeRenderer {
     /// the lake's activity, the fountains, the column and the breach.
     nonisolated static func lakeLight(energy: Float, activity: Float, fountains: Float, eruption: Float, breach: Float) -> SIMD3<Float> {
         let e = unit(energy), a = unit(activity)
-        let level: Float = 0.38 + 0.3 * e + 0.15 * a + 0.12 * unit(fountains) + 3.0 * unit(eruption) + 0.5 * unit(breach)
+        let level: Float = 0.38 + 0.3 * e + 0.15 * a + 0.12 * unit(fountains) + 1.1 * unit(eruption) + 0.5 * unit(breach)
         let warm = blackbody(1150)
         return warm * level
     }
@@ -357,8 +357,8 @@ final class VolcanoRimRenderer: ThemeRenderer {
     private func buildSparks(_ frame: VolcanoFrame, view v: View, height: Float, tanV: Float, gentle: Bool) {
         sparkInstances.removeAll(keepingCapacity: true)
         let pixel: Float = 2 / height
-        let blur: Float = 1.0 / 30
-        func add(_ p: SIMD3<Float>, _ vel: SIMD3<Float>, size: Float, kelvin: Float, light: Float, soft: Float) {
+        func add(_ p: SIMD3<Float>, _ vel: SIMD3<Float>, size: Float, kelvin: Float, light: Float, soft: Float,
+                 blur: Float = 1.0 / 30) {
             guard light > 1e-3, sparkInstances.count < Self.sparkCapacity * 2, let at = v.project(p) else { return }
             guard abs(at.ndc.x) < 1.3, abs(at.ndc.y) < 1.3 else { return }
             let trueHalf = size / (at.depth * tanV)
@@ -378,11 +378,14 @@ final class VolcanoRimRenderer: ThemeRenderer {
         }
         for b in frame.blobs where b.alive {
             let fade: Float = b.landed.map { max(0, 1 - $0 / 1.2) } ?? 1
-            add(b.position, b.landed == nil ? b.velocity : .zero, size: b.size, kelvin: b.temperature, light: 2.2 * fade, soft: 0)
+            // A long exposure's trail: the blobs streak along their arcs.
+            add(b.position, b.landed == nil ? b.velocity : .zero, size: b.size * 0.6, kelvin: b.temperature, light: 2.0 * fade,
+                soft: 0, blur: 0.14)
         }
         for b in frame.bombs where b.alive {
             let fade: Float = b.landed.map { max(0, 1 - $0 / 3) } ?? 1
-            add(b.position, b.landed == nil ? b.velocity : .zero, size: b.size, kelvin: b.temperature, light: 3 * fade, soft: 0)
+            add(b.position, b.landed == nil ? b.velocity : .zero, size: b.size * 0.5, kelvin: b.temperature, light: 2.4 * fade,
+                soft: 0, blur: 0.3)
         }
         sparkCount = sparkInstances.count / 2
     }
@@ -419,7 +422,7 @@ final class VolcanoRimRenderer: ThemeRenderer {
             columnInstances.append(SIMD4(x0, bottom, x1, k.key.isBlack ? lowTop : keyTop))
             columnInstances.append(SIMD4(k.key.isBlack ? 1 : 0, Self.unit(k.glow), k.pressed ? 1 : 0, 0))
         }
-        let light: SIMD3<Float> = glow * 6 + sky
+        let light: SIMD3<Float> = glow * 3.5 + sky
         columnLight = SIMD4(light, 1)
     }
 
