@@ -33,7 +33,8 @@ final class BedroomDawnRenderer: ThemeRenderer {
     let warp: WarpLayer
     let glass: WindowGlassLayer
     private var showWarp = false
-    private let scene, room, shafts, curtain, sprites, keys: MTLRenderPipelineState
+    private let scene: SkyPipeline
+    private let room, shafts, curtain, sprites, keys: MTLRenderPipelineState
     private var bedU = [SIMD4<Float>](repeating: .zero, count: 10 + 3 + 19)
     private var keyInstances: [KeyInstance] = []
     private var spriteData: [SIMD4<Float>] = []
@@ -74,10 +75,10 @@ final class BedroomDawnRenderer: ThemeRenderer {
               let g = WindowGlassLayer(device: device),
               let lib = try? device.makeLibrary(source: BedroomDawnShaders.source, options: nil) else { return nil }
         enum Blend { case opaque, premultiplied, additive }
-        func make(_ v: String, _ f: String, _ blend: Blend, writesDepth: Bool = true) -> MTLRenderPipelineState? {
+        func make(_ v: String, _ f: String, _ blend: Blend, writesDepth: Bool = true, storms: Bool = false) -> MTLRenderPipelineState? {
             let d = MTLRenderPipelineDescriptor()
-            d.vertexFunction = lib.makeFunction(name: v)
-            d.fragmentFunction = lib.makeFunction(name: f)
+            d.vertexFunction = lib.skyFunction(v, storms: storms)
+            d.fragmentFunction = lib.skyFunction(f, storms: storms)
             d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
             d.colorAttachments[1].pixelFormat = RenderStack.depthFormat
             let c = d.colorAttachments[0]!
@@ -95,7 +96,7 @@ final class BedroomDawnRenderer: ThemeRenderer {
             if !writesDepth { d.colorAttachments[1].writeMask = [] }
             return try? device.makeRenderPipelineState(descriptor: d)
         }
-        guard let sc = make("bed_glass_vertex", "bed_scene_fragment", .premultiplied),
+        guard let sc = SkyPipeline(build: { make("bed_glass_vertex", "bed_scene_fragment", .premultiplied, storms: $0) }),
               let rm = make("bed_full_vertex", "bed_room_fragment", .opaque),
               let sh = make("bed_full_vertex", "bed_shaft_fragment", .additive, writesDepth: false),
               let cu = make("bed_curtain_vertex", "bed_curtain_fragment", .premultiplied, writesDepth: false),
@@ -179,6 +180,7 @@ final class BedroomDawnRenderer: ThemeRenderer {
         }
         sky.viewAzimuth = viewAzimuth
         sky.horizonY = horizonY
+        sky.gentle = gentle
         sky.update(s, quality: quality, size: size, time: Float(frame.time))
         weather.gentle = gentle
         weather.update(s, quality: quality, size: size, dt: dt, surface: .glass)
@@ -412,7 +414,7 @@ final class BedroomDawnRenderer: ThemeRenderer {
         // Outside: the sky (and the warp), the street and houses, then the weather.
         sky.draw(e)
         if showWarp { warp.draw(e) }
-        e.setRenderPipelineState(scene)
+        e.setRenderPipelineState(scene.state(storms: sky.storms))
         bindUniforms(e, vertex: true)
         e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6)
         weather.draw(e)

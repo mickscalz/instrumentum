@@ -191,7 +191,23 @@ final class SkyLayer {
     private(set) var stormShift: Double = 0
     private var cellAnchor: (episode: Int, azimuth: Double)?
 
-    private let pipeline: MTLRenderPipelineState
+    private let pipeline: SkyPipeline
+    /// Whether this frame's sky needs the storm program (`SkySpecialisation`): a supercell, ash, a far storm or a sprite
+    /// in its rows. Every world drawing the sky in its own pass picks its pipeline by it.
+    private(set) var storms = false
+    /// Tests: draw with the storm program whatever the sky (a plain sky must look the same either way).
+    var forceStormProgram = false {
+        didSet { storms = forceStormProgram || SkySpecialisation.needsStorms(u) }
+    }
+    /// Gentle visuals: the supercell's lightning only glows in its cloud, never flashes.
+    var gentle = false
+    /// The supercell's lightning in its cloud (its light 0…1) goes through its own flash limiter: at most three large
+    /// jumps a second; under gentle visuals never more than a glow (`gentleCellGlow`, under the limiter's flash rise,
+    /// and its rise halved). `cellGlowOut` is what drew (tests).
+    nonisolated static let gentleCellGlow: Float = 0.2
+    private var glowLimiter = FlashLimiter()
+    private var lastTime: Float?
+    private(set) var cellGlowOut: Float = 0
     /// A 1×1 black texture bound while the real stars build, so no pass ever lacks texture 0.
     private let placeholder: MTLTexture
     private var u = [SIMD4<Float>](repeating: .zero, count: SkyLayer.uniformCount)
@@ -211,13 +227,15 @@ final class SkyLayer {
     }
 
     init?(device: MTLDevice) {
-        guard let lib = try? device.makeLibrary(source: SkyShaders.source, options: nil) else { return nil }
-        let d = MTLRenderPipelineDescriptor()
-        d.vertexFunction = lib.makeFunction(name: "sky_dome_vertex")
-        d.fragmentFunction = lib.makeFunction(name: "sky_dome_fragment")
-        d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
-        d.colorAttachments[1].pixelFormat = RenderStack.depthFormat
-        guard let p = try? device.makeRenderPipelineState(descriptor: d) else { return nil }
+        guard let lib = try? device.makeLibrary(source: SkyShaders.source, options: nil),
+              let p = SkyPipeline(build: { storms in
+                  let d = MTLRenderPipelineDescriptor()
+                  d.vertexFunction = lib.skyFunction("sky_dome_vertex", storms: storms)
+                  d.fragmentFunction = lib.skyFunction("sky_dome_fragment", storms: storms)
+                  d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
+                  d.colorAttachments[1].pixelFormat = RenderStack.depthFormat
+                  return try? device.makeRenderPipelineState(descriptor: d)
+              }) else { return nil }
         let pd = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 1, height: 1, mipmapped: false)
         pd.usage = [.shaderRead]
         guard let ph = device.makeTexture(descriptor: pd) else { return nil }
@@ -225,6 +243,8 @@ final class SkyLayer {
         ph.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0, withBytes: &black, bytesPerRow: 4)
         pipeline = p
         placeholder = ph
+        // The limiter starts from black: settle it on no light first, so the first frame is never a flash.
+        for _ in 0..<16 { _ = glowLimiter.limit(exposure: 1, sparkle: 0, dt: 1) }
         StarTextureCache.shared.request(device: device)
     }
 
@@ -351,13 +371,23 @@ final class SkyLayer {
         }
         for i in sat..<Self.satelliteSlots { u[Self.satARow + i] = .zero; u[Self.satBRow + i] = .zero; u[Self.satCRow + i] = .zero }
         // Fire & Neon (spec §7.2): the supercell weather, staged where the world looks as its far storms are.
+        let step: Double = {
+            guard let last = lastTime else { return 1.0 / 60 }
+            let d = Double(time - last)
+            return d >= 0 && d < 0.5 ? d : 1.0 / 60
+        }()
+        lastTime = time
+        glowLimiter.gentle = gentle
+        let glowAsked = s.supercellWeather.map { unit($0.glow) * (($0.amount.isFinite && $0.amount > 0) ? 1 : 0) } ?? 0
+        let glowPassed = max(0, glowLimiter.limit(exposure: 1 + glowAsked, sparkle: 0, dt: step).exposure - 1)
+        cellGlowOut = gentle ? min(Self.gentleCellGlow, glowPassed) : min(glowAsked, glowPassed)
         if let c = s.supercellWeather, c.amount.isFinite, c.amount > 0 {
             let cs = Self.stage(episode: c.episode, bearing: c.bearing, viewAzimuth: view, anchor: cellAnchor)
             cellAnchor = cs.anchor
             let az = (Double(c.bearing) + cs.shift) * .pi / 180
             u[Self.cellARow] = SIMD4(Float(sin(az)), Float(cos(az)), unit(c.phase), unit(c.amount))
             u[Self.cellBRow] = SIMD4(min(SupercellNow.greenest, max(0, c.green.isFinite ? c.green : 0)),
-                                     c.turn.isFinite ? c.turn : 0, unit(c.glow), unit(c.hail))
+                                     c.turn.isFinite ? c.turn : 0, cellGlowOut, unit(c.hail))
             u[Self.cellCRow] = SIMD4(c.distanceKm.isFinite ? c.distanceKm : 30, c.anvilEdgeKm.isFinite ? c.anvilEdgeKm : 38,
                                      unit(c.mammatus), unit(c.spot))
         } else {
@@ -369,10 +399,15 @@ final class SkyLayer {
         }
         let sunTint = tint(s.sunTint)
         u[Self.ashRow] = SIMD4(unit(s.ash), sunTint.x, sunTint.y, sunTint.z)
+        storms = forceStormProgram || SkySpecialisation.needsStorms(u)
     }
 
+    /// How many times the dome's storm program was built, and whether it has been (tests).
+    var domeStormBuilds: Int { pipeline.stormBuilds }
+    var domeHasStormProgram: Bool { pipeline.hasStormProgram }
+
     func draw(_ e: MTLRenderCommandEncoder) {
-        e.setRenderPipelineState(pipeline)
+        e.setRenderPipelineState(pipeline.state(storms: storms))
         uniforms.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
         bindStars(e)
         e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
@@ -486,8 +521,8 @@ final class WeatherLayer {
         guard let lib = try? device.makeLibrary(source: SkyShaders.source, options: nil) else { return nil }
         func make(_ v: String, _ f: String) -> MTLRenderPipelineState? {
             let d = MTLRenderPipelineDescriptor()
-            d.vertexFunction = lib.makeFunction(name: v)
-            d.fragmentFunction = lib.makeFunction(name: f)
+            d.vertexFunction = lib.skyFunction(v)
+            d.fragmentFunction = lib.skyFunction(f)
             d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
             d.colorAttachments[0].isBlendingEnabled = true
             d.colorAttachments[0].sourceRGBBlendFactor = .one
@@ -605,9 +640,11 @@ final class WeatherLayer {
         updateHail(s, quality: quality, dt: fdt, surface: surface)
 
         // Lightning brightens the scene through the flash limiter; under gentle visuals it is only a glow (Fire & Neon
-        // Review focus 5: no flash, a rise far under the limiter's).
+        // Review focus 5: no flash, a rise far under the limiter's). Under a supercell the flash is its cloud's own light
+        // (the sky layer's), so the scene only lifts a little with it, never a pale wash.
         limiter.gentle = gentle
-        exposureBoost = limiter.limit(exposure: 1 + (gentle ? Self.gentleLightning : 1.2) * s.lightning, sparkle: 0, dt: dt).exposure
+        let gain: Float = gentle ? Self.gentleLightning : (s.supercellWeather.map { $0.amount > 0 } == true ? Self.cellLightning : 1.2)
+        exposureBoost = limiter.limit(exposure: 1 + gain * s.lightning, sparkle: 0, dt: dt).exposure
     }
 
     /// The main drops' heights this frame (tests: ash falls at 0.6× the snow's pace).
@@ -615,8 +652,10 @@ final class WeatherLayer {
 
     /// Ashfall's density (its share of the snow's cap at full ash) and its fall (× the snow's speed).
     static let ashDensity: Float = 0.75, ashSpeed: Float = 0.6
-    /// Lightning's brightening under gentle visuals (a glow; 1.2 otherwise).
+    /// Lightning's brightening under gentle visuals (a glow; 1.2 otherwise), and under a supercell (its cloud carries
+    /// the flash; the scene lifts a little).
     static let gentleLightning: Float = 0.2
+    static let cellLightning: Float = 0.35
     static func emberCap(_ q: QualityLevel) -> Int { q == .lite ? 150 : 300 }
     static func hailCap(_ q: QualityLevel) -> Int { q == .lite ? 150 : 320 }
 

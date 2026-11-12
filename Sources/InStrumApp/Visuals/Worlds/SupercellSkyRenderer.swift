@@ -65,7 +65,8 @@ final class SupercellSkyRenderer: ThemeRenderer {
     let weather: WeatherLayer
     let warp: WarpLayer
     private var showWarp = false
-    private let scene, birds, posts: MTLRenderPipelineState
+    private let scene: SkyPipeline
+    private let birds, posts: MTLRenderPipelineState
     private var cellU = [SIMD4<Float>](repeating: .zero, count: SupercellSkyRenderer.uniformCount)
     private var birdInstances: [SIMD4<Float>] = []
     private var postInstances: [SIMD4<Float>] = []
@@ -99,10 +100,10 @@ final class SupercellSkyRenderer: ThemeRenderer {
     init?(device: MTLDevice) {
         guard let s = SkyLayer(device: device), let w = WeatherLayer(device: device), let gw = WarpLayer(device: device),
               let lib = try? device.makeLibrary(source: SupercellSkyShaders.source, options: nil) else { return nil }
-        func make(_ v: String, _ f: String, blend: Bool, keepDepth: Bool) -> MTLRenderPipelineState? {
+        func make(_ v: String, _ f: String, blend: Bool, keepDepth: Bool, storms: Bool = false) -> MTLRenderPipelineState? {
             let d = MTLRenderPipelineDescriptor()
-            d.vertexFunction = lib.makeFunction(name: v)
-            d.fragmentFunction = lib.makeFunction(name: f)
+            d.vertexFunction = lib.skyFunction(v, storms: storms)
+            d.fragmentFunction = lib.skyFunction(f, storms: storms)
             d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
             if blend {
                 d.colorAttachments[0].isBlendingEnabled = true
@@ -115,7 +116,7 @@ final class SupercellSkyRenderer: ThemeRenderer {
             if keepDepth { d.colorAttachments[1].writeMask = [] }
             return try? device.makeRenderPipelineState(descriptor: d)
         }
-        guard let sc = make("cell_vertex", "cell_scene_fragment", blend: false, keepDepth: false),
+        guard let sc = SkyPipeline(build: { make("cell_vertex", "cell_scene_fragment", blend: false, keepDepth: false, storms: $0) }),
               let bd = make("cell_bird_vertex", "cell_bird_fragment", blend: true, keepDepth: true),
               let ps = make("cell_post_vertex", "cell_post_fragment", blend: true, keepDepth: false) else { return nil }
         sky = s; weather = w; warp = gw; scene = sc; birds = bd; posts = ps
@@ -204,6 +205,7 @@ final class SupercellSkyRenderer: ThemeRenderer {
         sky.viewAzimuth = frame.viewAzimuth
         sky.horizonY = Self.horizonY
         sky.verticalFOV = Self.verticalFOV
+        sky.gentle = gentle
         sky.update(s, quality: quality, size: size, time: t)
         weather.gentle = gentle
         weather.update(s, quality: quality, size: size, dt: dt, surface: .ground(horizonY: Self.horizonY))
@@ -511,7 +513,7 @@ final class SupercellSkyRenderer: ThemeRenderer {
         guard let pass = stack.scenePass(clear: MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)),
               let e = cb.makeRenderCommandEncoder(descriptor: pass) else { return }
         let skyU = sky.uniforms
-        e.setRenderPipelineState(scene)
+        e.setRenderPipelineState(scene.state(storms: sky.storms))
         skyU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
         cellU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
         sky.bindStars(e)

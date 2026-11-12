@@ -124,7 +124,7 @@ final class SupercellSkyRendererTests: XCTestCase {
         let names = ["cell_vertex", "cell_scene_fragment", "cell_bird_vertex", "cell_bird_fragment", "cell_post_vertex",
                      "cell_post_fragment"]
         for name in names {
-            let function = lib.makeFunction(name: name)
+            let function = lib.skyFunction(name)
             XCTAssertNotNil(function, name)
         }
         // Built on the Sky kit, with no powers of its own.
@@ -141,8 +141,8 @@ final class SupercellSkyRendererTests: XCTestCase {
         // The Swift rows match the MSL struct byte for byte (the pipeline's own reflection).
         let row = MemoryLayout<SIMD4<Float>>.stride
         let d = MTLRenderPipelineDescriptor()
-        d.vertexFunction = lib.makeFunction(name: "cell_vertex")
-        d.fragmentFunction = lib.makeFunction(name: "cell_scene_fragment")
+        d.vertexFunction = lib.skyFunction("cell_vertex")
+        d.fragmentFunction = lib.skyFunction("cell_scene_fragment")
         d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
         d.colorAttachments[1].pixelFormat = RenderStack.depthFormat
         var reflection: MTLAutoreleasedRenderPipelineReflection?

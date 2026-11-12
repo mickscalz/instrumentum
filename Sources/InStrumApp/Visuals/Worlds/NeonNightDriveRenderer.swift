@@ -50,7 +50,8 @@ final class NeonNightDriveRenderer: ThemeRenderer {
     let trails: LightTrailsLayer
     let screen: WindscreenLayer
     let reflectCopy: ViewCopy
-    private let scene, reflect: MTLRenderPipelineState
+    private let scene: SkyPipeline
+    private let reflect: MTLRenderPipelineState
     private var u = [SIMD4<Float>](repeating: .zero, count: NeonNightDriveRenderer.uniformCount)
     private var limiter = FlashLimiter()
     private var limiterStarted = false
@@ -78,22 +79,24 @@ final class NeonNightDriveRenderer: ThemeRenderer {
               let tl = LightTrailsLayer(device: device), let sc = WindscreenLayer(device: device),
               let rc = ViewCopy(device: device),
               let lib = try? device.makeLibrary(source: NeonNightDriveShaders.source, options: nil) else { return nil }
-        let sd = MTLRenderPipelineDescriptor()
-        sd.vertexFunction = lib.makeFunction(name: "drive_vertex")
-        sd.fragmentFunction = lib.makeFunction(name: "drive_scene_fragment")
-        sd.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
-        sd.colorAttachments[1].pixelFormat = RenderStack.depthFormat
+        let scenePipe = SkyPipeline(build: { storms in
+            let sd = MTLRenderPipelineDescriptor()
+            sd.vertexFunction = lib.skyFunction("drive_vertex", storms: storms)
+            sd.fragmentFunction = lib.skyFunction("drive_scene_fragment", storms: storms)
+            sd.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
+            sd.colorAttachments[1].pixelFormat = RenderStack.depthFormat
+            return try? device.makeRenderPipelineState(descriptor: sd)
+        })
         let rd = MTLRenderPipelineDescriptor()
-        rd.vertexFunction = lib.makeFunction(name: "drive_vertex")
-        rd.fragmentFunction = lib.makeFunction(name: "drive_reflect_fragment")
+        rd.vertexFunction = lib.skyFunction("drive_vertex")
+        rd.fragmentFunction = lib.skyFunction("drive_reflect_fragment")
         rd.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
         rd.colorAttachments[0].isBlendingEnabled = true
         rd.colorAttachments[0].sourceRGBBlendFactor = .one
         rd.colorAttachments[0].destinationRGBBlendFactor = .one
         rd.colorAttachments[0].sourceAlphaBlendFactor = .zero
         rd.colorAttachments[0].destinationAlphaBlendFactor = .one
-        guard let scenePipe = try? device.makeRenderPipelineState(descriptor: sd),
-              let reflectPipe = try? device.makeRenderPipelineState(descriptor: rd) else { return nil }
+        guard let scenePipe, let reflectPipe = try? device.makeRenderPipelineState(descriptor: rd) else { return nil }
         sky = s; weather = w; warp = gw; trails = tl; screen = sc; reflectCopy = rc
         scene = scenePipe; reflect = reflectPipe
         sky.verticalFOV = 47
@@ -144,6 +147,7 @@ final class NeonNightDriveRenderer: ThemeRenderer {
         let fov = frame.fov.isFinite ? min(60, max(36, frame.fov)) : 47
         sky.verticalFOV = Double(fov)
         sky.horizonY = Self.horizonY
+        sky.gentle = gentle
         sky.update(s, quality: quality, size: size, time: t)
         // The falling rain (none in the tunnel: the frame's sky has none there), slowed while the drop's release hangs it.
         rainSpeed = 1 - 0.85 * Self.unit(frame.rainSlow)
@@ -312,7 +316,7 @@ final class NeonNightDriveRenderer: ThemeRenderer {
         // dim, behind the cloud, from `rowMoon`).
         var skyU = sky.uniforms
         skyU[Self.skyMoonRow] = SIMD4(0, 0, -1, skyU[Self.skyMoonRow].w)
-        e.setRenderPipelineState(scene)
+        e.setRenderPipelineState(scene.state(storms: sky.storms))
         skyU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
         u.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
         sky.bindStars(e)

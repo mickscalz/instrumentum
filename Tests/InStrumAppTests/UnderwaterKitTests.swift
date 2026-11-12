@@ -19,8 +19,8 @@ final class UnderwaterProbeRunner {
         let lib = try device.makeLibrary(source: UnderwaterProbe.source, options: nil)
         func make(_ fragment: String) throws -> MTLRenderPipelineState {
             let d = MTLRenderPipelineDescriptor()
-            d.vertexFunction = lib.makeFunction(name: "underwater_view_vertex")
-            d.fragmentFunction = lib.makeFunction(name: fragment)
+            d.vertexFunction = lib.skyFunction("underwater_view_vertex")
+            d.fragmentFunction = lib.skyFunction(fragment)
             d.colorAttachments[0].pixelFormat = .rgba32Float
             return try device.makeRenderPipelineState(descriptor: d)
         }
@@ -114,8 +114,8 @@ final class UnderwaterTestView {
               let lib = try? device.makeLibrary(source: UnderwaterProbe.source, options: nil) else { return nil }
         func make(_ fragment: String) -> MTLRenderPipelineState? {
             let d = MTLRenderPipelineDescriptor()
-            d.vertexFunction = lib.makeFunction(name: "underwater_view_vertex")
-            d.fragmentFunction = lib.makeFunction(name: fragment)
+            d.vertexFunction = lib.skyFunction("underwater_view_vertex")
+            d.fragmentFunction = lib.skyFunction(fragment)
             d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
             d.colorAttachments[1].pixelFormat = RenderStack.depthFormat
             return try? device.makeRenderPipelineState(descriptor: d)
@@ -169,7 +169,7 @@ extension WorldKitTests {
         let lib = try device.makeLibrary(source: UnderwaterProbe.source, options: nil)
         for name in ["underwater_view_vertex", "underwater_probe_fragment", "underwater_grid_fragment", "underwater_view_fragment",
                      "cabin_wall_fragment"] {
-            XCTAssertNotNil(lib.makeFunction(name: name), name)
+            XCTAssertNotNil(lib.skyFunction(name), name)
         }
         // The kit is a helper string for a world's program: it opens none of its own, and follows SkyShaders.common.
         XCTAssertFalse(UnderwaterShaders.common.contains("#include"))

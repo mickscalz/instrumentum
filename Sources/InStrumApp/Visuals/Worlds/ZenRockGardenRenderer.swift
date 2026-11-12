@@ -58,7 +58,8 @@ final class ZenRockGardenRenderer: ThemeRenderer {
     let weather: WeatherLayer
     let warp: WarpLayer
     private var showWarp = false
-    private let scene, keys: MTLRenderPipelineState
+    private let scene: SkyPipeline
+    private let keys: MTLRenderPipelineState
     /// The rake field: a ring of three r32Float textures (so a frame still in flight keeps reading its own), one written
     /// only when the field's version moves on, at most once a frame.
     private let fieldTextures: [MTLTexture]
@@ -98,15 +99,15 @@ final class ZenRockGardenRenderer: ThemeRenderer {
     init?(device: MTLDevice) {
         guard let s = SkyLayer(device: device), let w = WeatherLayer(device: device), let gw = WarpLayer(device: device),
               let lib = try? device.makeLibrary(source: ZenRockGardenShaders.source, options: nil) else { return nil }
-        func make(_ v: String, _ f: String) -> MTLRenderPipelineState? {
+        func make(_ v: String, _ f: String, storms: Bool = false) -> MTLRenderPipelineState? {
             let d = MTLRenderPipelineDescriptor()
-            d.vertexFunction = lib.makeFunction(name: v)
-            d.fragmentFunction = lib.makeFunction(name: f)
+            d.vertexFunction = lib.skyFunction(v, storms: storms)
+            d.fragmentFunction = lib.skyFunction(f, storms: storms)
             d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
             d.colorAttachments[1].pixelFormat = RenderStack.depthFormat
             return try? device.makeRenderPipelineState(descriptor: d)
         }
-        guard let sc = make("garden_vertex", "garden_fragment"), let k = make("garden_keys_vertex", "garden_keys_fragment") else { return nil }
+        guard let sc = SkyPipeline(build: { make("garden_vertex", "garden_fragment", storms: $0) }), let k = make("garden_keys_vertex", "garden_keys_fragment") else { return nil }
         // The field's textures, made once and filled with the morning's pattern (so no frame ever reads an empty one).
         let fw = RakeField.width, fh = RakeField.height
         let td = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .r32Float, width: fw, height: fh, mipmapped: false)
@@ -252,6 +253,7 @@ final class ZenRockGardenRenderer: ThemeRenderer {
         sky.verticalFOV = lens.verticalFOV
         sky.horizonY = horizonY
         sky.viewAzimuth = Self.viewAzimuth(latitude: s.latitude)
+        sky.gentle = gentle
         sky.update(s, quality: quality, size: size, time: Float(frame.time))
         let cam = sky.camera(latitude: s.latitude, aspect: aspect)
         camera = cam
@@ -400,7 +402,7 @@ final class ZenRockGardenRenderer: ThemeRenderer {
 
         // The garden (the sky shows where it discards): the stars at texture 0, the rake field at texture 1.
         let skyU = sky.uniforms
-        e.setRenderPipelineState(scene)
+        e.setRenderPipelineState(scene.state(storms: sky.storms))
         skyU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
         gardenU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
         sky.bindStars(e)

@@ -33,8 +33,8 @@ final class LightTrailsLayer {
     init?(device: MTLDevice) {
         guard let lib = try? device.makeLibrary(source: LightTrailsShaders.source, options: nil) else { return nil }
         let d = MTLRenderPipelineDescriptor()
-        d.vertexFunction = lib.makeFunction(name: "drive_vertex")
-        d.fragmentFunction = lib.makeFunction(name: "trails_fragment")
+        d.vertexFunction = lib.skyFunction("drive_vertex")
+        d.fragmentFunction = lib.skyFunction("trails_fragment")
         d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
         d.colorAttachments[0].isBlendingEnabled = true
         d.colorAttachments[0].sourceRGBBlendFactor = .one

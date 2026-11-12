@@ -13,7 +13,7 @@ final class LightningPlainsRendererTests: XCTestCase {
         let lib = try device.makeLibrary(source: LightningPlainsShaders.source, options: nil)
         for name in ["plains_vertex", "plains_scene_fragment", "plains_box_vertex", "plains_storm_fragment",
                      "plains_bolt_vertex", "plains_bolt_fragment", "plains_prop_vertex", "plains_prop_fragment"] {
-            XCTAssertNotNil(lib.makeFunction(name: name), name)
+            XCTAssertNotNil(lib.skyFunction(name), name)
         }
         // Built on the Sky, with no powers of its own.
         let kit = SkyShaders.common
@@ -27,8 +27,8 @@ final class LightningPlainsRendererTests: XCTestCase {
         let row = MemoryLayout<SIMD4<Float>>.stride
         for (vertex, fragment) in [("plains_vertex", "plains_scene_fragment"), ("plains_prop_vertex", "plains_prop_fragment")] {
             let d = MTLRenderPipelineDescriptor()
-            d.vertexFunction = lib.makeFunction(name: vertex)
-            d.fragmentFunction = lib.makeFunction(name: fragment)
+            d.vertexFunction = lib.skyFunction(vertex)
+            d.fragmentFunction = lib.skyFunction(fragment)
             d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
             d.colorAttachments[1].pixelFormat = RenderStack.depthFormat
             var reflection: MTLAutoreleasedRenderPipelineReflection?

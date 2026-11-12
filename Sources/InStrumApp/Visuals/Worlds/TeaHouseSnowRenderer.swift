@@ -165,8 +165,8 @@ final class TeaHouseSnowRenderer: ThemeRenderer {
         enum Blend { case opaque, premultiplied }
         func make(_ v: String, _ f: String, _ blend: Blend, writesDepth: Bool = true) -> MTLRenderPipelineState? {
             let d = MTLRenderPipelineDescriptor()
-            d.vertexFunction = lib.makeFunction(name: v)
-            d.fragmentFunction = lib.makeFunction(name: f)
+            d.vertexFunction = lib.skyFunction(v)
+            d.fragmentFunction = lib.skyFunction(f)
             d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
             d.colorAttachments[1].pixelFormat = RenderStack.depthFormat
             if blend == .premultiplied {
@@ -233,6 +233,7 @@ final class TeaHouseSnowRenderer: ThemeRenderer {
 
         sky.horizonY = l.horizon
         sky.viewAzimuth = nil   // face the equator: the sun crosses the screens at midday
+        sky.gentle = gentle
         sky.update(s, quality: quality, size: size, time: Float(frame.time))
         weather.gentle = gentle
         weather.update(s, quality: quality, size: size, dt: dt, surface: .ground(horizonY: l.horizon))

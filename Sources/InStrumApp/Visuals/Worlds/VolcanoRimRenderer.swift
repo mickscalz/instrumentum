@@ -30,8 +30,10 @@ final class VolcanoRimRenderer: ThemeRenderer {
     nonisolated static let verticalFOV = 46.0
     /// The horizon (the far rim's skyline) a little above the middle: the lake fills the lower half.
     nonisolated static let horizonY: Float = 0.42
-    /// The sparks, the bolts' segments.
-    nonisolated static let sparkCapacity = VolcanoRimModel.emberCount + VolcanoRimModel.blobCount + VolcanoRimModel.bombCount
+    /// The sparks (each blob and bomb in flight a trail of `trailSegments`), the bolts' segments.
+    nonisolated static let trailSegments = 4
+    nonisolated static let sparkCapacity = VolcanoRimModel.emberCount
+        + (VolcanoRimModel.blobCount + VolcanoRimModel.bombCount) * VolcanoRimRenderer.trailSegments
     nonisolated static let boltCapacity = VolcanoRimModel.strokeCount * 16
     /// The plume's lightning: violet-white.
     nonisolated static let boltColour = SIMD3<Float>(0.82, 0.78, 1.0)
@@ -42,7 +44,8 @@ final class VolcanoRimRenderer: ThemeRenderer {
     let veinsRenderer: MagmaVeinsRenderer
     private var showWarp = false
     private(set) var showingVeins = false
-    private let scene, sparks, bolts, columns: MTLRenderPipelineState
+    private let scene: SkyPipeline
+    private let sparks, bolts, columns: MTLRenderPipelineState
     private var volU = [SIMD4<Float>](repeating: .zero, count: VolcanoRimRenderer.uniformCount)
     private var sparkInstances: [SIMD4<Float>] = []
     private var boltInstances: [SIMD4<Float>] = []
@@ -81,10 +84,10 @@ final class VolcanoRimRenderer: ThemeRenderer {
         guard let s = SkyLayer(device: device), let w = WeatherLayer(device: device), let gw = WarpLayer(device: device),
               let mv = MagmaVeinsRenderer(device: device),
               let lib = try? device.makeLibrary(source: VolcanoRimShaders.source, options: nil) else { return nil }
-        func make(_ v: String, _ f: String, blend: Int) -> MTLRenderPipelineState? {
+        func make(_ v: String, _ f: String, blend: Int, storms: Bool = false) -> MTLRenderPipelineState? {
             let d = MTLRenderPipelineDescriptor()
-            d.vertexFunction = lib.makeFunction(name: v)
-            d.fragmentFunction = lib.makeFunction(name: f)
+            d.vertexFunction = lib.skyFunction(v, storms: storms)
+            d.fragmentFunction = lib.skyFunction(f, storms: storms)
             d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
             d.colorAttachments[1].pixelFormat = RenderStack.depthFormat
             if blend > 0 {
@@ -99,7 +102,7 @@ final class VolcanoRimRenderer: ThemeRenderer {
             return try? device.makeRenderPipelineState(descriptor: d)
         }
         // Blend 1: premultiplied over (with depth); 2: additive (no depth).
-        guard let sc = make("volcano_vertex", "volcano_scene_fragment", blend: 0),
+        guard let sc = SkyPipeline(build: { make("volcano_vertex", "volcano_scene_fragment", blend: 0, storms: $0) }),
               let sp = make("volcano_spark_vertex", "volcano_spark_fragment", blend: 2),
               let bo = make("volcano_bolt_vertex", "volcano_bolt_fragment", blend: 2),
               let co = make("volcano_column_vertex", "volcano_column_fragment", blend: 1) else { return nil }
@@ -200,6 +203,7 @@ final class VolcanoRimRenderer: ThemeRenderer {
         sky.viewAzimuth = frame.viewAzimuth
         sky.horizonY = Self.horizonY
         sky.verticalFOV = Self.verticalFOV
+        sky.gentle = gentle
         sky.update(s, quality: quality, size: size, time: t)
         weather.gentle = gentle
         weather.update(s, quality: quality, size: size, dt: dt, surface: .ground(horizonY: Self.horizonY))
@@ -340,7 +344,9 @@ final class VolcanoRimRenderer: ThemeRenderer {
         volU[Self.rowFireball] = SIMD4(-1, 0, 0, 0)
         volU[Self.rowRockfall] = SIMD4(-1, 0, 0, 0)
         volU[Self.rowSteam] = SIMD4(-1, 0, 0, 0)
-        volU[Self.rowSprites] = SIMD4(-1, -20, 0, 0.6)
+        // A far storm and its red sprites are SkyKit's (the sky's rows, when its far storms or the weather bring one; the
+        // red-sprites surprise calls them through the sky's inputs): the crater draws none of its own.
+        volU[Self.rowSprites] = SIMD4(-1, 0, 0, 0)
         volU[Self.rowTree] = SIMD4(-1, 0, 0, 0)
         for sp in frame.surprises {
             let x = sp.progress
@@ -354,14 +360,7 @@ final class VolcanoRimRenderer: ThemeRenderer {
             case .steamBlast:
                 volU[Self.rowSteam] = SIMD4(x, sp.angle, seed, 0)
             case .redSprites:
-                // Two or three bursts over its 1.4 s, each 80–160 ms.
-                let tt = sp.age
-                var light: Float = 0
-                for (k, at) in [Float(0.1), 0.55, 1.05].enumerated() where k < 2 + Int(sp.seed % 2) {
-                    let since = tt - at
-                    if since >= 0 { light = max(light, exp(-since / 0.07) * (since < 0.12 ? 1 : 0.4)) }
-                }
-                volU[Self.rowSprites] = SIMD4(light * min(1, 0.5 + share), sp.angle, seed, 1)
+                break   // SkyKit's sprites, called through the sky's inputs (`SpriteCalling`)
             case .lavaTree:
                 volU[Self.rowTree] = SIMD4(x, 0.35 + 0.3 * seed, seed, 0)
             }
@@ -392,16 +391,32 @@ final class VolcanoRimRenderer: ThemeRenderer {
             add(e.position, e.velocity, size: e.size, kelvin: e.temperatureNow, light: b * (e.near ? 0.9 : 1.6),
                 soft: e.near ? 1 : 0)
         }
+        // A long exposure's trails: each blob and bomb in flight streaks back along the arc it has flown (its past
+        // positions under gravity, a few segments, so the streak curves as it does in a photograph of fountaining),
+        // brightest at its head; landed, it glows where it lies and fades.
+        func trail(_ b: LavaParticle, size: Float, light: Float, seconds: Float) {
+            guard b.landed == nil else {
+                add(b.position, .zero, size: size, kelvin: b.temperature, light: light, soft: 0)
+                return
+            }
+            let g = VolcanoRimModel.gravity
+            func past(_ t: Float) -> SIMD3<Float> { b.position - b.velocity * t - SIMD3(0, 0, 0.5 * g * t * t) }
+            let n = Self.trailSegments
+            for i in 0..<n {
+                let t0 = seconds * Float(i) / Float(n), t1 = seconds * Float(i + 1) / Float(n)
+                let head = past(t0), tail = past(t1)
+                let k = Float(i) / Float(n)
+                add(tail, head - tail, size: size * (1 - 0.3 * k), kelvin: b.temperature, light: light * (1 - 0.65 * k),
+                    soft: 0, blur: 1)
+            }
+        }
         for b in frame.blobs where b.alive {
             let fade: Float = b.landed.map { max(0, 1 - $0 / 1.2) } ?? 1
-            // A long exposure's trail: the blobs streak along their arcs.
-            add(b.position, b.landed == nil ? b.velocity : .zero, size: b.size * 0.6, kelvin: b.temperature, light: 2.0 * fade,
-                soft: 0, blur: 0.14)
+            trail(b, size: b.size * 0.6, light: 2.0 * fade, seconds: 0.5)
         }
         for b in frame.bombs where b.alive {
             let fade: Float = b.landed.map { max(0, 1 - $0 / 3) } ?? 1
-            add(b.position, b.landed == nil ? b.velocity : .zero, size: b.size * 0.4, kelvin: b.temperature, light: 1.7 * fade,
-                soft: 0, blur: 1.0 / 30)
+            trail(b, size: b.size * 0.4, light: 1.7 * fade, seconds: 0.8)
         }
         sparkCount = sparkInstances.count / 2
     }
@@ -464,7 +479,7 @@ final class VolcanoRimRenderer: ThemeRenderer {
         guard let pass = stack.scenePass(clear: MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)),
               let e = cb.makeRenderCommandEncoder(descriptor: pass) else { return }
         let skyU = sky.uniforms
-        e.setRenderPipelineState(scene)
+        e.setRenderPipelineState(scene.state(storms: sky.storms))
         skyU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
         volU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
         sky.bindStars(e)
