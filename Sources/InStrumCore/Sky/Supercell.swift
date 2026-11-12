@@ -169,9 +169,10 @@ public extension WorldWeather {
         let ash = rawAsh.isFinite ? min(1, max(0, rawAsh)) : 0
         guard ash > 0 else { return SIMD3(1, 1, 1) }
         let h = sin(max(0, altitude.isFinite ? altitude : 0) * .pi / 180)
-        let airmass = Float(1 / (h + 0.025 * exp(-11 * h)))
-        let tau = SIMD3<Float>(0.05, 0.085, 0.13) * (ash * airmass)
-        return SIMD3(exp(-tau.x), exp(-tau.y), exp(-tau.z))
+        let airmass: Double = 1 / (h + 0.025 * Foundation.exp(-11 * h))
+        let k = Double(ash) * airmass
+        let r: Double = Foundation.exp(-0.05 * k), g: Double = Foundation.exp(-0.085 * k), b: Double = Foundation.exp(-0.13 * k)
+        return SIMD3<Float>(Float(r), Float(g), Float(b))
     }
 
     /// The sky's colours under ash (spec §7.1): a brown-grey haze low down, a dimmed, browner zenith.
