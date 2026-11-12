@@ -11,14 +11,34 @@ public struct SteinwayFrame {
     public var finish: Int
     public var glowColor: RGBA
     public var time: Double
+    /// Excitement (Fire & Neon spec §5.5): the spotlight blooming overhead (0…1 × the moment's strength, before the flash
+    /// limiter), the light gathering with tension (0…1), the surprises (a dust motes' shimmer in the light, the curtain
+    /// stirring at the stage's sides: each 0…1 as it plays) and the seconds the curtain has been stirring.
+    public var spot: Float = 0
+    public var gather: Float = 0
+    public var motes: Float = 0
+    public var curtain: Float = 0
+    public var curtainAge: Float = 0
+    public var surprises: [PlayingSurprise] = []
+    public var reduceMotion = false
 }
 
 /// Glossy black stage with warm spotlights, on the new engine (settings + roles).
-public struct MidnightSteinwayModel: ThemeModel {
+public struct MidnightSteinwayModel: ThemeModel, ExcitementAware, SurpriseListing {
     public typealias Frame = SteinwayFrame
     public static let id = MidnightSteinwayScene.id
     public static let displayName = MidnightSteinwayScene.displayName
     public static let finishes = ["Lacquer", "Satin", "Ivory", "Brushed metal", "Gold", "Pearl"]
+    /// The surprises (spec §5.5): a dust motes' shimmer, the curtain stirring.
+    public static let surpriseCount = 2
+    public static let surpriseSeconds: [Float] = [8, 9]
+    /// The spotlight blooms (spec §5.5): open over 0.6 s, held, closing over 2.5 s; a drop's bloom is longer.
+    public static let momentSeconds: Float = 5, dropSeconds: Float = 6
+
+    /// The spotlight's bloom `age` seconds into a moment `life` long (0…1).
+    public static func bloom(age: Float, life: Float) -> Float {
+        ExcitementPlay.envelope(age: age, life: life, rise: 0.6, fall: 2.5)
+    }
 
     public static let parameters: [ParamSpec] = [
         ParamSpec(id: "glow", name: "Key glow", group: "Light", help: "How brightly keys light up",
@@ -49,10 +69,15 @@ public struct MidnightSteinwayModel: ThemeModel {
 
     private var scene = MidnightSteinwayScene()
     private var time = 0.0
+    private var excite = ExcitementFrame()
+    private var play = ExcitementPlay()
 
     public init() {}
 
     public mutating func handle(_ e: PerformanceEvent) { scene.handle(e) }
+
+    /// Excitement's frame for the next step; its moment and surprise are taken once.
+    public mutating func setExcitement(_ e: ExcitementFrame) { excite = e }
 
     public mutating func step(dt: Double, params p: ParameterSet, roles: RoleValues, inputs: InputFrame, quality: QualityLevel) -> SteinwayFrame {
         time += dt
@@ -62,7 +87,26 @@ public struct MidnightSteinwayModel: ThemeModel {
         for i in frame.keys.indices { frame.keys[i].glow = min(1, frame.keys[i].glow * glow) }
         for i in frame.spotlights.indices { frame.spotlights[i].intensity *= glow }
         frame.bloom *= Float(p.number("bloom")) / 0.6
-        return SteinwayFrame(
+
+        // Excitement (spec §5.5): Energy plays through the existing reactions; a moment blooms the spotlight overhead;
+        // tension gathers the light toward the middle; a drop's bloom is golden and full.
+        let e = excite
+        excite.moment = nil
+        excite.surprise = nil
+        play.step(dt: dt, frame: e, momentSeconds: Self.momentSeconds, dropSeconds: Self.dropSeconds,
+                  surpriseSeconds: Self.surpriseSeconds)
+        var spot: Float = 0
+        if let m = play.moment {
+            spot = Self.bloom(age: m.age, life: m.duration) * m.strength
+            if m.isDrop { frame.bloom = max(frame.bloom, play.drop) }
+        }
+        var motes: Float = 0, curtain: Float = 0, curtainAge: Float = 0
+        if let s = play.surprise(0) { motes = ExcitementPlay.envelope(age: s.age, life: s.duration, rise: 1.5, fall: 2.5) }
+        if let s = play.surprise(1) {
+            curtain = ExcitementPlay.envelope(age: s.age, life: s.duration, rise: 1.2, fall: 3.5)
+            curtainAge = s.age
+        }
+        var out = SteinwayFrame(
             scene: frame,
             exposure: 1 + 0.25 * energy + 0.15 * brightness,
             bloom: Float(p.number("bloom")),
@@ -73,5 +117,13 @@ public struct MidnightSteinwayModel: ThemeModel {
             finish: Self.finishes.firstIndex(of: p.choice("keys.finish")) ?? 0,
             glowColor: p.color("keys.glowColor"),
             time: time)
+        out.spot = spot
+        out.gather = play.tension
+        out.motes = motes
+        out.curtain = curtain
+        out.curtainAge = curtainAge
+        out.surprises = play.surprises
+        out.reduceMotion = play.reduceMotion
+        return out
     }
 }

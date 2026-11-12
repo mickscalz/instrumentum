@@ -38,13 +38,22 @@ public struct ReefFrame: AmbienceProviding {
     public var time: Double
     /// Galaxy Warp over the reef's sky, when it's the chosen visual (notes then streak instead of lighting the corals).
     public var warp: WarpFrame?
+    /// Excitement (Fire & Neon spec §5.5): a spawning burst's flare in the corals (0…1 × the moment's strength, before
+    /// the flash limiter) and its pink haze in the water (0…1), the school tightening with tension (0…1), the drawn
+    /// Energy, and the surprises playing (0 a manta, 1 a green turtle, 2 a blacktip reef shark's slow pass).
+    public var burst: Float = 0
+    public var burstHaze: Float = 0
+    public var gather: Float = 0
+    public var energy: Float = 0
+    public var surprises: [PlayingSurprise] = []
+    public var reduceMotion = false
 }
 
 /// Set 12's world: at the edge of a coral cay's lagoon, the camera at the waterline, facing east over the reef crest.
 /// Above, the Coral Sea's sky, a low white cay with pisonia trees and the far crest breaking white; below, the reef in
 /// clear turquoise water. Its visual, Coral Pulse, lights the corals as you play; on a few nights after the spring full
 /// moons the reef spawns.
-public struct GreatBarrierReefModel: ThemeModel, MoodAware, SkyAware {
+public struct GreatBarrierReefModel: ThemeModel, MoodAware, SkyAware, ExcitementAware, SurpriseListing {
     public typealias Frame = ReefFrame
     public static let id = "great-barrier-reef"
     public static let displayName = "Great Barrier Reef"
@@ -71,6 +80,22 @@ public struct GreatBarrierReefModel: ThemeModel, MoodAware, SkyAware {
     public static let whaleLevel = 0.3
     /// A burst of bubbles as the lens goes under: at most one every this many seconds.
     static let burstGap = 4.0
+    /// The surprises (spec §5.5): a manta, a turtle, a reef shark's slow pass.
+    public static let surpriseCount = 3
+    public static let surpriseSeconds: [Float] = [16, 18, 14]
+    /// A spawning burst (spec §5.5): the flare and the haze play this long (a drop's, the school bursting, longer).
+    public static let momentSeconds: Float = 6, dropSeconds: Float = 7
+
+    /// The corals' flare in a burst `age` seconds in: up at once, dying away (0…1).
+    public static func burstFlare(age: Float, life: Float) -> Float {
+        guard age.isFinite, age >= 0, age < life else { return 0 }
+        return min(1, age / 0.12) * exp(-age / 1.2)
+    }
+
+    /// The spawn's pink haze in the water `age` seconds into a burst: thickening over 0.6 s, thinning over the rest (0…1).
+    public static func burstHaze(age: Float, life: Float) -> Float {
+        ExcitementPlay.envelope(age: age, life: life, rise: 0.6, fall: max(1, life - 1.5))
+    }
 
     public var mood = Mood.neutral
     private var sky = SkyState()
@@ -89,6 +114,8 @@ public struct GreatBarrierReefModel: ThemeModel, MoodAware, SkyAware {
     private var lastBurst = -Double.infinity
     private var lastLightning: Float = 0
     private var thunderRng = SeededRandom(seed: 0x2EEF)
+    private var excite = ExcitementFrame()
+    private var play = ExcitementPlay()
 
     private static let layout = KeyboardLayout.keys()
     /// The groups with nothing lit (while Galaxy Warp plays).
@@ -99,6 +126,9 @@ public struct GreatBarrierReefModel: ThemeModel, MoodAware, SkyAware {
     public init() {}
 
     public mutating func handle(_ e: PerformanceEvent) { pending.append(e) }
+
+    /// Excitement's frame for the next step; its moment and surprise are taken once.
+    public mutating func setExcitement(_ e: ExcitementFrame) { excite = e }
 
     /// It's warm here (`WorldWeather.warm`), and a cay has no fireflies.
     public mutating func setSky(_ s: SkyState) {
@@ -167,9 +197,20 @@ public struct GreatBarrierReefModel: ThemeModel, MoodAware, SkyAware {
         // Switching visuals lets held notes go: no polyps stay lit, no streak waits for a release.
         if let lastVisual, lastVisual != visual { pulse.allNotesOff(); warp.allNotesOff() }
         lastVisual = visual
-        pulse.reactionScale = MoodLook.reactionScale(mood)
-        pulse.lingerScale = MoodLook.lingerScale(mood)
-        pulse.fish = p.number("fish")
+        // Excitement (spec §5.5): Energy brings more fish into the school and lifts Coral Pulse (the polyps your notes
+        // light glow brighter and linger longer; the unplayed corals stay dark); a moment is a spawning burst (the corals
+        // let go a puff of spawn, flaring); tension tightens the school, and a drop bursts it apart.
+        let e = excite
+        excite.moment = nil
+        excite.surprise = nil
+        play.step(dt: fdt, frame: e, momentSeconds: Self.momentSeconds, dropSeconds: Self.dropSeconds,
+                  surpriseSeconds: Self.surpriseSeconds)
+        pulse.reactionScale = MoodLook.reactionScale(mood) * (1 + 0.4 * play.energy)
+        pulse.lingerScale = MoodLook.lingerScale(mood) * (1 + 0.5 * play.energy)
+        let fishDial = p.number("fish")
+        pulse.fish = min(1, (fishDial.isFinite ? fishDial : 0.6) + 0.3 * Double(play.energy))
+        let spreadOut: Float = play.moment?.isDrop == true ? 1 + 2.2 * play.drop : 1
+        pulse.schoolSpread = (1 - 0.55 * play.tension) * spreadOut
         for e in pending {
             switch e {
             case let .noteOn(note, velocity):
@@ -202,6 +243,13 @@ public struct GreatBarrierReefModel: ThemeModel, MoodAware, SkyAware {
         let hold = SkyHold(rawValue: p.choice("light.hold")) ?? .follow
         let setting = CoralSpawningSetting(rawValue: p.choice("spawning")) ?? .follow
         spawning.step(dt: fdt, sky: sky, setting: setting, held: hold != .follow, quality: quality)
+        if let m = play.momentBegan { spawning.burst(strength: m.strength, quality: quality) }
+        var burst: Float = 0, haze: Float = 0
+        if let m = play.moment {
+            burst = Self.burstFlare(age: m.age, life: m.duration) * m.strength
+            haze = Self.burstHaze(age: m.age, life: m.duration) * m.strength
+        }
+        let corals = warping ? Self.restingCorals : pulse.groups
 
         // The lagoon's swell: the reef crest's surf breaks with it, and the lens rides its meniscus.
         swell.scale = OceanSwell.weatherScale(sky)
@@ -228,13 +276,20 @@ public struct GreatBarrierReefModel: ThemeModel, MoodAware, SkyAware {
         let keys = Self.layout.map { k in KeyVisual(key: k, pressed: held[k.note] != nil, glow: keyGlow[Int(k.note) - 21]) }
 
         let feeding = Float(MoonlitLakeModel.smooth(-2, -10, sky.sun.altitude))
-        return ReefFrame(sky: sky, waterlineY: Self.waterlineY(p.number("waterline")), swellLift: lift, lensUnder: Float(under),
-                         swellPhases: phases, swellScale: swell.scale,
-                         corals: warping ? Self.restingCorals : pulse.groups, patches: warping ? [] : pulse.patches,
-                         school: pulse.school, colourWave: warping ? nil : pulse.wave, spawn: spawning.spawn,
-                         polypsOpen: feeding, cameraAzimuth: camera ?? Self.east, keys: keys,
-                         ambience: ambience(roles: roles, breaks: breaks), mood: mood, time: time,
-                         warp: warping ? warpFrame : nil)
+        var frame = ReefFrame(sky: sky, waterlineY: Self.waterlineY(p.number("waterline")), swellLift: lift, lensUnder: Float(under),
+                              swellPhases: phases, swellScale: swell.scale,
+                              corals: corals, patches: warping ? [] : pulse.patches,
+                              school: pulse.school, colourWave: warping ? nil : pulse.wave, spawn: spawning.spawn,
+                              polypsOpen: feeding, cameraAzimuth: camera ?? Self.east, keys: keys,
+                              ambience: ambience(roles: roles, breaks: breaks), mood: mood, time: time,
+                              warp: warping ? warpFrame : nil)
+        frame.burst = burst
+        frame.burstHaze = haze
+        frame.gather = play.tension
+        frame.energy = play.energy
+        frame.surprises = play.surprises
+        frame.reduceMotion = play.reduceMotion
+        return frame
     }
 
     // MARK: - Ambience

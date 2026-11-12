@@ -25,15 +25,30 @@ public struct BedroomFrame: AmbienceProviding {
     public var time: Double
     /// Galaxy Warp in the sky over the street, when it's the chosen visual.
     public var warp: WarpFrame?
+    /// Excitement (Fire & Neon spec §5.5): the sun breaking through and the light flooding in (0…1 × the moment's
+    /// strength, before the flash limiter), the light gathering with tension (0…1), the drawn Energy, and the surprises
+    /// playing (0 a bird on the sill, 1 a paper plane past the window, 2 a rainbow: sunlight split by the glass's bevelled
+    /// edge onto the wall).
+    public var flood: Float = 0
+    public var gather: Float = 0
+    public var energy: Float = 0
+    public var surprises: [PlayingSurprise] = []
+    public var reduceMotion = false
 }
 
 /// Set 6's world: a bedroom window at dawn behind sheer curtains, rooftops and a street waking up outside.
 /// Its visual, Curtain Light, lets your playing breathe into the curtains and the morning light.
-public struct BedroomDawnModel: ThemeModel, MoodAware, SkyAware {
+public struct BedroomDawnModel: ThemeModel, MoodAware, SkyAware, ExcitementAware, SurpriseListing {
     public typealias Frame = BedroomFrame
     public static let id = "bedroom-dawn"
     public static let displayName = "Bedroom Window at Dawn"
     public static let visuals = ["Curtain Light", "Frost Grow", "Galaxy Warp"]
+    /// The surprises (spec §5.5): a bird on the sill, a paper plane past the window, a rainbow. The rainbow is the sun's,
+    /// split by the glass: with the sun down or behind thick cloud the paper plane comes instead.
+    public static let surpriseCount = 3
+    public static let surpriseSeconds: [Float] = [9, 7, 12]
+    /// The sun breaks through (spec §5.5): the flood comes in over 0.8 s, holds, and ebbs over 3 s; a drop's is longer.
+    public static let momentSeconds: Float = 5.5, dropSeconds: Float = 6.5
     /// The lamp switches on below −3° and off above −2°, warming up over 3 s.
     static let lampOn = -3.0, lampOff = -2.0, lampWarmUp: Float = 3
 
@@ -51,8 +66,29 @@ public struct BedroomDawnModel: ThemeModel, MoodAware, SkyAware {
     private var lampLit = false
     private var lampAge: Float = 0
     private var lastVisual = ""
+    private var excite = ExcitementFrame()
+    private var play = ExcitementPlay()
+    /// The flood's own puffs into the curtains (at most two at once).
+    private var floodPuffs: [Cloth.Puff] = []
 
     private static let layout = KeyboardLayout.keys()
+
+    /// Excitement's frame for the next step; its moment and surprise are taken once.
+    public mutating func setExcitement(_ e: ExcitementFrame) { excite = e }
+
+    /// The surprise that plays for `index` under this sky: the rainbow needs the sun up and clear of thick cloud (the
+    /// paper plane comes otherwise).
+    static func available(_ index: Int, sky: SkyState) -> Int {
+        guard index == 2 else { return index }
+        let up = sky.sun.altitude.isFinite && sky.sun.altitude > -0.5
+        let clear = !sky.cloudCover.isFinite || sky.cloudCover < 0.75
+        return up && clear ? 2 : 1
+    }
+
+    /// The light flooding in `age` seconds into a moment `life` long: in over 0.8 s, held, ebbing over 3 s (0…1).
+    public static func flood(age: Float, life: Float) -> Float {
+        ExcitementPlay.envelope(age: age, life: life, rise: 0.8, fall: 3)
+    }
 
     public init() {
         // Sheer panels hang from the rod just above the window, drawn back toward the sides (each over a fifth of
@@ -122,14 +158,36 @@ public struct BedroomDawnModel: ThemeModel, MoodAware, SkyAware {
         }
         pending.removeAll(keepingCapacity: true)
 
+        // Excitement (spec §5.5): Energy breathes into the curtains and stirs the dust; a moment is the sun breaking
+        // through, the light flooding in and the curtains lifting; tension gathers the light and stills the air; a drop
+        // is the flood at its fullest.
+        var e = excite
+        excite.moment = nil
+        excite.surprise = nil
+        if let sp = e.surprise { e.surprise = WorldSurprise(index: Self.available(sp.index, sky: sky), seed: sp.seed) }
+        play.step(dt: dt, frame: e, momentSeconds: Self.momentSeconds, dropSeconds: Self.dropSeconds,
+                  surpriseSeconds: Self.surpriseSeconds)
+        var flood: Float = 0
+        if let m = play.moment { flood = Self.flood(age: m.age, life: m.duration) * m.strength }
+        let puffDt = Float(dt.isFinite ? min(max(dt, 0), 0.25) : 0)
+        for i in floodPuffs.indices { floodPuffs[i].age += puffDt }
+        floodPuffs.removeAll { $0.age > CurtainLight.puffLife }
+        if let m = play.momentBegan, floodPuffs.count < 2 {
+            floodPuffs.append(Cloth.Puff(x: 0.5, strength: min(1.5, 1.2 * m.strength), age: 0))
+        }
+        light.stir = play.energy
+
         light.step(dt: dt, sunAltitude: sky.sun.altitude, roles: roles)
         frost.step(dt: dt, baseFrost: sky.frost * frost.frost, roles: roles)
         let warpFrame = warp.step(dt: dt, roles: roles, inputs: inputs)
 
-        // The curtains: the sky's breeze (twice as much with the window open) times the sway, and Curtain Light's puffs.
+        // The curtains: the sky's breeze (twice as much with the window open) times the sway, and Curtain Light's puffs;
+        // Energy's slow breath on top, the air stilling as the light gathers, and the flood's lift.
         let open = p.number("window.open") > 0.5
-        let breeze = sky.wind * (open ? 2 : 1) * Float(2 * p.number("sway"))
-        let puffs = curtainVisual ? light.puffs : []
+        let sway = Float(2 * p.number("sway"))
+        let breath: Float = 0.35 * play.energy * (0.6 + 0.4 * Float(sin(2 * Double.pi * time / 5.5))) * sway
+        let breeze: Float = sky.wind * (open ? 2 : 1) * sway * (1 - 0.6 * play.tension) + breath
+        let puffs = (curtainVisual ? light.puffs : []) + floodPuffs
         left.step(dt: dt, wind: breeze, puffs: puffs)
         right.step(dt: dt, wind: breeze, puffs: puffs)
 
@@ -148,13 +206,19 @@ public struct BedroomDawnModel: ThemeModel, MoodAware, SkyAware {
         }
         let keys = Self.layout.map { k in KeyVisual(key: k, pressed: held[k.note] != nil, glow: keyGlow[Int(k.note) - 21]) }
 
-        return BedroomFrame(sky: sky, curtains: (left.positions, right.positions),
-                            glow: curtainVisual ? light.glow : 0, tint: light.tint, motes: light.motes, fairy: light.fairy,
-                            frostLevel: frost.level, patches: frostVisual ? frost.patches : [],
-                            streetLamp: lamp, litWindows: Self.litWindows(hour: heldDawn ? Self.heldDawnHour : sky.hourOfDay),
-                            windowOpen: open, keys: keys,
-                            ambience: ambience(roles: roles, open: open, heldDawn: heldDawn), mood: mood, time: time,
-                            warp: warping ? warpFrame : nil)
+        var frame = BedroomFrame(sky: sky, curtains: (left.positions, right.positions),
+                                 glow: curtainVisual ? light.glow : 0, tint: light.tint, motes: light.motes, fairy: light.fairy,
+                                 frostLevel: frost.level, patches: frostVisual ? frost.patches : [],
+                                 streetLamp: lamp, litWindows: Self.litWindows(hour: heldDawn ? Self.heldDawnHour : sky.hourOfDay),
+                                 windowOpen: open, keys: keys,
+                                 ambience: ambience(roles: roles, open: open, heldDawn: heldDawn), mood: mood, time: time,
+                                 warp: warping ? warpFrame : nil)
+        frame.flood = flood
+        frame.gather = play.tension
+        frame.energy = play.energy
+        frame.surprises = play.surprises
+        frame.reduceMotion = play.reduceMotion
+        return frame
     }
 
     private static func smooth(_ a: Double, _ b: Double, _ x: Double) -> Double {

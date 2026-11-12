@@ -17,6 +17,10 @@ enum SpaceshipLoungeShaders {
         float4 moonLight;  // sun's direction on screen (xy), lit fraction, unused
         float4 window;     // half width (p-space), bottom (NDC), top (NDC), corner radius
         float4 eq0, eq1, eq2;  // view → equatorial (star field)
+        float4 drive;      // Excitement: the vanishing point (p-space xy), the drive's charge 0…1.2, the arrival's light (limited)
+        float4 comet;      // a comet: its head (p-space xy), its tails' direction (radians, away from the sun), strength 0…1
+        float4 ship;       // a far ship: position (p-space xy), its strobe 0/1, strength 0…1
+        float4 pulsar;     // a pulsar: position (p-space xy), its pulse 0…1, strength 0…1
     };
     struct LoungeOut { float4 pos [[position]]; float2 ndc; };
 
@@ -93,6 +97,48 @@ enum SpaceshipLoungeShaders {
         float3 col = float3(0.0012, 0.0015, 0.0028);
         col += starField(v, u.east.w, time, 1.0, 2.0) + milkyWay(v, octaves, 1.0) * 0.9;   // every procedural star (no real ones here)
 
+        // Surprises among the stars, behind the Moon and Earth (each skipped while it isn't playing).
+        float pxp = u.east.w / 0.7;   // a pixel, in p-space units
+        if (u.comet.w > 0.001) {
+            // A comet: a small bright coma, a broad curving dust tail and a straight blue ion tail, away from the sun.
+            float2 dv = p - u.comet.xy;
+            float2 tdir = float2(cos(u.comet.z), sin(u.comet.z));
+            float2 tn = float2(-tdir.y, tdir.x);
+            float along = dot(dv, tdir), across = dot(dv, tn);
+            float d2 = dot(dv, dv);
+            float coma = exp(-d2 / (pxp * pxp * 2.5)) * 1.6 + exp(-sqrt(d2) / 0.012) * 0.3;
+            float dust = 0.0, ion = 0.0;
+            if (along > 0.0) {
+                float bend = across - 0.5 * along * along;
+                float w = 0.004 + 0.07 * along;
+                dust = exp(-bend * bend / (w * w)) * exp(-along / 0.22) * 0.5;
+                float wi = 0.0015 + 0.012 * along;
+                ion = exp(-across * across / (wi * wi)) * exp(-along / 0.3) * 0.3;
+            }
+            col += (float3(0.85, 0.95, 0.9) * coma + float3(1.0, 0.92, 0.76) * dust + float3(0.45, 0.65, 1.0) * ion) * u.comet.w;
+        }
+        if (u.ship.w > 0.001) {
+            // A far ship: its port (red) and starboard (green) lights, a white strobe, the faintest glint of its hull.
+            float2 a = p - u.ship.xy;
+            float r2 = pxp * pxp;
+            float2 ar = a + float2(0.006, 0.0), ag = a - float2(0.006, 0.0), aw = a - float2(0.0, 0.0025);
+            float red = exp(-dot(ar, ar) / (r2 * 1.2));
+            float green = exp(-dot(ag, ag) / (r2 * 1.2));
+            float strobe = exp(-dot(aw, aw) / (r2 * 1.5)) * u.ship.z;
+            float2 ah = a * float2(0.25, 1.0);
+            float hull = exp(-dot(ah, ah) / (r2 * 1.5)) * 0.06;
+            col += (float3(1.0, 0.18, 0.12) * red + float3(0.2, 1.0, 0.45) * green + float3(1.0) * (strobe * 2.4)
+                    + float3(0.6, 0.65, 0.7) * hull) * u.ship.w;
+        }
+        if (u.pulsar.w > 0.001) {
+            // A pulsar: a blue-white star with a faint halo, beating.
+            float2 a = p - u.pulsar.xy;
+            float d2 = dot(a, a);
+            float core = exp(-d2 / (pxp * pxp * 1.4));
+            float halo = exp(-sqrt(d2) / (pxp * 6.0)) * 0.15;
+            col += float3(0.75, 0.85, 1.0) * (core * 1.8 + halo) * ((0.15 + 0.85 * u.pulsar.z) * u.pulsar.w);
+        }
+
         // The Moon in its phase, lit from the sun's side.
         float2 mq = (p - u.moon.xy) / u.moon.z;
         float mr2 = dot(mq, mq);
@@ -140,6 +186,15 @@ enum SpaceshipLoungeShaders {
         col += sunCol * u.glare.w * 0.3 * exp(-abs(p.y - u.glare.y) / 0.005) * exp(-abs(p.x - u.glare.x) / 0.9);
         float vd = length(p - u.veil.xy);
         col += float3(1.0, 0.9, 0.75) * u.veil.w * exp(-vd / max(u.veil.z, 1e-3));
+
+        // The drive: its charge gathering at the vanishing point with tension (and through the jump), and the arrival's
+        // soft blue-white light as the stars snap back (through the flash limiter).
+        float charge = u.drive.z, arrive = u.drive.w;
+        if (charge + arrive > 0.001) {
+            float dd = length(p - u.drive.xy);
+            col += float3(0.55, 0.72, 1.0) * (charge * (0.05 * exp(-dd / 0.18) + 0.015 * exp(-dd / 0.6)));
+            col += float3(0.8, 0.88, 1.0) * (arrive * (0.3 * exp(-dd / 0.22) + 0.06 * exp(-dd / 1.0)));
+        }
 
         // Faint reflections on the glass: the lounge's warm glow low down, a soft diagonal sheen.
         float glow = u.a.w;

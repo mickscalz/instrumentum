@@ -12,17 +12,37 @@ public struct LoungeFrame: AmbienceProviding {
     public var ambience: AmbienceScene
     public var mood: Mood
     public var time: Double
+    /// Excitement (Fire & Neon spec §5.5): the warp jump's stretch (0…1, the stars drawn out into lines, already in
+    /// `warp`'s speed), the light of its arrival as they snap back (0…1, before the flash limiter), the drive's charge
+    /// gathering at the vanishing point with tension (0…1), the drawn Energy, and the surprises playing (0 a comet, 1 a
+    /// far ship's lights, 2 a pulsar).
+    public var jump: Float = 0
+    public var arrival: Float = 0
+    public var charge: Float = 0
+    public var energy: Float = 0
+    public var surprises: [PlayingSurprise] = []
+    public var reduceMotion = false
 }
 
 /// Set 2's world: a softly lit lounge with a big window on Earth, the Moon and deep stars.
 /// Its visual, Galaxy Warp, streaks stars past the window as you play.
-public struct SpaceshipLoungeModel: ThemeModel, MoodAware, SkyAware {
+public struct SpaceshipLoungeModel: ThemeModel, MoodAware, SkyAware, ExcitementAware, SurpriseListing {
     public typealias Frame = LoungeFrame
     public static let id = "spaceship-lounge"
     public static let displayName = "Spaceship Lounge"
     public static let visuals = ["Galaxy Warp"]
     /// The lounge drifts east over Earth, one turn every two hours.
     public static let orbitSeconds = 7200.0
+    /// The surprises (spec §5.5): a comet passing the window, a far ship's lights, a pulsar's blink.
+    public static let surpriseCount = 3
+    public static let surpriseSeconds: [Float] = [16, 14, 10]
+    /// The warp jump (spec §5.5): the stars stretch over 0.45 s, hold this long from the start (a drop's longer), snap back
+    /// in 0.18 s, and the arrival's light fades; the moment lasts `momentSeconds` (a drop's `dropSeconds`).
+    public static let jumpHold: Float = 1.2, dropHold: Float = 1.9
+    public static let momentSeconds: Float = 2.4, dropSeconds: Float = 3.2
+    /// How far a full jump adds to the warp's speed (its 0.1 drift … 1 full warp), and the speed Energy holds it to at least.
+    public static let jumpBoost: Float = 1.3
+    public static let energySpeed: Float = 0.45
 
     public var mood = Mood.neutral
     private var sky = SkyState()
@@ -31,12 +51,31 @@ public struct SpaceshipLoungeModel: ThemeModel, MoodAware, SkyAware {
     private var held: [UInt8: Float] = [:]
     private var keyGlow = [Float](repeating: 0, count: 88)
     private var time = 0.0
+    private var excite = ExcitementFrame()
+    private var play = ExcitementPlay()
 
     private static let layout = KeyboardLayout.keys()
 
     public init() {}
 
     public mutating func handle(_ e: PerformanceEvent) { pending.append(e) }
+
+    /// Excitement's frame for the next step; its moment and surprise are taken once.
+    public mutating func setExcitement(_ e: ExcitementFrame) { excite = e }
+
+    /// The warp jump's stretch `age` seconds into a jump held `hold` seconds: drawn out over 0.45 s, held, snapped back in
+    /// 0.18 s (0…1).
+    public static func stretch(age: Float, hold: Float) -> Float {
+        guard age.isFinite, age >= 0 else { return 0 }
+        return ExcitementPlay.smooth(0, 0.45, age) * (1 - ExcitementPlay.smooth(hold, hold + 0.18, age))
+    }
+
+    /// The arrival's light as the stars snap back: in over about 0.06 s at the snap, out with τ 0.35 s (0…1).
+    public static func arrival(age: Float, hold: Float) -> Float {
+        let since = age - hold
+        guard since.isFinite, since > 0 else { return 0 }
+        return (1 - exp(-since / 0.06)) * exp(-since / 0.35)
+    }
 
     public mutating func setSky(_ s: SkyState) { sky = Self.weatherless(s) }
 
@@ -86,7 +125,26 @@ public struct SpaceshipLoungeModel: ThemeModel, MoodAware, SkyAware {
             }
         }
         pending.removeAll(keepingCapacity: true)
-        let w = warp.step(dt: dt, roles: roles, inputs: inputs)
+        var w = warp.step(dt: dt, roles: roles, inputs: inputs)
+
+        // Excitement (spec §5.5): Energy speeds the stars; a moment is the warp jump (the stars stretch, then snap back);
+        // tension charges the drive at the vanishing point and raises the hum, and a drop is the jump at its longest.
+        // Reduce Motion keeps the warp adrift: no speed from Energy, no stretch, only the arrival's soft light.
+        let e = excite
+        excite.moment = nil
+        excite.surprise = nil
+        play.step(dt: dt, frame: e, momentSeconds: Self.momentSeconds, dropSeconds: Self.dropSeconds,
+                  surpriseSeconds: Self.surpriseSeconds)
+        let reduce = play.reduceMotion
+        var jump: Float = 0, arrival: Float = 0
+        if let m = play.moment {
+            let hold = m.isDrop ? Self.dropHold : Self.jumpHold
+            jump = Self.stretch(age: m.age, hold: hold) * m.strength
+            arrival = Self.arrival(age: m.age, hold: hold) * m.strength
+        }
+        if !reduce {
+            w.warpSpeed = max(w.warpSpeed, 0.1 + Self.energySpeed * play.energy) + Self.jumpBoost * jump
+        }
 
         // Keys glow console blue while held, then fade.
         let fall = Float(pow(0.5, dt / (roles[.linger] > 0.5 ? 1.0 : 0.25)))
@@ -97,12 +155,21 @@ public struct SpaceshipLoungeModel: ThemeModel, MoodAware, SkyAware {
         let keys = Self.layout.map { k in KeyVisual(key: k, pressed: held[k.note] != nil, glow: keyGlow[Int(k.note) - 21]) }
 
         let activity = min(1, 0.6 * roles[.energy] + 0.4 * roles[.density])
-        let ambience = AmbienceScene(levels: [.shipHum: 0.8, .airFlow: 0.5, .chime: 0.25, .hullTicks: 0.25],
+        // The hum rises with the tension (the drive spooling up), the air a little with Energy.
+        let hum = Double(0.8 + 0.2 * play.tension), air = Double(0.5 + 0.15 * play.energy)
+        let ambience = AmbienceScene(levels: [.shipHum: hum, .airFlow: air, .chime: 0.25, .hullTicks: 0.25],
                                      nightCool: 0, activity: activity, thunder: nil,
                                      closeness: MoodLook.ambienceCloseness(base: 0.6, mood), density: MoodLook.ambienceDensity(mood))
         let lon = Self.viewerLongitude(sky, time: time)
-        return LoungeFrame(sky: sky, warp: w, earthRotation: Float(lon * .pi / 180), keys: keys, ambience: ambience,
-                           mood: mood, time: time)
+        var frame = LoungeFrame(sky: sky, warp: w, earthRotation: Float(lon * .pi / 180), keys: keys, ambience: ambience,
+                                mood: mood, time: time)
+        frame.jump = reduce ? 0 : jump
+        frame.arrival = arrival
+        frame.charge = play.tension
+        frame.energy = play.energy
+        frame.surprises = play.surprises
+        frame.reduceMotion = reduce
+        return frame
     }
 }
 

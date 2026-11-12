@@ -20,6 +20,9 @@ enum SubmarineWindowShaders {
         float4 gauge;    // the depth gauge's centre (NDC x, y), its face's radius (NDC-y units), the needle (rad, cw from up)
         float4 sonar;    // the sonar screen's centre (NDC x, y), its radius, the sweep (rad, clockwise from the top)
         float4 misc;     // blips shown, living light on the wall 0…1, the cables' sag, the view's height (px)
+        float4 whale;    // Excitement: a whale passing: its middle (disc units, radius 1), its half-length (disc radii), presence 0…1
+        float4 whaleB;   // its heading ±1, its flukes' beat (turns), how far off it is (0 close … 1 far), unused
+        float4 contact;  // a far sub's sonar contact: bearing (rad), range 0…1, strength 0…1, its ping's phase 0…1
         float4 blips[24];// bearing (rad, clockwise from the top), range 0…1, brightness 0…1, unused
     };
     constant int kSubBlips = 24;
@@ -28,6 +31,42 @@ enum SubmarineWindowShaders {
     constant float kSubSlope = 0.3;
 
     struct SubOut { float4 pos [[position]]; float2 ndc; };
+
+    /// A humpback side on (a big moment), in its own units (x along the body, the snout at about +1.05, the flukes' tips
+    /// at about −1.35; y up): how much of a point it covers (soft by `px`, its own units' pixel), and through `pale` how
+    /// much of it is the pale underside and the long pale pectoral fins. Its tail stock flexes with the beat and the
+    /// flukes, edge on, pitch with it.
+    float subWhale(float2 p, float beat, float px, thread float& pale) {
+        pale = 0.0;
+        float x = p.x, y = p.y;
+        float b = sin(beat * 6.2831853);
+        float back = max(0.0, -0.45 - x);
+        float yb = y - 0.11 * b * back * back;
+        // The body: fuller toward the head, a small dorsal hump two-thirds back, the stock narrowing to the flukes.
+        float e = (x - 0.12) / 0.93;
+        float half = 0.19 * sqrt(max(0.0, 1.0 - e * e)) * (0.82 + 0.18 * smoothstep(-0.8, 0.5, x));
+        float stock = (x < -0.5 && x > -1.18) ? 0.028 + 0.1 * smoothstep(-1.18, -0.5, x) : 0.0;
+        float top = max(half, stock) + (yb > 0.0 ? 0.035 * exp(-((x + 0.42) / 0.07) * ((x + 0.42) / 0.07)) : 0.0);
+        float body = 1.0 - smoothstep(-px, px, abs(yb + 0.015 * x) - top);
+        // The flukes, edge on: a thin blade at the stock's end, pitching with the beat.
+        float2 fq = float2(x + 1.24, yb + 0.11 * b * 0.6);
+        float ang = 0.55 * b;
+        float ca = cos(ang), sa = sin(ang);
+        float2 fr = float2(fq.x * ca - fq.y * sa, fq.x * sa + fq.y * ca);
+        float fl = length(fr / float2(0.13, 0.026 + 0.05 * abs(b))) - 1.0;
+        float fluke = 1.0 - smoothstep(-px * 8.0, px * 8.0, fl);
+        // The pectoral fin: long and pale, swept back and down from behind the head, slowly sculling.
+        float fa = -2.45 + 0.12 * sin(beat * 6.2831853 + 1.0);
+        float2 fd = float2(cos(fa), sin(fa));
+        float2 fv = p - float2(0.42, -0.07);
+        float along = dot(fv, fd), across = dot(fv, float2(-fd.y, fd.x));
+        float finW = 0.05 * (1.0 - saturate(along / 0.46)) + 0.012;
+        float fin = (along > 0.0 && along < 0.46) ? 1.0 - smoothstep(finW - px, finW + px, abs(across)) : 0.0;
+        // The pale underside: below the body's middle line, brightest toward the throat.
+        float under = 1.0 - smoothstep(-0.08, 0.0, yb + 0.03);
+        pale = max(fin, body * under * (0.5 + 0.5 * smoothstep(-0.6, 0.5, x)));
+        return max(max(body, fluke), fin);
+    }
 
     vertex SubOut sub_full_vertex(uint vid [[vertex_id]]) {
         float2 p = float2(float((vid << 1) & 2), float(vid & 2)) * 2.0 - 1.0;
@@ -157,6 +196,27 @@ enum SubmarineWindowShaders {
         float beams = subLampBeams(q);
         float3 beamCol = mix(kLampColour, float3(0.55, 0.85, 1.0), saturate(0.35 * (q.y + 1.0)));
         col += beamCol * (beams * s.lamp.x * 0.45);
+
+        // A whale passing (a big moment): a dark shape out of the blue, its pale fins and underside catching the light from
+        // above and the lamps' beams, melting into the water the farther off it swims.
+        if (s.whale.w > 0.002) {
+            float2 wq = (q - s.whale.xy) / max(s.whale.z, 0.05);
+            wq.x *= s.whaleB.x;
+            if (abs(wq.x) < 1.5 && abs(wq.y) < 0.6) {
+                float px = 2.0 / (max(s.misc.w, 1.0) * max(s.view.z, 0.05) * max(s.whale.z, 0.05));
+                float pale;
+                float cover = subWhale(wq, s.whaleB.y, px, pale);
+                if (cover > 0.0) {
+                    float above = saturate(0.5 + 1.6 * wq.y);
+                    float3 albedo = mix(float3(0.035, 0.045, 0.055), float3(0.5, 0.55, 0.57), pale);
+                    float3 lit = albedo * (waterLight(D, L) * kWaterTint * (0.25 + 0.6 * above) * s.lamp.y
+                                           + kLampColour * (beams * s.lamp.x * (0.6 + 0.6 * pale)));
+                    lit *= waterAdapt(D);
+                    float haze = 0.15 + 0.6 * s.whaleB.z;
+                    col = mix(col, mix(lit, col, haze), cover * s.whale.w);
+                }
+            }
+        }
 
         ColorDepth o;
         o.color = float4(col, 1.0);
@@ -513,6 +573,17 @@ enum SubmarineWindowShaders {
                     float since = fract((s.sonar.w - b.x) / 6.2831853);
                     float flare = 0.35 + 0.65 * exp(-since * 3.5);
                     blips += b.z * flare * exp(-dot(dv, dv) / (0.0016 * SR * SR));
+                }
+                // A far sub's contact (a surprise): a bright return far out, its ping's ring spreading from it.
+                if (s.contact.z > 0.001) {
+                    float2 cp = s.contact.y * SR * float2(sin(s.contact.x), cos(s.contact.x));
+                    float2 cv = so - cp;
+                    float cd = length(cv);
+                    float ringR = s.contact.w * 0.35 * SR, ringW = 0.02 * SR;
+                    float rr = (cd - ringR) / ringW;
+                    float ring = exp(-rr * rr) * (1.0 - s.contact.w);
+                    float echo = exp(-dot(cv, cv) / (0.0025 * SR * SR));
+                    blips += s.contact.z * (1.2 * echo + 0.8 * ring);
                 }
                 float3 c = float3(0.006, 0.03, 0.018) + phos * (0.08 * grid + trail * 0.25 + line * 0.9 + blips * 1.3) * bright;
                 c *= 1.0 - 0.5 * smoothstep(0.7, 1.0, x);

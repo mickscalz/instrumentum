@@ -4,6 +4,10 @@ import CoreGraphics
 import InStrumCore
 
 /// Draws a GardenFrame into the render stack.
+///
+/// Excitement (Fire & Neon spec §5.5): the swarm is the model's butterflies; its bloom of light rides on the exposure
+/// through the `FlashLimiter` (a glow under gentle visuals) and on the sun's rays; the hummingbird is one more sprite
+/// (style 9), and rain on the glasshouse's glass is a fourth kind of the stateless particles (drops clinging and sliding).
 @MainActor
 final class ButterflyRenderer: ThemeRenderer {
     struct Sprite { var pos: SIMD4<Float>; var a: SIMD4<Float>; var b: SIMD4<Float> }
@@ -37,6 +41,21 @@ final class ButterflyRenderer: ThemeRenderer {
     private var history: [Int: [SIMD3<Float>]] = [:]
     private var limiter = FlashLimiter()
     private(set) var post = PostSettings()
+    private var primed = false
+    private var bloomGlow = ExcitementGlow()
+    /// The hummingbird's sprite style (the butterfly fragment draws it instead of a wing).
+    static let hummingbirdStyle: Float = 9
+    /// Drops on the glass while it rains (fewer on Smooth).
+    static func dropCount(_ q: QualityLevel) -> Int { q == .lite ? 60 : 140 }
+    /// Excitement as drawn (tests read them): the bloom's light after the limiter and what it asked for, the drops on
+    /// the glass, whether the hummingbird is drawn.
+    private(set) var bloomOut: Float = 0
+    private(set) var bloomRequest: Float = 0
+    private(set) var dropsDrawn = 0
+    private(set) var hummingbirdDrawn = false
+    private(set) var butterfliesDrawn = 0
+    var flashesInLastSecond: Int { limiter.recent }
+    var flashTotal: Int { limiter.total }
 
     init?(device: MTLDevice) {
         guard let lib = try? device.makeLibrary(source: ButterflyShaders.source, options: nil) else { return nil }
@@ -74,7 +93,21 @@ final class ButterflyRenderer: ThemeRenderer {
 
     func update(_ f: GardenFrame, params p: ParameterSet, quality: QualityLevel, gentle: Bool, dt: Double, size: CGSize) {
         limiter.gentle = gentle
-        let limited = limiter.limit(exposure: f.exposure, sparkle: f.pollen, dt: dt)
+        // The swarm's bloom of light rides on the exposure, through the limiter (primed on the garden's own, so arriving
+        // is never a flash); under gentle visuals it is a glow. Rain on the glass dims the light a little.
+        let rain = ExcitementGlow.unit(f.rainOnGlass)
+        let base = f.exposure * (1 - 0.12 * rain)
+        if !primed {
+            primed = true
+            for _ in 0..<16 { _ = limiter.limit(exposure: base, sparkle: f.pollen, dt: 1) }
+        }
+        let request = ExcitementGlow.unit(f.momentLight)
+        let asked = ExcitementGlow.ask(request, gentle: gentle, scale: 0.3)
+        let limited = limiter.limit(exposure: base * (1 + asked), sparkle: f.pollen, dt: dt)
+        let passed = ExcitementGlow.passed(limited: limited.exposure, base: base, asked: asked)
+        bloomRequest = request
+        bloomOut = bloomGlow.update(request: request, passed: passed, gentle: gentle, dt: dt)
+        let rays = f.rays * (1 - 0.6 * rain) + 0.6 * bloomOut
         let keysShow = p.number("keys.show") > 0.5
         let keyTop = keysShow ? Float(p.number("keys.height")) : 0
         let sky = Self.skies[f.timeOfDay] ?? Self.skies["Golden Hour"]!
@@ -83,12 +116,14 @@ final class ButterflyRenderer: ThemeRenderer {
         let counts = Self.particleCounts[quality]!
         let petals = f.petals > 0.01 ? counts.petals : 0
         let fireflies = f.fireflies > 0.01 ? counts.fireflies : 0
-        particleCount = counts.pollen + petals + fireflies
+        let drops = rain > 0.01 ? Self.dropCount(quality) : 0
+        dropsDrawn = drops
+        particleCount = counts.pollen + petals + fireflies + drops
         let glowColor = p.color("keys.glowColor")
         let finish = Float(Self.finishes.firstIndex(of: p.choice("keys.finish")) ?? 0)
         uniforms = [
             SIMD4(Float(size.width), Float(size.height), Float(f.time), keyTop),
-            SIMD4(sunX, sunY, f.rays, f.mist),
+            SIMD4(sunX, sunY, rays, f.mist),
             SIMD4(sky.top, sky.night),
             SIMD4(sky.mid, 0),
             SIMD4(sky.horizon, Float(p.number("foliage"))),
@@ -97,7 +132,7 @@ final class ButterflyRenderer: ThemeRenderer {
             SIMD4(Float(p.number("wings.iridescence")), Float(p.number("wings.shimmer")), Float(p.number("trail.glow")), keysShow ? 1 : 0),
             SIMD4(Float(counts.pollen), Float(petals), Float(fireflies), limited.exposure),
             SIMD4(Float(glowColor.r), Float(glowColor.g), Float(glowColor.b), finish),
-            SIMD4(Float(Self.shaftSteps[quality] ?? 0), Float(Self.noiseOctaves[quality] ?? 3), 0, 0),
+            SIMD4(Float(Self.shaftSteps[quality] ?? 0), Float(Self.noiseOctaves[quality] ?? 3), Float(drops), rain),
         ]
 
         // Butterflies, far to near; two wings each.
@@ -111,6 +146,15 @@ final class ButterflyRenderer: ThemeRenderer {
             butterflySprites.append(Sprite(pos: pos, a: a, b: SIMD4(b.opacity, b.landed ? 1 : 0, -1, seed)))
             butterflySprites.append(Sprite(pos: pos, a: a, b: SIMD4(b.opacity, b.landed ? 1 : 0, 1, seed)))
         }
+        butterfliesDrawn = sorted.count
+        // The hummingbird: one square sprite in front of the butterflies' haze (its heading and its wings' phase in a).
+        hummingbirdDrawn = false
+        if let h = f.hummingbird {
+            let size: Float = 0.05
+            butterflySprites.append(Sprite(pos: SIMD4(h.x, h.y, h.z, size), a: SIMD4(h.w, f.hummingbirdWing, Self.hummingbirdStyle, 0),
+                                           b: SIMD4(1, 0, 0, 0.5)))
+            hummingbirdDrawn = true
+        }
 
         // Trails from recent positions.
         let trailLength = Int((p.number("trail.length") * 14).rounded())
@@ -119,7 +163,8 @@ final class ButterflyRenderer: ThemeRenderer {
         for b in f.butterflies {
             alive.insert(b.id)
             var h = history[b.id] ?? []
-            h.append(b.position)
+            // While time is held (dt 0) the trails hold too, rather than collapsing onto the butterflies.
+            if dt > 0 || h.isEmpty { h.append(b.position) }
             if h.count > max(trailLength, 1) { h.removeFirst(h.count - max(trailLength, 1)) }
             history[b.id] = h
             guard trailLength > 0, !b.landed else { continue }

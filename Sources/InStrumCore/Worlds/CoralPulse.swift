@@ -136,6 +136,9 @@ public struct CoralPulse {
     public var lingerScale: Float = 1
     /// The Fish dial (0…1), set by the world each frame: the school's size.
     public var fish: Double = 0.6
+    /// How far the fish keep from their places in the school (1 as it swims; under 1 it tightens, over 1 it bursts
+    /// apart), set by the world each frame (Excitement's build and drop).
+    public var schoolSpread: Float = 1
 
     /// The groups after the last step (always seven, bass first).
     public private(set) var groups: [CoralGroup]
@@ -493,7 +496,8 @@ public struct CoralPulse {
             let p1 = trail[(trailHead - k0 - 1 + 2 * Self.trailLength) % Self.trailLength]
             let base = p0 + (p1 - p0) * f
             let along = fishAlong[i], across = fishAcross[i] + 0.004 * sin(2.3 * t + fishPhase[i])
-            let slot = SIMD2<Float>(along * c - across * s, along * s + across * c)
+            let spread = schoolSpread.isFinite ? min(4, max(0.2, schoolSpread)) : 1
+            let slot = SIMD2<Float>(along * c - across * s, along * s + across * c) * spread
             var p = fishPositions[i]
             p += (base + slot - p) * glide
             fishPositions[i] = p.clamped(lowerBound: SIMD2<Float>(0, 0), upperBound: SIMD2<Float>(1, 1))

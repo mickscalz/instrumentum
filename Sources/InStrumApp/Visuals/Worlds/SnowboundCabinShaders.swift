@@ -17,6 +17,10 @@ enum SnowboundCabinShaders {
         float4 fire;     // the fire's colour rgb, the candle's flicker 0…1
         float4 e;        // the window's bar count, unused…
         float4 bars[19]; // the Window Kit's bars: lo, hi (window coordinates), kind (0 vertical, 1 horizontal)
+        float4 owl;      // Excitement: an owl on the sill: its feet (NDC x, y), its height (NDC), shown 0/1
+        float4 owl2;     // its head's turn (−1 … 1), its blink 0…1, unused, unused
+        float4 star;     // a star through a break in the clouds: position (NDC x, y), strength 0…1, a pixel (NDC)
+        float4 roar;     // the fire's roar (limited), the snow's whirl, the wind's gathering, unused
     };
 
     constant float2 cabinQuad[6] = { float2(0, 0), float2(1, 0), float2(0, 1), float2(1, 0), float2(1, 1), float2(0, 1) };
@@ -146,6 +150,42 @@ enum SnowboundCabinShaders {
         return hit;
     }
 
+    // An owl perched on the drift at the foot of the glass (a surprise), in its own units (feet at 0, the top of its head
+    // near 1): a round body and a broad head in mottled tawny grey, a paler facial disc turned a little this way or that,
+    // dark eyes catching the fire's light, now and then a blink. Returns its colour and cover (0 or 1, as the drifts).
+    float4 cabinOwl(float sx, float sy, constant CabinU& c, float3 light, float3 fireCol) {
+        float4 o = c.owl;
+        if (o.w < 0.5 || o.z < 1e-4) return float4(0.0);
+        float aspect = c.a.y;
+        float2 q = float2(sx - o.x * aspect, sy - o.y) / o.z;
+        if (abs(q.x) > 0.6 || q.y < -0.02 || q.y > 1.1) return float4(0.0);
+        float turn = c.owl2.x, blink = c.owl2.y;
+        float2 b = (q - float2(0.0, 0.36)) / float2(0.33, 0.38);
+        float2 h = (q - float2(0.03 * turn, 0.8)) / float2(0.29, 0.23);
+        float body = length(b), head = length(h);
+        if (body > 1.0 && head > 1.0) return float4(0.0);
+        float mottle = cvn2(q * 26.0 + float2(3.1, 7.7)) * 0.6 + cvn2(q * float2(60.0, 14.0)) * 0.4;
+        float3 col = mix(float3(0.24, 0.2, 0.16), float3(0.52, 0.47, 0.4), mottle) * light;
+        // A soft rounding: the edges and the underside fall into shade.
+        col *= 0.7 + 0.3 * saturate(1.0 - min(body, head));
+        // The facial disc, its eyes and beak, turned with the head.
+        float2 fc = float2(0.09 * turn, 0.79);
+        float2 fd = (q - fc) / float2(0.21 * (1.0 - 0.3 * abs(turn)), 0.18);
+        float disc = 1.0 - smoothstep(0.82, 1.0, length(fd));
+        col = mix(col, float3(0.6, 0.55, 0.47) * light, disc * (0.75 + 0.25 * mottle));
+        for (int k = -1; k <= 1; k += 2) {
+            float2 eye = fc + float2(float(k) * 0.085 * (1.0 - 0.25 * abs(turn)), 0.02);
+            float2 ed = (q - eye) / float2(0.045, 0.045 * (1.0 - 0.92 * blink) + 1e-3);
+            float inEye = 1.0 - smoothstep(0.75, 1.0, length(ed));
+            float2 gd = (q - eye - float2(0.014, 0.016)) / 0.012;
+            float glint = exp(-dot(gd, gd)) * (1.0 - blink);
+            col = mix(col, float3(0.015, 0.012, 0.01), inEye) + fireCol * (glint * 2.5);
+        }
+        float2 bk = (q - fc - float2(0.0, -0.065)) / float2(0.025, 0.04);
+        col = mix(col, float3(0.12, 0.1, 0.08) * light, 1.0 - smoothstep(0.7, 1.0, length(bk)));
+        return float4(col, 1.0);
+    }
+
     struct CabinOut { float4 pos [[position]]; float2 ndc; };
 
     vertex CabinOut cabin_glass_vertex(uint vid [[vertex_id]], constant CabinU& c [[buffer(1)]]) {
@@ -187,6 +227,13 @@ enum SnowboundCabinShaders {
         float3 fireCol = c.fire.rgb;
         float2 win = (ndc - c.rect.xy) / max(c.rect.zw - c.rect.xy, float2(1e-5));
         float glassBottom = c.rect.y;
+
+        // ---- an owl on the sill, nearest of all (a surprise), lit by the sky and the window's own light at night
+        if (c.owl.w > 0.5) {
+            float3 owlLight = skyAmb * 1.1 + moonCol * 0.8 + sunCol * 0.4 + fireCol * fire * 0.35 * night;
+            float4 owl = cabinOwl(sx, sy, c, owlLight, fireCol);
+            if (owl.a > 0.5) { ColorDepth o; o.color = float4(owl.rgb, 1); o.depth = float4(0.08, 0, 0, 1); return o; }
+        }
 
         // ---- drifts banked against the panes (nearest of all)
         bool onBar;
@@ -396,7 +443,24 @@ enum SnowboundCabinShaders {
         float a = 1.0 - (1.0 - behindA) * (1.0 - smoke);
         // The cabin's glow also hazes the air (and sky) around it.
         col += float3(1.0, 0.65, 0.3) * cabinGlow * 0.5;
-        if (a < 0.003 && cabinGlow < 0.003) discard_fragment();
+        // A star through a break in the clouds (a surprise): the cloud parts round it and it shines through, twinkling
+        // low in the cold air.
+        float4 st = c.star;
+        if (st.z > 0.001 && behindA < 0.5) {
+            float2 sd = float2(sx - st.x * aspect, sy - st.y);
+            float r = length(sd);
+            float ragged = cvn2(float2(sx, sy) * 9.0 + 3.7) - 0.5;
+            float clear = (1.0 - smoothstep(0.05, 0.15, r + 0.05 * ragged)) * st.z * cloud;
+            float3 clearSky = u.zenith.rgb * 0.6;
+            float tw = 0.72 + 0.28 * sin(time * 9.0) * sin(time * 13.7 + 1.0);
+            float px = max(st.w, 1e-4);
+            float core = exp(-dot(sd, sd) / (px * px * 1.6));
+            float halo = exp(-r / (px * 5.0)) * 0.12;
+            float3 starLight = float3(0.92, 0.95, 1.0) * ((core * 2.4 + halo) * tw * st.z);
+            col = col * (1.0 - clear) + clearSky * clear + starLight;
+            a = max(a, clear);
+        }
+        if (a < 0.003 && cabinGlow < 0.003 && st.z < 0.001) discard_fragment();
         ColorDepth o; o.color = float4(col, max(a, 0.0)); o.depth = float4(behindA > 0.5 ? behindDepth : 0.9, 0, 0, 1);
         return o;
     }
