@@ -261,7 +261,7 @@ final class SkyLayer {
     // ---------------------------------------------------------------- the supercell's impostor (Fire & Neon fix pass)
     // The supercell weather changes over minutes, so it is drawn into a texture the sky samples (at the world's own
     // quality, for the cost of a lookup a pixel): a window in azimuth and altitude round the view. No frame ever draws
-    // more than a 24th of it (every 24th row), so none spikes, even on a slow graphics chip. The texture holds
+    // more than a 32nd of it (every 32nd row), so none spikes, even on a slow graphics chip. The texture holds
     // three snapshots: while one is filled a strip a frame, the sky shows the other two cross-fading from the older to the
     // newer as the fill goes on (so the storm moves smoothly, a fill behind, never in torn rows); when the fill is whole it
     // becomes the newer. A new window (the view swung past the one shown) is filled the same way and shown alone once
@@ -274,7 +274,7 @@ final class SkyLayer {
     /// Its size: columns, and rows in each half of a snapshot (three snapshots, six halves, one texture).
     nonisolated static let cellColumns = 1280, cellRows = 448, cellSlots = 3
     /// How many frames one snapshot is drawn over.
-    nonisolated static let cellStrips = 24
+    nonisolated static let cellStrips = 32
     /// Previews and tests: a snapshot drawn whole when one is needed (a still frame has no frames after it).
     static var cellAtOnce = false
     private var cellKernel: MTLComputePipelineState?

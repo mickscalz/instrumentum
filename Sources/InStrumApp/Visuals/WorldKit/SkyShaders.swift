@@ -838,11 +838,11 @@ enum SkyShaders {
             float a = rainNow * (1.0 - exp(-min(baseHit, 12.0) / 1.7));
             float azR = atan2(hv.y, hv.x);
             float shafts = skyNoise2(float2(azR * 7.0, time * 0.04 + 3.0));
-            // (In the impostor, the curtains it falls in: streaks a few degrees wide, longer than wide, slowly falling.)
-            float streaks = fine > 0.5 ? skyFbm2(float2(azR * 22.0 + 3.0 * shafts, atan(k) * 3.0 + time * 0.05), 2) : 0.5;
+            // (In the impostor, the denser shafts it falls in: darker, a few degrees wide, longer than wide.)
+            float streaks = fine > 0.5 ? skyFbm2(float2(azR * 13.0 + 3.0 * shafts, atan(k) * 2.0 + time * 0.04), 2) : 0.5;
             streaks = mix(0.5, streaks, smoothstep(0.6, 0.1, k));
-            float3 c = grey * (0.27 + 0.26 * (1.0 - saturate(k * 3.0))) * (0.85 + 0.3 * shafts) * (0.86 + 0.28 * streaks)
-                     + Lc * (lightAmt * 0.3 * back * (0.7 + 0.6 * streaks));
+            float3 c = grey * (0.27 + 0.26 * (1.0 - saturate(k * 3.0))) * (0.85 + 0.3 * shafts) * (1.06 - 0.14 * streaks)
+                     + Lc * (lightAmt * 0.3 * back);
             recept += T * a * 0.55 * (0.6 + 0.8 * shafts);
             acc += T * a * c; T *= 1.0 - a;
         }
