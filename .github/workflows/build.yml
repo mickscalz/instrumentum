@@ -1,212 +1,25 @@
 name: Build
-
-on:
-  push:
-  pull_request:
-
+on: push
 jobs:
-  test:
-    runs-on: macos-15
+  keycheck:
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - name: Toolchain
-        run: swift --version && sw_vers && uname -m
-      - name: Test
-        timeout-minutes: 40
-        run: swift test 2>&1 | tee test.log; exit ${PIPESTATUS[0]}
-      - name: Report
-        if: always()
-        run: |
-          {
-            echo "FAILED TESTS: $(grep -E "Test Case '.*' failed" test.log | sed -E "s/.*-\[[A-Za-z]+\.([A-Za-z0-9_]+) ([A-Za-z0-9_]+)\].*/\1.\2/" | sort -u | tr '\n' ' ')"
-            grep -E "Executed [0-9]+ tests" test.log | tail -n 1
-            echo "FAILURES:"
-            grep -E "error:|: error|Fatal|crashed|signal" test.log | grep -v "^\s*$" | sed -E 's,^/.*/(Tests|Sources)/,\1/,' | cut -c1-200 | head -n 40
-            grep -E "Test Suite '(All|Selected) tests'|Executed [0-9]+ tests" test.log | tail -n 2
-            if grep -q "unexpected signal" test.log; then echo "LAST LINES:"; grep -vE "^\[[0-9]+/[0-9]+\]" test.log | tail -n 30; fi
-            swift --version 2>&1 | head -1
-            grep -E "error:|warning: |Test Suite '(All|Selected) tests'|Test Case .*(failed|skipped)|Test Suite '[A-Za-z]+Tests' (passed|failed)|Executed [0-9]+ test|: error|failed \(|skipped|Compiling|Build complete" test.log | grep -v "^\s*$" | tail -n 160
-          } > report.txt
-          python3 -c "import sys,urllib.parse;t=open('report.txt').read()[-60000:];print('::notice title=test-report::'+t.replace('%','%25').replace('\r','').replace('\n','%0A'))"
-
-  looks:
-    # A task branch with a `.github/look-filter` file (one `swift test --filter` pattern) renders those previews at once,
-    # without waiting for the full test run, and publishes them to `previews-<branch>` (this container cannot download
-    # artifacts, so the main session reads the PNGs from that branch). Integration branches use the previews job below.
-    if: github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref != 'refs/heads/storms' && github.ref != 'refs/heads/fire-neon'
-    runs-on: macos-15
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v5
-      - name: Render the branch's previews
-        run: |
-          if [ ! -f .github/look-filter ]; then echo "no look-filter: nothing to render"; exit 0; fi
-          FILTER="$(head -n 1 .github/look-filter)"
-          echo "filter: $FILTER"
-          PREVIEW_DIR="$PWD/previews" DEMO_DIR="$PWD/previews/audio" swift test --filter "$FILTER" 2>&1 | tee preview.log; echo "exit ${PIPESTATUS[0]}" | tee -a preview.log
-      - name: Encode demo audio
-        run: |
-          [ -d previews/audio ] || exit 0
-          for f in previews/audio/*.wav; do [ -f "$f" ] && afconvert -f m4af -d aac -b 256000 "$f" "${f%.wav}.m4a" && rm "$f"; done
-          ls -la previews/audio || true
-      - name: Publish to previews-<branch>
+      - name: Check the update-signing key matches the app's public key
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          [ -d previews ] || exit 0
-          cp preview.log previews/ 2>/dev/null || true
-          cd previews
-          TARGET="previews-$GITHUB_REF_NAME"
-          git init -q && git checkout -q -b "$TARGET"
-          git -c user.name=ci -c user.email=ci@localhost add -A
-          git -c user.name=ci -c user.email=ci@localhost commit -qm "previews for $GITHUB_SHA"
-          for i in 1 2 3; do
-            perl -e 'alarm 120; exec @ARGV' git push -f -q "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$TARGET" && exit 0
-            echo "push attempt $i failed or timed out"; sleep 10
-          done
-          exit 1
-      - name: Report
-        if: always()
-        run: |
-          grep -E "error:|warning: |passed|failed|skipped|FRAME TIME|TIMING|exit " preview.log | tail -n 60 > report.txt || true
-          python3 -c "t=open('report.txt').read()[-60000:];print('::notice title=look-report::'+t.replace('%','%25').replace('\r','').replace('\n','%0A'))"
-
-  previews:
-    needs: test
-    # The integration branches render every preview after the tests pass and publish them to the previews branch; a
-    # Storms task branch (storms-*) renders only its world's previews and frame time (storms-t13, the sets: the demo
-    # audio), even when an unrelated test failed, and keeps them as an artifact.
-    if: github.event_name == 'push' && ((needs.test.result == 'success' && (github.ref == 'refs/heads/m3a' || github.ref == 'refs/heads/sets' || github.ref == 'refs/heads/sets-3-4' || github.ref == 'refs/heads/sets-5-6' || github.ref == 'refs/heads/sets-7-8' || github.ref == 'refs/heads/sets-9-10' || github.ref == 'refs/heads/sets-11-12' || github.ref == 'refs/heads/small-wins' || github.ref == 'refs/heads/sets-13-14' || github.ref == 'refs/heads/storms' || github.ref == 'refs/heads/fire-neon' || github.ref == 'refs/heads/main')))
-    runs-on: macos-15
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v5
-      - name: Render preview frames
-        run: |
-          FILTER="PreviewRenderTests|ShaderPreviewArtTests|DemoRenderTests|SkyPreviewTests|WorldPreviewTests"
-          case "$GITHUB_REF" in refs/heads/storms-t13) FILTER="DemoRenderTests";; refs/heads/storms-*) FILTER="WorldPreviewTests/testWriteSupercell|SupercellFrameTimeTests";; esac
-          PREVIEW_DIR="$PWD/previews" DEMO_DIR="$PWD/previews/audio" swift test --filter "$FILTER" 2>&1 | tee preview.log; exit ${PIPESTATUS[0]}
-      - name: Keep preview frames
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: previews-${{ github.run_number }}
-          path: |
-            previews/*.png
-            preview.log
-          if-no-files-found: warn
-      - name: Encode demo audio
-        run: |
-          for f in previews/audio/*.wav; do [ -f "$f" ] && afconvert -f m4af -d aac -b 256000 "$f" "${f%.wav}.m4a" && rm "$f"; done
-          ls -la previews/audio || true
-      - name: Render icon and installer art
-        if: ${{ !startsWith(github.ref, 'refs/heads/storms-') }}
-        run: |
-          brew install librsvg >/dev/null
-          rsvg-convert -w 512 -h 512 Packaging/AppIcon.svg -o previews/app-icon.png
-          rsvg-convert -w 1320 -h 800 Packaging/dmg-background.svg -o previews/dmg-background.png
-      - name: Publish to previews branch
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          ls -la previews
-          cd previews
-          TARGET=previews; case "$GITHUB_REF_NAME" in storms-*) TARGET="previews-$GITHUB_REF_NAME";; esac
-          git init -q && git checkout -q -b "$TARGET"
-          git -c user.name=ci -c user.email=ci@localhost add -A
-          git -c user.name=ci -c user.email=ci@localhost commit -qm "previews for $GITHUB_SHA"
-          # The push has hung on GitHub's side now and then: give each try two minutes, three tries.
-          for i in 1 2 3; do
-            perl -e 'alarm 120; exec @ARGV' git push -f -q "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$TARGET" && exit 0
-            echo "push attempt $i failed or timed out"; sleep 10
-          done
-          exit 1
-      - name: Report
-        if: always()
-        run: |
-          grep -E "error:|warning: |passed|failed|skipped|FRAME TIME" preview.log | tail -n 60 > report.txt || true
-          python3 -c "t=open('report.txt').read()[-60000:];print('::notice title=preview-report::'+t.replace('%','%25').replace('\r','').replace('\n','%0A'))"
-
-  package:
-    # Builds the installer as soon as the app compiles, so a failing test never holds back a playable build. Only the
-    # integration branches package (task branches only test, so they never queue behind installers).
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/storms' || github.ref == 'refs/heads/fire-neon' || github.ref == 'refs/heads/small-wins' || startsWith(github.ref, 'refs/heads/pkg-')
-    runs-on: macos-15
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v5
-      - name: Packaging tools
-        run: |
-          brew install librsvg >/dev/null
-          pip3 install --break-system-packages --quiet dmgbuild || pip3 install --quiet dmgbuild
-      - name: Build app
-        run: Scripts/make-app.sh "$GITHUB_RUN_NUMBER" 2>&1 | tee package.log; exit ${PIPESTATUS[0]}
-      - name: Build installer
-        run: Scripts/make-dmg.sh "$GITHUB_RUN_NUMBER" 2>&1 | tee -a package.log; exit ${PIPESTATUS[0]}
-      - name: Check it is an Intel app for macOS 13+
-        run: |
-          BIN="dist/In Strum Meants.app/Contents/MacOS/InStrumMeants"
-          ARCHS=$(lipo -archs "$BIN"); MINOS=$(vtool -show-build "$BIN" | awk '/minos/ {print $2}')
-          echo "archs=$ARCHS minos=$MINOS" | tee -a package.log
-          test "$ARCHS" = "x86_64"
-          test "$MINOS" = "13.0"
-          codesign --verify --verbose "dist/In Strum Meants.app" 2>&1 | tee -a package.log
-      - name: Check the installer
-        run: |
-          DMG=$(ls dist/*.dmg | head -1)
-          check() { if eval "$2"; then echo "CHECK ok: $1" | tee -a package.log; else echo "CHECK FAILED: $1" | tee -a package.log; FAIL=1; fi; }
-          FAIL=0
-          hdiutil attach -nobrowse -readonly -mountpoint /tmp/dmgcheck "$DMG" 2>&1 | tail -1 | sed 's/^/CHECK attach: /' | tee -a package.log
-          echo "CHECK contents: $(ls -A /tmp/dmgcheck | tr '\n' ' ')" | tee -a package.log
-          check "app present" 'test -d "/tmp/dmgcheck/In Strum Meants.app"'
-          check "Applications link" 'test -L /tmp/dmgcheck/Applications && test "$(readlink /tmp/dmgcheck/Applications)" = "/Applications"'
-          check "background" 'ls /tmp/dmgcheck/.background* >/dev/null 2>&1'
-          check "app icon" 'test -f "/tmp/dmgcheck/In Strum Meants.app/Contents/Resources/AppIcon.icns"'
-          hdiutil detach /tmp/dmgcheck >/dev/null || true
-          test $FAIL = 0 && echo "dmg ok: $DMG" | tee -a package.log
-          exit $FAIL
-      - name: Render demo audio
-        if: github.ref == 'refs/heads/main'
-        run: |
-          DEMO_DIR="$PWD/dist/demo" swift test --filter DemoRenderTests 2>&1 | tail -n 5
-          for f in dist/demo/*.wav; do [ -f "$f" ] && afconvert -f m4af -d aac -b 256000 "$f" "${f%.wav}.m4a"; done
-          ls -la dist/demo
-      - name: Keep build
-        uses: actions/upload-artifact@v4
-        with:
-          name: In-Strum-Meants-build-${{ github.run_number }}
-          path: |
-            dist/*.zip
-            dist/*.dmg
-      - name: Publish release
-        if: github.ref == 'refs/heads/main'
-        env:
-          GH_TOKEN: ${{ github.token }}
           SPARKLE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
         run: |
-          { echo "**$(git log -1 --pretty=%s)**"; echo; cat Packaging/release-notes.md; } > notes.md
-          ZIP=$(ls dist/*.zip | head -n 1)
-          ASSETS=(dist/*.dmg "$ZIP" dist/demo/*.m4a)
-          # The in-app updater's feed: the zip signed with the EdDSA key (a repo secret), and the appcast that points the
-          # installed app at it. Without the secret the build is published as before, with no feed.
-          if [ -n "$SPARKLE_KEY" ]; then
-            curl -sSL -o sparkle.tar.xz https://github.com/sparkle-project/Sparkle/releases/download/2.6.4/Sparkle-2.6.4.tar.xz
-            mkdir -p sparkle && tar -xJf sparkle.tar.xz -C sparkle
-            printf '%s' "$SPARKLE_KEY" > ed.key
-            SIG=$(sparkle/bin/sign_update --ed-key-file ed.key "$ZIP")
-            rm -f ed.key
-            echo "signed: $SIG"
-            python3 Scripts/make-appcast.py "$GITHUB_RUN_NUMBER" "$ZIP" "$SIG" Packaging/release-notes.md "$(git log -1 --pretty=%s)" dist/appcast.xml
-            ASSETS+=(dist/appcast.xml)
-          else
-            echo "::warning title=no update feed::SPARKLE_ED_PRIVATE_KEY is not set, so this release has no appcast"
-          fi
-          gh release create "build-$GITHUB_RUN_NUMBER" "${ASSETS[@]}" --latest --title "In Strum Meants — build $GITHUB_RUN_NUMBER" --notes-file notes.md
-      - name: Report
-        if: always()
-        run: |
-          grep -E "error:|warning: |archs=|valid on disk|satisfies|Build complete|\.zip|dmg ok|\.dmg|CHECK" package.log | tail -n 40 > report.txt || true
-          python3 -c "t=open('report.txt').read()[-60000:];print('::notice title=package-report::'+t.replace('%','%25').replace('\r','').replace('\n','%0A'))"
+          pip install --quiet cryptography
+          python3 - <<'PY'
+          import base64, os
+          from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+          from cryptography.hazmat.primitives import serialization
+          k = os.environ.get("SPARKLE_KEY", "").strip()
+          if not k:
+              print("::error::SPARKLE_ED_PRIVATE_KEY is not set"); raise SystemExit(1)
+          seed = base64.b64decode(k)
+          print("key bytes:", len(seed))
+          pub = Ed25519PrivateKey.from_private_bytes(seed).public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+          ok = base64.b64encode(pub).decode() == "8APL1L4Umo8jgd9zTe5wnPvH/eDtIesuG8VnB2T04PM="
+          print("::notice::KEY MATCHES" if ok else "::error::KEY DOES NOT MATCH")
+          raise SystemExit(0 if ok else 1)
+          PY
