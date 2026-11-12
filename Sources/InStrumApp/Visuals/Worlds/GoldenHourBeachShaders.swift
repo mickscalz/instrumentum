@@ -14,6 +14,8 @@ enum GoldenHourBeachShaders {
         float4 crest[3];    // the next crests: metres beyond the break line, strength (crest[0].z: wetness after rain)
         float4 line[48];    // across (m), out (m), half length (m), glow
         float4 lineB[48];   // hue, unused…
+        float4 fw[9];       // Fire & Neon §5.5, the fireworks' bursts: direction from the eye (unit), angular radius (rad)
+        float4 fwB[9];      // their light on the water: colour × brightness (rgb, HDR), 1 for a live row (0 ends the list)
     };
     struct BeachOut { float4 pos [[position]]; float2 ndc; };
 
@@ -182,6 +184,20 @@ enum GoldenHourBeachShaders {
         slope.y += (0.3 + last) * exp(-since / 0.5) * (face - 0.4 * lip);
     }
 
+    /// The fireworks' bursts mirrored by the water along the reflected ray `rd` (Fire & Neon §5.5): each a soft glow
+    /// the size of its burst, broken into a column by the water's ripples (the normal already is).
+    float3 fireworkReflection(float3 rd, constant BeachU& b) {
+        float3 glow = float3(0);
+        for (int i = 0; i < 9; i++) {
+            if (b.fwB[i].w < 0.5) break;
+            float r = max(b.fw[i].w, 0.004);
+            float c = 1.0 - dot(rd, b.fw[i].xyz);       // ≈ θ² / 2
+            if (c > 8.0 * r * r + 0.002) continue;
+            glow += b.fwB[i].rgb * exp(-c / (0.5 * r * r + 0.00004));
+        }
+        return glow;
+    }
+
     // A low headland to the left, hazy with distance. Height above the horizon (radians) by relative azimuth.
     float headland(float azRel) {
         if (azRel < -0.95 || azRel > -0.22) return -1.0;
@@ -274,6 +290,7 @@ enum GoldenHourBeachShaders {
                 white = saturate(white);
                 float3 nrm = oceanNormal(slope, fwd, rgt);
                 col = oceanShade(d, nrm, q, f, u, o, stars);
+                if (b.fwB[0].w > 0.5) col += fireworkReflection(normalize(reflect(d, nrm)), b) * (0.08 + 0.3 * smoothstep(40.0, 400.0, f));
                 col = mix(col, foamCol, white * (0.7 + 0.25 * foamGold));
                 // Spray glints on golden foam.
                 float spark = smoothstep(0.8, 0.95, vnoise3(float3(q * 6.0, 5.0 * sin(o.phases.y))));
@@ -308,6 +325,7 @@ enum GoldenHourBeachShaders {
                 float3 spec = o.sunColor.rgb * (pow(sdS, 90.0) * 1.4 + pow(sdS, 12.0) * 0.12) * o.sun.w
                             + o.moonColor.rgb * (pow(sdM, 90.0) * 1.4 + pow(sdM, 12.0) * 0.12) * o.moon.w;
                 wetCol += spec * (0.5 + 0.5 * b.a.z);
+                if (b.fwB[0].w > 0.5) wetCol += fireworkReflection(normalize(rd), b) * fres * 0.6;
                 col = mix(dryCol, wetCol, wet);
                 // Rain-wet sand: darker, with a duller mirror of the sky than the sea's own wet band.
                 col = mix(col, mix(dryCol * 0.7, wetCol, 0.6), damp);
@@ -355,6 +373,161 @@ enum GoldenHourBeachShaders {
         out.color = float4(col, 1.0);
         out.depth = float4(depth, 0, 0, 1);
         return out;
+    }
+
+    // ---------------------------------------------------------------- Fire & Neon §5.5: fireworks and the green flash
+    // Additive streaks: a: from (x, y) to (x, y), NDC; b: colour × light (rgb, HDR) and the half-width in pixels. The
+    // view row: aspect, NDC per pixel (y), unused, unused.
+    struct BeachSpark { float4 a; float4 b; };
+    struct BeachSparkOut { float4 pos [[position]]; float2 local; float len; float radius; float3 colour; };
+
+    vertex BeachSparkOut beach_spark_vertex(uint vid [[vertex_id]], uint iid [[instance_id]], constant BeachSpark* sp [[buffer(0)]],
+                                            constant float4& view [[buffer(1)]]) {
+        float2 c[6] = { float2(0, 0), float2(1, 0), float2(0, 1), float2(1, 0), float2(1, 1), float2(0, 1) };
+        BeachSpark s = sp[iid];
+        float aspect = view.x, px = view.y;
+        // In aspect units (x × aspect), so a streak is as wide whichever way it runs.
+        float2 a = float2(s.a.x * aspect, s.a.y), e = float2(s.a.z * aspect, s.a.w);
+        float2 dir = e - a;
+        float len = length(dir);
+        dir = len > 1e-6 ? dir / len : float2(1, 0);
+        float2 nrm = float2(-dir.y, dir.x);
+        float r = max(s.b.w, 0.7) * px;
+        float2 k = c[vid];
+        float along = mix(-2.5 * r, len + 2.5 * r, k.x), across = mix(-2.5 * r, 2.5 * r, k.y);
+        float2 q = a + dir * along + nrm * across;
+        BeachSparkOut o;
+        o.pos = float4(q.x / aspect, q.y, 0, 1);
+        o.local = float2(along, across);
+        o.len = len;
+        o.radius = r;
+        o.colour = s.b.rgb;
+        return o;
+    }
+
+    /// A spark's streak: its head (the far end) bright, its trail fading back along it. Additive.
+    fragment float4 beach_spark_fragment(BeachSparkOut in [[stage_in]]) {
+        float along = clamp(in.local.x, 0.0, in.len);
+        float2 dq = float2(in.local.x - along, in.local.y);
+        float r = in.radius;
+        float core = exp(-dot(dq, dq) / (r * r));
+        float h = in.len > 1e-6 ? along / in.len : 1.0;
+        float tail = 0.25 + 0.75 * h * h;
+        return float4(in.colour * (core * tail), 0.0);
+    }
+
+    // Sprites (premultiplied): the gulls, a dolphin breaking the surface, a kite. rect: the quad (NDC x0, y0, x1, y1);
+    // local: its own units at the quad's corners (lo x, lo y, hi x, hi y); info: kind (0 a gull, 1 a dolphin, 2 a kite),
+    // its wingbeat / its roll / the kite's tail phase, the kite's tilt, cover; tint: its colour (rgb) and the sun on it.
+    struct BeachSprite { float4 rect; float4 local; float4 info; float4 tint; };
+    struct BeachSpriteOut { float4 pos [[position]]; float2 uv; float4 info; float4 tint; };
+
+    vertex BeachSpriteOut beach_sprite_vertex(uint vid [[vertex_id]], uint iid [[instance_id]], constant BeachSprite* sp [[buffer(0)]]) {
+        float2 c[6] = { float2(0, 0), float2(1, 0), float2(0, 1), float2(1, 0), float2(1, 1), float2(0, 1) };
+        BeachSprite s = sp[iid];
+        BeachSpriteOut o;
+        o.pos = float4(mix(s.rect.xy, s.rect.zw, c[vid]), 0, 1);
+        o.uv = mix(s.local.xy, s.local.zw, c[vid]);
+        o.info = s.info;
+        o.tint = s.tint;
+        return o;
+    }
+
+    /// A gull from below, its wingspan −1…1 across: a slim body and long angled wings, crooked at the wrist, the beat
+    /// lifting them. A signed distance.
+    float gullDistance(float2 uv, float wing) {
+        float d = length((uv - float2(0.0, -0.02)) / float2(0.55, 1.0)) - 0.09;
+        for (int k = 0; k < 2; k++) {
+            float side = k == 0 ? -1.0 : 1.0;
+            float2 root = float2(0.06 * side, 0.0);
+            float2 wrist = float2(0.42 * side, 0.1 + 0.22 * wing);
+            float2 tip = float2(0.98 * side, -0.06 + 0.5 * wing);
+            float2 a = segDistH(uv, root, wrist), e = segDistH(uv, wrist, tip);
+            d = min(d, a.x - mix(0.08, 0.06, a.y));
+            d = min(d, e.x - mix(0.06, 0.02, e.y));
+        }
+        return d;
+    }
+
+    /// A dolphin's back breaking the surface (uv in its own units: x along its swim, y up, the water at y = −0.22): an
+    /// arc rising and setting as it rolls (`roll` 0…1), the dorsal fin riding on it. A signed distance; `spray` returns the
+    /// white water where it breaks the surface and goes under.
+    float dolphinDistance(float2 uv, float roll, thread float& spray) {
+        float R = 0.9;
+        float rise = 0.62 * sin(3.14159 * saturate(roll));
+        float2 cen = float2(mix(-0.55, 0.55, roll), -0.22 - R + rise);
+        float2 q = uv - cen;
+        float ang = atan2(q.x, q.y);                          // 0 at the top of the arc, + ahead
+        float band = abs(length(q) - R) - mix(0.11, 0.05, saturate(abs(ang) / 1.2));
+        float d = max(band, abs(ang) - 1.25);
+        // The fin: a swept-back triangle a little behind the top of the arc.
+        float2 f = q - float2(-0.12 * R, R);
+        float t = saturate(f.y / 0.34);
+        float fin = max(abs(f.x + 0.1 * t * t + 0.02) - 0.1 * (1.0 - t), max(-f.y, f.y - 0.34));
+        d = min(d, fin);
+        float water = -0.22;
+        float edge = exp(-((uv.y - water) * (uv.y - water)) / 0.004);
+        spray = edge * (smoothstep(0.25, 0.0, roll) + smoothstep(0.75, 1.0, roll)) * smoothstep(0.35, 0.0, abs(uv.x - cen.x - (roll < 0.5 ? 0.7 : -0.7) * R));
+        return max(d, water - uv.y);
+    }
+
+    /// A diamond kite (uv in metres, its spine up) with two coloured halves, dark spars and a ribbon tail waving below
+    /// (`tail` its phase). A signed distance; `side` returns which half (−1 left, +1 right; 0 the spars and tail).
+    float kiteDistance(float2 uv, float tail, thread float& side) {
+        float2 top = float2(0, 0.75), right = float2(0.45, 0.15), bottom = float2(0, -0.55), left = float2(-0.45, 0.15);
+        float2 e0 = right - top, e1 = bottom - right, e2 = left - bottom, e3 = top - left;
+        float c0 = e0.x * (uv.y - top.y) - e0.y * (uv.x - top.x);
+        float c1 = e1.x * (uv.y - right.y) - e1.y * (uv.x - right.x);
+        float c2 = e2.x * (uv.y - bottom.y) - e2.y * (uv.x - bottom.x);
+        float c3 = e3.x * (uv.y - left.y) - e3.y * (uv.x - left.x);
+        float inside = max(max(c0, c1), max(c2, c3)) / 0.6;   // ≤ 0 inside (clockwise)
+        side = uv.x < 0.0 ? -1.0 : 1.0;
+        float spar = min(abs(uv.x), abs(uv.y - 0.15) + max(abs(uv.x) - 0.45, 0.0));
+        if (spar < 0.015 && inside < 0.0) side = 0.0;
+        // The tail: from the bottom corner down 3.5 m, swinging wider as it goes.
+        float y = -0.55 - uv.y;
+        float d = inside;
+        if (y > 0.0 && y < 3.5) {
+            float k = y / 3.5;
+            float x = 0.28 * k * sin(y * 1.9 - tail) + 0.05 * sin(y * 5.0 - 1.7 * tail);
+            float dt = abs(uv.x - x) - 0.018 * (1.0 - 0.5 * k);
+            if (dt < d) { d = dt; side = 0.0; }
+        }
+        return d;
+    }
+
+    fragment float4 beach_sprite_fragment(BeachSpriteOut in [[stage_in]]) {
+        int kind = int(in.info.x + 0.5);
+        float aa = max(fwidth(in.uv.x), fwidth(in.uv.y)) * 1.2 + 1e-4;
+        float3 col = in.tint.rgb;
+        float a;
+        if (kind == 0) {
+            float d = gullDistance(in.uv, in.info.y);
+            a = 1.0 - smoothstep(-aa, aa, d);
+        } else if (kind == 1) {
+            float spray;
+            float d = dolphinDistance(in.uv, in.info.y, spray);
+            float body = 1.0 - smoothstep(-aa, aa, d);
+            // The sun catches its wet back along the top.
+            col = col + float3(1.0, 0.75, 0.45) * in.tint.w * smoothstep(0.1, 0.0, abs(d + 0.03)) * step(-0.18, in.uv.y);
+            float3 white = float3(0.85, 0.82, 0.78) * (0.5 + in.tint.w);
+            a = max(body, 0.6 * spray);
+            col = (col * body + white * 0.6 * spray) / max(a, 1e-3);
+        } else {
+            float side;
+            float ct = cos(in.info.z), st = sin(in.info.z);   // its tilt
+            float2 kv = float2(ct * in.uv.x + st * in.uv.y, -st * in.uv.x + ct * in.uv.y);
+            float d = kiteDistance(kv, in.info.y, side);
+            a = (1.0 - smoothstep(-aa, aa, d));
+            float3 red = float3(0.85, 0.12, 0.1), yellow = float3(1.0, 0.72, 0.12);
+            float3 cloth = side < 0.0 ? red : yellow;
+            // Backlit, the cloth glows with the low sun through it; the spars and the tail stay dark.
+            col = side == 0.0 ? in.tint.rgb * 0.4 : cloth * (in.tint.rgb * 1.5 + in.tint.w * 0.9);
+            a *= side == 0.0 ? 1.0 : 0.92;
+        }
+        a *= in.info.w;
+        if (a < 0.002) discard_fragment();
+        return float4(col * a, a);
     }
 
     // Keys: rect (x0, y0, x1, y1) and info (isBlack, glow, pressed, light).

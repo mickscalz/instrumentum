@@ -13,6 +13,12 @@ enum CoastRoadShaders {
         float4 d;   // seconds since the last break (< 0 none), its strength, cliff-base scroll (wrapped), wind
         float4 w;   // window: half width (x·aspect units), bottom, top, corner radius
         float4 e;   // wetness 0…1, the road's far edge (NDC y), unused…
+        // Fire & Neon §5.5 (Excitement):
+        float4 f;   // the lighthouse's lantern from the eye (m: across, out, up), its beams' light 0…1
+        float4 g;   // the beams' bearing (rad; 0 faces you), unused, the lantern's flare 0…1, the road opening onto the sea 0…1
+        float4 h;   // the far train: its head's bearing from the view's centre (rad), signed length (rad), light, headlights gathering
+        float4 i;   // oncoming headlights on the verge: x (aspect units), light; x, light
+        float4 j;   // x, light, unused, unused
     };
     struct RoadOut { float4 pos [[position]]; float2 ndc; };
 
@@ -68,6 +74,55 @@ enum CoastRoadShaders {
         return base + n;
     }
 
+    /// Fire & Neon §5.5: the lighthouse on the far point. Its two beams (half a turn apart) sweep the air over the sea, a
+    /// shaft where the haze catches them, brighter as one swings toward you; and its lantern, a point that blazes when a
+    /// beam faces you (the flare after the flash limiter).
+    float3 lighthouseLight(float3 d, constant SkyU& sky, constant RoadU& u, float haze, float fog) {
+        float light = u.f.w;
+        if (light <= 0.001) return float3(0);
+        float2 fwd = normalize(sky.forward.xy), rgt = float2(fwd.y, -fwd.x);
+        float3 L = float3(rgt * u.f.x + fwd * u.f.y, u.f.z);
+        float distL = length(L);
+        float2 home = -normalize(L.xy);
+        float ca = cos(u.g.x), sa = sin(u.g.x);
+        float3 B = float3(home.x * ca - home.y * sa, home.x * sa + home.y * ca, 0.0);
+        float density = 0.25 + haze + 1.2 * fog;
+        float sum = 0.0;
+        for (int k = 0; k < 2; k++) {
+            float3 b = k == 0 ? B : -B;
+            // The nearest approach of the view ray (from the eye along d) to the beam (from the lantern along b).
+            float db = dot(d, b);
+            float denom = 1.0 - db * db;
+            if (denom < 1e-5) continue;
+            float dl = -dot(d, L), bl = -dot(b, L);
+            float t = (db * bl - dl) / denom;
+            float s = (bl - db * dl) / denom;
+            if (t <= 0.0 || s <= 0.0) continue;
+            float3 gap = d * t - b * s - L;
+            float width = 4.0 + 0.035 * s;
+            float x2 = dot(gap, gap) / (width * width);
+            if (x2 > 9.0) continue;
+            float toward = saturate(-db);
+            float t2 = toward * toward, t4 = t2 * t2;
+            sum += exp(-x2) * (0.25 + 1.6 * t4 * t4) / (1.0 + s / 2500.0);
+        }
+        float c = 1.0 - dot(d, L / distL);
+        float lantern = exp(-c / 1.2e-6) * (0.8 + 40.0 * u.g.z) + exp(-c / 3e-5) * 0.05 * (1.0 + 20.0 * u.g.z);
+        return float3(1.0, 0.92, 0.75) * ((sum * density * 0.35 + lantern) * light);
+    }
+
+    /// Fire & Neon §5.5: a lit train along the far shore, its windows a dotted line at the headlands' foot.
+    float3 farTrain(float azRel, float alt, constant RoadU& u) {
+        if (u.h.z <= 0.0 || abs(u.h.y) < 1e-4) return float3(0);
+        float tu = (u.h.x - azRel) / u.h.y;                 // 0 at its head … 1 at its tail
+        if (tu < -0.02 || tu > 1.0) return float3(0);
+        float band = smoothstep(0.0003, 0.0007, alt) * (1.0 - smoothstep(0.0018, 0.0024, alt));
+        float cars = fract(tu * 6.0), win = fract(tu * 42.0);
+        float lit = step(0.0, tu) * step(0.08, cars) * step(cars, 0.94) * smoothstep(0.5, 0.2, abs(win - 0.5));
+        float head = exp(-tu * tu / 0.0004);
+        return (float3(1.0, 0.78, 0.48) * lit * 1.6 + float3(1.0, 0.95, 0.85) * head * 6.0) * (band * u.h.z);
+    }
+
     fragment ColorDepth road_fragment(RoadOut in [[stage_in]], constant SkyU& sky [[buffer(0)]], constant RoadU& u [[buffer(1)]],
                                       constant OceanU& o [[buffer(2)]], texture2d<float> stars [[texture(0)]]) {
         ColorDepth out;
@@ -83,6 +138,9 @@ enum CoastRoadShaders {
         float3 horizon = sky.horizon.rgb, zenith = sky.zenith.rgb;
         float haze = u.a.w, lampsLit = u.c.x, night = u.c.y, speed = u.c.z, fog = u.c.w;
         float bottom = u.w.y;
+        float opened = u.g.w;          // the drop: the road comes out of the scrub onto the open cliff
+        fog *= 1.0 - 0.6 * opened;
+        float3 extra = float3(0);      // the lighthouse and the far train, added over the sky after the premultiply
         float lightW = saturate(o.sun.w + o.moon.w);
         float3 lightCol = (o.sun.w * o.sunColor.rgb + o.moon.w * o.moonColor.rgb) / max(o.sun.w + o.moon.w, 1e-3);
         float3 hazeCol = horizon * (1.0 + 0.1 * night);
@@ -91,7 +149,7 @@ enum CoastRoadShaders {
 
         // Near layers (aspect units, rolled with the world).
         float railY = bottom + 0.2;
-        float scrubY = scrubLine(p.x, u.b.y, bottom + 0.34);
+        float scrubY = scrubLine(p.x, u.b.y, bottom + 0.34 - 0.11 * opened);
         // Lamps: posts every kLampSpacing with an arm reaching over the road, lit from dusk.
         float lampDx = (fract(p.x / kLampSpacing + u.b.w) - 0.5) * kLampSpacing;
         float headY = u.w.z - 0.2;
@@ -130,6 +188,11 @@ enum CoastRoadShaders {
             float shine = exp(-sh * sh);
             col = mix(col, metal, max(beam, postCover * 0.95));
             col += (horizon * 0.25 + lampCol * lampsLit * 0.3) * shine * beam;
+            // Oncoming headlights washing over the verge as each car passes, and gathering round the bend ahead.
+            float w0 = p.x - u.i.x, w1 = p.x - u.i.z, w2 = p.x - u.j.x;
+            float wash = u.i.y * exp(-w0 * w0 / 0.12) + u.i.w * exp(-w1 * w1 / 0.12) + u.j.y * exp(-w2 * w2 / 0.12);
+            float ahead = u.h.w * smoothstep(0.1 * u.a.y, 0.95 * u.a.y, p.x);
+            col += float3(0.85, 0.9, 1.0) * (0.09 * wash + 0.05 * ahead) * (0.4 + 0.6 * max(beam, 1.0 - depthIn));
             // Rime along the rail's top (spec §6.4), its feathers passing with the posts: two octaves of a noise that
             // repeats every post spacing, so the post phase's wrap never shows, smeared into an even band by speed
             // (like the posts) so it never strobes.
@@ -189,6 +252,8 @@ enum CoastRoadShaders {
                 }
             }
             if (hl > 0.0) { alpha = 1.0; depth = 0.97; }
+            extra = lighthouseLight(d, sky, u, haze, fog) * (hl > 0.0 ? 0.5 : 1.0);
+            if (hl > 0.0) extra += farTrain(azRel, alt, u);
         }
         // Premultiplied from here: lamp posts over everything, fog over the view, lamp heads glowing on top.
         col *= alpha;
@@ -211,7 +276,8 @@ enum CoastRoadShaders {
         float2 head = float2(lampDx - 0.16, p.y - headY + 0.01);
         float hd2 = dot(head * float2(1.0, 1.6), head * float2(1.0, 1.6));
         col += lampCol * lampsLit * (exp(-hd2 / 0.0009) * 5.0 + exp(-hd2 / 0.012) * 0.6);
-        if (alpha < 0.002 && hd2 > 0.1) discard_fragment();
+        col += extra;
+        if (alpha < 0.002 && hd2 > 0.1 && extra.r + extra.g + extra.b < 1e-5) discard_fragment();
         out.color = float4(col, alpha);
         out.depth = float4(depth, 0, 0, 1);
         return out;
@@ -284,6 +350,72 @@ enum CoastRoadShaders {
         float r = lampPostRime(sky, dx, q.y, armY, post, arm);   // rimed like the road's own lamp posts
         float3 c = r > 0.0 ? mix(colour.rgb, rimeColor(sky), r) : colour.rgb;
         return float4(c * a, a);
+    }
+
+    // ---------------------------------------------------------------- Fire & Neon §5.5: a fox in the scrub
+    // p: where it stands (x, y of its feet, aspect units of the world's frame), its height (aspect units), its trot's
+    // phase; q: cover, eyeshine 0…1, unused, unused; tint: its coat (rgb), unused. Rolled like the lights; premultiplied
+    // (the eyeshine adds light).
+    struct FoxInstance { float4 p; float4 q; float4 tint; };
+    struct FoxOut { float4 pos [[position]]; float2 uv; float4 q; float4 tint; float trot; };
+
+    vertex FoxOut road_fox_vertex(uint vid [[vertex_id]], uint iid [[instance_id]], constant FoxInstance* foxes [[buffer(0)]],
+                                  constant RoadU& u [[buffer(1)]]) {
+        float2 c[6] = { float2(0, 0), float2(1, 0), float2(0, 1), float2(1, 0), float2(1, 1), float2(0, 1) };
+        FoxInstance fx = foxes[iid];
+        float2 uv = mix(float2(-1.4, -0.15), float2(1.4, 1.4), c[vid]);
+        float2 q = fx.p.xy + uv * fx.p.z;
+        float aspect = u.a.y, ro = u.a.z, cr = cos(ro), sr = sin(ro);
+        float2 rq = float2(q.x * cr + q.y * sr, -q.x * sr + q.y * cr);
+        FoxOut o;
+        o.pos = float4(rq.x / aspect, rq.y, 0, 1);
+        o.uv = uv;
+        o.q = fx.q;
+        o.tint = fx.tint;
+        o.trot = fx.p.w;
+        return o;
+    }
+
+    float2 foxSegment(float2 p, float2 a, float2 b) {
+        float2 pa = p - a, ba = b - a;
+        float h = saturate(dot(pa, ba) / max(dot(ba, ba), 1e-6));
+        return float2(length(pa - ba * h), h);
+    }
+
+    /// A fox side on, in units of its height (feet at y = 0, its head to the right, turned to look at you): body, legs
+    /// mid-trot, a bushy tail, a pointed head with its ears up. A signed distance.
+    float foxDistance(float2 uv, float trot) {
+        float d = length((uv - float2(0.0, 0.55)) / float2(1.0, 0.36)) - 0.55;
+        d = min(d, length(uv - float2(0.62, 0.78)) - 0.15);
+        float2 sn = foxSegment(uv, float2(0.66, 0.74), float2(0.86, 0.7));
+        d = min(d, sn.x - mix(0.07, 0.025, sn.y));
+        for (int k = 0; k < 2; k++) {
+            float ex = k == 0 ? 0.56 : 0.68;
+            float2 ear = foxSegment(uv, float2(ex, 0.86), float2(ex - 0.02, 1.05));
+            d = min(d, ear.x - mix(0.05, 0.01, ear.y));
+        }
+        float2 tail = foxSegment(uv, float2(-0.48, 0.58), float2(-1.15, 0.36 + 0.04 * sin(trot * 0.5)));
+        d = min(d, tail.x - (0.08 + 0.07 * sin(3.14159 * tail.y)));
+        for (int k = 0; k < 4; k++) {
+            float fk = float(k);
+            float x = k < 2 ? 0.3 + 0.08 * fk : -0.32 + 0.08 * (fk - 2.0);
+            float swing = 0.09 * sin(trot + fk * 1.7 + (k < 2 ? 0.0 : 3.14159));
+            float2 leg = foxSegment(uv, float2(x, 0.42), float2(x + swing, 0.0));
+            d = min(d, leg.x - 0.035);
+        }
+        return d;
+    }
+
+    fragment float4 road_fox_fragment(FoxOut in [[stage_in]]) {
+        float d = foxDistance(in.uv, in.trot);
+        float aa = max(fwidth(in.uv.x) * 1.2, 1e-3);
+        float cover = (1.0 - smoothstep(-aa, aa, d)) * in.q.x;
+        // Eyeshine: the car's light caught in its eyes, green-gold, at night.
+        float2 e0 = in.uv - float2(0.59, 0.81), e1 = in.uv - float2(0.69, 0.81);
+        float eyes = (exp(-dot(e0, e0) / 0.0006) + exp(-dot(e1, e1) / 0.0006)) * in.q.y * in.q.x;
+        if (cover < 0.002 && eyes < 0.002) discard_fragment();
+        float3 glow = float3(0.7, 1.0, 0.45) * eyes * 3.0;
+        return float4(in.tint.rgb * cover + glow, cover);
     }
 
     // The car around the window: door trim and headliner lit by the sky and the dashboard, a rubber seal

@@ -24,8 +24,12 @@ final class CoastRoadRenderer: ThemeRenderer {
     let warp: WarpLayer
     private var showWarp = false
     private let road: SkyPipeline
-    private let lights, frame, keys, posts: MTLRenderPipelineState
-    private var roadU = [SIMD4<Float>](repeating: .zero, count: 6)
+    private let lights, frame, keys, posts, foxes: MTLRenderPipelineState
+    private var roadU = [SIMD4<Float>](repeating: .zero, count: CoastRoadRenderer.uniformCount)
+    /// Fire & Neon §5.5: the fox in the scrub, and the lantern's light on the scene through the flash limiter.
+    private var foxInstances: [FoxInstance] = []
+    private var primed = false
+    private var lanternGlow: Float = 0
     private var oceanU = [SIMD4<Float>](repeating: .zero, count: 7)
     private var lightInstances: [SIMD4<Float>] = []
     private var postInstances: [SIMD4<Float>] = []
@@ -44,8 +48,24 @@ final class CoastRoadRenderer: ThemeRenderer {
     private(set) var lampPosts: [SIMD2<Float>] = []
     /// The keys' rectangles in NDC (x0, y0, x1, y1) (tests check they stay inside the frame).
     var keyRects: [SIMD4<Float>] { keyInstances.map(\.rect) }
+    /// Excitement as drawn (tests read them): the lighthouse's beams and lantern flare, the road opening, the gathering
+    /// headlights, the washes on the verge, the fox and the train, the exposure after the flash limiter.
+    private(set) var beamOut: Float = 0
+    private(set) var flareOut: Float = 0
+    private(set) var openOut: Float = 0
+    private(set) var headlightsOut: Float = 0
+    private(set) var washesDrawn = 0
+    private(set) var foxDrawn = false
+    private(set) var trainOut: Float = 0
+    private(set) var exposureOut: Float = 1
+    var flashesInLastSecond: Int { limiter.recent }
+    var flashTotal: Int { limiter.total }
+    /// The shader's rows: the six before Fire & Neon, then the lighthouse, the train and headlights, the washes.
+    nonisolated static let uniformCount = 11
 
     private struct KeyInstance { var rect: SIMD4<Float>; var info: SIMD4<Float> }
+    /// The shader's FoxInstance.
+    private struct FoxInstance { var p: SIMD4<Float>; var q: SIMD4<Float>; var tint: SIMD4<Float> }
 
     init?(device: MTLDevice) {
         guard let s = SkyLayer(device: device), let w = WeatherLayer(device: device), let gw = WarpLayer(device: device),
@@ -76,19 +96,17 @@ final class CoastRoadRenderer: ThemeRenderer {
               let l = make("road_lights_vertex", "road_lights_fragment", .additive, writesDepth: false),
               let f = make("road_vertex", "road_frame_fragment", .premultiplied, writesDepth: false),
               let k = make("road_keys_vertex", "road_keys_fragment", .opaque),
-              let pp = make("road_post_vertex", "road_post_fragment", .premultiplied, writesDepth: false) else { return nil }
-        sky = s; weather = w; warp = gw; road = r; lights = l; frame = f; keys = k; posts = pp
+              let pp = make("road_post_vertex", "road_post_fragment", .premultiplied, writesDepth: false),
+              let fx = make("road_fox_vertex", "road_fox_fragment", .premultiplied, writesDepth: false) else { return nil }
+        sky = s; weather = w; warp = gw; road = r; lights = l; frame = f; keys = k; posts = pp; foxes = fx
         sky.verticalFOV = 50
     }
 
     private static func smooth(_ a: Double, _ b: Double, _ x: Double) -> Double { OceanLight.smooth(a, b, x) }
 
-    /// Face the low sun over the sea, else the moon while it's up, else out to sea (the road's curves add yaw).
-    static func targetAzimuth(_ s: SkyState) -> Double {
-        if s.sun.altitude > -12, s.sun.altitude < 25 { return s.sun.azimuth }
-        if s.moon.altitude > -5 { return s.moon.azimuth }
-        return SkyLayer.defaultViewAzimuth(latitude: s.latitude)
-    }
+    /// Face the low sun over the sea, else the moon while it's up, else out to sea (the road's curves add yaw): the
+    /// model's own rule, so its shooting star is placed where the window looks.
+    static func targetAzimuth(_ s: SkyState) -> Double { CoastRoadModel.viewAzimuth(s) }
 
     /// Lamps light up from dusk (the sun below 2°) and stay lit through the night.
     static func lampLight(sunAltitude: Double) -> Float { Float(smooth(2, -1, sunAltitude)) }
@@ -145,7 +163,22 @@ final class CoastRoadRenderer: ThemeRenderer {
         let mood = frame.mood
         let haze = min(1, 0.35 * MoodLook.hazeScale(mood) + s.mist)
         let exposure = MoodLook.exposure(mood) * (1 + 0.9 * night) * weather.exposureBoost
-        let limited = limiter.limit(exposure: exposure, sparkle: 0.45 + 0.55 * frame.bloom, dt: dt)
+        // The lantern blazing as a beam faces you (and a fireball) lights the scene through the flash limiter; under
+        // gentle visuals only ever a glow, eased in.
+        let request = Self.unit(frame.flashRequest)
+        let fdt = Float(dt.isFinite ? min(max(dt, 0), 0.25) : 0)
+        if gentle {
+            lanternGlow += (min(0.12, 0.4 * request) - lanternGlow) * (dt == 0 ? 1 : 1 - exp(-fdt / 0.8))
+        } else {
+            lanternGlow = 0.9 * request
+        }
+        if !primed {
+            // The limiter starts from black: settle it on the scene's own exposure first, so arriving is never a flash.
+            primed = true
+            for _ in 0..<16 { _ = limiter.limit(exposure: exposure, sparkle: 1, dt: 1) }
+        }
+        let limited = limiter.limit(exposure: exposure * (1 + lanternGlow), sparkle: 0.45 + 0.55 * frame.bloom, dt: dt)
+        exposureOut = limited.exposure
         lampOut = Float(p.number("lamps")) * Self.lampLight(sunAltitude: s.sun.altitude) * sparkleScale
         bloomOut = frame.bloom * sparkleScale
         let fog = min(1, Float(p.number("fog")) + 0.8 * s.mist)
@@ -169,6 +202,7 @@ final class CoastRoadRenderer: ThemeRenderer {
         // Wet tarmac: how wet, and the road's far edge (where reflections hang from).
         let roadLineY = bottom + 0.06
         roadU[5] = SIMD4(s.wetness, roadLineY, 0, 0)
+        fillExcitement(frame, gentle: gentle, aspect: aspect, bottom: bottom)
 
         // The sea passes by the distance travelled, wrapped to its tile (every swell component and noise repeats
         // over the tile, so there's no seam); the chord bloom tints and brightens the glitter path.
@@ -253,6 +287,60 @@ final class CoastRoadRenderer: ThemeRenderer {
             time: time, quality: quality)
     }
 
+    // MARK: - Excitement (Fire & Neon spec §5.5)
+
+    nonisolated static func unit(_ v: Float) -> Float { v.isFinite ? min(1, max(0, v)) : 0 }
+
+    /// The lighthouse, the far train, the headlights on the verge, the road opening and the fox, into the shader's rows.
+    private func fillExcitement(_ frame: RoadFrame, gentle: Bool, aspect: Float, bottom: Float) {
+        let lightScale: Float = gentle ? 0.6 : 1
+        let beam = Self.unit(frame.beamLight) * lightScale
+        let off = CoastRoadModel.facing(frame.beamAngle)
+        // The lantern's flare as a beam faces you: under gentle visuals a gentle glimmer, never a blaze.
+        let flare = exp(-off * off / 0.0016) * (gentle ? 0.15 : 1)
+        beamOut = beam
+        flareOut = beam > 0.001 ? flare : 0
+        let l = CoastRoadModel.lighthouse
+        roadU[6] = SIMD4(l.x, l.y, l.z, beam)
+        openOut = Self.unit(frame.open)
+        roadU[7] = SIMD4(frame.beamAngle.isFinite ? frame.beamAngle : 0, 0, flareOut, openOut)
+        headlightsOut = Self.unit(frame.headlights) * lightScale
+        trainOut = 0
+        if let t = frame.train, t.light > 0.001 {
+            trainOut = Self.unit(t.light) * lightScale
+            roadU[8] = SIMD4(t.head, t.length, trainOut, headlightsOut)
+        } else {
+            roadU[8] = SIMD4(0, 0, 0, headlightsOut)
+        }
+        // The washes: 1 at the window's right edge … 0 at its left (aspect units of the world's frame).
+        var rows = [SIMD2<Float>](repeating: SIMD2(-9, 0), count: 3)
+        var drawn = 0
+        for w in frame.washes.prefix(3) {
+            let x = (-0.93 + 1.86 * w.x) * aspect
+            rows[drawn] = SIMD2(x, Self.unit(w.light) * lightScale)
+            drawn += 1
+        }
+        washesDrawn = drawn
+        roadU[9] = SIMD4(rows[0].x, rows[0].y, rows[1].x, rows[1].y)
+        roadU[10] = SIMD4(rows[2].x, rows[2].y, 0, 0)
+
+        // The fox: standing in the scrub as the car passes it, its eyes catching the light at night.
+        foxInstances.removeAll(keepingCapacity: true)
+        foxDrawn = false
+        if let fx = frame.fox, fx.alpha > 0.001 {
+            let x = 0.93 * aspect + 0.25 - Float(fx.along * Self.midRate)   // it stands still: the scrub's layer passes it
+            if x > -0.93 * aspect - 0.3, x < 0.93 * aspect + 0.3 {
+                let s = frame.sky
+                let day = Float(Self.smooth(-4, 6, s.sun.altitude))
+                let coat = SIMD3<Float>(0.42, 0.19, 0.08) * (0.08 + 0.55 * day) + s.zenith * 0.03
+                let eyes = (1 - day) * (gentle ? 0.5 : 1)
+                foxInstances.append(FoxInstance(p: SIMD4(x, bottom + 0.235, 0.14, fx.trot), q: SIMD4(Self.unit(fx.alpha), eyes, 0, 0),
+                                                 tint: SIMD4(coat, 0)))
+                foxDrawn = true
+            }
+        }
+    }
+
     func render(stack: RenderStack, commandBuffer cb: MTLCommandBuffer) {
         guard let pass = stack.scenePass(clear: MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)),
               let e = cb.makeRenderCommandEncoder(descriptor: pass) else { return }
@@ -274,6 +362,13 @@ final class CoastRoadRenderer: ThemeRenderer {
             e.setFragmentBytes(&postColour, length: MemoryLayout<SIMD4<Float>>.size, index: 0)
             skyU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }   // their rime
             e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6, instanceCount: postInstances.count)
+        }
+
+        if !foxInstances.isEmpty {
+            e.setRenderPipelineState(foxes)
+            foxInstances.withUnsafeBytes { e.setVertexBytes($0.baseAddress!, length: $0.count, index: 0) }
+            roadU.withUnsafeBytes { e.setVertexBytes($0.baseAddress!, length: $0.count, index: 1) }
+            e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6, instanceCount: foxInstances.count)
         }
 
         if !lightInstances.isEmpty {

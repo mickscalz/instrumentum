@@ -16,6 +16,7 @@ enum AuroraFjordShaders {
         float4 aurora;     // the aurora's light on snow, ice and water (rgb), aurora amount 0…1
         float4 ambient;    // the sky's light on the scene (rgb), cloud cover
         float4 swell;      // the two swell components' phases (radians, wrapped), unused, unused
+        float4 corona;     // Fire & Neon §5.5: the surge's corona overhead (after the sparkle), unused, unused, unused
     };
 
     // The fjord in the view's frame (metres; φ in radians across the view, + to the right).
@@ -361,6 +362,95 @@ enum AuroraFjordShaders {
         col = mix(col, fjordMist(u, f), saturate(f.b.z * (0.1 + 0.9 * (1.0 - exp(-in.far / 900.0)))) * 0.85);
         float a = cover * in.alpha;
         return float4(col * a, a);
+    }
+
+    // ---------------------------------------------------------------- Fire & Neon §5.5: the surge's corona
+    // An additive quad over the top of the V of sky (the renderer sizes it: x0, y0, x1, y1 in NDC). The corona's rays
+    // run from the magnetic zenith (high behind you) down through the top of the frame, converging upward, green below
+    // and violet-pink toward the zenith, flickering slowly; it keeps above 27° and within 0.45 rad of the view's middle,
+    // where the walls never reach, so it never lies over the rock.
+    struct CoronaOut { float4 pos [[position]]; float2 ndc; };
+
+    vertex CoronaOut fjord_corona_vertex(uint vid [[vertex_id]], constant float4& rect [[buffer(0)]]) {
+        float2 c[6] = { float2(0, 0), float2(1, 0), float2(0, 1), float2(1, 0), float2(1, 1), float2(0, 1) };
+        float2 p = mix(rect.xy, rect.zw, c[vid]);
+        CoronaOut o;
+        o.pos = float4(p, 0, 1);
+        o.ndc = p;
+        return o;
+    }
+
+    fragment float4 fjord_corona_fragment(CoronaOut in [[stage_in]], constant SkyU& u [[buffer(0)]], constant FjordU& f [[buffer(1)]]) {
+        float k = f.corona.x;
+        if (k <= 0.001) discard_fragment();
+        float3 d = fjordRay(in.ndc, u);
+        float alt = asin(clamp(d.z, -1.0, 1.0));
+        float phi = fjordPhi(d, u);
+        float fade = smoothstep(0.47, 0.58, alt) * (1.0 - smoothstep(0.32, 0.45, abs(phi)));
+        if (fade <= 0.0) discard_fragment();
+        float3 F = fjordAhead(u);
+        float3 Z = normalize(float3(0.0, 0.0, 0.978) - F * 0.208);     // the magnetic zenith, 12° behind the zenith
+        float3 e1 = normalize(cross(Z, F)), e2 = cross(e1, Z);
+        float ang = atan2(dot(d, e1), dot(d, e2));
+        float from = acos(clamp(dot(d, Z), -1.0, 1.0));
+        float t = f.a.y * (8.0 * kFjordTick);
+        float n = 0.65 * vnoise3(float3(ang * 34.0, t, 2.0)) + 0.35 * vnoise3(float3(ang * 85.0, t * 1.7, 5.0));
+        float rays = smoothstep(0.38, 0.78, n);
+        float profile = smoothstep(1.45, 0.95, from);
+        float3 green = float3(0.25, 1.0, 0.45), violet = float3(0.7, 0.3, 0.95);
+        float3 col = mix(green, violet, smoothstep(1.2, 0.9, from));
+        return float4(col * (0.22 * k * rays * profile * fade), 0.0);
+    }
+
+    // ---------------------------------------------------------------- Fire & Neon §5.5: an orca in the fjord
+    // rect: the quad (NDC); local: metres at its corners (lo across, lo up from the water, hi across, hi up); info: its
+    // fin out of the water 0…1, seconds since its blow (< 0: none), the blow's strength, the wind 0…1; tint: the night's
+    // light on its breath (rgb), cover. Premultiplied.
+    struct OrcaInstance { float4 rect; float4 local; float4 info; float4 tint; };
+    struct OrcaOut { float4 pos [[position]]; float2 uv; float4 info; float4 tint; };
+
+    vertex OrcaOut fjord_orca_vertex(uint vid [[vertex_id]], uint iid [[instance_id]], constant OrcaInstance* os [[buffer(0)]]) {
+        float2 c[6] = { float2(0, 0), float2(1, 0), float2(0, 1), float2(1, 0), float2(1, 1), float2(0, 1) };
+        OrcaInstance o = os[iid];
+        OrcaOut out;
+        out.pos = float4(mix(o.rect.xy, o.rect.zw, c[vid]), 0, 1);
+        out.uv = mix(o.local.xy, o.local.zw, c[vid]);
+        out.info = o.info;
+        out.tint = o.tint;
+        return out;
+    }
+
+    /// Its back and tall fin, black out of the still water, and its blow: a bushy column of breath rising four metres,
+    /// hanging, drifting with the wind and thinning out over four seconds, lit by the night.
+    fragment float4 fjord_orca_fragment(OrcaOut in [[stage_in]], constant FjordU& f [[buffer(1)]]) {
+        float2 q = in.uv;
+        float fin = in.info.x, age = in.info.y, strength = in.info.z, wind = in.info.w;
+        float aa = max(fwidth(q.x), fwidth(q.y)) * 1.2 + 1e-4;
+        float body = 0.0;
+        if (fin > 0.01) {
+            float back = length((q - float2(0.0, -0.55)) / float2(2.2, 1.0)) - 0.62 * fin;
+            float h = 1.6 * fin;
+            float t = saturate(q.y / max(h, 1e-3));
+            float finD = max(abs(q.x + 0.25 * t * t) - 0.38 * (1.0 - t), q.y - h);
+            float d = max(min(back, finD), -q.y);
+            body = 1.0 - smoothstep(-aa, aa, d);
+        }
+        float3 dark = float3(0.003, 0.004, 0.005) + f.aurora.rgb * 0.15;
+        float breath = 0.0;
+        if (age >= 0.0 && age < 4.0) {
+            float y = q.y;
+            float rise = 4.2 * (1.0 - exp(-age / 0.3));
+            float up = saturate(y / 4.0);
+            float x = q.x - 0.25 - 0.6 * age * wind * up;
+            float w = 0.25 + 0.3 * age + 0.3 * up * (1.0 + age);
+            float n = vnoise3(float3(q.x * 1.6, (y - age * 0.6) * 1.4, age * 0.5 + 3.0));
+            float column = exp(-(x * x) / (w * w)) * smoothstep(0.0, 0.25, y) * (1.0 - smoothstep(rise - 0.6, rise + 0.4, y));
+            breath = saturate(column * (0.45 + 0.55 * n) * strength * (1.0 - smoothstep(1.2, 4.0, age)) * 0.75);
+        }
+        float a = (breath + body * (1.0 - breath)) * in.tint.w;
+        if (a < 0.002) discard_fragment();
+        float3 col = (in.tint.rgb * breath + dark * body * (1.0 - breath)) * in.tint.w;
+        return float4(col, a);
     }
 
     // ---------------------------------------------------------------- the jetty's rails

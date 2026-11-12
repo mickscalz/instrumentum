@@ -103,6 +103,19 @@ public struct OceanSwell {
         return broke
     }
 
+    /// A big wave out of turn (Fire & Neon spec §5.5, the beach's drop): the next wave due at least `after` seconds from
+    /// now breaks at `strength` (before the weather's scale) if that is bigger than its own, as part of a set. Returns
+    /// that wave as it was, or nil when none is due in the schedule's 40 s. The schedule keeps its times, so the crest
+    /// already rolling in is the one that grows.
+    @discardableResult
+    public mutating func surge(strength: Float, after: Double) -> Wave? {
+        guard strength.isFinite, let i = schedule.firstIndex(where: { $0.breakTime >= time + max(0, after) }) else { return nil }
+        let was = schedule[i]
+        schedule[i].strength = max(was.strength, min(1.5, strength))
+        schedule[i].big = true
+        return was
+    }
+
     /// The next `n` waves still to break, at the current weather's strength.
     public func upcoming(_ n: Int) -> [Wave] {
         schedule.prefix(n).map { var w = $0; w.strength = min(1, w.strength * scale); return w }

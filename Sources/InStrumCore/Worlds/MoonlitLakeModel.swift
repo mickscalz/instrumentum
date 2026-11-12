@@ -17,15 +17,78 @@ public struct LakeFrame: AmbienceProviding {
     public var time: Double
     /// Galaxy Warp over the lake's sky, when it's the chosen visual (notes then streak instead of rippling).
     public var warp: WarpFrame?
+
+    // Excitement as the lake draws it (Fire & Neon spec §5.5). The meteor burst and the fireball are already in `sky`
+    // (the shared sky draws them, and the water mirrors them).
+    /// Rings that aren't a note's: a fish rising, and the water's own dimples as Energy rises (beside `ripples`).
+    public var rings: [Ripple] = []
+    /// The owl crossing the moon (a surprise), while it flies.
+    public var owl: LakeOwl? = nil
+    /// The wind the water and the reeds feel: the sky's, raised by Energy (0…1).
+    public var windOnWater: Float = 0
+    /// Tension: the mist gathers on the water (0…1). The drop: it lifts all at once (1), settling back over 14 s.
+    public var mistGather: Float = 0
+    public var mistLift: Float = 0
+    /// A fireball's light on the lake (0…1, before the renderer's flash limiter).
+    public var flashRequest: Float = 0
+    /// How many of the lake's own meteors (the burst's, a fireball's) are showing.
+    public var worldMeteors: Int = 0
+    /// The surprises playing now.
+    public var surprises: [LakeSurprise] = []
+    public var energy: Float = 0
+    public var tension: Float = 0
+}
+
+/// The owl crossing the moon (Fire & Neon spec §5.5): it glides a straight line across the sky from `from` to `to`
+/// (east-north-up unit vectors), through the moon's disc; `progress` 0…1 along it, its wings' beat (−1 down … 1 up: a
+/// few deep, slow beats, then a glide) and its wingspan's angular size (degrees).
+public struct LakeOwl: Equatable {
+    public var from: SIMD3<Float>
+    public var to: SIMD3<Float>
+    public var progress: Float
+    public var wing: Float
+    public var span: Float
+
+    /// Where it is now (an east-north-up unit vector).
+    public var direction: SIMD3<Float> {
+        let a = simd_normalize(from), b = simd_normalize(to)
+        let p = min(1, max(0, progress.isFinite ? progress : 0))
+        return simd_normalize(a * (1 - p) + b * p)
+    }
+}
+
+/// A lake surprise playing now (Fire & Neon spec §5.5): a fireball, an owl crossing the moon (a fish rising instead
+/// while the moon is down or out of view), a fish rising.
+public struct LakeSurprise: Equatable {
+    public enum Kind: Int, CaseIterable { case fireball, owl, fish }
+    public var kind: Kind
+    public var age: Float
+    public var duration: Float
+    public var seed: UInt64
+
+    public static func duration(_ k: Kind) -> Float {
+        switch k {
+        case .fireball: return 3.6
+        case .owl: return 7
+        case .fish: return 4.5
+        }
+    }
+    public var progress: Float { min(1, max(0, age / max(duration, 1e-3))) }
 }
 
 /// Set 1's world: a still lake under the Living Sky, ridges and pines, reeds and mist.
 /// Its visual, Lake Ripples, answers your notes on the water.
-public struct MoonlitLakeModel: ThemeModel, MoodAware, SkyAware {
+public struct MoonlitLakeModel: ThemeModel, MoodAware, SkyAware, ExcitementAware, SurpriseListing {
     public typealias Frame = LakeFrame
     public static let id = "moonlit-lake"
     public static let displayName = "Moonlit Lake"
     public static let visuals = ["Lake Ripples", "Galaxy Warp"]
+    /// A fireball, an owl crossing the moon, a fish rising (Fire & Neon spec §5.5).
+    public static let surpriseCount = LakeSurprise.Kind.allCases.count
+    /// The rings' pool (a fish's and the water's own), the burst's meteors at most, and the mist's settling time.
+    public static let ringCount = 16
+    public static let burstMost = 12, burstLeast = 5
+    public static let liftSeconds: Float = 20
 
     public var mood = Mood.neutral
     private var sky = SkyState()
@@ -39,13 +102,38 @@ public struct MoonlitLakeModel: ThemeModel, MoodAware, SkyAware {
     private var lastLightning: Float = 0
     private var thunderRng = SeededRandom(seed: 0x7E11)
 
+    // Excitement (Fire & Neon spec §5.5): fixed pools throughout.
+    private var excite = ExcitementFrame()
+    private var rng = SeededRandom(seed: 0x1A4E_E7C1)
+    private var meteors = WorldMeteors()
+    private var rings = [Ripple](repeating: MoonlitLakeModel.deadRing, count: MoonlitLakeModel.ringCount)
+    private var surprises: [LakeSurprise?] = [nil, nil, nil]
+    private var owl: LakeOwl?
+    private var energyEased: Float = 0
+    private var gather: Float = 0
+    private var liftAge: Float?
+    private var dimpleDebt: Float = 0
+    private var burstAge: Float?
+
     private static let layout = KeyboardLayout.keys()
+    private static let deadRing = Ripple(x: 0, depth: 0, age: 0, strength: 0, lifetime: 0)
 
     public init() {}
 
     public mutating func handle(_ e: PerformanceEvent) { pending.append(e) }
 
     public mutating func setSky(_ s: SkyState) { sky = s }
+
+    /// Excitement's frame for the next step; its moment and surprise are taken once.
+    public mutating func setExcitement(_ e: ExcitementFrame) { excite = e }
+
+    /// Where the lake looks: at the moon while it's up (a little to its left, so it sits off-centre), else at the sun,
+    /// else toward the equator (the renderer glides its camera here).
+    public static func viewAzimuth(_ s: SkyState) -> Double {
+        if s.moon.altitude > -5, s.sun.altitude < 2 { return s.moon.azimuth - 10 }
+        if s.sun.altitude > -12 { return s.sun.azimuth - 10 }
+        return s.latitude < 0 ? 0 : 180
+    }
 
     public mutating func step(dt: Double, params p: ParameterSet, roles: RoleValues, inputs: InputFrame, quality: QualityLevel) -> LakeFrame {
         time += dt
@@ -79,6 +167,8 @@ public struct MoonlitLakeModel: ThemeModel, MoodAware, SkyAware {
         pending.removeAll(keepingCapacity: true)
         lake.step(dt: dt, roles: roles)
         let warpFrame = warp.step(dt: dt, roles: roles, inputs: inputs)
+        let x = ExcitementStep.take(&excite)
+        stepExcitement(x, dt: Float(max(0, dt.isFinite ? dt : 0)), warping: warping)
 
         // Keys glow moon-silver while held, then fade (longer when lingering).
         let fall = Float(pow(0.5, dt / (roles[.linger] > 0.5 ? 1.2 : 0.3)))
@@ -88,8 +178,161 @@ public struct MoonlitLakeModel: ThemeModel, MoodAware, SkyAware {
         }
         let keys = Self.layout.map { k in KeyVisual(key: k, pressed: held[k.note] != nil, glow: keyGlow[Int(k.note) - 21]) }
 
-        return LakeFrame(sky: sky, ripples: lake.ripples, fireflies: lake.fireflies, glitter: lake.glitter, keys: keys,
-                         ambience: ambience(roles: roles), mood: mood, time: time, warp: warping ? warpFrame : nil)
+        var shown = sky
+        meteors.inject(into: &shown)
+        var frame = LakeFrame(sky: shown, ripples: lake.ripples, fireflies: lake.fireflies, glitter: lake.glitter, keys: keys,
+                              ambience: ambience(roles: roles), mood: mood, time: time, warp: warping ? warpFrame : nil)
+        frame.rings = rings.filter { $0.lifetime > 0 && $0.age >= 0 }   // a fish's later rings wait their turn
+        frame.owl = owl
+        frame.windOnWater = min(1, max(0, (sky.wind.isFinite ? sky.wind : 0) + 0.35 * energyEased))
+        frame.mistGather = gather
+        frame.mistLift = liftAge.map { ExcitementStep.envelope(age: $0, life: Self.liftSeconds, rise: 0.7, fall: 14) } ?? 0
+        frame.flashRequest = 0.35 * meteors.fireballLight(at: sky.meteorTime)
+        frame.worldMeteors = meteors.live(at: sky.meteorTime).count
+        frame.surprises = surprises.compactMap { $0 }
+        frame.energy = x.energy
+        frame.tension = x.tension
+        return frame
+    }
+
+    // MARK: - Excitement (Fire & Neon spec §5.5)
+
+    /// Energy stirs the water (its wind, and dimples here and there); a big moment is a meteor burst from one radiant,
+    /// mirrored in the lake; tension gathers the mist and a drop lifts it all at once; the surprises play.
+    private mutating func stepExcitement(_ x: ExcitementStep, dt fd: Float, warping: Bool) {
+        energyEased = ExcitementStep.ease(energyEased, to: x.energy, tau: x.energy > energyEased ? 1.2 : 4, dt: fd)
+        let now = sky.meteorTime
+        meteors.prune(at: now)
+
+        // The water's own dimples: rarer than a note's rings and fainter, about 3 a second at full Energy.
+        for i in rings.indices where rings[i].lifetime > 0 {
+            rings[i].age += fd
+            if rings[i].age >= rings[i].lifetime { rings[i] = Self.deadRing }
+        }
+        if fd > 0, !warping {
+            dimpleDebt += 3 * energyEased * energyEased * fd
+            while dimpleDebt >= 1 {
+                dimpleDebt -= 1
+                ring(x: rng.range(0.08, 0.92), depth: rng.range(0.2, 0.85), strength: rng.range(0.12, 0.3) * lake.reactionScale,
+                     lifetime: rng.range(2, 3))
+            }
+        }
+
+        // A big moment: a meteor burst. The drop: the mist lifts.
+        if let m = x.moment {
+            burst(strength: ExcitementStep.strength(m), gentle: x.gentle, now: now)
+            if m.isDrop { liftAge = 0 }
+        }
+        if let a = burstAge { burstAge = a + fd > 4 ? nil : a + fd }
+        if let a = liftAge { liftAge = a + fd > Self.liftSeconds ? nil : a + fd }
+        let target = x.tension
+        gather = ExcitementStep.ease(gather, to: target, tau: target > gather ? 1.5 : 3, dt: fd)
+        if liftAge != nil { gather = ExcitementStep.ease(gather, to: 0, tau: 0.4, dt: fd) }
+
+        // Surprises.
+        if let sp = x.surprise { surprised(sp, gentle: x.gentle, now: now) }
+        for i in surprises.indices {
+            guard var sp = surprises[i] else { continue }
+            sp.age += fd
+            surprises[i] = sp.age >= sp.duration ? nil : sp
+        }
+        if let o = owl {
+            if let found = surprises.first(where: { $0?.kind == .owl }), let sp = found {
+                var next = o
+                next.progress = sp.progress
+                // A few deep, slow beats, then a glide, and again.
+                let cycle = (sp.age * 2.1).truncatingRemainder(dividingBy: 5)
+                next.wing = cycle < 3 ? sin(cycle * 2 * .pi) : 0.15
+                owl = next
+            } else {
+                owl = nil
+            }
+        }
+    }
+
+    /// A ring in the pool (over the most nearly spent when it's full); a negative `age` waits that long to start.
+    private mutating func ring(x: Float, depth: Float, strength: Float, lifetime: Float, age: Float = 0) {
+        let r = Ripple(x: x, depth: depth, age: age, strength: strength, lifetime: lifetime)
+        if let free = rings.firstIndex(where: { $0.lifetime <= 0 }) {
+            rings[free] = r
+        } else {
+            var oldest = 0
+            for i in rings.indices where rings[i].age / max(rings[i].lifetime, 1e-3) > rings[oldest].age / max(rings[oldest].lifetime, 1e-3) {
+                oldest = i
+            }
+            rings[oldest] = r
+        }
+    }
+
+    /// 5–12 meteors from one radiant high in the view, the first ones at once and the rest over 2.4 s, all running away
+    /// from it; at strength 0.6 and over the first two are fireballs ending in a flare (never under gentle visuals, where
+    /// every one is a magnitude and a half fainter).
+    private mutating func burst(strength s: Float, gentle: Bool, now: Double) {
+        burstAge = 0
+        let span = Float(Self.burstMost - Self.burstLeast)
+        let count = min(Self.burstMost, Self.burstLeast + Int(((s - 0.15) / 0.85 * span).rounded()))
+        let view = Self.viewAzimuth(sky)
+        let radiant = WorldMeteors.direction(azimuth: view + Double(rng.range(-16, 16)), altitude: Double(rng.range(22, 32)))
+        let fainter: Float = gentle ? 1.5 : 0
+        for k in 0..<count {
+            let f = count > 1 ? Float(k) / Float(count - 1) : 0
+            let offset = 2.4 * Double(f * f.squareRoot())
+            let length = rng.range(8, 18) * (0.8 + 0.4 * s)
+            let pace = rng.range(18, 32)
+            let fireball = k < 2 && s >= 0.6
+            let magnitude: Float = fireball ? -5 - 3 * (s - 0.6) / 0.4 + Float(k) : -1.2 - 2.6 * s + rng.range(-1, 1.2)
+            let m = WorldMeteors.meteor(radiant: radiant, distance: rng.range(5, 22), angle: rng.range(-1.35, 1.35), length: length,
+                                        born: now + offset, duration: length / pace, magnitude: magnitude + fainter,
+                                        speed: Double(rng.range(58, 70)), flare: fireball && !gentle)
+            meteors.add(m)
+        }
+    }
+
+    private mutating func surprised(_ s: WorldSurprise, gentle: Bool, now: Double) {
+        guard var kind = LakeSurprise.Kind(rawValue: s.index) else { return }
+        var r = SeededRandom(seed: s.seed)
+        let view = Self.viewAzimuth(sky)
+        if kind == .owl {
+            // The owl crosses the moon: only while the moon is up, lit and in view (else a fish rises instead).
+            let off = abs((sky.moon.azimuth - view + 540).truncatingRemainder(dividingBy: 360) - 180)
+            if sky.moon.altitude < 4 || sky.moonLit < 0.15 || off > 35 { kind = .fish }
+        }
+        guard !surprises.contains(where: { $0?.kind == kind }) else { return }
+        var duration = LakeSurprise.duration(kind)
+        switch kind {
+        case .fireball:
+            // A slow golden fireball across the view, high to low, ending in a flare (a glow under gentle visuals).
+            let leftToRight = r.unit() < 0.5
+            let a = view + (leftToRight ? -1 : 1) * Double(r.range(20, 30))
+            let b = view + (leftToRight ? 1 : -1) * Double(r.range(14, 24))
+            let start = WorldMeteors.direction(azimuth: a, altitude: Double(r.range(26, 32)))
+            let end = WorldMeteors.direction(azimuth: b, altitude: Double(r.range(4, 9)))
+            let run = r.range(2.8, 3.3)
+            meteors.add(WorldMeteors.meteor(from: start, to: end, born: now, duration: run, magnitude: gentle ? -6 : -8,
+                                            speed: 24, flare: !gentle))
+            duration = run + 0.2
+        case .owl:
+            let m = WorldMeteors.direction(azimuth: sky.moon.azimuth, altitude: sky.moon.altitude)
+            let up = SIMD3<Float>(0, 0, 1)
+            var across = simd_cross(m, up)
+            if simd_length(across) < 1e-4 { across = SIMD3<Float>(1, 0, 0) }
+            across = simd_normalize(across) * (r.unit() < 0.5 ? 1 : -1)
+            let rising = up - m * simd_dot(m, up)   // up the sky from the moon (nothing with the moon overhead)
+            let downhill: SIMD3<Float> = simd_length(rising) > 1e-4 ? simd_normalize(rising) * -0.18 : .zero
+            let path = simd_normalize(across + downhill)
+            let half: Float = 9 * .pi / 180
+            let start = simd_normalize(m * cos(half) - path * sin(half)), end = simd_normalize(m * cos(half) + path * sin(half))
+            owl = LakeOwl(from: start, to: end, progress: 0, wing: 0, span: 1.6)
+        case .fish:
+            let x = r.range(0.25, 0.75), depth = r.range(0.25, 0.6)
+            // A rise: a ring, then two more from the same spot as the fish turns down.
+            for k in 0..<3 {
+                ring(x: x + r.range(-0.004, 0.004), depth: depth, strength: (0.7 - 0.15 * Float(k)) * lake.reactionScale,
+                     lifetime: 3.5 - 0.35 * Float(k), age: -0.35 * Float(k))
+            }
+        }
+        let record = LakeSurprise(kind: kind, age: 0, duration: duration, seed: s.seed)
+        if let free = surprises.firstIndex(where: { $0 == nil }) { surprises[free] = record }
     }
 
     /// The lake's soundscape, following the sky and your playing.
