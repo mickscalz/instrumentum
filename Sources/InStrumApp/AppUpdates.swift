@@ -49,25 +49,28 @@ public enum AppUpdates {
 /// The top bar's update button: a quiet icon that checks for a new build, which turns into an orange **Update** once a
 /// newer build is out. Either way it opens the update window (what's new, then Install Update). Hidden where there is
 /// no updater (tests, previews, `swift run`).
+@MainActor
 struct UpdateButton: View {
     @ObservedObject var status: UpdateStatus
     let hasUpdater: Bool
-    let check: () -> Void
+    let check: @MainActor () -> Void
 
-    init(status: UpdateStatus = AppUpdates.status, hasUpdater: Bool = AppUpdates.updater != nil,
-         check: @escaping () -> Void = { AppUpdates.updater?.checkForUpdates() }) {
-        _status = ObservedObject(wrappedValue: status); self.hasUpdater = hasUpdater; self.check = check
+    /// Nil arguments mean the app's own: its status, whether it has an updater, and the updater's window.
+    init(status: UpdateStatus? = nil, hasUpdater: Bool? = nil, check: (@MainActor () -> Void)? = nil) {
+        _status = ObservedObject(wrappedValue: status ?? AppUpdates.status)
+        self.hasUpdater = hasUpdater ?? (AppUpdates.updater != nil)
+        self.check = check ?? { AppUpdates.updater?.checkForUpdates() }
     }
 
     var body: some View {
         if hasUpdater {
             if let build = status.newBuild {
-                Button(action: check) { Label("Update", systemImage: "arrow.down.circle.fill") }
+                Button { check() } label: { Label("Update", systemImage: "arrow.down.circle.fill") }
                     .buttonStyle(.borderedProminent)
                     .tint(Color(red: 0.95, green: 0.55, blue: 0.2))
                     .help("Build \(build) is ready: see what's new and install it. Your settings, presets and keeps stay.")
             } else {
-                Button(action: check) { Label("Check for Updates", systemImage: "arrow.triangle.2.circlepath") }
+                Button { check() } label: { Label("Check for Updates", systemImage: "arrow.triangle.2.circlepath") }
                     .labelStyle(.iconOnly)
                     .help("Check for a new build (this is build \(AppUpdates.currentBuild))")
             }
