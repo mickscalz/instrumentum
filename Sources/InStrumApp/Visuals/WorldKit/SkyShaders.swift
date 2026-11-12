@@ -1096,15 +1096,16 @@ enum SkyShaders {
     /// it comes (over the clouds, the moon and the sun's disc, which it hides). The storm is drawn first, where little
     /// else is live, and the sky behind it only where it shows through (under the storm's dark body none of it is drawn).
     float3 skyRadiance(float3 d, constant SkyU& u, thread float& moonMask, texture2d<float> stars) {
-        float amount = saturate(u.cellA.w);
-        if (amount <= 0.001 || d.z <= -0.01) return skyRadianceBase(d, u, moonMask, stars);
-        float4 storm = supercellSky(d, u, u.forward.w);
+        float amount = d.z > -0.01 ? saturate(u.cellA.w) : 0.0;
+        float4 storm = float4(0.0, 0.0, 0.0, 1.0);
+        if (amount > 0.001) storm = supercellSky(d, u, u.forward.w);
         // The light under the core goes green (a grade of at most 12%).
         float3 grade = mix(float3(1.0), float3(1.0 - 0.9 * 0.12, 1.0 + 0.25 * 0.12, 1.0 - 0.6 * 0.12),
                            saturate(u.cellB.x / 0.12)) * amount;
         float through = 1.0 - amount + amount * storm.a;
         float3 col = float3(0);
         moonMask = 0.0;
+        // One call site: skyRadianceBase is large, and inlined twice it slowed every sky about sevenfold on CI.
         if (through > 0.002) col = skyRadianceBase(d, u, moonMask, stars);
         moonMask *= through;
         return col * (1.0 - amount) + grade * (storm.rgb + storm.a * col);
