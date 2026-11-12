@@ -40,6 +40,8 @@ enum NeonNightDriveShaders {
         float4 cars[24];    // per car: (x centre, ahead, oncoming, brake), (seed 0…1, light bar, body, 0); empty: ahead −1e5
         float4 pal[6];      // the neon now: three palette colours (rgb), then three accents (rgb)
         float4 moon;        // the moon behind the overcast: its direction (east-north-up), how much shows 0…1
+        float4 cabin;       // the windscreen's outline (NDC): the dashboard's line y, the roof's line y, 0, 0
+        float4 pillars;     // the left pillar's inner edge x at the dashboard and at the roof, the right pillar's
     };
     struct DriveOut { float4 pos [[position]]; float2 ndc; };
 
@@ -1379,7 +1381,11 @@ enum NeonNightDriveShaders {
         // mirror fades with the distance beyond.
         float3 hz = driveProject(float3(d.x, 0.0, d.z), sky, u);
         float aboveH = smoothstep(hz.y - 0.02, hz.y + 0.04, sp.y);
-        float edges = smoothstep(0.0, 0.14, uv.x) * smoothstep(1.0, 0.86, uv.x);
+        // What the pillars hide from you isn't mirrored either (it would show as a stray patch under them).
+        float fC = clamp((sp.y - u.cabin.x) / max(u.cabin.y - u.cabin.x, 1e-3), 0.0, 1.0);
+        float lx = mix(u.pillars.x, u.pillars.y, fC), rx = mix(u.pillars.z, u.pillars.w, fC);
+        float seen = smoothstep(lx - 0.02, lx + 0.12, sp.x) * smoothstep(rx + 0.02, rx - 0.12, sp.x);
+        float edges = smoothstep(0.0, 0.06, uv.x) * smoothstep(1.0, 0.94, uv.x) * seen;
         float fade = 1.0 / (1.0 + beyond / 80.0);
         float F = fresnelWet(-d.y);
         float strength = F * wet * (water > 0.5 ? 0.9 : 0.55 + 0.6 * puddle) * aboveH * edges * fade * patches;

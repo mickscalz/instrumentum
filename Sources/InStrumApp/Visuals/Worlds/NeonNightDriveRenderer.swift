@@ -25,10 +25,10 @@ final class NeonNightDriveRenderer: ThemeRenderer {
     nonisolated static let studBase = 32, studSlots = 16
     nonisolated static let carBase = 48, carSlots = 12
     nonisolated static let palBase = 72, palRows = 6
-    nonisolated static let rowMoon = 78
+    nonisolated static let rowMoon = 78, rowCabin = 79, rowPillars = 80
     /// The Sky kit's `SkyU` rows for the moon: its direction and phase, then lit fraction, earthshine, radius.
     nonisolated static let skyMoonRow = 6
-    nonisolated static let uniformCount = 79
+    nonisolated static let uniformCount = 81
 
     // MARK: The view
     /// The way the road runs (degrees from north): the sky's moon and clouds stand where they would.
@@ -274,7 +274,13 @@ final class NeonNightDriveRenderer: ThemeRenderer {
         trails.update(frame, quality: quality, gentle: gentle)
         let wave: Float = waveAge >= 0 ? waveLight * exp(-max(0, waveAge) / 0.6) : 0
         let cabin: SIMD3<Float> = haze * 2.5 + glowColour * glowStrength * 0.5 + avg * (0.08 * wave)
-        screen.update(spec: .windscreen(aspect: aspect), wipers: frame.wipers, glassRain: frame.glassRain, speed: frame.speed,
+        // The cabin's outline, so the road never mirrors what the pillars hide from you.
+        let glass = WindowSpec.windscreen(aspect: aspect)
+        if let w = glass.windscreen {
+            u[Self.rowCabin] = SIMD4(w.dash, w.roof, 0, 0)
+            u[Self.rowPillars] = SIMD4(w.leftPillar.x, w.leftPillar.y, w.rightPillar.x, w.rightPillar.y)
+        }
+        screen.update(spec: glass, wipers: frame.wipers, glassRain: frame.glassRain, speed: frame.speed,
                       cabinLight: cabin, strobe: strobeLight, keys: frame.keys, keyColour: pal[0],
                       showKeys: p.number("keys.show") > 0.5, quality: quality, dt: dt, aspect: aspect, time: t)
 
