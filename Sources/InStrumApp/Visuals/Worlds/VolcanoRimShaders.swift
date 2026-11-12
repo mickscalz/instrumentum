@@ -523,12 +523,12 @@ enum VolcanoRimShaders {
         float slump = 15.0 * smoothstep(0.55, 0.78, vn2(float2(arc * 0.008, 9.0))) - 10.0 * smoothstep(0.6, 0.82, vn2(float2(arc * 0.011, 4.0)));
         // Gullies: chutes cut down the wall every hundred metres or so, each its own width, wider up; rockfall has
         // heaped a talus cone at each one's foot.
-        float gc = arc / 95.0 + 0.7 * vn2(float2(arc * 0.01, 2.0));
+        float gc = arc / 95.0 + 0.7 * vn2(float2(arc * 0.01, 2.0)) + 0.14 * vn2(float2(arc * 0.03, z * 0.035 + 6.0));
         float gid = floor(gc + 0.5);
         float gseed = hash12(float2(gid, 8.1));
         float gd = abs(gc - gid) * 95.0;
         float gw = (10.0 + 16.0 * gseed) * (0.45 + 0.55 * smoothstep(0.0, 140.0, z));
-        float gully = step(0.3, gseed) * (1.0 - smoothstep(0.3 * gw, gw, gd));
+        float gully = step(0.3, gseed) * (1.0 - smoothstep(0.15 * gw, 1.15 * gw, gd));
         float lz = (z + slump - 9.0 * gully) / 24.0 + 0.85 * vn2(float2(arc * 0.004, z * 0.006 + 1.0))
                  + 0.3 * vn2(float2(arc * 0.012, z * 0.02 + 3.0));
         float Li = floor(lz), f = lz - Li;
@@ -555,7 +555,7 @@ enum VolcanoRimShaders {
         // and the gullies cut it.
         float holds = smoothstep(0.4, 0.62, vn2(float2(arc * 0.012, Li * 2.3))) * step(0.25, seedL) * (1.0 - gully);
         // Its lit edge thickens and thins along the wall and fades in and out (a broken edge, never a drawn line).
-        float lipW = 0.05 + 0.16 * vn2(float2(arc * 0.021, Li * 4.7));
+        float lipW = 0.07 + 0.2 * vn2(float2(arc * 0.021, Li * 4.7));
         float lip = smoothstep(0.95 - 1.6 * lipW, 0.95 - 0.6 * lipW, f) * (1.0 - smoothstep(0.95, 1.0, f)) * holds
                   * (0.35 + 0.9 * vn2(float2(arc * 0.035, Li * 1.9 + 6.0)));
         float under = (1.0 - smoothstep(0.0, 0.2, f)) * holds;
@@ -591,7 +591,7 @@ enum VolcanoRimShaders {
         }
         float3 lit = craterLight(P, N, u);
         float3 col = basaltC * ao * (lit + u.skyL.rgb);
-        col += basaltC * lit * (1.6 * lip);
+        col += basaltC * lit * (1.25 * lip);
         float3 basalt0 = basaltC;
         // The breach's notch: its cut faces lit by the river pouring through.
         float off = abs(th - u.dims2.w);
@@ -814,14 +814,14 @@ enum VolcanoRimShaders {
         float q = xj / w;
         // Inside it, long-exposure threads (clots racing up smeared into lines) and clumps rising through it.
         float threads = vn2(float2(q * 3.2 + 7.0, z * 0.01 - tt * 0.8));
-        float clumps = vn2(float2(xj * 0.07, (z - tt * 95.0) * 0.045));
+        float clumps = vn2(float2(xj * 0.13, (z - tt * 95.0) * 0.08)) * 0.75 + 0.25 * vn2(float2(xj * 0.31, (z - tt * 95.0) * 0.2));
         float body = exp(-q * q * 1.4) * (0.85 + 0.25 * threads);
         // Its head tears into clots: from two-thirds of the way up the jet thins into clumps, and above its head only
         // clots remain.
         float tear = smoothstep(0.55, 1.05, zn + 0.25 * (clumps - 0.5));
         float dens = body * mix(1.0, smoothstep(0.42, 0.72, clumps + 0.15 * threads), tear)
                    * (1.0 - smoothstep(1.0, 1.35, z / max(Hj, 1.0) - 0.15 * clumps)) * smoothstep(-3.0, 2.0, z) * standing;
-        float Tj = 1370.0 - 190.0 * zn - 170.0 * q * q + 45.0 * (threads - 0.5) + 30.0 * sp;
+        float Tj = 1370.0 - 190.0 * zn - 170.0 * q * q + 45.0 * (threads - 0.5) + 30.0 * sp - 120.0 * tear;
         float3 light = blackbody(Tj) * (dens * (1.1 + 0.25 * threads));
         float cover = saturate(dens * 1.4);
         // Clots from its head, fewer and larger, on tall narrow arcs (the flights 6 times fast, a long exposure's
@@ -858,8 +858,10 @@ enum VolcanoRimShaders {
         float n = fbm2(mw + float2(1.7, 4.2), oct);
         // Torn, see-through edges; wisps and holes inside; dense just over the lake, thinning as it climbs.
         float edge = 1.0 - smoothstep(0.3, 1.05, abs(s) + 0.6 * (n - 0.5));
-        float wisp = smoothstep(0.4, 0.66, n);
-        float thick = 0.5 + 0.7 * exp(-zz / 110.0);       // thinning as it widens
+        // High up it is wisps only (the gas spreading and mixing): never a dense lump at its top.
+        float high = saturate(zz / 350.0);
+        float wisp = smoothstep(0.4 + 0.14 * high, 0.66 + 0.08 * high, n);
+        float thick = 0.42 + 0.78 * exp(-zz / 110.0);     // thinning as it widens
         float dens = edge * (0.2 + 0.8 * wisp) * thick * (0.55 + 0.6 * amount) * smoothstep(-5.0, 20.0, z);
         if (dens <= 0.003) return float4(0);
         float alpha = 1.0 - exp(-dens * 1.35);
@@ -884,8 +886,8 @@ enum VolcanoRimShaders {
         float Hj = fountainTop(u);
         if (Hj > 1.0) {
             float df2 = P.x * P.x + sq(zz - 0.8 * Hj);
-            float Rf = 70.0 + 0.4 * Hj;
-            lit += blackbody(1210.0) * (u.erupt.y * 0.3 * Rf * Rf / (Rf * Rf + df2) * (0.3 + 0.7 * under) * (0.5 + 0.5 * depthIn));
+            float Rf = 50.0 + 0.3 * Hj;
+            lit += blackbody(1210.0) * (u.erupt.y * 0.16 * Rf * Rf / (Rf * Rf + df2) * (0.3 + 0.7 * under) * (0.5 + 0.5 * depthIn));
         }
         return float4(lit * alpha, alpha);
     }

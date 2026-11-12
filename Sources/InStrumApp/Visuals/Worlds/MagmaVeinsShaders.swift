@@ -208,7 +208,7 @@ enum MagmaVeinsShaders {
         float x = max(dist + torn, 0.0) / w;
         float2 flow = p - float2(0.0, view.z * 0.03);
         float pulse = vn2(flow * 7.0 + 9.0);
-        float raft = smoothstep(0.66, 0.86, vn2(flow * 17.0 + float2(5.0, 1.0)) * 0.8 + 0.25 * vn2(flow * 43.0));
+        float raft = smoothstep(0.72, 0.9, vn2(flow * 13.0 + float2(5.0, 1.0)) * 0.8 + 0.25 * vn2(flow * 37.0));
         float T = Tcore - 140.0 * (1.0 - pulse) - 240.0 * raft * (1.0 - 0.5 * x) - 430.0 * smoothstep(0.4, 1.0, x);
         float inChan = 1.0 - smoothstep(0.9, 1.05, x);
         float cover = 1.0 - smoothstep(1.4, 1.85, x + 0.3 * (vn2(p * 40.0) - 0.5));

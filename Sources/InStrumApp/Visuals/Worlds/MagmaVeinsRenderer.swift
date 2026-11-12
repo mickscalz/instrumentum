@@ -143,11 +143,27 @@ final class MagmaVeinsRenderer: ThemeRenderer {
         return out
     }
 
-    /// A lens along a channel (0 at its ends, 1 at its middle): never quite pinched shut, so the channel stays whole.
+    /// A lens along a channel (0 at its ends, 1 at its middle): never quite pinched shut, so the channel stays whole,
+    /// and blunt at its far end (a channel's tip is a rounded tongue, never a spike).
     nonisolated static func lens(_ s: Float) -> Float {
         let x = min(1, max(0, s))
         let k = sin(Float.pi * x)
-        return 0.14 + 0.86 * k.squareRoot() * (0.55 + 0.45 * k)
+        return 0.14 + 0.2 * x * x + 0.86 * k.squareRoot() * (0.55 + 0.45 * k) * (1 - 0.2 * x * x)
+    }
+
+    /// Where a vein's channel runs (view units across, from its origin): its smoothed path drawn toward its nearest
+    /// neighbour's as it climbs (`toward`: the neighbour's path, in the vein's own frame), so neighbouring channels run
+    /// together and merge rather than fanning apart.
+    nonisolated static func merged(_ path: [SIMD2<Float>], toward other: [SIMD2<Float>]?, pull: Float) -> [SIMD2<Float>] {
+        guard let other, other.count == path.count, pull > 0 else { return path }
+        var out = path
+        let n = Float(path.count - 1)
+        for i in 0..<path.count {
+            let s = Float(i) / n
+            let m = pull * s * s * (3 - 2 * s)
+            out[i].x += (0.5 * (path[i].x + other[i].x) - path[i].x) * m
+        }
+        return out
     }
 
     /// Each vein's lens-shaped channel and its braids, grown as far as it has reached (view heights from its origin at
@@ -166,10 +182,25 @@ final class MagmaVeinsRenderer: ThemeRenderer {
             instances.append(SIMD4(width.1, kelvin.1, 0, 0))
         }
         let soft: Float = gentle ? 0.8 : 1
-        for v in frame.veins where v.alive {
-            let path = Self.smoothed(v.path())
+        // Each channel runs toward its nearest neighbour's (within a sixth of the view across) and merges with it.
+        var near: [(index: Int, path: [SIMD2<Float>])] = []
+        for (i, v) in frame.veins.enumerated() where v.alive && v.reach > 0 { near.append((i, Self.smoothed(v.path()))) }
+        for (k, entry) in near.enumerated() {
+            let v = frame.veins[entry.index]
+            var best: Int?
+            var bestGap: Float = 0.17 * aspect
+            for (j, other) in near.enumerated() where j != k {
+                let gap = abs(frame.veins[other.index].origin - v.origin) * aspect
+                if gap < bestGap { bestGap = gap; best = j }
+            }
+            var toward: [SIMD2<Float>]?
+            if let b = best {
+                let w = frame.veins[near[b].index]
+                let shift = (w.origin - v.origin) * aspect
+                toward = near[b].path.map { SIMD2($0.x + shift, $0.y) }
+            }
+            let path = Self.merged(entry.path, toward: toward, pull: 0.8)
             let reach = v.reach
-            guard reach > 0 else { continue }
             let steps = Float(path.count - 1)
             // A channel of magma opening through the crust: wider the harder the note, widening as it grows, a lens over
             // the length it has reached; hottest near its source, cooler toward its tip, a hot pulse along it.

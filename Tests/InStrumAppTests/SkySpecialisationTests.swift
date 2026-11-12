@@ -112,9 +112,9 @@ final class SkySpecialisationTests: XCTestCase {
 /// TIMING lines, with the Lounge (no sky) for scale.
 @MainActor
 final class SkyProgramFrameTimeTests: XCTestCase {
-    static func median(_ renderer: ThemeRenderer, stack: RenderStack, queue: MTLCommandQueue) -> Double {
+    static func median(_ renderer: ThemeRenderer, stack: RenderStack, queue: MTLCommandQueue, frames: Int = 24) -> Double {
         var times: [Double] = []
-        for i in 0..<28 {
+        for i in 0..<(frames + 4) {
             guard let cb = queue.makeCommandBuffer() else { continue }
             renderer.render(stack: stack, commandBuffer: cb)
             cb.commit()
@@ -129,15 +129,22 @@ final class SkyProgramFrameTimeTests: XCTestCase {
         guard let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue() else { throw XCTSkip("No Metal device") }
         let stack = try XCTUnwrap(RenderStack(device: device, pixelFormat: .bgra8Unorm))
         stack.resize(width: 1280, height: 720)
+        // Interleaved (plain, storm, plain, storm …), so the GPU's clocks settling favour neither.
         func both(_ label: String, _ renderer: ThemeRenderer, _ sky: SkyLayer) {
+            var plain: [Double] = [], storm: [Double] = []
+            for round in 0..<6 {
+                for stormy in [false, true] {
+                    sky.forceStormProgram = stormy
+                    let m = Self.median(renderer, stack: stack, queue: queue, frames: 10)
+                    if round > 0 { if stormy { storm.append(m) } else { plain.append(m) } }
+                }
+            }
             sky.forceStormProgram = false
-            let plain = Self.median(renderer, stack: stack, queue: queue)
-            sky.forceStormProgram = true
-            let storm = Self.median(renderer, stack: stack, queue: queue)
-            sky.forceStormProgram = false
-            print(String(format: "TIMING sky-program %@ High 1280x720: plain %.2f ms, storm program %.2f ms (median of 24)",
-                         label, plain, storm))
-            XCTAssertGreaterThan(plain, 0)
+            plain.sort(); storm.sort()
+            let p = plain[plain.count / 2], s = storm[storm.count / 2]
+            print(String(format: "TIMING sky-program %@ High 1280x720: plain %.2f ms, storm program %.2f ms (interleaved, median of 5×6)",
+                         label, p, s))
+            XCTAssertGreaterThan(p, 0)
         }
         let cell = try SupercellSkyRendererTests.renderCell(at: 2, quality: .high, notes: SupercellSkyRendererTests.playing,
                                                             width: 1280, height: 720, capture: false)
