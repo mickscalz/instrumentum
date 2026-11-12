@@ -41,6 +41,8 @@ final class AuroraFjordRenderer: ThemeRenderer {
     private var coronaRect: SIMD4<Float>?
     private var orcaInstances: [OrcaInstance] = []
     private var primed = false
+    /// Under gentle visuals the exposure only ever eases up (never a flash).
+    private var gentleExposure = GentleExposure()
     private var fireballGlow: Float = 0
     private var villageInstances: [VillageInstance] = []
     private var floeInstances: [SIMD4<Float>] = []
@@ -221,7 +223,7 @@ final class AuroraFjordRenderer: ThemeRenderer {
             primed = true
             for _ in 0..<16 { _ = limiter.limit(exposure: exposure, sparkle: 1, dt: 1) }
         }
-        let limited = limiter.limit(exposure: exposure * (1 + fireballGlow), sparkle: 1, dt: dt)
+        let limited = limiter.limit(exposure: gentleExposure.step(exposure * (1 + fireballGlow), gentle: gentle, dt: dt), sparkle: 1, dt: dt)
         exposureOut = limited.exposure
         let sparkle = limited.sparkle
         // Excitement (Fire & Neon spec §5.5): the surge, the curtains gathering, Energy's pace and lift.

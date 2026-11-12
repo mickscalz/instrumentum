@@ -23,6 +23,8 @@ final class MoonlitLakeRenderer: ThemeRenderer {
     private var owlInstances: [OwlInstance] = []
     private var aspect: Float = 16.0 / 9
     private var primed = false
+    /// Under gentle visuals the exposure only ever eases up (never a flash).
+    private var gentleExposure = GentleExposure()
     private var fireballGlow: Float = 0
     private var viewAzimuth: Double?
     private var limiter = FlashLimiter()
@@ -185,7 +187,7 @@ final class MoonlitLakeRenderer: ThemeRenderer {
             primed = true
             for _ in 0..<16 { _ = limiter.limit(exposure: exposure, sparkle: 1, dt: 1) }
         }
-        let limited = limiter.limit(exposure: exposure * (1 + fireballGlow), sparkle: Float(p.number("glitter")) * (0.25 + 0.75 * frame.glitter), dt: dt)
+        let limited = limiter.limit(exposure: gentleExposure.step(exposure * (1 + fireballGlow), gentle: gentle, dt: dt), sparkle: Float(p.number("glitter")) * (0.25 + 0.75 * frame.glitter), dt: dt)
         exposureOut = limited.exposure
         let glitter = limited.sparkle
         glitterOut = glitter

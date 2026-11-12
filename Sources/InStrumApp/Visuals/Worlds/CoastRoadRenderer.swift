@@ -29,6 +29,8 @@ final class CoastRoadRenderer: ThemeRenderer {
     /// Fire & Neon §5.5: the fox in the scrub, and the lantern's light on the scene through the flash limiter.
     private var foxInstances: [FoxInstance] = []
     private var primed = false
+    /// Under gentle visuals the exposure only ever eases up (never a flash).
+    private var gentleExposure = GentleExposure()
     private var lanternGlow: Float = 0
     /// The mist drifting through the lighthouse's beams (noise cells, wrapped at 64 so it never jumps).
     private var beamMist: Float = 0
@@ -179,7 +181,7 @@ final class CoastRoadRenderer: ThemeRenderer {
             primed = true
             for _ in 0..<16 { _ = limiter.limit(exposure: exposure, sparkle: 1, dt: 1) }
         }
-        let limited = limiter.limit(exposure: exposure * (1 + lanternGlow), sparkle: 0.45 + 0.55 * frame.bloom, dt: dt)
+        let limited = limiter.limit(exposure: gentleExposure.step(exposure * (1 + lanternGlow), gentle: gentle, dt: dt), sparkle: 0.45 + 0.55 * frame.bloom, dt: dt)
         exposureOut = limited.exposure
         lampOut = Float(p.number("lamps")) * Self.lampLight(sunAltitude: s.sun.altitude) * sparkleScale
         bloomOut = frame.bloom * sparkleScale

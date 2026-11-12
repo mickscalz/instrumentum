@@ -33,6 +33,8 @@ final class GoldenHourBeachRenderer: ThemeRenderer {
     private var slot = 0
     private var view = SIMD4<Float>(16.0 / 9, 2.0 / 720, 0, 0)
     private var primed = false
+    /// Under gentle visuals the exposure only ever eases up (never a flash).
+    private var gentleExposure = GentleExposure()
     private var burstGlow: Float = 0
     private var oceanU = [SIMD4<Float>](repeating: .zero, count: 7)   // the beach doesn't travel: travel stays 0
     private var keyInstances: [KeyInstance] = []
@@ -182,7 +184,7 @@ final class GoldenHourBeachRenderer: ThemeRenderer {
             primed = true
             for _ in 0..<16 { _ = limiter.limit(exposure: exposure, sparkle: 1, dt: 1) }
         }
-        let limited = limiter.limit(exposure: exposure * (1 + burstGlow), sparkle: Float(p.number("glitter")) * (0.25 + 0.75 * frame.glitter), dt: dt)
+        let limited = limiter.limit(exposure: gentleExposure.step(exposure * (1 + burstGlow), gentle: gentle, dt: dt), sparkle: Float(p.number("glitter")) * (0.25 + 0.75 * frame.glitter), dt: dt)
         exposureOut = limited.exposure
         glitterOut = limited.sparkle
 
