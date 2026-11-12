@@ -6,13 +6,13 @@ on:
 
 jobs:
   test:
-    runs-on: macos-15
+    runs-on: macos-15-intel   # the app is Intel-only and Michael's Mac is Intel; GitHub's arm64 queue has dropped jobs since 12 Nov
     steps:
       - uses: actions/checkout@v5
       - name: Toolchain
         run: swift --version && sw_vers && uname -m
       - name: Test
-        timeout-minutes: 40
+        timeout-minutes: 90
         run: swift test 2>&1 | tee test.log; exit ${PIPESTATUS[0]}
       - name: Report
         if: always()
@@ -86,7 +86,7 @@ jobs:
     # Storms task branch (storms-*) renders only its world's previews and frame time (storms-t13, the sets: the demo
     # audio), even when an unrelated test failed, and keeps them as an artifact.
     if: github.event_name == 'push' && ((needs.test.result == 'success' && (github.ref == 'refs/heads/m3a' || github.ref == 'refs/heads/sets' || github.ref == 'refs/heads/sets-3-4' || github.ref == 'refs/heads/sets-5-6' || github.ref == 'refs/heads/sets-7-8' || github.ref == 'refs/heads/sets-9-10' || github.ref == 'refs/heads/sets-11-12' || github.ref == 'refs/heads/small-wins' || github.ref == 'refs/heads/sets-13-14' || github.ref == 'refs/heads/storms' || github.ref == 'refs/heads/fire-neon' || github.ref == 'refs/heads/main')))
-    runs-on: macos-15
+    runs-on: macos-15-intel   # the app is Intel-only and Michael's Mac is Intel; GitHub's arm64 queue has dropped jobs since 12 Nov
     permissions:
       contents: write
     steps:
@@ -143,7 +143,7 @@ jobs:
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/storms' || github.ref == 'refs/heads/fire-neon' || github.ref == 'refs/heads/small-wins' || startsWith(github.ref, 'refs/heads/pkg-')
     # Releases package on GitHub's Intel Macs: the app is Intel-only (x86_64), so they build it natively, and they stay
     # free when the Apple silicon queue is full (12 Nov: Fire & Neon's release waited an hour for an arm64 runner).
-    runs-on: ${{ github.ref == 'refs/heads/main' && 'macos-15-intel' || 'macos-15' }}
+    runs-on: macos-15-intel
     permissions:
       contents: write
     steps:
