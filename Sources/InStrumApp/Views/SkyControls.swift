@@ -75,7 +75,7 @@ struct SkyControls: View {
                 .pickerStyle(.segmented)
                 if sky.weatherMode == .pick {
                     Picker("", selection: Binding(get: { sky.weather }, set: { w in update { $0.weather = w } })) {
-                        ForEach(WeatherKind.allCases, id: \.self) { Text(Self.weatherName($0)).tag($0) }
+                        ForEach(WeatherKind.offered, id: \.self) { Text(Self.weatherName($0)).tag($0) }
                     }
                     .labelsHidden()
                 }
@@ -87,7 +87,7 @@ struct SkyControls: View {
                     }
                     Button("Reset Advanced to defaults") { update { $0.resetAdvanced() } }
                     DisclosureGroup("Weathers in random") {
-                        ForEach(WeatherKind.allCases, id: \.self) { kind in
+                        ForEach(WeatherKind.offered, id: \.self) { kind in
                             Toggle(Self.weatherName(kind), isOn: Binding(
                                 get: { !sky.randomExcluded.contains(kind) },
                                 set: { on in update { s in

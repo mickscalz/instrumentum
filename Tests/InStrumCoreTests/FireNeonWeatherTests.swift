@@ -377,3 +377,34 @@ final class FireNeonWeatherTests: XCTestCase {
         mutating func step(dt: Double, params: ParameterSet, roles: RoleValues, inputs: InputFrame, quality: QualityLevel) -> SkyState? { sky }
     }
 }
+
+/// The Supercell weather is held back from the Fire & Neon release (12 Nov): not offered, never picked, never chosen at
+/// random, even at the beach whose table offers it; every other weather runs as before.
+final class HeldBackWeatherTests: XCTestCase {
+    func testTheSupercellIsHeldBack() {
+        XCTAssertTrue(WeatherKind.heldBack.contains(.supercell))
+        XCTAssertFalse(WeatherKind.offered.contains(.supercell))
+        XCTAssertEqual(WeatherKind.offered.count, WeatherKind.allCases.count - WeatherKind.heldBack.count)
+        XCTAssertTrue(WeatherKind.offered.contains(.ashfall))
+    }
+
+    func testHeldBackSettingsNeverRunIt() {
+        var picked = SkySettings(); picked.weatherMode = .pick; picked.weather = .supercell
+        XCTAssertEqual(picked.holdingBack().weather, .clear)
+        picked.weather = .ashfall
+        XCTAssertEqual(picked.holdingBack().weather, .ashfall, "other picks stand")
+        XCTAssertEqual(picked, { var p = SkySettings(); p.weatherMode = .pick; p.weather = .ashfall; return p }(),
+                       "the saved settings are untouched")
+
+        var s = SkySettings(); s.weatherMode = .randomBeautiful; s.spellMinutes = 2; s.randomBlendSeconds = 10
+        let held = s.holdingBack()
+        XCTAssertEqual(held.holdingBack(), held, "holding back twice changes nothing")
+        var m = WeatherMachine(settings: held, seed: 17)
+        m.extras = WorldWeather.randomExtras(for: GoldenHourBeachModel.id)
+        XCTAssertNotNil(m.extras[.supercell], "the beach's table still offers it")
+        var seen: Set<WeatherKind> = [m.current]
+        for _ in 0..<20_000 { m.step(dt: 30, settings: held); seen.insert(m.current) }
+        XCTAssertFalse(seen.contains(.supercell))
+        XCTAssertTrue(seen.contains(.gustFront), "the rest of the beach's table plays on")
+    }
+}
