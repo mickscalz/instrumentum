@@ -127,8 +127,21 @@ struct SettingsPopover: View {
                 .labelsHidden()
                 .frame(width: 160)
             }
+            HStack {
+                Text("Keyboard layout")
+                Picker("Keyboard layout", selection: Binding(get: { model.keyboardRange }, set: { model.setKeyboardRange($0) })) {
+                    ForEach(KeyboardRange.allCases, id: \.self) { Text($0.displayName).tag($0) }
+                }
+                .labelsHidden()
+                .frame(width: 160)
+            }
+            Text(Self.keyboardLayoutCaption)
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
+
+    /// Under Keyboard layout (Small Wins spec §2): the keep gesture lives on the keyboard's top three black keys.
+    static let keyboardLayoutCaption = "Tap its top three black keys together, twice, to keep a take."
 
     private var uniqueSourceNames: [String] {
         var seen = Set<String>()
