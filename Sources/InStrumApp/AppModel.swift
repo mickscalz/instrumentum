@@ -100,6 +100,11 @@ public final class AppModel: ObservableObject {
     var settings: AppSettings
     private var launched = false
     private var autosaveTimer: Timer?
+    /// The sleep timer (Small Wins spec §3): its fade, its 10 Hz ticker (running only while there is something to do)
+    /// and its clock (system uptime, as the playing's; tests set their own). Never saved.
+    var sleepFade = SleepFade()
+    var sleepTicker: Timer?
+    var sleepClock: () -> Double = { ProcessInfo.processInfo.systemUptime }
     private var watchdogTimer: Timer?
     private var terminateObserver: NSObjectProtocol?
     /// The Mac's Reduce Motion, once the app follows it (`startWatchingReduceMotion`).
