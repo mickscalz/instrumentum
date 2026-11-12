@@ -172,7 +172,9 @@ enum NeonNightDriveShaders {
         int oct = int(u.a.z + 0.5);
         float cloud = fbm2(cp, oct);
         float lowCloud = exp(-el / 0.1) * overCity * (0.3 + 1.3 * cloud * cloud);
-        float highCloud = 0.1 * exp(-el / 0.35) * (0.3 + 1.4 * cloud);
+        // The overcast's base overhead, lit from below: mottled, its gaps darker.
+        float mottle = smoothstep(0.25, 0.75, cloud);
+        float highCloud = 0.22 * exp(-el / 0.5) * (0.1 + 1.6 * mottle * mottle);
         float3 glow = u.glow.rgb * (u.glow.w * night * u.neon.z * smoothstep(-0.2, 0.3, ahead)) * lowCloud
                     + u.glow.rgb * float3(0.6, 0.55, 0.9) * (u.glow.w * night * highCloud);
         s = s * (1.0 - 0.6 * night) + glow + float3(0.0015, 0.002, 0.005) * night;
