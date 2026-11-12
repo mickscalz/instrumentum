@@ -1,5 +1,6 @@
 import XCTest
 import SwiftUI
+import AppKit
 @testable import InStrumApp
 @testable import InStrumAudio
 @testable import InStrumCore
@@ -236,5 +237,57 @@ private extension AppModel {
             handleMIDI(bytes: [0x80, 60, 64], time: t + 0.25)
             t += 0.5
         }
+    }
+}
+
+/// The look of Keep that (PREVIEW_DIR, for the looks job): the main bar's bookmark beside its neighbours, plain and
+/// filled while the "Kept · 4:12" toast shows over the canvas.
+@MainActor
+final class KeepThatPreviewTests: XCTestCase {
+    func testWriteKeepPreviews() throws {
+        guard let dir = ProcessInfo.processInfo.environment["PREVIEW_DIR"] else { throw XCTSkip("PREVIEW_DIR not set") }
+        let url = URL(fileURLWithPath: dir, isDirectory: true)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let m = AppModel(engine: FakeEngine(), store: SettingsStore(directory: tmp), launchGuard: LaunchGuard(directory: tmp),
+                         presets: PresetStore(directory: tmp.appendingPathComponent("Presets")))
+        m.toastDuration = 60
+        let plain = try XCTUnwrap(Self.snapshot(Self.scene(m), size: CGSize(width: 720, height: 200)))
+        try PreviewRenderer.writePNG(plain, to: url.appendingPathComponent("keep-bar.png"))
+        m.showToast("Kept · \(AppModel.keptLength(252))", symbol: "bookmark.fill")
+        let kept = try XCTUnwrap(Self.snapshot(Self.scene(m), size: CGSize(width: 720, height: 200)))
+        try PreviewRenderer.writePNG(kept, to: url.appendingPathComponent("keep-toast.png"))
+        XCTAssertGreaterThan(PreviewRenderer.difference(plain, kept), 0.001, "the toast and the filled bookmark show")
+    }
+
+    /// The right end of the main bar over a night-blue canvas, with the toast where the app puts it.
+    static func scene(_ m: AppModel) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 14) {
+                Spacer()
+                KeepButton(model: m)
+                Button("Choose Instrument") {}
+                Button {} label: { Label("Panic", systemImage: "speaker.slash.fill") }
+            }
+            .padding(.horizontal, 16).padding(.vertical, 10)
+            .background(Color(red: 0.13, green: 0.12, blue: 0.11))
+            LinearGradient(colors: [Color(red: 0.05, green: 0.07, blue: 0.16), Color(red: 0.10, green: 0.12, blue: 0.22)],
+                           startPoint: .top, endPoint: .bottom)
+                .overlay(alignment: .top) { ToastBanner(model: m) }
+        }
+        .frame(width: 720, height: 200)
+        .environment(\.colorScheme, .dark)
+    }
+
+    static func snapshot<V: View>(_ view: V, size: CGSize) -> CGImage? {
+        let host = NSHostingView(rootView: view)
+        host.frame = NSRect(origin: .zero, size: size)
+        host.appearance = NSAppearance(named: .darkAqua)
+        host.layoutSubtreeIfNeeded()
+        guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return nil }
+        host.cacheDisplay(in: host.bounds, to: rep)
+        return rep.cgImage
     }
 }
