@@ -16,6 +16,11 @@ enum SkyShaders {
     // (inlined into every sky, its registers slowed them all). A function made without the constant keeps them.
     constant bool kSkyStormsSet [[function_constant(20)]];
     constant bool kSkyStorms = is_function_constant_defined(kSkyStormsSet) ? kSkyStormsSet : true;
+    // The supercell weather alone has a program of its own (it reads its impostor; none of the far storm, the sprites or
+    // the ash is compiled in): its constant, set with the storms' by `skyFunction(_:program:)`, else the storms'.
+    constant bool kSkyCellSet [[function_constant(21)]];
+    constant bool kSkyCell = is_function_constant_defined(kSkyCellSet) ? kSkyCellSet
+                           : (is_function_constant_defined(kSkyStormsSet) ? kSkyStormsSet : true);
 
     // ---------------------------------------------------------------- noise
     float hash13(float3 p) {
@@ -1415,7 +1420,7 @@ enum SkyShaders {
 
         // The supercell weather (Fire & Neon §7.2) takes the generic cloud's place as it comes (drawn over all this in
         // skyRadiance).
-        if (kSkyStorms) cloudCover *= 1.0 - saturate(u.cellA.w);
+        if (kSkyCell) cloudCover *= 1.0 - saturate(u.cellA.w);
 
         // Clouds: a drifting layer lit by the sun or the moon.
         if (cloudCover > 0.01 && alt > 0.0) {
@@ -1498,9 +1503,9 @@ enum SkyShaders {
     /// else is live, and the sky behind it only where it shows through (under the storm's dark body none of it is drawn).
     float3 skyRadiance(float3 d, constant SkyU& u, thread float& moonMask, texture2d<float> stars) {
         // (A plain sky's program has none of the storm: amount folds to 0, and the base is all that is left.)
-        float amount = kSkyStorms && d.z > -0.01 ? saturate(u.cellA.w) : 0.0;
+        float amount = kSkyCell && d.z > -0.01 ? saturate(u.cellA.w) : 0.0;
         float4 storm = float4(0.0, 0.0, 0.0, 1.0);
-        if (kSkyStorms && amount > 0.001) {
+        if (kSkyCell && amount > 0.001) {
             float recept;
             storm = supercellSky(d, u, u.forward.w, u.weather.w, 0.0, recept);
             storm.rgb += supercellFlashLight(d, u, 1.0 - storm.a, recept);
@@ -1559,9 +1564,9 @@ enum SkyShaders {
     /// SkyLayer.cellTextureIndex) when the sky's rows say it is drawn, else none: the worlds that draw it each frame read
     /// this; skyRadiance without the texture draws the storm itself (the worlds that don't).
     float3 skyRadiance(float3 d, constant SkyU& u, thread float& moonMask, texture2d<float> stars, texture2d<float> cell) {
-        float amount = kSkyStorms && d.z > -0.01 && u.flash.w > 0.5 ? saturate(u.cellA.w) : 0.0;
+        float amount = kSkyCell && d.z > -0.01 && u.flash.w > 0.5 ? saturate(u.cellA.w) : 0.0;
         float4 storm = float4(0.0, 0.0, 0.0, 1.0);
-        if (kSkyStorms && amount > 0.001) {
+        if (kSkyCell && amount > 0.001) {
             float recept;
             storm = supercellImpostor(d, u, cell, recept);
             storm.rgb += supercellFlashLight(d, u, 1.0 - storm.a, recept);

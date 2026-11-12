@@ -79,10 +79,10 @@ final class NeonNightDriveRenderer: ThemeRenderer {
               let tl = LightTrailsLayer(device: device), let sc = WindscreenLayer(device: device),
               let rc = ViewCopy(device: device),
               let lib = try? device.makeLibrary(source: NeonNightDriveShaders.source, options: nil) else { return nil }
-        let scenePipe = SkyPipeline(build: { storms in
+        let scenePipe = SkyPipeline(program: { program in
             let sd = MTLRenderPipelineDescriptor()
-            sd.vertexFunction = lib.skyFunction("drive_vertex", storms: storms)
-            sd.fragmentFunction = lib.skyFunction("drive_scene_fragment", storms: storms)
+            sd.vertexFunction = lib.skyFunction("drive_vertex", program: program)
+            sd.fragmentFunction = lib.skyFunction("drive_scene_fragment", program: program)
             sd.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
             sd.colorAttachments[1].pixelFormat = RenderStack.depthFormat
             return try? device.makeRenderPipelineState(descriptor: sd)
@@ -317,7 +317,7 @@ final class NeonNightDriveRenderer: ThemeRenderer {
         // dim, behind the cloud, from `rowMoon`).
         var skyU = sky.uniforms
         skyU[Self.skyMoonRow] = SIMD4(0, 0, -1, skyU[Self.skyMoonRow].w)
-        e.setRenderPipelineState(scene.state(storms: sky.storms))
+        e.setRenderPipelineState(scene.state(sky.program))
         skyU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
         u.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
         sky.bindStars(e)

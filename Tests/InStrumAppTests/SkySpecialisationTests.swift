@@ -36,6 +36,25 @@ final class SkySpecialisationTests: XCTestCase {
         XCTAssertFalse(SkySpecialisation.needsStorms([]), "no rows: plain")
     }
 
+    /// The supercell alone has a program of its own (its impostor, none of the far storm, the sprites or the ash); with
+    /// any of those the whole storm program; forced, always the whole one.
+    func testTheSupercellAloneHasItsOwnProgram() throws {
+        guard let device = MTLCreateSystemDefaultDevice() else { throw XCTSkip("No Metal device") }
+        let layer = try XCTUnwrap(SkyLayer(device: device))
+        let size = CGSize(width: 320, height: 180)
+        var cell = R.supercell(R.golden(), phase: 0.2)
+        layer.update(cell, quality: .high, size: size, time: 0)
+        XCTAssertEqual(layer.program, .cell)
+        XCTAssertTrue(layer.storms)
+        cell.ash = 0.4
+        layer.update(cell, quality: .high, size: size, time: 0)
+        XCTAssertEqual(layer.program, .storms)
+        layer.update(R.golden(), quality: .high, size: size, time: 0)
+        XCTAssertEqual(layer.program, .plain)
+        layer.forceStormProgram = true
+        XCTAssertEqual(layer.program, .storms)
+    }
+
     /// The storm program is built the first time a frame needs it and kept: one build however many frames, none for a
     /// plain sky.
     func testTheStormProgramIsMadeOnceWhenNeeded() throws {

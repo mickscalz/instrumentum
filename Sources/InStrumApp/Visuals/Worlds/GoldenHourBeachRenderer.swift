@@ -43,15 +43,15 @@ final class GoldenHourBeachRenderer: ThemeRenderer {
     init?(device: MTLDevice) {
         guard let s = SkyLayer(device: device), let w = WeatherLayer(device: device), let gw = WarpLayer(device: device),
               let lib = try? device.makeLibrary(source: GoldenHourBeachShaders.source, options: nil) else { return nil }
-        func make(_ v: String, _ f: String, storms: Bool = false) -> MTLRenderPipelineState? {
+        func make(_ v: String, _ f: String, program: SkyProgram = .plain) -> MTLRenderPipelineState? {
             let d = MTLRenderPipelineDescriptor()
-            d.vertexFunction = lib.skyFunction(v, storms: storms)
-            d.fragmentFunction = lib.skyFunction(f, storms: storms)
+            d.vertexFunction = lib.skyFunction(v, program: program)
+            d.fragmentFunction = lib.skyFunction(f, program: program)
             d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
             d.colorAttachments[1].pixelFormat = RenderStack.depthFormat
             return try? device.makeRenderPipelineState(descriptor: d)
         }
-        guard let b = SkyPipeline(build: { make("beach_vertex", "beach_fragment", storms: $0) }), let k = make("beach_keys_vertex", "beach_keys_fragment") else { return nil }
+        guard let b = SkyPipeline(program: { make("beach_vertex", "beach_fragment", program: $0) }), let k = make("beach_keys_vertex", "beach_keys_fragment") else { return nil }
         sky = s; weather = w; warp = gw; beach = b; keys = k
         sky.verticalFOV = 58
     }
@@ -186,7 +186,7 @@ final class GoldenHourBeachRenderer: ThemeRenderer {
         if showWarp { warp.draw(e) }
 
         let skyU = sky.uniforms
-        e.setRenderPipelineState(beach.state(storms: sky.storms))
+        e.setRenderPipelineState(beach.state(sky.program))
         skyU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
         beachU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
         oceanU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 2) }

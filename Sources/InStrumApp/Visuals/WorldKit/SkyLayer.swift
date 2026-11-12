@@ -197,9 +197,16 @@ final class SkyLayer {
     /// Whether this frame's sky needs the storm program (`SkySpecialisation`): a supercell, ash, a far storm or a sprite
     /// in its rows. Every world drawing the sky in its own pass picks its pipeline by it.
     private(set) var storms = false
+    /// Which program this frame's sky needs: the supercell's alone when it is the only storm weather (`SkySpecialisation`).
+    /// Worlds that read the supercell's impostor pick their pipeline by it; the rest by `storms`.
+    private(set) var program: SkyProgram = .plain
     /// Tests: draw with the storm program whatever the sky (a plain sky must look the same either way).
     var forceStormProgram = false {
-        didSet { storms = forceStormProgram || SkySpecialisation.needsStorms(u) }
+        didSet { chooseProgram() }
+    }
+    private func chooseProgram() {
+        program = forceStormProgram ? .storms : SkySpecialisation.program(u)
+        storms = program != .plain
     }
     /// Gentle visuals: the supercell's lightning only glows in its cloud, never flashes.
     var gentle = false
@@ -230,10 +237,10 @@ final class SkyLayer {
 
     init?(device: MTLDevice) {
         guard let lib = try? device.makeLibrary(source: SkyShaders.source, options: nil),
-              let p = SkyPipeline(build: { storms in
+              let p = SkyPipeline(program: { program in
                   let d = MTLRenderPipelineDescriptor()
-                  d.vertexFunction = lib.skyFunction("sky_dome_vertex", storms: storms)
-                  d.fragmentFunction = lib.skyFunction("sky_dome_fragment", storms: storms)
+                  d.vertexFunction = lib.skyFunction("sky_dome_vertex", program: program)
+                  d.fragmentFunction = lib.skyFunction("sky_dome_fragment", program: program)
                   d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
                   d.colorAttachments[1].pixelFormat = RenderStack.depthFormat
                   return try? device.makeRenderPipelineState(descriptor: d)
@@ -565,7 +572,7 @@ final class SkyLayer {
         }
         let sunTint = tint(s.sunTint)
         u[Self.ashRow] = SIMD4(unit(s.ash), sunTint.x, sunTint.y, sunTint.z)
-        storms = forceStormProgram || SkySpecialisation.needsStorms(u)
+        chooseProgram()
     }
 
     /// How many times the dome's storm program was built, and whether it has been (tests).
@@ -573,7 +580,7 @@ final class SkyLayer {
     var domeHasStormProgram: Bool { pipeline.hasStormProgram }
 
     func draw(_ e: MTLRenderCommandEncoder) {
-        e.setRenderPipelineState(pipeline.state(storms: storms))
+        e.setRenderPipelineState(pipeline.state(program))
         uniforms.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
         bindStars(e)
         e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
