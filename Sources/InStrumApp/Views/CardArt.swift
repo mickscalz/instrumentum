@@ -2380,7 +2380,7 @@ extension CardArt {
 
     /// The card's easter egg: a tiny lava tree (a pillar of lava left standing when a flow drained away round a trunk)
     /// on the far rim: where it stands across the card and its height (fractions).
-    static let liquorLavaTree: (x: Double, height: Double) = (0.795, 0.052)
+    static let liquorLavaTree: (x: Double, height: Double) = (0.795, 0.06)
 
     /// A point on the lake on the card (fractions), in perspective: the far crust small and squashed, the near large.
     static func liquorLakePoint(u: Double, v: Double) -> CGPoint {
@@ -2395,7 +2395,7 @@ extension CardArt {
     static func liquorRimTop(_ x: Double) -> Double {
         let dip: Double = 0.030 * exp(-pow((x - 0.55) / 0.30, 2))
         let rough: Double = 0.010 * sin(x * 9.3 + 0.6) + 0.006 * sin(x * 23.0 + 1.1) + 0.004 * sin(x * 51.0)
-        return 0.345 - dip + rough
+        return 0.300 - dip + rough
     }
 
     /// Where the far wall meets the crater floor at `x` (fractions).
@@ -2430,9 +2430,35 @@ extension CardArt {
                 poly = CardArt.clip(poly, nearer: seeds[i], than: seeds[j])
                 if poly.count < 3 { break }
             }
-            return (seed: seeds[i], cell: poly)
+            return (seed: seeds[i], cell: CardArt.liquorJagged(poly))
         }
     }()
+
+    /// A cell's edges broken into three, each kink shared with the neighbour across the edge: the edge is taken from its
+    /// lower endpoint, so both cells see the same two kinks, keyed by its midpoint; they stand off the edge by up to 11%
+    /// of its length, so the cracks run jagged rather than straight.
+    static func liquorJagged(_ cell: [CGPoint]) -> [CGPoint] {
+        func key(_ p: CGPoint) -> (Int, Int) { (Int((p.x * 4000).rounded()), Int((p.y * 4000).rounded())) }
+        var out: [CGPoint] = []
+        for i in cell.indices {
+            let a = cell[i], b = cell[(i + 1) % cell.count]
+            let ka = key(a), kb = key(b)
+            let forward: Bool = ka.0 < kb.0 || (ka.0 == kb.0 && ka.1 <= kb.1)
+            let p = forward ? a : b, q = forward ? b : a
+            let mid = key(CGPoint(x: (p.x + q.x) / 2, y: (p.y + q.y) / 2))
+            let dx: CGFloat = q.x - p.x, dy: CGFloat = q.y - p.y
+            let length: CGFloat = max(1e-9, (dx * dx + dy * dy).squareRoot())
+            let nx: CGFloat = -dy / length, ny: CGFloat = dx / length
+            var kinks: [CGPoint] = []
+            for (f, salt) in [(CGFloat(1) / 3, 1), (CGFloat(2) / 3, 2)] {
+                let o: CGFloat = CGFloat(CardArt.hash(mid.0 + salt * 7919, mid.1) - 0.5) * 0.22 * length
+                kinks.append(CGPoint(x: p.x + dx * f + nx * o, y: p.y + dy * f + ny * o))
+            }
+            out.append(a)
+            out.append(contentsOf: forward ? kinks : kinks.reversed())
+        }
+        return out
+    }
 
     /// The part of a convex polygon nearer `s` than `o`.
     static func clip(_ poly: [CGPoint], nearer s: CGPoint, than o: CGPoint) -> [CGPoint] {
@@ -2534,6 +2560,78 @@ extension CardArt {
                      with: .color(Color(red: 1, green: 0.94, blue: 0.88).opacity((0.10 + 0.32 * twinkle) * fade)))
         }
 
+        // The far wall: the rim's black skyline, steep inner cliffs lit orange only near the floor, old flows in bands.
+        let rim: [CGPoint] = profile(size, count: 120) { liquorRimTop($0) }
+        var wall = Path()
+        wall.move(to: CGPoint(x: 0, y: h))
+        for p in rim { wall.addLine(to: p) }
+        wall.addLine(to: CGPoint(x: w, y: h))
+        wall.closeSubpath()
+        ctx.fill(wall, with: .linearGradient(
+            Gradient(stops: [.init(color: Color(red: 0.035, green: 0.016, blue: 0.016), location: 0),
+                             .init(color: Color(red: 0.055, green: 0.022, blue: 0.020), location: 0.40),
+                             .init(color: Color(red: 0.17, green: 0.05, blue: 0.024), location: 0.75),
+                             .init(color: Color(red: 0.40, green: 0.12, blue: 0.04), location: 1)]),
+            startPoint: CGPoint(x: 0, y: h * 0.29), endPoint: CGPoint(x: 0, y: h * 0.54)))
+        // The cliffs: gullies running down the wall, their hollows dark and every other rib catching the glow from below;
+        // two ledges of old flows across it.
+        let hollow = Color(red: 0.02, green: 0.008, blue: 0.008)
+        let glowRib = Color(red: 0.9, green: 0.32, blue: 0.08)
+        for g in 0..<34 {
+            let x0: Double = hash(g, 461)
+            let top: Double = liquorRimTop(x0) + 0.006 + 0.03 * hash(g, 462)
+            let bottom: Double = top + (liquorWallFoot(x0) - 0.004 - top) * (0.55 + 0.45 * hash(g, 465))
+            let lean: Double = 0.016 * (hash(g, 463) - 0.5)
+            let wide: CGFloat = CGFloat(1.0 + 2.2 * hash(g, 464)) * k
+            let a = CGPoint(x: w * CGFloat(x0), y: h * CGFloat(top))
+            let m = CGPoint(x: w * CGFloat(x0 + 0.5 * lean), y: h * CGFloat((top + bottom) / 2))
+            let b = CGPoint(x: w * CGFloat(x0 + lean), y: h * CGFloat(bottom))
+            var gully = Path()
+            gully.addLines([a, m, b])
+            ctx.stroke(gully, with: .linearGradient(
+                Gradient(stops: [.init(color: hollow.opacity(0), location: 0), .init(color: hollow.opacity(0.5), location: 0.6),
+                                 .init(color: hollow.opacity(0.2), location: 1)]),
+                startPoint: a, endPoint: b), lineWidth: wide)
+            guard g % 2 == 0 else { continue }
+            var rib = Path()
+            rib.addLines([CGPoint(x: a.x + 0.9 * wide, y: a.y + 0.02 * h), CGPoint(x: m.x + 0.9 * wide, y: m.y), CGPoint(x: b.x + 0.9 * wide, y: b.y)])
+            light.stroke(rib, with: .linearGradient(Gradient(colors: [glowRib.opacity(0), glowRib.opacity(0.14)]), startPoint: a, endPoint: b),
+                         lineWidth: 0.6 * k)
+        }
+        for (band, f) in [0.42, 0.74].enumerated() {
+            let line: [CGPoint] = profile(size, count: 120) { (x: Double) -> Double in
+                let top: Double = liquorRimTop(x)
+                let wobble: Double = 0.005 * sin(19 * x + 2.1 * Double(band)) + 0.002 * sin(67 * x + Double(band))
+                return top + (liquorWallFoot(x) - top) * f + wobble
+            }
+            var path = Path()
+            path.addLines(line)
+            ctx.stroke(path, with: .color(Color(red: 0.80, green: 0.28, blue: 0.07).opacity(0.10 + 0.12 * f)), lineWidth: 0.8 * k)
+        }
+        var lip = Path()
+        lip.addLines(rim.map { CGPoint(x: $0.x, y: $0.y + 0.5 * k) })
+        ctx.stroke(lip, with: .color(Color(red: 0.60, green: 0.20, blue: 0.06).opacity(0.30)), lineWidth: 0.7 * k)
+
+        // The crater floor: old black flows from the wall's foot to the lake, warmed by it; the heat glow over the lake.
+        var craterFloor = Path()
+        craterFloor.move(to: CGPoint(x: 0, y: h))
+        for p in profile(size, count: 120, { liquorWallFoot($0) }) { craterFloor.addLine(to: p) }
+        craterFloor.addLine(to: CGPoint(x: w, y: h))
+        craterFloor.closeSubpath()
+        ctx.fill(craterFloor, with: .linearGradient(
+            Gradient(stops: [.init(color: Color(red: 0.20, green: 0.06, blue: 0.025), location: 0),
+                             .init(color: Color(red: 0.07, green: 0.025, blue: 0.018), location: 0.35),
+                             .init(color: Color(red: 0.03, green: 0.014, blue: 0.012), location: 1)]),
+            startPoint: CGPoint(x: 0, y: h * 0.535), endPoint: CGPoint(x: 0, y: h)))
+        let reach: CGFloat = w * 0.50
+        var haze = light
+        haze.translateBy(x: hot.x, y: yFar + 0.02 * h)
+        haze.scaleBy(x: 1, y: 0.42)
+        haze.fill(Path(ellipseIn: CGRect(x: -reach, y: -reach, width: 2 * reach, height: 2 * reach)),
+                  with: .radialGradient(Gradient(colors: [Color(red: 1.0, green: 0.40, blue: 0.10).opacity(0.36 * heat),
+                                                          Color(red: 1.0, green: 0.30, blue: 0.06).opacity(0)]),
+                                        center: .zero, startRadius: 0, endRadius: reach))
+
         // The plume: smoke climbing out of the lake and leaning left, billowing once a bar, then its underside lit.
         var smoke = ctx
         smoke.addFilter(.blur(radius: 5 * k))
@@ -2567,59 +2665,11 @@ extension CardArt {
                 let x: CGFloat = w * CGFloat(0.629 - 0.34 * pow(0.6 * u, 1.4) + sway)
                 let y: CGFloat = h * CGFloat(0.542 - 0.348 * u)
                 let r: CGFloat = w * CGFloat(0.020 + 0.06 * u)
-                let a: Double = 0.34 * pow(1 - u, 1.4) * heat
+                let a: Double = 0.50 * pow(1 - u, 1.2) * heat
                 layer.fill(Path(ellipseIn: CGRect(x: x - r, y: y - 0.55 * r, width: 2 * r, height: 1.1 * r)),
                            with: .color(Color(red: 1.0, green: 0.38, blue: 0.09).opacity(a)))
             }
         }
-
-        // The far wall: the rim's black skyline, steep inner cliffs lit orange only near the floor, old flows in bands.
-        let rim: [CGPoint] = profile(size, count: 120) { liquorRimTop($0) }
-        var wall = Path()
-        wall.move(to: CGPoint(x: 0, y: h))
-        for p in rim { wall.addLine(to: p) }
-        wall.addLine(to: CGPoint(x: w, y: h))
-        wall.closeSubpath()
-        ctx.fill(wall, with: .linearGradient(
-            Gradient(stops: [.init(color: Color(red: 0.040, green: 0.018, blue: 0.018), location: 0),
-                             .init(color: Color(red: 0.060, green: 0.024, blue: 0.020), location: 0.45),
-                             .init(color: Color(red: 0.20, green: 0.06, blue: 0.025), location: 0.78),
-                             .init(color: Color(red: 0.42, green: 0.13, blue: 0.04), location: 1)]),
-            startPoint: CGPoint(x: 0, y: h * 0.33), endPoint: CGPoint(x: 0, y: h * 0.54)))
-        for band in 0..<7 {
-            let f: Double = Double(band + 1) / 8
-            let line: [CGPoint] = profile(size, count: 120) { (x: Double) -> Double in
-                let top: Double = liquorRimTop(x)
-                let wobble: Double = 0.004 * sin(29 * x + 1.7 * Double(band)) + 0.002 * sin(83 * x + Double(band))
-                return top + (liquorWallFoot(x) - top) * f + wobble
-            }
-            var path = Path()
-            path.addLines(line)
-            ctx.stroke(path, with: .color(Color(red: 0.85, green: 0.30, blue: 0.08).opacity(0.03 + 0.16 * f * f * f)), lineWidth: 0.7 * k)
-        }
-        var lip = Path()
-        lip.addLines(rim.map { CGPoint(x: $0.x, y: $0.y + 0.5 * k) })
-        ctx.stroke(lip, with: .color(Color(red: 0.60, green: 0.20, blue: 0.06).opacity(0.30)), lineWidth: 0.7 * k)
-
-        // The crater floor: old black flows from the wall's foot to the lake, warmed by it; the heat glow over the lake.
-        var craterFloor = Path()
-        craterFloor.move(to: CGPoint(x: 0, y: h))
-        for p in profile(size, count: 120, { liquorWallFoot($0) }) { craterFloor.addLine(to: p) }
-        craterFloor.addLine(to: CGPoint(x: w, y: h))
-        craterFloor.closeSubpath()
-        ctx.fill(craterFloor, with: .linearGradient(
-            Gradient(stops: [.init(color: Color(red: 0.20, green: 0.06, blue: 0.025), location: 0),
-                             .init(color: Color(red: 0.07, green: 0.025, blue: 0.018), location: 0.35),
-                             .init(color: Color(red: 0.03, green: 0.014, blue: 0.012), location: 1)]),
-            startPoint: CGPoint(x: 0, y: h * 0.535), endPoint: CGPoint(x: 0, y: h)))
-        let reach: CGFloat = w * 0.50
-        var haze = light
-        haze.translateBy(x: hot.x, y: yFar + 0.02 * h)
-        haze.scaleBy(x: 1, y: 0.42)
-        haze.fill(Path(ellipseIn: CGRect(x: -reach, y: -reach, width: 2 * reach, height: 2 * reach)),
-                  with: .radialGradient(Gradient(colors: [Color(red: 1.0, green: 0.40, blue: 0.10).opacity(0.36 * heat),
-                                                          Color(red: 1.0, green: 0.30, blue: 0.06).opacity(0)]),
-                                        center: .zero, startRadius: 0, endRadius: reach))
 
         // The lava tree on the far rim: a hollow pillar left standing, two stubs of branches, warm inside (the easter egg).
         let tx: CGFloat = w * liquorLavaTree.x
@@ -2673,17 +2723,17 @@ extension CardArt {
             let radius: CGFloat = max(1e-3, spread / n)
             let fromHot: Double = hypot(Double(plate.seed.x) - fountain.u, Double(plate.seed.y) - fountain.v)
             let young: Double = max(0, 1 - fromHot / 0.45)
-            let gap: CGFloat = (0.35 + CGFloat(0.6 + 0.9 * hash(index, 522)) * depth + CGFloat(1.2 * young)) * k
+            let gap: CGFloat = (0.30 + CGFloat(0.35 + 0.65 * hash(index, 522)) * depth + CGFloat(1.1 * young)) * k
             let s: CGFloat = max(0.2, 1 - gap / radius)
             let q: [CGPoint] = corners.map { CGPoint(x: mx + ($0.x - mx) * s, y: my + ($0.y - my) * s) }
             /// The point `f` of the way from `a` to `b`.
             func along(_ a: CGPoint, _ b: CGPoint, _ f: CGFloat) -> CGPoint { CGPoint(x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f) }
             var crustPlate = Path()
-            crustPlate.move(to: along(q[0], q[1], 0.22))
+            crustPlate.move(to: along(q[0], q[1], 0.15))
             for j in 1...q.count {
                 let previous = q[j - 1], corner = q[j % q.count], next = q[(j + 1) % q.count]
-                crustPlate.addLine(to: along(previous, corner, 0.78))
-                crustPlate.addQuadCurve(to: along(corner, next, 0.22), control: corner)
+                crustPlate.addLine(to: along(previous, corner, 0.85))
+                crustPlate.addQuadCurve(to: along(corner, next, 0.15), control: corner)
             }
             crustPlate.closeSubpath()
             let v: Double = hash(index, 521)
@@ -2695,7 +2745,7 @@ extension CardArt {
                                  .init(color: Color(red: r, green: g, blue: b), location: 0.5),
                                  .init(color: Color(red: 0.8 * r, green: 0.8 * g, blue: 0.9 * b), location: 1)]),
                 startPoint: CGPoint(x: mx, y: my - radius), endPoint: CGPoint(x: mx, y: my + radius)))
-            crust.stroke(crustPlate, with: .color(Color(red: 1.0, green: 0.40, blue: 0.08).opacity(0.10 + 0.14 * young)), lineWidth: 0.7 * k)
+            crust.stroke(crustPlate, with: .color(Color(red: 1.0, green: 0.40, blue: 0.08).opacity(0.05 + 0.14 * young)), lineWidth: 0.6 * k)
         }
         // The cracks' light blooming over the crust, strongest round the fountain.
         var bloom = light
@@ -2930,6 +2980,19 @@ extension CardArt {
                       with: .radialGradient(Gradient(colors: [Color(red: 1.0, green: 0.35, blue: 0.55).opacity(0.30),
                                                               Color(red: 1.0, green: 0.25, blue: 0.50).opacity(0)]),
                                             center: .zero, startRadius: 0, endRadius: reach))
+        // Low cloud over the city, its underside lit by the neon and the streets, more as it nears the horizon.
+        var clouds = ctx
+        clouds.addFilter(.blur(radius: 9 * k))
+        clouds.drawLayer { layer in
+            for i in 0..<16 {
+                let x: CGFloat = w * CGFloat(1.2 * hash(i, 681) - 0.1)
+                let y: CGFloat = h * CGFloat(0.08 + 0.30 * hash(i, 682))
+                let r: CGFloat = w * CGFloat(0.10 + 0.14 * hash(i, 683))
+                let low: Double = Double(y / hz)
+                layer.fill(Path(ellipseIn: CGRect(x: x - r, y: y - 0.18 * r, width: 2 * r, height: 0.36 * r)),
+                           with: .color(Color(red: 0.22 + 0.25 * low, green: 0.07 + 0.06 * low, blue: 0.20 + 0.14 * low).opacity(0.10 + 0.20 * low)))
+            }
+        }
 
         // Lit windows, gathered by colour and brightness so each lot is one path: warm and cool, three levels each.
         var windows: [Path] = Array(repeating: Path(), count: 6)
@@ -2958,7 +3021,15 @@ extension CardArt {
                 let tall: Double = line.low + (line.high - line.low) * hash(i, 720 + row)
                 let away: Double = min(1, abs(left + wide / 2 - Double(driveVanishing.x)) / 0.45)
                 let top: CGFloat = h * CGFloat(driveHorizon - tall * (0.45 + 0.55 * away))
-                ctx.fill(Path(CGRect(x: w * left, y: top, width: w * wide, height: hz - top + 1)), with: .color(colour(line.shade)))
+                // Lit from below by the streets; some with a narrower storey on top.
+                var body = Path(CGRect(x: w * left, y: top, width: w * wide, height: hz - top + 1))
+                if hash(i, 725 + row) < 0.4 {
+                    body.addRect(CGRect(x: w * (left + 0.2 * wide), y: top - 0.03 * h, width: 0.6 * w * wide, height: 0.03 * h + 1))
+                }
+                let shade = line.shade
+                ctx.fill(body, with: .linearGradient(
+                    Gradient(colors: [colour(shade), Color(red: shade.red + 0.07, green: shade.green + 0.02, blue: shade.blue + 0.06)]),
+                    startPoint: CGPoint(x: 0, y: top), endPoint: CGPoint(x: 0, y: hz)))
                 let cols: Int = max(2, Int(Double(w) * wide / Double(3.4 * k)))
                 let storeys: Int = max(2, Int(Double(hz - top) / Double(4.2 * k)))
                 for a in 0..<cols {
@@ -2995,7 +3066,7 @@ extension CardArt {
                 let ta: CGFloat = at(xa, top0), fa: CGFloat = at(xa, foot0), tb: CGFloat = at(xb, top0), fb: CGFloat = at(xb, foot0)
                 for r in 0..<15 {
                     let q = j * 41 + r + side * 991
-                    guard hash(q, 760) <= 0.16 else { continue }
+                    guard hash(q, 760) <= 0.22 else { continue }
                     let f0: CGFloat = (CGFloat(r) + 0.25) / 15, f1: CGFloat = (CGFloat(r) + 0.62) / 15
                     var pane = Path()
                     pane.addLines([CGPoint(x: xa, y: ta + (fa - ta) * f0), CGPoint(x: xb, y: tb + (fb - tb) * f0),
@@ -3065,6 +3136,34 @@ extension CardArt {
                            style: StrokeStyle(lineWidth: (0.6 + 2.2 * f) * k, lineCap: .round))
             }
         }
+
+        // Street lamps along both parapets, running away to the road's end, each mirrored down the wet road.
+        var lampGlow = light
+        lampGlow.addFilter(.blur(radius: 2 * k))
+        var poles = Path()
+        for lane in [-0.10, 1.32] {
+            for j in 0..<9 {
+                let f: Double = 1 / (1 + 0.55 * Double(j))
+                let foot = onRoad(lane, 1 - pow(f, 1 / 2.2))
+                let tall: CGFloat = 95 * k * CGFloat(f)
+                let head = CGPoint(x: foot.x, y: foot.y - tall)
+                poles.move(to: foot)
+                poles.addLine(to: head)
+                let r: CGFloat = CGFloat(2 + 10 * f) * k
+                light.fill(Path(ellipseIn: CGRect(x: head.x - r, y: head.y - r, width: 2 * r, height: 2 * r)),
+                           with: .radialGradient(Gradient(colors: [Color(red: 1.0, green: 0.86, blue: 0.66).opacity(0.55),
+                                                                   Color(red: 1.0, green: 0.70, blue: 0.45).opacity(0)]),
+                                                 center: head, startRadius: 0, endRadius: r))
+                light.fill(Path(ellipseIn: CGRect(x: head.x - 0.25 * r, y: head.y - 0.18 * r, width: 0.5 * r, height: 0.36 * r)),
+                           with: .color(Color(red: 1.0, green: 0.95, blue: 0.85).opacity(0.9)))
+                let length: CGFloat = 1.5 * tall
+                lampGlow.fill(Path(CGRect(x: head.x - 0.22 * r, y: foot.y, width: 0.44 * r, height: length)),
+                              with: .linearGradient(Gradient(colors: [Color(red: 1.0, green: 0.8, blue: 0.55).opacity(0.22),
+                                                                      Color(red: 1.0, green: 0.8, blue: 0.55).opacity(0)]),
+                                                    startPoint: CGPoint(x: 0, y: foot.y), endPoint: CGPoint(x: 0, y: foot.y + length)))
+            }
+        }
+        ctx.stroke(poles, with: .color(Color(red: 0.03, green: 0.025, blue: 0.05)), lineWidth: 1.2 * k)
 
         // The light trails: long exposures of the traffic, as ribbons narrowing to the road's end; a car's lights travel
         // each one once a beat.
@@ -3153,7 +3252,7 @@ extension CardArt {
         wet.closeSubpath()
         var film = ctx
         film.clip(to: wet)
-        film.fill(Path(CGRect(x: 0, y: 0, width: w, height: h)), with: .color(Color(red: 0.40, green: 0.30, blue: 0.55).opacity(0.10)))
+        film.fill(Path(CGRect(x: 0, y: 0, width: w, height: h)), with: .color(Color(red: 0.40, green: 0.30, blue: 0.55).opacity(0.12)))
         var beads = Path(), glints = Path()
         for i in 0..<140 {
             let p = CGPoint(x: w * CGFloat(hash(i, 811)), y: h * CGFloat(hash(i, 812)))
@@ -3170,11 +3269,14 @@ extension CardArt {
         arc.addLines((0...60).map { onArc(leftmost + (wiper.sweep - leftmost) * Double($0) / 60) })
         var arcGlow = light
         arcGlow.addFilter(.blur(radius: 2 * k))
-        arcGlow.stroke(arc, with: .color(Color(red: 0.75, green: 0.65, blue: 1.0).opacity(0.12)), lineWidth: 2.5 * k)
+        arcGlow.stroke(arc, with: .color(Color(red: 0.75, green: 0.65, blue: 1.0).opacity(0.05)), lineWidth: 2.5 * k)
         var blade = Path()
         blade.move(to: bladeFoot)
         blade.addLine(to: tipRight)
-        ctx.stroke(blade, with: .color(Color(red: 0.012, green: 0.010, blue: 0.020)), style: StrokeStyle(lineWidth: 3.2 * k, lineCap: .round))
-        light.stroke(blade, with: .color(Color(red: 0.7, green: 0.55, blue: 0.9).opacity(0.20)), lineWidth: 0.6 * k)
+        ctx.stroke(blade, with: .color(Color(red: 0.010, green: 0.008, blue: 0.016)), style: StrokeStyle(lineWidth: 4.6 * k, lineCap: .round))
+        var bladeEdge = Path()
+        bladeEdge.move(to: CGPoint(x: bladeFoot.x - 1.6 * k, y: bladeFoot.y))
+        bladeEdge.addLine(to: CGPoint(x: tipRight.x - 1.6 * k, y: tipRight.y))
+        light.stroke(bladeEdge, with: .color(Color(red: 0.75, green: 0.55, blue: 0.95).opacity(0.28)), lineWidth: 0.7 * k)
     }
 }
