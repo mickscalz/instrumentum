@@ -108,6 +108,16 @@ final class NeonNightDriveRendererTests: XCTestCase {
     }
 
     /// A melody over a bass line, with chords now and then.
+    /// Six notes a frame across the keyboard (a hammering).
+    nonisolated static func crowd(_ i: Int) -> [UInt8] {
+        var notes: [UInt8] = []
+        for k in 0..<6 {
+            let n: Int = 21 + (i * 6 + k * 11) % 88
+            notes.append(UInt8(n))
+        }
+        return notes
+    }
+
     nonisolated static func playing(_ i: Int) -> [UInt8] {
         if i % 90 == 0 { return [48, 60, 64, 67] }
         if i % 20 == 0 { return [UInt8(62 + (i / 20 * 5) % 19)] }
@@ -347,7 +357,8 @@ final class NeonNightDriveRendererTests: XCTestCase {
     // MARK: - Light Trails
 
     func testLightTrailsArePackedByLane() throws {
-        let shot = try Self.renderDrive(at: 1.5, notes: { i in i % 6 == 0 ? [UInt8(30 + (i / 6) % 60)] : [] }, capture: false)
+        let sparse: (Int) -> [UInt8] = { i in i % 6 == 0 ? [UInt8(30 + (i / 6) % 60)] : [] }
+        let shot = try Self.renderDrive(at: 1.5, notes: sparse, capture: false)
         let layer = shot.renderer.trails
         let rows = layer.uniforms
         var total = 0
@@ -365,8 +376,8 @@ final class NeonNightDriveRendererTests: XCTestCase {
         XCTAssertGreaterThan(left, 0)
         XCTAssertGreaterThan(right, 0)
         // Smooth sends at most 64, the brightest.
-        let lite = try Self.renderDrive(at: 2, quality: .lite, notes: { i in [UInt8(21 + i % 88), UInt8(21 + (i * 7) % 88)] },
-                                        capture: false)
+        let pairs: (Int) -> [UInt8] = { i in [UInt8(21 + i % 88), UInt8(21 + (i * 7) % 88)] }
+        let lite = try Self.renderDrive(at: 2, quality: .lite, notes: pairs, capture: false)
         XCTAssertLessThanOrEqual(lite.renderer.trails.drawn, LightTrailsLayer.budget(.lite))
         XCTAssertGreaterThan(lite.frame.trails.count, LightTrailsLayer.budget(.lite))
         // Galaxy Warp takes the notes instead.
@@ -380,11 +391,15 @@ final class NeonNightDriveRendererTests: XCTestCase {
         guard MTLCreateSystemDefaultDevice() != nil else { throw XCTSkip("No Metal device") }
         let preview = try XCTUnwrap(PreviewRenderer(width: 640, height: 360))
         var captured = 0
-        let shot = try Self.renderDrive(at: 2, values: ["rain": .number(0.9), "traffic": .number(1)], energy: 1, tension: 0.8,
-                                        moments: [30: Self.chord(1)], surprises: [40: 0, 50: 3],
-                                        pulse: InstrumentPulse(bpm: 150, gate: 0.5),
-                                        notes: { i in (0..<6).map { k in UInt8(21 + (i * 6 + k * 11) % 88) } }, capture: false,
-                                        each: { _, r, _ in if preview.capture(r) != nil { captured += 1 } })
+        let values: [String: ParamValue] = ["rain": .number(0.9), "traffic": .number(1)]
+        let moments: [Int: BigMoment] = [30: Self.chord(1)]
+        let surprises: [Int: Int] = [40: 0, 50: 3]
+        let pulse = InstrumentPulse(bpm: 150, gate: 0.5)
+        let each: (Int, NeonNightDriveRenderer, DriveFrame) -> Void = { _, r, _ in
+            if preview.capture(r) != nil { captured += 1 }
+        }
+        let shot = try Self.renderDrive(at: 2, values: values, energy: 1, tension: 0.8, moments: moments, surprises: surprises,
+                                        pulse: pulse, notes: Self.crowd, capture: false, each: each)
         let r = shot.renderer
         XCTAssertEqual(captured, 120)
         XCTAssertEqual(r.trails.bufferAllocations, 3, "the streaks' ring of buffers, made once")
@@ -465,18 +480,21 @@ extension WorldPreviewTests {
         try write(try T.renderDrive(at: 6, values: ["rain": .number(0.25)], energy: 0, notes: sparse, width: w, height: h),
                   "drive-night")
         // Energy 1, a C major chord held (the neon warm), Chrome Bass's arp at 140 racing the studs, the melody over it.
+        let melody: (Int) -> [UInt8] = { i in i % 12 == 0 ? [UInt8(72 + (i / 12 * 5) % 14)] : [] }
+        let held: Set<UInt8> = [36, 60, 64, 67]
         try write(try T.renderDrive(at: 6, energy: 1, tension: 0.3, pulse: InstrumentPulse(bpm: 140, gate: 0.55),
-                                    notes: { i in i % 12 == 0 ? [UInt8(72 + (i / 12 * 5) % 14)] : [] },
-                                    holds: [36, 60, 64, 67], width: w, height: h), "drive-energy")
+                                    notes: melody, holds: held, width: w, height: h), "drive-energy")
         // Mid-Drop: tension in the tunnel, the drop, and just out onto the bridge with the wave running along the skyline.
         var outAt: Int?
-        try write(try T.renderDrive(at: 30, energy: 0.9, tension: 0.9, moments: [660: T.chord(1, drop: true)],
-                                    notes: T.playing, width: w, height: h,
-                                    stop: { i, f in
-            if i > 660, outAt == nil, f.tunnel.map({ $0.end <= 0 }) ?? true { outAt = i }
+        let drop: [Int: BigMoment] = [660: T.chord(1, drop: true)]
+        let out: (Int, DriveFrame) -> Bool = { i, f in
+            let clear: Bool = f.tunnel.map({ $0.end <= 0 }) ?? true
+            if i > 660, outAt == nil, clear { outAt = i }
             if let o = outAt { return i >= o + 24 }
             return false
-        }), "drive-drop")
+        }
+        try write(try T.renderDrive(at: 30, energy: 0.9, tension: 0.9, moments: drop, notes: T.playing, width: w, height: h,
+                                    stop: out), "drive-drop")
         // Tension high, deep in the tunnel: its lights strobing gently overhead, the rain gone from the glass.
         try write(try T.renderDrive(at: 13, energy: 0.8, tension: 0.95, notes: T.playing, width: w, height: h), "drive-tunnel")
         // Smooth.
@@ -484,13 +502,14 @@ extension WorldPreviewTests {
                                     width: w, height: h), "drive-smooth")
         // Light Trails: the arp's notes racing down the left lanes, the brass's chords streaking the right, a moment's
         // interchange bloom fanning out ahead.
-        try write(try T.renderDrive(at: 5.4, energy: 0.8, moments: [270: T.chord(0.9)],
-                                    pulse: InstrumentPulse(bpm: 128, gate: 0.55),
-                                    notes: { i in
+        let moment: [Int: BigMoment] = [270: T.chord(0.9)]
+        let racing: (Int) -> [UInt8] = { i in
             if i % 45 == 0 { return [55, 60, 64, 67, 72] }
             if i % 8 == 0 { return [UInt8(28 + (i / 8 * 3) % 18)] }
             return []
-        }, width: w, height: h), "light-trails")
+        }
+        try write(try T.renderDrive(at: 5.4, energy: 0.8, moments: moment, pulse: InstrumentPulse(bpm: 128, gate: 0.55),
+                                    notes: racing, width: w, height: h), "light-trails")
         // A surprise: the train crossing its bridge as you come to it.
         try write(try T.renderDrive(at: 9, energy: 0.5, surprises: [60: 0], notes: T.playing, width: w, height: h),
                   "drive-train")
