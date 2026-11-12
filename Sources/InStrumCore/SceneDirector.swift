@@ -130,6 +130,7 @@ public enum ThemeRegistry {
         .make(GreatBarrierReefModel.self),
         .make(SupercellSkyModel.self),
         .make(LightningPlainsModel.self),
+        .make(VolcanoRimModel.self),
         .make(NeonNightDriveModel.self),
     ]
 

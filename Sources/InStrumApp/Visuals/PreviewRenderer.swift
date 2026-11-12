@@ -61,6 +61,7 @@ final class PreviewRenderer {
         var reef: GreatBarrierReefRenderer?
         var plains: LightningPlainsRenderer?
         var supercell: SupercellSkyRenderer?
+        var volcano: VolcanoRimRenderer?
         var drive: NeonNightDriveRenderer?
         var images: [CGImage] = []
         for t in times.sorted() {
@@ -152,6 +153,10 @@ final class PreviewRenderer {
                     if supercell == nil { supercell = SupercellSkyRenderer(device: device) }
                     supercell?.update(f, params: director.parameters, quality: quality, gentle: gentle, dt: dt, size: size)
                     current = supercell
+                } else if let f = frame as? VolcanoFrame {
+                    if volcano == nil { volcano = VolcanoRimRenderer(device: device) }
+                    volcano?.update(f, params: director.parameters, quality: quality, gentle: gentle, dt: dt, size: size)
+                    current = volcano
                 } else if let f = frame as? DriveFrame {
                     if drive == nil { drive = NeonNightDriveRenderer(device: device) }
                     drive?.update(f, params: director.parameters, quality: quality, gentle: gentle, dt: dt, size: size)
@@ -181,6 +186,7 @@ final class PreviewRenderer {
         case var f as ReefFrame: edit(&f.sky); return f
         case var f as PlainsFrame: edit(&f.sky); return f
         case var f as SupercellFrame: edit(&f.sky); return f
+        case var f as VolcanoFrame: edit(&f.sky); return f
         case var f as DriveFrame: edit(&f.sky); return f
         default: return frame
         }
