@@ -130,6 +130,7 @@ public enum ThemeRegistry {
         .make(GreatBarrierReefModel.self),
         .make(SupercellSkyModel.self),
         .make(LightningPlainsModel.self),
+        .make(NeonNightDriveModel.self),
     ]
 
     public static var all: [(id: String, name: String)] { entries.map { ($0.id, $0.name) } }
