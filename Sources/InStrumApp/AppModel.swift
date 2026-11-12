@@ -102,6 +102,8 @@ public final class AppModel: ObservableObject {
     private var autosaveTimer: Timer?
     private var watchdogTimer: Timer?
     private var terminateObserver: NSObjectProtocol?
+    /// The Mac's Reduce Motion, once the app follows it (`startWatchingReduceMotion`).
+    var reduceMotionWatcher: ReduceMotionWatching?
 
     public init(engine: InstrumentEngine, store: SettingsStore, launchGuard: LaunchGuard, presets: PresetStore) {
         self.presets = presets
@@ -904,6 +906,7 @@ public final class AppModel: ObservableObject {
     public func setFollowReduceMotion(_ on: Bool) {
         objectWillChange.send()
         settings.followReduceMotion = on
+        updateReduceMotion()
         autosave()
     }
 
