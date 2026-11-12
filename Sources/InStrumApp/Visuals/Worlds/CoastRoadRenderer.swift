@@ -30,6 +30,8 @@ final class CoastRoadRenderer: ThemeRenderer {
     private var foxInstances: [FoxInstance] = []
     private var primed = false
     private var lanternGlow: Float = 0
+    /// The mist drifting through the lighthouse's beams (noise cells, wrapped at 64 so it never jumps).
+    private var beamMist: Float = 0
     private var oceanU = [SIMD4<Float>](repeating: .zero, count: 7)
     private var lightInstances: [SIMD4<Float>] = []
     private var postInstances: [SIMD4<Float>] = []
@@ -202,6 +204,7 @@ final class CoastRoadRenderer: ThemeRenderer {
         // Wet tarmac: how wet, and the road's far edge (where reflections hang from).
         let roadLineY = bottom + 0.06
         roadU[5] = SIMD4(s.wetness, roadLineY, 0, 0)
+        beamMist = (beamMist + 0.35 * fdt).truncatingRemainder(dividingBy: 64)
         fillExcitement(frame, gentle: gentle, aspect: aspect, bottom: bottom)
 
         // The sea passes by the distance travelled, wrapped to its tile (every swell component and noise repeats
@@ -303,7 +306,7 @@ final class CoastRoadRenderer: ThemeRenderer {
         let l = CoastRoadModel.lighthouse
         roadU[6] = SIMD4(l.x, l.y, l.z, beam)
         openOut = Self.unit(frame.open)
-        roadU[7] = SIMD4(frame.beamAngle.isFinite ? frame.beamAngle : 0, 0, flareOut, openOut)
+        roadU[7] = SIMD4(frame.beamAngle.isFinite ? frame.beamAngle : 0, beamMist, flareOut, openOut)
         headlightsOut = Self.unit(frame.headlights) * lightScale
         trainOut = 0
         if let t = frame.train, t.light > 0.001 {

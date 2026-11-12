@@ -16,7 +16,7 @@ enum AuroraFjordShaders {
         float4 aurora;     // the aurora's light on snow, ice and water (rgb), aurora amount 0…1
         float4 ambient;    // the sky's light on the scene (rgb), cloud cover
         float4 swell;      // the two swell components' phases (radians, wrapped), unused, unused
-        float4 corona;     // Fire & Neon §5.5: the surge's corona overhead (after the sparkle), unused, unused, unused
+        float4 corona;     // Fire & Neon §5.5: the corona overhead, the surge (both after the sparkle), the magnetic zenith's altitude (rad), unused
     };
 
     // The fjord in the view's frame (metres; φ in radians across the view, + to the right).
@@ -364,11 +364,18 @@ enum AuroraFjordShaders {
         return float4(col * a, a);
     }
 
-    // ---------------------------------------------------------------- Fire & Neon §5.5: the surge's corona
-    // An additive quad over the top of the V of sky (the renderer sizes it: x0, y0, x1, y1 in NDC). The corona's rays
-    // run from the magnetic zenith (high behind you) down through the top of the frame, converging upward, green below
-    // and violet-pink toward the zenith, flickering slowly; it keeps above 27° and within 0.45 rad of the view's middle,
-    // where the walls never reach, so it never lies over the rock.
+    // ---------------------------------------------------------------- Fire & Neon §5.5: the surge and its corona
+    // An additive quad over the V of sky (the renderer sizes it: x0, y0, x1, y1 in NDC), drawn only while the curtains
+    // surge or the corona shows, and never over the walls (the skyline is tested per pixel).
+    //
+    // The surge: the curtains brighten and ripple. The sky's own aurora carries the curtain; this adds the surge's fine
+    // rays (two octaves along the band, far finer than the curtain's own, soft: never hard bars), a fold travelling along
+    // it and its base swaying, mostly green, with a thin pink-magenta fringe along the lower edge (the band's geometry is
+    // the sky shader's, from the same uniforms).
+    //
+    // The corona: rays along the field lines, which perspective draws converging on one point high overhead (the
+    // magnetic zenith, set just above the frame's top: f.corona.z its altitude), fanning out from it, each of its own
+    // length, violet-pink near the point and green further out, flickering slowly.
     struct CoronaOut { float4 pos [[position]]; float2 ndc; };
 
     vertex CoronaOut fjord_corona_vertex(uint vid [[vertex_id]], constant float4& rect [[buffer(0)]]) {
@@ -381,25 +388,63 @@ enum AuroraFjordShaders {
     }
 
     fragment float4 fjord_corona_fragment(CoronaOut in [[stage_in]], constant SkyU& u [[buffer(0)]], constant FjordU& f [[buffer(1)]]) {
-        float k = f.corona.x;
-        if (k <= 0.001) discard_fragment();
+        float k = f.corona.x, surge = f.corona.y;
+        if (k <= 0.001 && surge <= 0.001) discard_fragment();
         float3 d = fjordRay(in.ndc, u);
         float alt = asin(clamp(d.z, -1.0, 1.0));
+        if (alt <= 0.0) discard_fragment();
         float phi = fjordPhi(d, u);
-        float fade = smoothstep(0.47, 0.58, alt) * (1.0 - smoothstep(0.32, 0.45, abs(phi)));
-        if (fade <= 0.0) discard_fragment();
-        float3 F = fjordAhead(u);
-        float3 Z = normalize(float3(0.0, 0.0, 0.978) - F * 0.208);     // the magnetic zenith, 12° behind the zenith
-        float3 e1 = normalize(cross(Z, F)), e2 = cross(e1, Z);
-        float ang = atan2(dot(d, e1), dot(d, e2));
-        float from = acos(clamp(dot(d, Z), -1.0, 1.0));
-        float t = f.a.y * (8.0 * kFjordTick);
-        float n = 0.65 * vnoise3(float3(ang * 34.0, t, 2.0)) + 0.35 * vnoise3(float3(ang * 85.0, t * 1.7, 5.0));
-        float rays = smoothstep(0.38, 0.78, n);
-        float profile = smoothstep(1.45, 0.95, from);
-        float3 green = float3(0.25, 1.0, 0.45), violet = float3(0.7, 0.3, 0.95);
-        float3 col = mix(green, violet, smoothstep(1.2, 0.9, from));
-        return float4(col * (0.22 * k * rays * profile * fade), 0.0);
+        int octaves = int(f.a.w + 0.5);
+        float side;
+        float top = fjordSkyline(phi, octaves, side);
+        float clear = smoothstep(top, top + 0.002, alt);
+        if (clear <= 0.0) discard_fragment();
+        // The clock wraps at the hour: the noise's time runs 256 cells an hour (its lattice's period), the waves whole
+        // turns an hour, so nothing jumps at the wrap.
+        float tt = f.a.y * (4.0 * kFjordTick);
+        float tw = f.a.y * (6.2831853 / 3600.0);
+        float3 col = float3(0);
+        if (surge > 0.001) {
+            float2 ph = u.aurora.xy;
+            float3 P = float3(ph / max(length(ph), 1e-4), 0.0);
+            float3 W = float3(P.y, -P.x, 0.0);
+            float A = toRad(clamp(u.aurora.z, 0.5, 89.0));
+            float3 Bv = P * cos(A) + float3(0.0, 0.0, sin(A));
+            float3 Uv = float3(0.0, 0.0, cos(A)) - P * sin(A);
+            float along = atan2(dot(d, W), dot(d, Bv));
+            float h = toDeg(asin(clamp(dot(d, Uv), -1.0, 1.0)));
+            float hb = h + 1.1 * sin(along * 14.0 - tw * 1500.0) + 0.5 * sin(along * 37.0 + tw * 2700.0);
+            if (hb > -6.0 && hb < 60.0) {
+                float r1 = fjordNoise(float3(along * 260.0 + 3.0 * tt, 1.5, tt), 256.0);
+                float r2 = fjordNoise(float3(along * 610.0 - 5.0 * tt, 4.5, 2.0 * tt), 256.0);
+                float rays = 0.4 + 0.6 * (0.6 * r1 + 0.4 * r2);
+                rays *= rays;
+                float lower = hb < 0.0 ? exp(hb / 0.9) : 1.0;
+                float profile = lower * exp(-max(hb, 0.0) / 9.0);
+                float fr = (hb + 0.7) / 0.8;
+                float fringe = exp(-fr * fr);
+                float ends = 1.0 - smoothstep(1.2, 1.5708, abs(along));
+                float3 green = float3(0.22, 1.0, 0.42), pink = float3(1.0, 0.3, 0.62);
+                col += (green * (profile * rays) + pink * (fringe * (0.35 + 0.65 * rays) * 0.5)) * (0.14 * surge * ends * saturate(u.night.x));
+            }
+        }
+        if (k > 0.001) {
+            float3 F = fjordAhead(u);
+            float za = f.corona.z;
+            float3 Z = F * cos(za) + float3(0.0, 0.0, sin(za));
+            float3 e1 = normalize(cross(Z, F)), e2 = cross(e1, Z);       // e2 points down the sky, ahead
+            float ang = atan2(dot(d, e1), dot(d, e2));
+            float from = acos(clamp(dot(d, Z), -1.0, 1.0));
+            float n = 0.65 * fjordNoise(float3(ang * 45.0, 2.0, tt), 256.0) + 0.35 * fjordNoise(float3(ang * 120.0, 5.0, 2.0 * tt), 256.0);
+            float rays = smoothstep(0.3, 0.85, n);
+            float reach = 0.25 + 0.45 * fjordNoise(float3(ang * 45.0, 9.0, 0.5 * tt), 256.0);
+            float profile = smoothstep(0.02, 0.1, from) * exp(-from / reach) * (1.0 - smoothstep(0.85, 1.2, from));
+            float3 green = float3(0.25, 1.0, 0.45), violet = float3(0.75, 0.3, 0.9);
+            float3 c = mix(green, violet, smoothstep(0.3, 0.08, from));
+            float flicker = 0.85 + 0.15 * sin(tw * 1100.0 + ang * 9.0);
+            col += c * (0.22 * k * rays * profile * flicker * saturate(u.night.x + 0.3));
+        }
+        return float4(col * clear, 0.0);
     }
 
     // ---------------------------------------------------------------- Fire & Neon §5.5: an orca in the fjord
@@ -420,37 +465,86 @@ enum AuroraFjordShaders {
         return out;
     }
 
-    /// Its back and tall fin, black out of the still water, and its blow: a bushy column of breath rising four metres,
-    /// hanging, drifting with the wind and thinning out over four seconds, lit by the night.
+    /// How much of the orca stands out of the water at q (metres across, up; 0…1 cover) with `fin` how far it has
+    /// surfaced: its back, a low dark arc, and a bull's tall dorsal fin, a little swept back, its leading edge convex
+    /// and its trailing edge hollow; `edge` hands back how near the silhouette's edge q is (0 deep inside … 1 on it).
+    float fjordOrcaCover(float2 q, float fin, float aa, thread float& edge) {
+        edge = 0.0;
+        if (fin <= 0.01 || q.y < -0.05) return 0.0;
+        float2 bq = (q - float2(-0.2, -0.62 + 0.3 * fin)) / float2(2.3, 0.7);
+        float back = (length(bq) - 1.0) * 0.7;
+        float base = 0.05 + 0.2 * fin;                  // where the fin leaves the back
+        float h = 1.7 * fin;
+        float t = (q.y - base) / h;
+        float finD = 1.0;
+        if (t > -0.2 && t < 1.05) {
+            float tc = saturate(t);
+            float bend = sin(3.14159265 * tc);
+            float lead = mix(0.42, -0.32, tc) + 0.12 * bend;
+            float trail = mix(-0.36, -0.32, tc) + 0.1 * bend * (1.0 - tc);
+            finD = max(max(trail - q.x, q.x - lead), max(q.y - (base + h), base - 0.15 - q.y));
+        }
+        float dd = min(back, finD);
+        dd = max(dd, -q.y);                              // the water's surface
+        edge = exp(-max(-dd, 0.0) / 0.1);
+        return 1.0 - smoothstep(-aa, aa, dd);
+    }
+
+    /// The orca surfacing in the still water: its back and tall fin near-black and wet, the sky and the aurora catching
+    /// their edges and the fin's top, a thin bright line where the water wraps them, and their reflection darkening the
+    /// mirrored sky (broken by the ripples). Its blow: a pale puff rising fast to about four metres, billowing, then
+    /// drifting downwind and thinning over four seconds, lit by the night (the aurora's green muted in the mist), with a
+    /// faint reflection. Premultiplied.
     fragment float4 fjord_orca_fragment(OrcaOut in [[stage_in]], constant FjordU& f [[buffer(1)]]) {
         float2 q = in.uv;
         float fin = in.info.x, age = in.info.y, strength = in.info.z, wind = in.info.w;
         float aa = max(fwidth(q.x), fwidth(q.y)) * 1.2 + 1e-4;
+        float3 light = in.tint.rgb;
+        float lum = dot(light, float3(0.3, 0.5, 0.2));
+        float tw = f.a.y * (6.2831853 / 3600.0);
+        // The body (and, below the water line, its reflection).
+        float edge;
         float body = 0.0;
-        if (fin > 0.01) {
-            float back = length((q - float2(0.0, -0.55)) / float2(2.2, 1.0)) - 0.62 * fin;
-            float h = 1.6 * fin;
-            float t = saturate(q.y / max(h, 1e-3));
-            float finD = max(abs(q.x + 0.25 * t * t) - 0.38 * (1.0 - t), q.y - h);
-            float d = max(min(back, finD), -q.y);
-            body = 1.0 - smoothstep(-aa, aa, d);
+        float3 bodyCol = float3(0.0);
+        float refl = 0.0;
+        if (q.y >= 0.0) {
+            body = fjordOrcaCover(q, fin, aa, edge);
+            if (body > 0.0) {
+                float tip = saturate((q.y - 0.3) / 1.6);
+                float saddle = exp(-((q.x + 0.75) * (q.x + 0.75)) / 0.12) * exp(-((q.y - 0.12) * (q.y - 0.12)) / 0.03);
+                bodyCol = float3(0.006, 0.007, 0.008) + light * (0.05 + 0.25 * edge + 0.12 * tip) + float3(0.05) * lum * saddle * 4.0;
+                float wl = exp(-q.y / 0.035);
+                bodyCol += light * (0.6 * wl);
+            }
+        } else {
+            float ripple = 0.06 * sin(q.y * 9.0 + tw * 2400.0) + 0.03 * sin(q.y * 23.0 - tw * 3300.0);
+            float e2;
+            refl = fjordOrcaCover(float2(q.x + ripple, -q.y), fin, aa * 2.0, e2) * 0.75 * (1.0 - smoothstep(0.6, 2.0, -q.y));
         }
-        float3 dark = float3(0.003, 0.004, 0.005) + f.aurora.rgb * 0.15;
+        // The blow.
         float breath = 0.0;
-        if (age >= 0.0 && age < 4.0) {
-            float y = q.y;
-            float rise = 4.2 * (1.0 - exp(-age / 0.3));
-            float up = saturate(y / 4.0);
-            float x = q.x - 0.25 - 0.6 * age * wind * up;
-            float w = 0.25 + 0.3 * age + 0.3 * up * (1.0 + age);
-            float n = vnoise3(float3(q.x * 1.6, (y - age * 0.6) * 1.4, age * 0.5 + 3.0));
-            float column = exp(-(x * x) / (w * w)) * smoothstep(0.0, 0.25, y) * (1.0 - smoothstep(rise - 0.6, rise + 0.4, y));
-            breath = saturate(column * (0.45 + 0.55 * n) * strength * (1.0 - smoothstep(1.2, 4.0, age)) * 0.75);
+        if (age >= 0.0 && age < 4.5 && strength > 0.0) {
+            float y = abs(q.y);
+            float H = 3.8 * (1.0 - exp(-age / 0.3));
+            float up = saturate(y / max(H, 0.1));
+            float shift = 0.75 + (0.35 + 0.9 * wind) * age * up;
+            float w = 0.12 + 0.45 * up + 0.35 * age;
+            float x = q.x - shift;
+            float column = exp(-(x * x) / (w * w)) * smoothstep(0.0, 0.25, y) * (1.0 - smoothstep(H - 0.5, H + 0.4, y));
+            float2 hq = float2(x, y - (H - 0.35)) / float2(0.55 + 0.35 * age, 0.45 + 0.25 * age);
+            float head = exp(-dot(hq, hq));
+            float2 nq = float2(x * 1.8, (y - 0.5 * age) * 1.6);
+            float n = 0.6 * vnoise3(float3(nq, age * 0.6 + 3.0)) + 0.4 * vnoise3(float3(nq * 2.3 + 7.0, age * 0.9));
+            float fade = smoothstep(0.0, 0.08, age) * (1.0 - smoothstep(1.0, 4.5, age));
+            breath = saturate(max(column, head) * (0.25 + 0.95 * n) * strength * fade * 0.55);
+            if (q.y < 0.0) breath *= 0.3 * (1.0 - smoothstep(0.3, 1.5, -q.y));
         }
-        float a = (breath + body * (1.0 - breath)) * in.tint.w;
+        float3 breathCol = mix(light, float3(0.85, 0.95, 1.0) * lum, 0.5) * 1.5;
+        float a = breath + (body + refl) * (1.0 - breath);
         if (a < 0.002) discard_fragment();
-        float3 col = (in.tint.rgb * breath + dark * body * (1.0 - breath)) * in.tint.w;
-        return float4(col, a);
+        float3 col = breathCol * breath + bodyCol * (body * (1.0 - breath)) + float3(0.002, 0.003, 0.004) * (refl * (1.0 - breath));
+        a *= in.tint.w;
+        return float4(col * in.tint.w, a);
     }
 
     // ---------------------------------------------------------------- the jetty's rails

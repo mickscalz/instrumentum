@@ -335,7 +335,9 @@ public struct CoastRoadModel: ThemeModel, MoodAware, SkyAware, ExcitementAware, 
             trainWay = r.unit() < 0.5 ? -1 : 1
             trainFrom = -trainWay * r.range(0.25, 0.4)
         case .shootingStar:
-            // Low over the sea (the window shows the sky to about 15°): a quick one with a short train.
+            // Low over the sea (the window shows the sky to about 15°): a quick one with a short train. Its head a point as
+            // bright as the brightest stars (a brighter head only grows the sky's halo round it into a ball of light): its
+            // brightness is its long streak.
             let view = Self.viewAzimuth(sky)
             let rightward = r.unit() < 0.5
             let a = view + (rightward ? -1 : 1) * Double(r.range(14, 22))
@@ -343,7 +345,7 @@ public struct CoastRoadModel: ThemeModel, MoodAware, SkyAware, ExcitementAware, 
             let start = WorldMeteors.direction(azimuth: a, altitude: Double(r.range(11, 14)))
             let end = WorldMeteors.direction(azimuth: b, altitude: Double(r.range(3, 6)))
             meteors.add(WorldMeteors.meteor(from: start, to: end, born: now, duration: r.range(0.7, 1.0),
-                                            magnitude: gentle ? -1.5 : -3, speed: 62, flare: false))
+                                            magnitude: gentle ? -1.2 : -2.2, speed: 62, flare: false))
         }
         let record = RoadSurprise(kind: kind, age: 0, duration: RoadSurprise.duration(kind), seed: s.seed)
         if let free = surprises.firstIndex(where: { $0 == nil }) { surprises[free] = record }

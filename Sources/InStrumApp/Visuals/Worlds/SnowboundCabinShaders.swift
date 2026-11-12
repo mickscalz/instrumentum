@@ -18,7 +18,7 @@ enum SnowboundCabinShaders {
         float4 e;        // the window's bar count, unused…
         float4 bars[19]; // the Window Kit's bars: lo, hi (window coordinates), kind (0 vertical, 1 horizontal)
         float4 owl;      // Excitement: an owl on the sill: its feet (NDC x, y), its height (NDC), shown 0/1
-        float4 owl2;     // its head's turn (−1 … 1), its blink 0…1, unused, unused
+        float4 owl2;     // its head's turn (−1 … 1), its blink 0…1, how much of it shows 0…1, unused
         float4 star;     // a star through a break in the clouds: position (NDC x, y), strength 0…1, a pixel (NDC)
         float4 roar;     // the fire's roar (limited), the snow's whirl, the wind's gathering, unused
     };
@@ -151,39 +151,68 @@ enum SnowboundCabinShaders {
     }
 
     // An owl perched on the drift at the foot of the glass (a surprise), in its own units (feet at 0, the top of its head
-    // near 1): a round body and a broad head in mottled tawny grey, a paler facial disc turned a little this way or that,
-    // dark eyes catching the fire's light, now and then a blink. Returns its colour and cover (0 or 1, as the drifts).
-    float4 cabinOwl(float sx, float sy, constant CabinU& c, float3 light, float3 fireCol) {
+    // near 1), seen at night as an owl is: a dark, upright, tapering shape, its round head (no ear tufts) set on it with
+    // no neck, the window's warm light faint on its front and its pale facial disc, the cold sky catching its crown and
+    // shoulders, dark eyes with the window caught in them, faint streaks down its breast, the folded wings' edges. Soft
+    // at its edge (a pixel's width: `px`, in the scene's units). `ambient` is the night's light on it (sky, moon, sun), `window` the cabin's.
+    // Returns its colour and cover.
+    float4 cabinOwl(float sx, float sy, float px, constant CabinU& c, float3 ambient, float3 window, float3 fireCol) {
         float4 o = c.owl;
         if (o.w < 0.5 || o.z < 1e-4) return float4(0.0);
         float aspect = c.a.y;
         float2 q = float2(sx - o.x * aspect, sy - o.y) / o.z;
-        if (abs(q.x) > 0.6 || q.y < -0.02 || q.y > 1.1) return float4(0.0);
+        if (abs(q.x) > 0.5 || q.y < -0.02 || q.y > 1.08) return float4(0.0);
         float turn = c.owl2.x, blink = c.owl2.y;
-        float2 b = (q - float2(0.0, 0.36)) / float2(0.33, 0.38);
-        float2 h = (q - float2(0.03 * turn, 0.8)) / float2(0.29, 0.23);
-        float body = length(b), head = length(h);
-        if (body > 1.0 && head > 1.0) return float4(0.0);
+        float aa = px / o.z + 1e-4;
+        // The body: an egg, broadest at the shoulders, narrowing to the tail; the head: a flattened ball.
+        float rx = 0.26 * (1.0 - 0.3 * smoothstep(0.42, 0.02, q.y));
+        float2 bq = float2(q.x / rx, (q.y - 0.4) / 0.4);
+        float2 hc = float2(0.02 * turn, 0.79);
+        float2 hq = (q - hc) / float2(0.235, 0.2);
+        float db = (length(bq) - 1.0) * rx, dh = (length(hq) - 1.0) * 0.2;
+        float k = 0.06;
+        float hm = saturate(0.5 + 0.5 * (dh - db) / k);
+        float d = mix(dh, db, hm) - k * hm * (1.0 - hm);           // a smooth union: no neck
+        d = max(d, 0.03 - q.y);                                    // its feet sunk in the snow
+        float cover = (1.0 - smoothstep(-aa, aa, d)) * saturate(c.owl2.z);
+        if (cover <= 0.0) return float4(0.0);
+        // Its roundness (how squarely a point faces you), from the nearer of the two.
+        float r = min(length(bq), length(hq));
+        float nz = sqrt(saturate(1.0 - r * r));
+        bool onHead = length(hq) < length(bq);
+        float upper = onHead ? saturate(hq.y + 0.2) : saturate(bq.y + 0.1);
         float mottle = cvn2(q * 26.0 + float2(3.1, 7.7)) * 0.6 + cvn2(q * float2(60.0, 14.0)) * 0.4;
-        float3 col = mix(float3(0.24, 0.2, 0.16), float3(0.52, 0.47, 0.4), mottle) * light;
-        // A soft rounding: the edges and the underside fall into shade.
-        col *= 0.7 + 0.3 * saturate(1.0 - min(body, head));
-        // The facial disc, its eyes and beak, turned with the head.
-        float2 fc = float2(0.09 * turn, 0.79);
-        float2 fd = (q - fc) / float2(0.21 * (1.0 - 0.3 * abs(turn)), 0.18);
-        float disc = 1.0 - smoothstep(0.82, 1.0, length(fd));
-        col = mix(col, float3(0.6, 0.55, 0.47) * light, disc * (0.75 + 0.25 * mottle));
-        for (int k = -1; k <= 1; k += 2) {
-            float2 eye = fc + float2(float(k) * 0.085 * (1.0 - 0.25 * abs(turn)), 0.02);
-            float2 ed = (q - eye) / float2(0.045, 0.045 * (1.0 - 0.92 * blink) + 1e-3);
-            float inEye = 1.0 - smoothstep(0.75, 1.0, length(ed));
-            float2 gd = (q - eye - float2(0.014, 0.016)) / 0.012;
+        float albedo = 0.075 * (0.8 + 0.4 * mottle);
+        // Faint streaks down its breast, and the folded wings' darker edges.
+        float streak = smoothstep(0.55, 0.85, cvn2(float2(q.x * 34.0, q.y * 5.0)));
+        albedo *= onHead ? 1.0 : 1.0 - 0.3 * streak * nz;
+        float wing = onHead ? 0.0 : smoothstep(0.55, 0.8, abs(bq.x)) * smoothstep(0.02, 0.25, q.y) * smoothstep(0.62, 0.45, q.y);
+        albedo *= 1.0 - 0.35 * wing;
+        float3 plumage = float3(1.0, 0.86, 0.7);
+        float3 col = plumage * albedo * (ambient * (0.45 + 0.55 * nz) + window * (nz * nz) * 1.3);
+        // The sky's cold light along its crown and shoulders.
+        float rim = (1.0 - nz) * (1.0 - nz) * upper;
+        col += ambient * float3(0.75, 0.85, 1.0) * (0.22 * rim);
+        // The facial disc, its ruff, the eyes and the beak, turned with the head.
+        float2 fc = float2(0.085 * turn, 0.775);
+        float2 fd = (q - fc) / float2(0.19 * (1.0 - 0.3 * abs(turn)), 0.165);
+        float fl = length(fd);
+        float disc = 1.0 - smoothstep(0.82, 1.0, fl);
+        float ruff = exp(-((fl - 1.0) * (fl - 1.0)) / 0.02);
+        float3 face = float3(1.0, 0.9, 0.78) * 0.2 * (0.85 + 0.3 * mottle) * (ambient * 0.8 + window * 1.4);
+        col = mix(col, face, disc * 0.85);
+        col *= 1.0 - 0.45 * ruff;
+        for (int e = -1; e <= 1; e += 2) {
+            float2 eye = fc + float2(float(e) * 0.075 * (1.0 - 0.25 * abs(turn)), 0.025);
+            float2 ed = (q - eye) / float2(0.042, 0.042 * (1.0 - 0.92 * blink) + 1e-3);
+            float inEye = 1.0 - smoothstep(0.7, 1.0, length(ed));
+            float2 gd = (q - eye - float2(0.012, 0.014)) / 0.01;
             float glint = exp(-dot(gd, gd)) * (1.0 - blink);
-            col = mix(col, float3(0.015, 0.012, 0.01), inEye) + fireCol * (glint * 2.5);
+            col = mix(col, float3(0.006, 0.005, 0.004), inEye) + fireCol * window.r * (glint * 1.6);
         }
-        float2 bk = (q - fc - float2(0.0, -0.065)) / float2(0.025, 0.04);
-        col = mix(col, float3(0.12, 0.1, 0.08) * light, 1.0 - smoothstep(0.7, 1.0, length(bk)));
-        return float4(col, 1.0);
+        float2 bk = (q - fc - float2(0.0, -0.06)) / float2(0.02, 0.035);
+        col = mix(col, float3(0.32, 0.3, 0.26) * (ambient + window), 0.8 * (1.0 - smoothstep(0.6, 1.0, length(bk))));
+        return float4(col, cover);
     }
 
     struct CabinOut { float4 pos [[position]]; float2 ndc; };
@@ -230,9 +259,15 @@ enum SnowboundCabinShaders {
 
         // ---- an owl on the sill, nearest of all (a surprise), lit by the sky and the window's own light at night
         if (c.owl.w > 0.5) {
-            float3 owlLight = skyAmb * 1.1 + moonCol * 0.8 + sunCol * 0.4 + fireCol * fire * 0.35 * night;
-            float4 owl = cabinOwl(sx, sy, c, owlLight, fireCol);
-            if (owl.a > 0.5) { ColorDepth o; o.color = float4(owl.rgb, 1); o.depth = float4(0.08, 0, 0, 1); return o; }
+            float3 owlAmbient = skyAmb * 1.1 + moonCol * 0.8 + sunCol * 0.4;
+            float3 owlWindow = fireCol * fire * 0.45 * night;
+            float px = max(fwidth(sx), fwidth(sy));
+            float4 owl = cabinOwl(sx, sy, px, c, owlAmbient, owlWindow, fireCol);
+            if (owl.a > 0.002) {
+                // Its soft edge over the snow behind it (the drift and the field it sits against).
+                float3 snow = float3(0.92, 0.95, 1.0) * (skyAmb * 0.95 + moonCol * 0.8 + sunCol * 0.35 + fireCol * fire * 0.3 * night);
+                ColorDepth o; o.color = float4(mix(snow, owl.rgb, owl.a), 1); o.depth = float4(0.08, 0, 0, 1); return o;
+            }
         }
 
         // ---- drifts banked against the panes (nearest of all)

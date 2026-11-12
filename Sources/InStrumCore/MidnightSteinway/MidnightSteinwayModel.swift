@@ -34,6 +34,8 @@ public struct MidnightSteinwayModel: ThemeModel, ExcitementAware, SurpriseListin
     public static let surpriseSeconds: [Float] = [8, 9]
     /// The spotlight blooms (spec §5.5): open over 0.6 s, held, closing over 2.5 s; a drop's bloom is longer.
     public static let momentSeconds: Float = 5, dropSeconds: Float = 6
+    /// How far a drop lifts the room's amber glow (the stage's bloom, 0…1) at most.
+    public static let dropRoomLift: Float = 0.25
 
     /// The spotlight's bloom `age` seconds into a moment `life` long (0…1).
     public static func bloom(age: Float, life: Float) -> Float {
@@ -98,7 +100,9 @@ public struct MidnightSteinwayModel: ThemeModel, ExcitementAware, SurpriseListin
         var spot: Float = 0
         if let m = play.moment {
             spot = Self.bloom(age: m.age, life: m.duration) * m.strength
-            if m.isDrop { frame.bloom = max(frame.bloom, play.drop) }
+            // A drop's golden light is the spotlight's (its cone and pool, full); the room's own amber lifts only a
+            // little with it, so the stage stays dark and theatrical round the light.
+            if m.isDrop { frame.bloom = max(frame.bloom, Self.dropRoomLift * play.drop) }
         }
         var motes: Float = 0, curtain: Float = 0, curtainAge: Float = 0
         if let s = play.surprise(0) { motes = ExcitementPlay.envelope(age: s.age, life: s.duration, rise: 1.5, fall: 2.5) }

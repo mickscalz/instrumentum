@@ -188,7 +188,7 @@ public struct MoonlitLakeModel: ThemeModel, MoodAware, SkyAware, ExcitementAware
         frame.windOnWater = min(1, max(0, (sky.wind.isFinite ? sky.wind : 0) + 0.35 * energyEased))
         frame.mistGather = gather
         frame.mistLift = liftAge.map { ExcitementStep.envelope(age: $0, life: Self.liftSeconds, rise: 0.7, fall: 14) } ?? 0
-        frame.flashRequest = 0.35 * meteors.fireballLight(at: sky.meteorTime)
+        frame.flashRequest = 0.35 * max(meteors.fireballLight(at: sky.meteorTime), burstFlareLight(at: sky.meteorTime))
         frame.worldMeteors = meteors.live(at: sky.meteorTime).count
         frame.surprises = surprises.compactMap { $0 }
         frame.energy = x.energy
@@ -266,8 +266,10 @@ public struct MoonlitLakeModel: ThemeModel, MoodAware, SkyAware, ExcitementAware
     }
 
     /// 5–12 meteors from one radiant high in the view, the first ones at once and the rest over 2.4 s, all running away
-    /// from it; at strength 0.6 and over the first two are fireballs ending in a flare (never under gentle visuals, where
-    /// every one is a magnitude and a half fainter).
+    /// from it. Their heads stay points (about as bright as the brightest stars: a brighter head only grows the sky's halo
+    /// round it into a ball of light); their brightness is in their long, thin, tapering streaks and trains. At strength
+    /// 0.6 and over the first two are the brightest and longest, each ending in a brief small flare (never under gentle
+    /// visuals, where every one is a magnitude and a half fainter).
     private mutating func burst(strength s: Float, gentle: Bool, now: Double) {
         // Never two at once: a moment while a burst still runs adds two more from its radiant (to free slots only, so
         // nothing in flight is cut off).
@@ -283,15 +285,26 @@ public struct MoonlitLakeModel: ThemeModel, MoodAware, SkyAware, ExcitementAware
             if adding, meteors.slots.allSatisfy({ $0 != nil }) { break }
             let f = count > 1 ? Float(k) / Float(count - 1) : 0
             let offset = adding ? Double(k) * 0.2 : 2.4 * Double(f * f.squareRoot())
-            let length = rng.range(8, 18) * (0.8 + 0.4 * s)
-            let pace = rng.range(18, 32)
-            let fireball = !adding && k < 2 && s >= 0.6
-            let magnitude: Float = fireball ? -5 - 3 * (s - 0.6) / 0.4 + Float(k) : -1.2 - 2.6 * s + rng.range(-1, 1.2)
+            let bright = !adding && k < 2 && s >= 0.6
+            let length = rng.range(14, 28) * (0.8 + 0.4 * s) * (bright ? 1.3 : 1)
+            let pace = rng.range(22, 36)
+            let magnitude: Float = bright ? -2.3 + 0.4 * Float(k) : -0.9 - 1.0 * s + rng.range(-0.6, 0.6)
             let m = WorldMeteors.meteor(radiant: radiant, distance: rng.range(5, 22), angle: rng.range(-1.35, 1.35), length: length,
                                         born: now + offset, duration: length / pace, magnitude: magnitude + fainter,
-                                        speed: Double(rng.range(58, 70)), flare: fireball && !gentle)
+                                        speed: Double(rng.range(58, 70)), flare: bright && !gentle)
             meteors.add(m)
         }
+    }
+
+    /// The burst's terminal flares on the lake (0…1, before the limiter): a brief lift at each flare's height, a fifth of
+    /// a fireball's at most.
+    private func burstFlareLight(at t: Double) -> Float {
+        var light: Float = 0
+        for case let m? in meteors.slots where m.flare && m.isHead(at: t) {
+            let shape = m.headBrightness(at: t) / max(1e-6, m.peakBrightness)
+            light = max(light, 0.5 * max(0, shape - 1.05))
+        }
+        return min(1, light)
     }
 
     private mutating func surprised(_ s: WorldSurprise, gentle: Bool, now: Double) {

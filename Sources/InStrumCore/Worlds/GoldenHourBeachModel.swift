@@ -42,8 +42,8 @@ public struct BeachFrame: AmbienceProviding {
     public var tension: Float = 0
 }
 
-/// One firework shell (Fire & Neon spec §5.5): fired from the headland down the beach, it climbs on a faint spark trail
-/// and bursts into stars that spread, droop and fade. Metres in the beach's own frame, from the camera's foot on the
+/// One firework shell (Fire & Neon spec §5.5): fired from a barge out on the open sea, it climbs on a faint spark trail
+/// and bursts into stars that spread, droop and fall away as embers. Metres in the beach's own frame, from the camera's foot on the
 /// sand: across (+ right), out to sea (+ away), up.
 public struct FireworkShell: Equatable {
     public enum Kind: Int, CaseIterable { case peony, chrysanthemum, willow }
@@ -130,8 +130,6 @@ public struct GoldenHourBeachModel: ThemeModel, MoodAware, SkyAware, ExcitementA
     public static let surpriseCount = BeachSurprise.Kind.allCases.count
     /// The fixed pools: the shells in the air at once (a moment fires 3–9), the gulls, a pod's dolphins.
     public static let shellCount = 9, gullCount = 5, podMost = 5
-    /// Where the shells are fired from: the headland's foot down the beach to the left (metres in the beach's frame).
-    public static let launchSite = SIMD3<Float>(-470, 980, 25)
     /// The sun's drawn radius (degrees, before the sky's sun size): its last sliver is what turns green.
     public static let sunRadius: Float = 0.9
 
@@ -328,9 +326,11 @@ public struct GoldenHourBeachModel: ThemeModel, MoodAware, SkyAware, ExcitementA
         }
     }
 
-    /// 3–9 shells by the moment's strength, fired in a quick run from the headland: the first a low one that bursts at
-    /// once, the rest higher, a third of a second or so apart, in a few colours (gentle visuals: the same shells, their
-    /// light only a glow in the renderer).
+    /// 3–9 shells by the moment's strength, fired in a quick run from barges 600–800 m out over the open sea, clear of
+    /// the palms and the headland (across the middle of the view, in the camera's frame: from a quarter of the
+    /// view's half width left of centre to a third right of it): the first a low one that bursts at once, the rest higher, a third of a second or
+    /// so apart, in a few colours. Big shells: their stars spread 100–130 m before the air stops them (gentle visuals:
+    /// the same shells, their light only a glow in the renderer).
     private mutating func fireworks(strength s: Float, gentle: Bool) {
         let count = min(Self.shellCount, 3 + Int(((s - 0.15) / 0.85 * 6).rounded()))
         let palette: [Float] = [0.0, 0.09, 0.14, 0.33, 0.58, 0.76, -1]
@@ -339,18 +339,20 @@ public struct GoldenHourBeachModel: ThemeModel, MoodAware, SkyAware, ExcitementA
         for i in shells.indices where shells[i] == nil && fired < count {
             let first = fired == 0
             let kind: FireworkShell.Kind = first ? .peony : (rng.unit() < 0.25 ? .willow : (rng.unit() < 0.5 ? .chrysanthemum : .peony))
-            let up: Float = first ? 120 : rng.range(150, 270)
-            let burst = SIMD3<Float>(rng.range(-780, 120), rng.range(900, 1250), up)
-            let rise: Float = first ? 0.32 : 1.0 + (up - 150) / 120 * 0.6
+            let up: Float = first ? 115 : rng.range(140, 220)
+            let out = rng.range(600, 800)
+            let burst = SIMD3<Float>(out * rng.range(-0.24, 0.34), out, up)
+            let launch = SIMD3<Float>(burst.x + rng.range(-12, 12), out - rng.range(0, 25), 1)
+            let rise: Float = first ? 0.32 : 1.0 + (up - 140) / 80 * 0.5
             let hue = palette[Int(rng.unit() * Float(palette.count)) % palette.count]
             let two = rng.unit() < 0.35 ? palette[Int(rng.unit() * Float(palette.count)) % palette.count] : hue
             let life: Float, speed: Float, drag: Float, stars: Int
             switch kind {
-            case .peony: life = 1.8; speed = rng.range(85, 110); drag = 1.4; stars = 32
-            case .chrysanthemum: life = 2.2; speed = rng.range(95, 120); drag = 1.4; stars = 44
-            case .willow: life = 3.2; speed = 70; drag = 2.0; stars = 30
+            case .peony: life = 2.3; speed = rng.range(150, 185); drag = 1.45; stars = 36
+            case .chrysanthemum: life = 2.7; speed = rng.range(160, 195); drag = 1.5; stars = 46
+            case .willow: life = 3.6; speed = 120; drag = 2.0; stars = 34
             }
-            shells[i] = FireworkShell(kind: kind, launch: Self.launchSite, burst: burst, age: -delay, rise: rise, life: life,
+            shells[i] = FireworkShell(kind: kind, launch: launch, burst: burst, age: -delay, rise: rise, life: life,
                                       speed: speed, drag: drag, stars: min(stars, FireworkShell.mostStars),
                                       hue: kind == .willow ? 0.1 : hue, hue2: kind == .willow ? 0.1 : two,
                                       brightness: (0.65 + 0.35 * s) * (gentle ? 0.8 : 1), seed: UInt32(truncatingIfNeeded: rng.next()))

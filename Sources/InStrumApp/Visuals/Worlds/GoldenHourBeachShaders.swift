@@ -417,8 +417,9 @@ enum GoldenHourBeachShaders {
         return float4(in.colour * (core * tail), 0.0);
     }
 
-    // Sprites (premultiplied): the gulls, a dolphin breaking the surface, a kite. rect: the quad (NDC x0, y0, x1, y1);
-    // local: its own units at the quad's corners (lo x, lo y, hi x, hi y); info: kind (0 a gull, 1 a dolphin, 2 a kite),
+    // Sprites (premultiplied): the gulls, a dolphin breaking the surface, a kite, a burst's smoke. rect: the quad (NDC x0,
+    // y0, x1, y1); local: its own units at the quad's corners (lo x, lo y, hi x, hi y); info: kind (0 a gull, 1 a dolphin,
+    // 2 a kite, 3 smoke),
     // its wingbeat / its roll / the kite's tail phase, the kite's tilt, cover; tint: its colour (rgb) and the sun on it.
     struct BeachSprite { float4 rect; float4 local; float4 info; float4 tint; };
     struct BeachSpriteOut { float4 pos [[position]]; float2 uv; float4 info; float4 tint; };
@@ -514,6 +515,16 @@ enum GoldenHourBeachShaders {
             float3 white = float3(0.85, 0.82, 0.78) * (0.5 + in.tint.w);
             a = max(body, 0.6 * spray);
             col = (col * body + white * 0.6 * spray) / max(a, 1e-3);
+        } else if (kind == 3) {
+            // A burst's smoke: a soft, billowing ball (uv −1…1; info.y its age plus a seed, info.z how thick), two
+            // octaves of noise rolling slowly through it, thinnest at its rim.
+            float r = length(in.uv);
+            if (r > 1.0) discard_fragment();
+            float t = in.info.y;
+            float n = 0.6 * vnoise3(float3(in.uv * 2.2, 0.35 * t)) + 0.4 * vnoise3(float3(in.uv * 5.0 + 3.0, 0.6 * t + 7.0));
+            float ball = 1.0 - smoothstep(0.25, 1.0, r + 0.3 * (n - 0.5));
+            a = ball * (0.35 + 0.8 * n) * in.info.z;
+            col = in.tint.rgb * (0.85 + 0.3 * n);
         } else {
             float side;
             float ct = cos(in.info.z), st = sin(in.info.z);   // its tilt

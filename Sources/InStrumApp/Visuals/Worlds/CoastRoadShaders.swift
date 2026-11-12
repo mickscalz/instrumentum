@@ -15,7 +15,7 @@ enum CoastRoadShaders {
         float4 e;   // wetness 0…1, the road's far edge (NDC y), unused…
         // Fire & Neon §5.5 (Excitement):
         float4 f;   // the lighthouse's lantern from the eye (m: across, out, up), its beams' light 0…1
-        float4 g;   // the beams' bearing (rad; 0 faces you), unused, the lantern's flare 0…1, the road opening onto the sea 0…1
+        float4 g;   // the beams' bearing (rad; 0 faces you), the mist's drift (wrapped), the lantern's flare 0…1, the road opening 0…1
         float4 h;   // the far train: its head's bearing from the view's centre (rad), signed length (rad), light, headlights gathering
         float4 i;   // oncoming headlights on the verge: x (aspect units), light; x, light
         float4 j;   // x, light, unused, unused
@@ -74,10 +74,14 @@ enum CoastRoadShaders {
         return base + n;
     }
 
-    /// Fire & Neon §5.5: the lighthouse on the far point. Its two beams (half a turn apart) sweep the air over the sea, a
-    /// shaft where the haze catches them, brighter as one swings toward you; and its lantern, a point that blazes when a
-    /// beam faces you (the flare after the flash limiter).
-    float3 lighthouseLight(float3 d, constant SkyU& sky, constant RoadU& u, float haze, float fog) {
+    /// Fire & Neon §5.5: the lighthouse on the far point. Its two beams (half a turn apart) are narrow cones of light in
+    /// the sea air (about 0.6° each side, a Gaussian across), seen by the light the haze scatters toward you: brightest
+    /// near the lantern, where the cone is narrow and the light dense, fading along it as the haze takes the light, and
+    /// far brighter as a beam swings toward you (sea haze scatters forward). Faint mist drifts through them. Where the
+    /// view ray passes the beam's axis is found in closed form (clamped to the lantern's side and to `maxT`, where the
+    /// sea stops the ray), so a beam has no edge anywhere. And the lantern, a point that blazes when a beam faces you
+    /// (the flare after the flash limiter).
+    float3 lighthouseLight(float3 d, constant SkyU& sky, constant RoadU& u, float haze, float fog, float maxT) {
         float light = u.f.w;
         if (light <= 0.001) return float3(0);
         float2 fwd = normalize(sky.forward.xy), rgt = float2(fwd.y, -fwd.x);
@@ -86,29 +90,63 @@ enum CoastRoadShaders {
         float2 home = -normalize(L.xy);
         float ca = cos(u.g.x), sa = sin(u.g.x);
         float3 B = float3(home.x * ca - home.y * sa, home.x * sa + home.y * ca, 0.0);
-        float density = 0.25 + haze + 1.2 * fog;
+        float density = 0.3 + haze + 1.2 * fog;             // how much the air scatters
+        float reach = 2600.0 / (1.0 + haze + 2.0 * fog);    // how far along a beam its light carries
         float sum = 0.0;
         for (int k = 0; k < 2; k++) {
             float3 b = k == 0 ? B : -B;
-            // The nearest approach of the view ray (from the eye along d) to the beam (from the lantern along b).
             float db = dot(d, b);
-            float denom = 1.0 - db * db;
-            if (denom < 1e-5) continue;
-            float dl = -dot(d, L), bl = -dot(b, L);
-            float t = (db * bl - dl) / denom;
-            float s = (bl - db * dl) / denom;
-            if (t <= 0.0 || s <= 0.0) continue;
-            float3 gap = d * t - b * s - L;
-            float width = 4.0 + 0.035 * s;
+            float sin2 = max(1.0 - db * db, 1e-6);
+            float s = max((db * dot(d, L) - dot(b, L)) / sin2, 0.0);
+            float t = clamp(dot(d, L + b * s), 0.0, maxT);
+            s = max(dot(d * t - L, b), 0.0);
+            float3 gap = d * t - L - b * s;
+            float width = 2.5 + 0.011 * s;
             float x2 = dot(gap, gap) / (width * width);
-            if (x2 > 9.0) continue;
-            float toward = saturate(-db);
-            float t2 = toward * toward, t4 = t2 * t2;
-            sum += exp(-x2) * (0.25 + 1.6 * t4 * t4) / (1.0 + s / 2500.0);
+            if (x2 > 10.0) continue;
+            // Henyey–Greenstein (g 0.72) for the angle between the beam's light and the way back to you.
+            float hg = 1.518 + 1.44 * db;
+            float phase = 0.4816 / (hg * sqrt(hg));
+            float path = min(rsqrt(sin2), 4.0);
+            // Mist drifting through the light: two octaves, wrapped along the drift so it never jumps.
+            float3 Q = d * t;
+            float mist = 0.6 * vnoiseP(float3(Q.x * 0.012 + u.g.y, Q.y * 0.012, Q.z * 0.08), 64.0)
+                       + 0.4 * vnoiseP(float3(Q.x * 0.031 + 2.0 * u.g.y, Q.y * 0.031 + 5.0, Q.z * 0.2), 128.0);
+            sum += exp(-x2) * phase * path * (40.0 / width) * exp(-s / reach) * (0.45 + 1.1 * mist);
         }
+        float v = sum * density * 0.2;
+        float beams = v / (1.0 + 0.4 * v);
         float c = 1.0 - dot(d, L / distL);
-        float lantern = exp(-c / 1.2e-6) * (0.8 + 40.0 * u.g.z) + exp(-c / 3e-5) * 0.05 * (1.0 + 20.0 * u.g.z);
-        return float3(1.0, 0.92, 0.75) * ((sum * density * 0.35 + lantern) * light);
+        float lantern = maxT < 1e8 ? 0.0 : exp(-c / 1.2e-6) * (0.8 + 30.0 * u.g.z) + exp(-c / 2e-5) * 0.04 * (1.0 + 12.0 * u.g.z);
+        return float3(1.0, 0.92, 0.75) * ((beams + lantern) * light);
+    }
+
+    /// One of the flare's ghosts: a soft disc a little brighter at its rim (NDC centre, radius in aspect units).
+    float lanternGhost(float2 ndc, float2 at, float aspect, float size) {
+        float g = length((ndc - at) * float2(aspect, 1.0)) / size;
+        return smoothstep(1.0, 0.75, g) * (0.35 + 0.65 * g * g) * 0.035;
+    }
+
+    /// The lantern's flare in the lens as a beam faces you (u.g.z, after the flash limiter): a thin horizontal streak
+    /// through it, a faint ring, and three small ghosts on the line through the frame's centre.
+    float3 lanternFlare(float2 ndc, constant SkyU& sky, constant RoadU& u) {
+        float k = u.g.z * u.f.w;
+        if (k <= 0.01) return float3(0);
+        float2 fwd = normalize(sky.forward.xy), rgt = float2(fwd.y, -fwd.x);
+        float3 L = normalize(float3(rgt * u.f.x + fwd * u.f.y, u.f.z));
+        float lz = dot(L, sky.forward.xyz);
+        if (lz <= 0.05) return float3(0);
+        float2 lp = float2(dot(L, sky.right.xyz) / (lz * sky.right.w), dot(L, sky.up.xyz) / (lz * sky.up.w));
+        float aspect = u.a.y;
+        float2 dp = (ndc - lp) * float2(aspect, 1.0);
+        float r = length(dp);
+        float3 col = float3(1.0, 0.9, 0.72) * (exp(-abs(dp.y) / 0.0035) * exp(-abs(dp.x) / 0.22) * 0.35);
+        float ring = (r - 0.075) / 0.01;
+        col += float3(0.7, 0.85, 1.0) * (exp(-ring * ring) * 0.025);
+        col += lanternGhost(ndc, lp * 0.45, aspect, 0.022) * float3(0.55, 0.8, 1.0);
+        col += lanternGhost(ndc, lp * -0.3, aspect, 0.05) * float3(1.0, 0.75, 0.45);
+        col += lanternGhost(ndc, lp * -0.85, aspect, 0.032) * float3(0.7, 1.0, 0.75);
+        return col * k;
     }
 
     /// Fire & Neon §5.5: a lit train along the far shore, its windows a dotted line at the headlands' foot.
@@ -235,6 +273,8 @@ enum CoastRoadShaders {
             float3 foamCol = (horizon * 0.55 + 0.3) * (0.5 + 0.6 * lightW) + lightCol * 0.2 * lightW;
             col = mix(col, foamCol, saturate(white));
             col = mix(col, hazeCol, saturate(haze * 0.75 * (1.0 - exp(-f / 900.0))));
+            // The beams in the air over the sea, as far as the water (a beam facing you lights the air all round).
+            extra = lighthouseLight(d, sky, u, haze, fog, t);
             depth = 0.6 + 0.4 * saturate(f / 3000.0);
             alpha = 1.0;
         } else {
@@ -253,7 +293,7 @@ enum CoastRoadShaders {
                 }
             }
             if (hl > 0.0) { alpha = 1.0; depth = 0.97; }
-            extra = lighthouseLight(d, sky, u, haze, fog) * (hl > 0.0 ? 0.5 : 1.0);
+            extra = lighthouseLight(d, sky, u, haze, fog, 1e9) * (hl > 0.0 ? 0.5 : 1.0);
             if (hl > 0.0) extra += farTrain(azRel, alt, u);
         }
         // Premultiplied from here: lamp posts over everything, fog over the view, lamp heads glowing on top.
@@ -277,6 +317,7 @@ enum CoastRoadShaders {
         float2 head = float2(lampDx - 0.16, p.y - headY + 0.01);
         float hd2 = dot(head * float2(1.0, 1.6), head * float2(1.0, 1.6));
         col += lampCol * lampsLit * (exp(-hd2 / 0.0009) * 5.0 + exp(-hd2 / 0.012) * 0.6);
+        extra += lanternFlare(ndc, sky, u);
         col += extra;
         if (alpha < 0.002 && hd2 > 0.1 && extra.r + extra.g + extra.b < 1e-5) discard_fragment();
         out.color = float4(col, alpha);
