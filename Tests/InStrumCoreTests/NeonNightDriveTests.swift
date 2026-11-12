@@ -562,7 +562,9 @@ final class NeonNightDriveTests: XCTestCase {
         m.handle(.allNotesOff)
         m.setExcitement(excitement())
         let f = run(&m, seconds: 40)
-        XCTAssertEqual(f.speed, NeonNightDriveModel.cruise, accuracy: 0.01)
+        // Back to cruising, with the instrument's tempo still adding its share.
+        let cruising = NeonNightDriveModel.cruise + NeonNightDriveModel.tempoBoost(m.pulse)
+        XCTAssertEqual(f.speed, cruising, accuracy: 0.01)
         XCTAssertTrue(f.trails.isEmpty)
         XCTAssertTrue(f.studs.isEmpty)
         var brightest: Float = 0

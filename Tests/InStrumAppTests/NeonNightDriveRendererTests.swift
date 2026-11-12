@@ -357,7 +357,8 @@ final class NeonNightDriveRendererTests: XCTestCase {
     // MARK: - Light Trails
 
     func testLightTrailsArePackedByLane() throws {
-        let sparse: (Int) -> [UInt8] = { i in i % 6 == 0 ? [UInt8(30 + (i / 6) % 60)] : [] }
+        // A low note and a high one every tenth of a second.
+        let sparse: (Int) -> [UInt8] = { i in i % 6 == 0 ? [UInt8(30 + (i / 6) % 15), UInt8(66 + (i / 6) % 20)] : [] }
         let shot = try Self.renderDrive(at: 1.5, notes: sparse, capture: false)
         let layer = shot.renderer.trails
         let rows = layer.uniforms
