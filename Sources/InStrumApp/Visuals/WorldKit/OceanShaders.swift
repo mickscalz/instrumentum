@@ -117,12 +117,13 @@ enum OceanShaders {
     }
 
     /// The sea's colour along ray d, hitting the surface with normal nrm at q, `far` metres out.
-    float3 oceanShade(float3 d, float3 nrm, float2 q, float far, constant SkyU& u, constant OceanU& o, texture2d<float> stars) {
+    float3 oceanShade(float3 d, float3 nrm, float2 q, float far, constant SkyU& u, constant OceanU& o, texture2d<float> stars,
+                      texture2d<float> cell) {
         float3 rd = reflect(d, nrm);
         rd.z = max(rd.z, 0.002);
         rd = normalize(rd);
         float mm;
-        float3 refl = skyRadiance(rd, u, mm, stars);
+        float3 refl = skyRadiance(rd, u, mm, stars, cell);
         float cosT = saturate(-dot(d, nrm));
         float fres = 0.02 + 0.98 * pow(1.0 - cosT, 5.0);
         float3 deep = u.zenith.rgb * 0.05 + u.horizon.rgb * 0.05 + float3(0.002, 0.008, 0.010);

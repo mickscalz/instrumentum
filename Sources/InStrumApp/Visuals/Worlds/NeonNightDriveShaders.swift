@@ -161,9 +161,10 @@ enum NeonNightDriveShaders {
     }
 
     // ---------------------------------------------------------------- the sky
-    float3 driveSky(float3 dE, float3 d, constant SkyU& sky, constant DriveU& u, texture2d<float> stars) {
+    float3 driveSky(float3 dE, float3 d, constant SkyU& sky, constant DriveU& u, texture2d<float> stars,
+                    texture2d<float> cell) {
         float moonMask = 0.0;
-        float3 s = skyRadiance(dE, sky, moonMask, stars);
+        float3 s = skyRadiance(dE, sky, moonMask, stars, cell);
         float night = u.move.w;
         // The city washes out all but the brightest stars and lights the cloud base from below: warm near the horizon,
         // stronger over the downtown ahead, the cloud's underside mottled.
@@ -1024,7 +1025,8 @@ enum NeonNightDriveShaders {
     constant float kTunnelPortalTop = 15.0;
 
     fragment ColorDepth drive_scene_fragment(DriveOut in [[stage_in]], constant SkyU& sky [[buffer(0)]],
-                                             constant DriveU& u [[buffer(1)]], texture2d<float> stars [[texture(0)]]) {
+                                             constant DriveU& u [[buffer(1)]], texture2d<float> stars [[texture(0)]],
+                                             texture2d<float> cell [[texture(9)]]) {
         float3 dE;
         float3 d = driveRay(in.ndc, sky, u, dE);
         float pa = u.a.w;
@@ -1281,7 +1283,7 @@ enum NeonNightDriveShaders {
 
         // The air: the haze over everything hit, and the lights glowing in the rain.
         if (kind == 0) {
-            col = driveSky(dE, d, sky, u, stars);
+            col = driveSky(dE, d, sky, u, stars, cell);
         } else {
             col = applyHaze(col, tHit, d, u);
         }

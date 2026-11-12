@@ -120,7 +120,7 @@ enum MoonlitLakeShaders {
     }
 
     fragment ColorDepth lake_fragment(LakeOut in [[stage_in]], constant SkyU& u [[buffer(0)]], constant LakeU& l [[buffer(1)]],
-                                  texture2d<float> stars [[texture(0)]]) {
+                                  texture2d<float> stars [[texture(0)]], texture2d<float> cell [[texture(9)]]) {
         ColorDepth out;
         float2 p = in.ndc;
         if (p.y < l.a.x) {   // under the keyboard
@@ -147,7 +147,7 @@ enum MoonlitLakeShaders {
             if (hit) col = mix(col, mistCol, mist * 0.55 * exp(-alt / 0.02));
             if (!hit) {
                 float mm;
-                col = skyRadiance(d, u, mm, stars);
+                col = skyRadiance(d, u, mm, stars, cell);
             }
         } else {
             // The water: where the ray meets the lake (camera 1 unit above it).
@@ -188,7 +188,7 @@ enum MoonlitLakeShaders {
             float3 refl = ridgeColor(ralt, raz, u, l, false, hit);
             if (!hit) {
                 float mm;
-                refl = skyRadiance(rd, u, mm, stars);
+                refl = skyRadiance(rd, u, mm, stars, cell);
             }
             float cosT = saturate(-dot(d, nrm));
             float fres = 0.02 + 0.98 * pow(1.0 - cosT, 5.0);

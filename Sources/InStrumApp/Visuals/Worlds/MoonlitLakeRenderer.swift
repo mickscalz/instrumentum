@@ -36,10 +36,10 @@ final class MoonlitLakeRenderer: ThemeRenderer {
     init?(device: MTLDevice) {
         guard let s = SkyLayer(device: device), let w = WeatherLayer(device: device), let gw = WarpLayer(device: device),
               let lib = try? device.makeLibrary(source: MoonlitLakeShaders.source, options: nil) else { return nil }
-        func make(_ v: String, _ f: String, additive: Bool, storms: Bool = false) -> MTLRenderPipelineState? {
+        func make(_ v: String, _ f: String, additive: Bool, program: SkyProgram = .plain) -> MTLRenderPipelineState? {
             let d = MTLRenderPipelineDescriptor()
-            d.vertexFunction = lib.skyFunction(v, storms: storms)
-            d.fragmentFunction = lib.skyFunction(f, storms: storms)
+            d.vertexFunction = lib.skyFunction(v, program: program)
+            d.fragmentFunction = lib.skyFunction(f, program: program)
             d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
             d.colorAttachments[1].pixelFormat = RenderStack.depthFormat
             if additive {
@@ -51,7 +51,7 @@ final class MoonlitLakeRenderer: ThemeRenderer {
             }
             return try? device.makeRenderPipelineState(descriptor: d)
         }
-        guard let l = SkyPipeline(build: { make("lake_vertex", "lake_fragment", additive: false, storms: $0) }),
+        guard let l = SkyPipeline(program: { make("lake_vertex", "lake_fragment", additive: false, program: $0) }),
               let g = make("firefly_vertex", "firefly_fragment", additive: true),
               let k = make("lake_keys_vertex", "lake_keys_fragment", additive: false) else { return nil }
         self.device = device
@@ -210,13 +210,14 @@ final class MoonlitLakeRenderer: ThemeRenderer {
     }
 
     func render(stack: RenderStack, commandBuffer cb: MTLCommandBuffer) {
+        sky.prepare(cb)   // the supercell's impostor, before the frame's passes
         guard let pass = stack.scenePass(clear: MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)),
               let e = cb.makeRenderCommandEncoder(descriptor: pass) else { return }
         sky.draw(e)
         if showWarp { warp.draw(e) }
 
         let skyU = sky.uniforms
-        e.setRenderPipelineState(lake.state(storms: sky.storms))
+        e.setRenderPipelineState(lake.state(sky.program))
         skyU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
         lakeU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
         sky.bindStars(e)

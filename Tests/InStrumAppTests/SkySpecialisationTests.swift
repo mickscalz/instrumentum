@@ -36,6 +36,25 @@ final class SkySpecialisationTests: XCTestCase {
         XCTAssertFalse(SkySpecialisation.needsStorms([]), "no rows: plain")
     }
 
+    /// The supercell alone has a program of its own (its impostor, none of the far storm, the sprites or the ash); with
+    /// any of those the whole storm program; forced, always the whole one.
+    func testTheSupercellAloneHasItsOwnProgram() throws {
+        guard let device = MTLCreateSystemDefaultDevice() else { throw XCTSkip("No Metal device") }
+        let layer = try XCTUnwrap(SkyLayer(device: device))
+        let size = CGSize(width: 320, height: 180)
+        var cell = R.supercell(R.golden(), phase: 0.2)
+        layer.update(cell, quality: .high, size: size, time: 0)
+        XCTAssertEqual(layer.program, .cell)
+        XCTAssertTrue(layer.storms)
+        cell.ash = 0.4
+        layer.update(cell, quality: .high, size: size, time: 0)
+        XCTAssertEqual(layer.program, .storms)
+        layer.update(R.golden(), quality: .high, size: size, time: 0)
+        XCTAssertEqual(layer.program, .plain)
+        layer.forceStormProgram = true
+        XCTAssertEqual(layer.program, .storms)
+    }
+
     /// The storm program is built the first time a frame needs it and kept: one build however many frames, none for a
     /// plain sky.
     func testTheStormProgramIsMadeOnceWhenNeeded() throws {
@@ -81,6 +100,53 @@ final class SkySpecialisationTests: XCTestCase {
         let clear = try render(R.golden(), force: false)
         let cell = try render(R.supercell(R.golden(), phase: 0.2), force: false)
         XCTAssertGreaterThan(PreviewRenderer.difference(clear, cell), 0.02, "the storm program draws the storm")
+    }
+
+    /// The supercell's impostor (Fire & Neon fix pass): none for a plain sky. In the app no frame draws more than a
+    /// strip of it: the storm's first snapshot is filled a strip a frame and shown once whole (`cellStrips` frames),
+    /// then the next a strip a frame. Previews draw a snapshot whole at once, and again when the clock jumps. The rows
+    /// say where it is.
+    func testTheSupercellImpostorIsDrawnInStrips() throws {
+        guard let device = MTLCreateSystemDefaultDevice() else { throw XCTSkip("No Metal device") }
+        let preview = try XCTUnwrap(PreviewRenderer(width: 160, height: 90))
+        let size = CGSize(width: 160, height: 90)
+        let cell = R.supercell(R.golden(), phase: 0.45)   // (the Core: `cellStrips` frames a snapshot)
+        defer { SkyLayer.cellAtOnce = true }
+        SkyLayer.cellAtOnce = false
+        let r = try XCTUnwrap(SkyOnlyRenderer(device: device))
+        r.sky.viewAzimuth = 0
+        r.update(T.night(), quality: .high, size: size, dt: 1.0 / 30, time: 0, surface: .none)
+        _ = preview.capture(r)
+        XCTAssertNil(r.sky.cellTexture, "a plain sky has none")
+        XCTAssertEqual(r.sky.uniforms[SkyLayer.flashRow].w, 0, "and its rows say so")
+        for i in 0..<SkyLayer.cellStrips {
+            r.update(cell, quality: .high, size: size, dt: 1.0 / 60, time: Float(i) / 60, surface: .none)
+            _ = preview.capture(r)
+            XCTAssertEqual(r.sky.uniforms[SkyLayer.flashRow].w > 0.5, i == SkyLayer.cellStrips - 1, "frame \(i)")
+        }
+        XCTAssertNotNil(r.sky.cellTexture, "whole after its strips")
+        for i in 0..<4 {
+            r.update(cell, quality: .high, size: size, dt: 1.0 / 60, time: Float(SkyLayer.cellStrips + i) / 60, surface: .none)
+            _ = preview.capture(r)
+        }
+        XCTAssertEqual(r.sky.cellWholeDraws, 0, "never all at once in the app")
+        XCTAssertEqual(r.sky.cellStripDraws, SkyLayer.cellStrips + 4, "a strip a frame")
+        let rows = r.sky.uniforms
+        XCTAssertGreaterThan(rows[SkyLayer.flashRow].w, 0.5, "the rows read it")
+        XCTAssertGreaterThan(rows[10].w, 0.5, "its half-width (radians) covers the view")
+        XCTAssertLessThan(rows[SkyLayer.flashRow].y, 0, "from under the horizon")
+        XCTAssertGreaterThan(rows[SkyLayer.flashRow].z, 0.5, "to over the view's top")
+        // A preview: whole at once, and again after a jump in the clock.
+        SkyLayer.cellAtOnce = true
+        let p = try XCTUnwrap(SkyOnlyRenderer(device: device))
+        p.sky.viewAzimuth = 0
+        p.update(cell, quality: .high, size: size, dt: 1.0 / 30, time: 0, surface: .none)
+        _ = preview.capture(p)
+        XCTAssertEqual(p.sky.cellWholeDraws, 1)
+        XCTAssertGreaterThan(p.sky.uniforms[SkyLayer.flashRow].w, 0.5, "shown in its first frame")
+        p.update(cell, quality: .high, size: size, dt: 1.0 / 30, time: 30, surface: .none)
+        _ = preview.capture(p)
+        XCTAssertEqual(p.sky.cellWholeDraws, 2)
     }
 
     /// Every library built on the shared sky reads its constant only through specialised functions: a sky-reading

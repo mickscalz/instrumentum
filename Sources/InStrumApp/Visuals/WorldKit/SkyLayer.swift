@@ -192,12 +192,21 @@ final class SkyLayer {
     private var cellAnchor: (episode: Int, azimuth: Double)?
 
     private let pipeline: SkyPipeline
+    /// The dome's library (its supercell impostor's kernel is made from it the first time a supercell shows).
+    private let library: MTLLibrary
     /// Whether this frame's sky needs the storm program (`SkySpecialisation`): a supercell, ash, a far storm or a sprite
     /// in its rows. Every world drawing the sky in its own pass picks its pipeline by it.
     private(set) var storms = false
+    /// Which program this frame's sky needs: the supercell's alone when it is the only storm weather (`SkySpecialisation`).
+    /// Worlds that read the supercell's impostor pick their pipeline by it; the rest by `storms`.
+    private(set) var program: SkyProgram = .plain
     /// Tests: draw with the storm program whatever the sky (a plain sky must look the same either way).
     var forceStormProgram = false {
-        didSet { storms = forceStormProgram || SkySpecialisation.needsStorms(u) }
+        didSet { chooseProgram() }
+    }
+    private func chooseProgram() {
+        program = forceStormProgram ? .storms : SkySpecialisation.program(u)
+        storms = program != .plain
     }
     /// Gentle visuals: the supercell's lightning only glows in its cloud, never flashes.
     var gentle = false
@@ -228,10 +237,10 @@ final class SkyLayer {
 
     init?(device: MTLDevice) {
         guard let lib = try? device.makeLibrary(source: SkyShaders.source, options: nil),
-              let p = SkyPipeline(build: { storms in
+              let p = SkyPipeline(program: { program in
                   let d = MTLRenderPipelineDescriptor()
-                  d.vertexFunction = lib.skyFunction("sky_dome_vertex", storms: storms)
-                  d.fragmentFunction = lib.skyFunction("sky_dome_fragment", storms: storms)
+                  d.vertexFunction = lib.skyFunction("sky_dome_vertex", program: program)
+                  d.fragmentFunction = lib.skyFunction("sky_dome_fragment", program: program)
                   d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
                   d.colorAttachments[1].pixelFormat = RenderStack.depthFormat
                   return try? device.makeRenderPipelineState(descriptor: d)
@@ -243,14 +252,184 @@ final class SkyLayer {
         ph.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0, withBytes: &black, bytesPerRow: 4)
         pipeline = p
         placeholder = ph
+        library = lib
         // The limiter starts from black: settle it on no light first, so the first frame is never a flash.
         for _ in 0..<16 { _ = glowLimiter.limit(exposure: 1, sparkle: 0, dt: 1) }
         StarTextureCache.shared.request(device: device)
     }
 
-    /// Binds the real stars (or the placeholder) at fragment texture 0, for any pass whose shader calls skyRadiance.
+    /// Binds the real stars (or the placeholder) at fragment texture 0, for any pass whose shader calls skyRadiance, and
+    /// the supercell's impostor (or the placeholder) at `cellTextureIndex`, for those that read it.
     func bindStars(_ e: MTLRenderCommandEncoder) {
         e.setFragmentTexture(starTexture ?? placeholder, index: 0)
+        e.setFragmentTexture(cellTexture ?? placeholder, index: Self.cellTextureIndex)
+    }
+
+    // ---------------------------------------------------------------- the supercell's impostor (Fire & Neon fix pass)
+    // The supercell weather changes over minutes, so it is drawn into a texture the sky samples (at the world's own
+    // quality, for the cost of a lookup a pixel): a window in azimuth and altitude round the view. No frame ever draws
+    // more than a 32nd of it (every 32nd row; a 64th but in the Core), so none spikes, even on a slow graphics chip. The
+    // texture holds three snapshots: while one is filled a strip a frame, the sky shows the other two cross-fading from
+    // the older to the newer over the fill's first half (so the storm moves smoothly, a fill behind, never in torn rows);
+    // when the fill is whole it becomes the newer. A new window (the view swung past the one shown) is filled the same way
+    // and shown alone once whole. Each snapshot's upper half is the storm's light (premultiplied) and how much of the
+    // sky shows through; its lower half how its cloud takes the lightning's light, which the sky adds each frame round
+    // the strike (so a flash never waits). Allocated once, kept. Previews and tests (`cellAtOnce`) draw a snapshot whole
+    // when they need one.
+
+    /// The fragment texture index the impostor is bound at (beside the stars at 0, clear of every world's own).
+    nonisolated static let cellTextureIndex = 9
+    /// Its size: columns, and rows in each half of a snapshot (three snapshots, six halves, one texture).
+    nonisolated static let cellColumns = 1280, cellRows = 448, cellSlots = 3
+    /// How many frames one snapshot is drawn over: in the Core, where the base passes overhead, 32; in the Approach (the
+    /// storm far off, growing slowly) and the Clearing (only the anvil drifting off, and a picked storm held), 64.
+    nonisolated static let cellStrips = 32, cellStripsSlow = 64
+    /// Previews and tests: a snapshot drawn whole when one is needed (a still frame has no frames after it).
+    static var cellAtOnce = false
+    private var cellKernel: MTLComputePipelineState?
+    private var cellKernelTried = false
+    private(set) var cellTexture: MTLTexture?
+    /// Each snapshot's window: its centre's azimuth, its half-width, its bottom and top altitudes (radians, east-north-up).
+    private var cellWindows = [SIMD4<Float>](repeating: .zero, count: 3)
+    private var cellWhole = [false, false, false]
+    /// The snapshot being filled, the newer and the older shown (−1: none).
+    private var cellFill = 0, cellNewer = -1, cellOlder = -1
+    private var cellFillStrip = 0
+    private var cellFillStrips = SkyLayer.cellStrips
+    /// The window the fills draw now.
+    private(set) var cellWindow = SIMD4<Float>(0, 0, 0, 0)
+    private var cellClock: Float = .nan
+    private var cellPhase: Float = -1
+    /// Tests: how many snapshots were drawn whole in one frame, and how many single strips were drawn.
+    private(set) var cellWholeDraws = 0, cellStripDraws = 0
+
+    /// The window a view needs (its frame's edges in azimuth and altitude, with no margin), from the camera rows.
+    nonisolated static func cellWindowNeeded(_ u: [SIMD4<Float>]) -> SIMD4<Float> {
+        let right = SIMD3(u[0].x, u[0].y, u[0].z), up = SIMD3(u[1].x, u[1].y, u[1].z), fwd = SIMD3(u[2].x, u[2].y, u[2].z)
+        let tanH = u[0].w, tanV = u[1].w
+        let centre = atan2(fwd.x, fwd.y)
+        var half: Float = 0, top: Float = -1
+        // (Round the frame's edges and across its middle, nine points each: no arrays, nothing allocated a frame.)
+        for i in 0..<45 {
+            let s = Float(i % 9) / 4 - 1
+            let side = i / 9
+            let x: Float = side == 2 ? 1 : (side == 3 ? -1 : s)
+            let y: Float = side == 0 ? 1 : (side == 1 ? -1 : (side == 4 ? 0 : s))
+            let d = simd_normalize(fwd + right * (x * tanH) + up * (y * tanV))
+            var da = atan2(d.x, d.y) - centre
+            da -= 2 * .pi * (da / (2 * .pi)).rounded()
+            if d.z > -0.05 { half = max(half, abs(da)) }
+            top = max(top, asin(min(1, max(-1, d.z))))
+        }
+        return SIMD4(centre, half, -0.05, top)
+    }
+
+    /// Whether `window` holds everything `need` asks for.
+    nonisolated static func cellWindow(_ window: SIMD4<Float>, covers need: SIMD4<Float>) -> Bool {
+        guard window.y > 0 else { return false }
+        var dc = need.x - window.x
+        dc -= 2 * .pi * (dc / (2 * .pi)).rounded()
+        return abs(dc) + need.y <= window.y + 1e-4 && need.w <= window.w + 1e-4
+    }
+
+    /// The window for a view: what it needs with room to turn (10° each side, 6° over its top), at most all round.
+    nonisolated static func cellWindowFor(_ need: SIMD4<Float>) -> SIMD4<Float> {
+        let deg: Float = .pi / 180
+        return SIMD4(need.x, min(.pi, need.y + 10 * deg), -3 * deg, min(.pi / 2, max(20 * deg, need.w + 6 * deg)))
+    }
+
+    private func cellPipeline() -> MTLComputePipelineState? {
+        if let k = cellKernel { return k }
+        guard !cellKernelTried else { return nil }
+        cellKernelTried = true
+        guard let f = library.skyFunction("sky_cell_impostor", storms: true) else { return nil }
+        cellKernel = try? library.device.makeComputePipelineState(function: f)
+        return cellKernel
+    }
+
+    private func cellImpostor() -> MTLTexture? {
+        if let t = cellTexture { return t }
+        let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba16Float, width: Self.cellColumns,
+                                                         height: 2 * Self.cellSlots * Self.cellRows, mipmapped: false)
+        d.usage = [.shaderRead, .shaderWrite]
+        d.storageMode = .private
+        cellTexture = library.device.makeTexture(descriptor: d)
+        return cellTexture
+    }
+
+    /// Encodes rows `first`, `first + strips`, … of snapshot `slot`, drawn in the window `cellWindow`.
+    private func encodeCell(_ cb: MTLCommandBuffer, kernel: MTLComputePipelineState, texture: MTLTexture, slot: Int,
+                            first: Int, strips: Int) {
+        guard let enc = cb.makeComputeCommandEncoder() else { return }
+        u[9].w = cellWindow.x; u[10].w = cellWindow.y
+        u[Self.flashRow].y = cellWindow.z; u[Self.flashRow].z = cellWindow.w
+        var job = SIMD4<UInt32>(UInt32(first), UInt32(strips), UInt32(Self.cellRows), UInt32(2 * slot * Self.cellRows))
+        enc.setComputePipelineState(kernel)
+        u.withUnsafeBytes { enc.setBytes($0.baseAddress!, length: $0.count, index: 0) }
+        enc.setBytes(&job, length: MemoryLayout<SIMD4<UInt32>>.size, index: 1)
+        enc.setTexture(texture, index: 0)
+        let tw = max(1, kernel.threadExecutionWidth)
+        let th = max(1, min(8, kernel.maxTotalThreadsPerThreadgroup / tw))
+        let rows = (Self.cellRows - first + strips - 1) / strips
+        enc.dispatchThreadgroups(MTLSize(width: (Self.cellColumns + tw - 1) / tw, height: (rows + th - 1) / th, depth: 1),
+                                 threadsPerThreadgroup: MTLSize(width: tw, height: th, depth: 1))
+        enc.endEncoding()
+        if strips == 1 { cellWholeDraws += 1 } else { cellStripDraws += 1 }
+    }
+
+    /// Draws this frame's share of the supercell's impostor into `cb` (before the frame's own passes: one strip, never
+    /// more, outside previews) and marks the sky's rows to read it: the window shown in eq1.w, eq2.w and the flash row's
+    /// y and z; its w 1 + (3 × the older snapshot + the newer) + 0.9 × how far from the older to the newer (0 when there
+    /// is none to show). Every renderer that draws the sky calls it first in `render`; without it (or with no supercell)
+    /// the rows say no impostor, and the sky draws the supercell itself (`skyRadiance` without the texture) or none.
+    func prepare(_ cb: MTLCommandBuffer) {
+        u[9].w = 0; u[10].w = 0
+        u[Self.flashRow].y = 0; u[Self.flashRow].z = 0; u[Self.flashRow].w = 0
+        guard u[Self.cellARow].w > 0, storms else {
+            cellWhole = [false, false, false]; cellNewer = -1; cellOlder = -1; cellFillStrip = 0
+            return
+        }
+        guard let kernel = cellPipeline(), let texture = cellImpostor() else { return }
+        let need = Self.cellWindowNeeded(u)
+        if !Self.cellWindow(cellWindow, covers: need) {
+            // A new window: the fill starts again in it (what is shown stays until it is whole).
+            cellWindow = Self.cellWindowFor(need)
+            cellFillStrip = 0
+        }
+        let clock = u[2].w, phase = u[Self.cellARow].z
+        // (Previews: the clock or the storm jumped between still frames, so what is shown is stale.)
+        let jumped = !cellClock.isFinite || abs(clock - cellClock) > 0.5 || abs(phase - cellPhase) > 0.01
+        cellClock = clock; cellPhase = phase
+        // (A snapshot keeps the strips it began with.)
+        if cellFillStrip == 0 { cellFillStrips = phase > 0.34 && phase < 0.7 ? Self.cellStrips : Self.cellStripsSlow }
+        let whole = Self.cellAtOnce && (jumped || cellNewer < 0 || cellWindows[cellNewer] != cellWindow)
+        if whole {
+            encodeCell(cb, kernel: kernel, texture: texture, slot: cellFill, first: 0, strips: 1)
+            cellFillStrip = cellFillStrips
+        } else {
+            encodeCell(cb, kernel: kernel, texture: texture, slot: cellFill, first: cellFillStrip, strips: cellFillStrips)
+            cellFillStrip += 1
+        }
+        if cellFillStrip >= cellFillStrips {
+            // Whole: it becomes the newer, the newer the older; the fill goes on in the oldest.
+            cellWindows[cellFill] = cellWindow
+            cellWhole[cellFill] = true
+            cellOlder = cellNewer
+            cellNewer = cellFill
+            cellFill = (0..<Self.cellSlots).first { $0 != cellNewer && $0 != cellOlder } ?? 0
+            cellWhole[cellFill] = false
+            cellFillStrip = 0
+            if whole { cellOlder = -1 }   // (a still frame shows the snapshot it drew)
+        }
+        guard cellNewer >= 0 else { u[9].w = 0; u[10].w = 0; u[Self.flashRow].y = 0; u[Self.flashRow].z = 0; return }
+        // The older cross-fades into the newer over the first half of the next fill (the sky reads one snapshot for the
+        // rest); one drawn in another window is not shown.
+        let w = cellWindows[cellNewer]
+        let older = cellOlder >= 0 && cellWindows[cellOlder] == w ? cellOlder : cellNewer
+        let blend = older == cellNewer ? 1 : min(1, 2 * Float(cellFillStrip) / Float(cellFillStrips))
+        u[9].w = w.x; u[10].w = w.y
+        u[Self.flashRow].y = w.z; u[Self.flashRow].z = w.w
+        u[Self.flashRow].w = 1 + Float(3 * older + cellNewer) + 0.9 * min(blend, 1)
     }
 
     /// Waits (running the main run loop) until the shared star texture has arrived; for previews and tests.
@@ -399,7 +578,7 @@ final class SkyLayer {
         }
         let sunTint = tint(s.sunTint)
         u[Self.ashRow] = SIMD4(unit(s.ash), sunTint.x, sunTint.y, sunTint.z)
-        storms = forceStormProgram || SkySpecialisation.needsStorms(u)
+        chooseProgram()
     }
 
     /// How many times the dome's storm program was built, and whether it has been (tests).
@@ -407,7 +586,7 @@ final class SkyLayer {
     var domeHasStormProgram: Bool { pipeline.hasStormProgram }
 
     func draw(_ e: MTLRenderCommandEncoder) {
-        e.setRenderPipelineState(pipeline.state(storms: storms))
+        e.setRenderPipelineState(pipeline.state(program))
         uniforms.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
         bindStars(e)
         e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
@@ -1030,6 +1209,7 @@ final class SkyOnlyRenderer: ThemeRenderer {
     }
 
     func render(stack: RenderStack, commandBuffer cb: MTLCommandBuffer) {
+        sky.prepare(cb)
         guard let pass = stack.scenePass(clear: MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)),
               let e = cb.makeRenderCommandEncoder(descriptor: pass) else { return }
         sky.draw(e)
