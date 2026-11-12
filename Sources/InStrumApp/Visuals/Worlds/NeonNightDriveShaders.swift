@@ -39,6 +39,7 @@ enum NeonNightDriveShaders {
         float4 studs[16];   // ahead (m; ≤ 0 empty), brightness, 0, 0
         float4 cars[24];    // per car: (x centre, ahead, oncoming, brake), (seed 0…1, light bar, body, 0); empty: ahead −1e5
         float4 pal[6];      // the neon now: three palette colours (rgb), then three accents (rgb)
+        float4 moon;        // the moon behind the overcast: its direction (east-north-up), how much shows 0…1
     };
     struct DriveOut { float4 pos [[position]]; float2 ndc; };
 
@@ -178,6 +179,17 @@ enum NeonNightDriveShaders {
         float3 glow = u.glow.rgb * (u.glow.w * night * u.neon.z * smoothstep(-0.2, 0.3, ahead)) * lowCloud
                     + u.glow.rgb * float3(0.6, 0.55, 0.9) * (u.glow.w * night * highCloud);
         s = s * (1.0 - 0.6 * night) + glow + float3(0.0015, 0.002, 0.005) * night;
+        // The moon behind the overcast (the Sky kit's own disc isn't drawn here): soft and dim in its halo, a little
+        // clearer where the cloud thins.
+        float3 M = u.moon.xyz;
+        if (u.moon.w > 0.0 && M.z > -0.02) {
+            float ang = acos(clamp(dot(dE, M), -1.0, 1.0));
+            float R = max(sky.moonInfo.z, 0.004);
+            float disc = 1.0 - smoothstep(R * 0.6, R * 1.6, ang);
+            float halo = exp(-ang / (R * 3.0)) * 0.35 + exp(-ang / 0.2) * 0.05;
+            float through = 0.45 + 0.55 * (1.0 - smoothstep(0.3, 0.8, cloud));
+            s += float3(0.72, 0.78, 0.92) * (u.moon.w * through * (disc * 0.08 + halo * 0.05));
+        }
         // Far lightning behind the towers (a surprise): the cloud lit from inside near its place on the skyline, and its
         // bolt, a thin jagged line from the cloud base down behind the towers.
         if (u.flash.x > 0.0) {
@@ -530,13 +542,15 @@ enum NeonNightDriveShaders {
         if (slide < 0.99) {
             float fu = t * pa / max(abs(d.x), 0.03);
             float fv = t * pa;
+            // A sign on the facade fades out as it turns edge-on (it would read as a sliver).
+            float facing = smoothstep(0.1, 0.35, abs(d.x) / max(length(d), 1e-4));
             if (local >= start && local <= start + len && y >= ground && y <= ground + height) {
                 float2 uv = float2(side < 0.0 ? local - start : start + len - local, y - ground);
                 float3 c = facade(uv.x, uv.y, height, seed, fu, fv, 1.0, abs(d.x), u);
-                if (hasSign && mode > 0) {
+                if (hasSign && mode > 0 && facing > 0.0) {
                     float cover = 0.0;
                     float3 sg = neonSign(uv, len, height, mode, slot, seed, fu, sx, false, u, cover);
-                    c = c * (1.0 - cover) + sg;
+                    c = c * (1.0 - cover * facing) + sg * facing;
                 }
                 r.t = t * (1.0 + 6.0 * slide);
                 r.col = c * (1.0 - slide);
@@ -546,7 +560,7 @@ enum NeonNightDriveShaders {
                 float cover = 0.0;
                 float2 uv = float2(side < 0.0 ? local - start : start + len - local, y - ground);
                 float3 sg = neonSign(uv, len, height, 0, slot, seed, fu, sx, false, u, cover);
-                r.add = sg * (1.0 - slide);
+                r.add = sg * ((1.0 - slide) * facing);
                 r.addT = t;
             }
         }
@@ -653,20 +667,31 @@ enum NeonNightDriveShaders {
         return zl;
     }
 
-    /// A street light seen along `d`: its head (a bright disc at least a pixel across) and its halo in the rain (a ball of
-    /// scattered light some metres round it, so near lamps glow wide and far ones are points).
+    /// A street light seen along `d`: its head (a lens under its housing, with a shape near and a point of the same light
+    /// far off), a tight glow round the lens, and its halo in the rain (no wider than a few degrees however near the lamp).
     float3 lampGlow(float3 d, float3 v, float tHit, float strength, float3 colour, float rain, float pa) {
         float dist = length(v);
         if (dist > tHit || v.z < 1.0) return float3(0);
-        float c = dot(d, v) / dist;
-        float a2 = max(1.0 - c * c, 0.0);
-        float head = 0.22 / dist;
-        float s2 = head * head + pa * pa;
-        float core = exp(-a2 / s2) * (head * head / s2) * 9.0;
-        float r = 2.2 + 3.5 * rain;
-        float off = sqrt(a2) * dist;
-        float halo = exp(-off / r) * (0.03 + 0.08 * rain) + exp(-off / (r * 4.0)) * 0.0035;
-        return colour * strength * (core + halo);
+        float3 o = d * dot(d, v) - v;
+        float off = length(o);
+        float3 h = float3(d.z, 0.0, -d.x) / max(length(d.xz), 1e-4);
+        float3 w = cross(d, h);
+        float ox = dot(o, h), oy = dot(o, w);
+        // The lens: 0.6 m across, as tall as it shows from here (more of its underside as you near it).
+        float hw = 0.3;
+        float hh = 0.14 * saturate(v.y / dist) + 0.05;
+        float fw = dist * pa;
+        float sx2 = hw * hw + fw * fw, sy2 = hh * hh + fw * fw;
+        float soft = fw / hh;
+        float point = exp(-ox * ox / sx2 - oy * oy / sy2) * (hw * hh / sqrt(sx2 * sy2)) * (1.0 + 2.0 * smoothstep(0.5, 3.0, soft));
+        float er = length(float2(ox / hw, oy / hh));
+        float crisp = (1.0 - smoothstep(1.0 - soft, 1.0 + soft, er)) * (1.0 + 0.5 * exp(-er * er * 3.0));
+        float core = mix(point, crisp, smoothstep(0.7, 0.3, soft)) * 6.0;
+        float edgeOff = max(off - hw, 0.0);
+        float tight = exp(-edgeOff / min(0.3, dist * 0.006)) * 0.1;
+        float r = min(2.2 + 3.5 * rain, dist * 0.03);
+        float halo = exp(-off / r) * (0.03 + 0.07 * rain) + exp(-off / min(r * 4.0, dist * 0.2)) * 0.0035;
+        return colour * strength * (core + tight + halo);
     }
 
     /// A light's mirror on the wet road at `p`, seen along `d`: a streak below its mirror image, narrow sideways and long
@@ -1136,15 +1161,27 @@ enum NeonNightDriveShaders {
                             float carIdx = floor(along / 20.0);
                             float pos = fract((car + 0.6) / 2.2) * 2.2 - 0.725;
                             float hw = hash12(float2(floor((car + 0.6) / 2.2), carIdx + 7.0));
+                            float hw2 = hash12(float2(floor((car + 0.6) / 2.2) * 1.7, carIdx + 3.0));
                             float vin = saturate((yt - 9.7) / 1.4);
-                            float3 tint = hash11(carIdx * 3.1 + 0.4) < 0.45 ? float3(0.82, 0.94, 1.0) : float3(1.0, 0.84, 0.62);
-                            float inside = (0.5 + 0.45 * hw) * (0.7 + 0.5 * vin) + 1.1 * smoothstep(0.86, 0.97, vin);
+                            float3 tint = fract(carIdx * 0.618 + 0.3) < 0.35 ? float3(0.58, 0.86, 1.0) : float3(1.0, 0.72, 0.42);
+                            // The carriage's light inside: the ceiling's strip brightest, falling off towards the frame;
+                            // seat backs dark along the sill; some windows dimmer (blinds half down, a dim car).
+                            float edge = min(0.725 - abs(pos), min(yt - 9.7, 11.1 - yt));
+                            float falloff = 0.45 + 0.55 * smoothstep(0.0, 0.32, edge);
+                            float inside = (0.3 + 0.18 * hw) * (0.7 + 0.4 * vin) + 0.4 * smoothstep(0.8, 0.95, vin);
+                            inside *= falloff * (1.0 - 0.45 * smoothstep(0.3, 0.12, vin));
+                            inside *= hw2 < 0.22 ? 0.35 : 1.0;
                             float c0 = (hw - 0.5) * 0.7;
                             float headD = length(float2(pos - c0, yt - 10.42)) - 0.12;
                             float shoulders = max(abs(pos - c0) - 0.26, yt - 10.24);
-                            float person = step(0.5, hw) * smoothstep(fp, -fp, min(headD, shoulders));
-                            inside *= 1.0 - 0.85 * person;
-                            col = shell + float3(0.0, 0.05, 0.09) * stripe * 0.4 + tint * win * inside;
+                            float person = step(0.55, hw) * smoothstep(fp, -fp, min(headD, shoulders));
+                            inside *= 1.0 - 0.8 * person;
+                            // The window's dark frame and its mullion (filtered: far off they only dim the glass).
+                            float fw = max(fp, 0.02);
+                            float frame = 1.0 - smoothstep(0.035 - fw, 0.035 + fw, edge);
+                            float mullion = 1.0 - smoothstep(0.02 - fw, 0.02 + fw, abs(pos));
+                            float glassLit = 1.0 - max(frame, mullion) * 0.85;
+                            col = shell + float3(0.0, 0.05, 0.09) * stripe * 0.4 + tint * (win * inside * glassLit);
                         }
                     }
                 }
@@ -1299,14 +1336,27 @@ enum NeonNightDriveShaders {
         float water = kind > 1.5 ? 1.0 : 0.0;
         float zw = p.z + u.move.x;
         float wet = mix(u.rain.z, 1.0, water);
-        // Ripples: the rain's on the road, the swell's on the harbour.
-        float2 rp = float2(p.x, zw) * (water > 0.5 ? 0.08 : 0.9);
-        float n1 = vn2(rp + float2(0.0, u.a.y * (water > 0.5 ? 0.3 : 2.0))) - 0.5;
-        float n2 = vn2(rp * 2.3 + float2(u.a.y * 1.1, 3.7)) - 0.5;
-        uv += float2(n1 * 0.004 + n2 * 0.002, n2 * 0.01) * (water > 0.5 ? 3.0 : 1.0 + 2.0 * u.rain.x);
+        // How far beyond the road the mirrored thing stands (m), from the scene's depth along the mirrored ray: a wet road
+        // mirrors what stands on it sharply and what stands far beyond it blurred and faint, as a glossy surface does.
+        float depM = depth.sample(s, saturate(uv)).r;
+        float tM = 60.0 * depM / max(1.0 - depM, 1e-4);
+        float beyond = max(tM - t, 0.0);
+        float spread = beyond / (t + beyond + 1e-3);
         int oct = int(u.a.z + 0.5);
         float puddle = smoothstep(0.56, 0.74, fbm2(float2(p.x * 0.21, zw * 0.07), oct)) * u.rain.z;
         float rough = water > 0.5 ? 0.35 : clamp(0.8 - 0.5 * puddle, 0.2, 1.0);
+        // Ripples: the rain's on the road, the swell's on the harbour. They shift the mirror sideways in bands (more for
+        // what's further off) and break its light into patches, as they break the lamps' streaks.
+        float2 rp = float2(p.x, zw) * (water > 0.5 ? 0.08 : 0.9);
+        float n1 = vn2(rp + float2(0.0, u.a.y * (water > 0.5 ? 0.3 : 2.0))) - 0.5;
+        float n2 = vn2(rp * 2.3 + float2(u.a.y * 1.1, 3.7)) - 0.5;
+        float shake = (water > 0.5 ? 3.0 : 1.0 + 2.0 * u.rain.x) * (0.4 + 1.6 * spread);
+        uv += float2(n1 * 0.008 + n2 * 0.004, n2 * 0.01) * shake;
+        float rip = vn2(float2(p.x * 1.3, zw * 3.1) + float2(0.0, u.a.y * 1.7));
+        float patches = mix(1.0, 0.35 + 1.9 * rip * rip, 0.5 + 0.5 * spread);
+        // The blur: the surface's sideways roughness over the distance beyond, in the copy's texels (half resolution).
+        float sigma = (water > 0.5 ? 0.012 : 0.003 + 0.008 * rough) * spread;
+        float lod = clamp(log2(max(sigma / max(u.a.w * 2.0, 1e-5), 1.0)), 1.6 + rough * 0.4, 4.0);
         // The streak: taps down the screen (towards you) and a few up, widening with roughness.
         // Jittered a pixel at a time (interleaved noise) so a bright line doesn't repeat down the road in bands.
         float3 acc = float3(0);
@@ -1320,16 +1370,19 @@ enum NeonNightDriveShaders {
             float w = exp(-k * k * 2.2);
             float2 q = uv + float2(0.0, k * reach);
             if (q.y < 0.0 || q.y > 1.0) continue;
-            acc += view.sample(s, q, level(1.6 + rough)).rgb * w;
+            acc += view.sample(s, q, level(lod)).rgb * w;
             wsum += w;
         }
         float3 refl = wsum > 0.0 ? acc / wsum : float3(0);
         // Only what stands above the horizon is mirrored this way (lower things have their own streaks): fade the taps that
-        // came back from below it.
+        // came back from below it. Nothing is mirrored from past the view's edges (no smeared edge columns), and the
+        // mirror fades with the distance beyond.
         float3 hz = driveProject(float3(d.x, 0.0, d.z), sky, u);
         float aboveH = smoothstep(hz.y - 0.02, hz.y + 0.04, sp.y);
+        float edges = smoothstep(0.0, 0.06, uv.x) * smoothstep(1.0, 0.94, uv.x);
+        float fade = 1.0 / (1.0 + beyond / 120.0);
         float F = fresnelWet(-d.y);
-        float strength = F * wet * (water > 0.5 ? 0.9 : 0.55 + 0.6 * puddle) * aboveH;
+        float strength = F * wet * (water > 0.5 ? 0.9 : 0.55 + 0.6 * puddle) * aboveH * edges * fade * patches;
         float k = 1.0 - exp(-t / max(u.haze.w, 1.0));
         return float4(refl * strength * (1.0 - k), 0.0);
     }

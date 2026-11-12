@@ -25,7 +25,10 @@ final class NeonNightDriveRenderer: ThemeRenderer {
     nonisolated static let studBase = 32, studSlots = 16
     nonisolated static let carBase = 48, carSlots = 12
     nonisolated static let palBase = 72, palRows = 6
-    nonisolated static let uniformCount = 78
+    nonisolated static let rowMoon = 78
+    /// The Sky kit's `SkyU` rows for the moon: its direction and phase, then lit fraction, earthshine, radius.
+    nonisolated static let skyMoonRow = 6
+    nonisolated static let uniformCount = 79
 
     // MARK: The view
     /// The way the road runs (degrees from north): the sky's moon and clouds stand where they would.
@@ -259,6 +262,13 @@ final class NeonNightDriveRenderer: ThemeRenderer {
             u[Self.carBase + i * 2 + 1] = SIMD4(Float(c.seed % 1000) / 1000, c.lightBar ? 1 : 0, 0, 0)
         }
         for i in 0..<Self.palRows { u[Self.palBase + i] = SIMD4(pal[i], 0) }
+        // The moon, drawn by the drive itself as a dim glow behind the overcast (the Sky kit's disc is hidden in `render`):
+        // its direction and how much of it shows (its lit part, none by day or below the horizon).
+        let su = sky.uniforms
+        let m = su[Self.skyMoonRow], mi = su[Self.skyMoonRow + 1]
+        let moonUp: Float = m.z > -0.02 ? 1 : 0
+        let lit: Float = Self.unit(mi.x)
+        u[Self.rowMoon] = SIMD4(m.x, m.y, m.z, moonUp * night * (0.35 + 0.65 * lit))
 
         // Light Trails, and the windscreen with its rain, wipers and the keys' strip.
         trails.update(frame, quality: quality, gentle: gentle)
@@ -292,7 +302,10 @@ final class NeonNightDriveRenderer: ThemeRenderer {
         guard let pass = stack.scenePass(clear: MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)),
               let hdr = stack.hdrTarget, let depth = stack.depthTarget,
               let e = cb.makeRenderCommandEncoder(descriptor: pass) else { return }
-        let skyU = sky.uniforms
+        // The Sky kit's moon would be a crisp disc on the overcast: set it below the horizon here (the drive draws its own,
+        // dim, behind the cloud, from `rowMoon`).
+        var skyU = sky.uniforms
+        skyU[Self.skyMoonRow] = SIMD4(0, 0, -1, skyU[Self.skyMoonRow].w)
         e.setRenderPipelineState(scene)
         skyU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
         u.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
