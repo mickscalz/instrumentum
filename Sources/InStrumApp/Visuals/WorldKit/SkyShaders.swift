@@ -1046,7 +1046,10 @@ enum SkyShaders {
 
         float4 anvil = float4(0.0);
         float anvilT = 1e9;
-        if (T > 0.01 && k > 0.0015) {
+        // (Behind an opaque body by more than the cross-fade, the anvil would add nothing: its underside sags at most
+        // 3 km, so it is never nearer than 6.5 km up.)
+        bool hidden = body.a >= 1.0 && bodyT + 1.2 <= (kCellAnvil - 3.0) / max(k, 1e-4);
+        if (T > 0.01 && k > 0.0015 && !hidden) {
             // The anvil's underside, a ceiling over you from far off the view's sides back to its trailing edge behind
             // the storm (as Supercell Sky's): it sags toward the tower it spreads from (one step of the sag at the level
             // plane's hit), so the two meet; its trailing edge is rounded and ragged, feathered into fibres.
@@ -1078,15 +1081,18 @@ enum SkyShaders {
                 float outward = kCellAnvil * log(rho / kCellAnvil + sqrt(rho * rho / (kCellAnvil * kCellAnvil) + 1.0));
                 float2 gq = float2(rho * phi, outward);
                 float bil = skyNoise2(gq * 0.2 + 3.0);
-                float2 Lq = normalize(float2(Lu.y, Lu.x) + float2(1e-4, 0.0));
-                float bilL = skyNoise2((gq + Lq * 1.2) * 0.2 + 3.0);
+                float under = saturate(0.3 - 5.0 * Lu.z);
+                float bilL = bil;
+                if (under > 0.0) {
+                    float2 Lq = normalize(float2(Lu.y, Lu.x) + float2(1e-4, 0.0));
+                    bilL = skyNoise2((gq + Lq * 1.2) * 0.2 + 3.0);
+                }
                 float2 qt = P - top;
                 float fib = skyNoise2(float2(atan2(qt.y, qt.x) * 9.0 + 2.0 * bil, length(qt) * 0.08 + 2.0));
                 float3 c = grey * (0.11 + 0.13 * bil + 0.015 * fib + 0.06 * na + 0.14 * thin);
                 // A low light gets under it from the clear side beyond its trailing edge (warmest near the edge); after
                 // sunset it lights it from below.
                 float reach = exp(-max(trail, 0.0) / 14.0) * saturate(Lu.x * 2.0 + 0.4);
-                float under = saturate(0.3 - 5.0 * Lu.z);
                 float lit = under * (0.7 + 0.6 * saturate(0.5 + 2.0 * (bilL - bil)));
                 float pm = mam * smoothstep(0.38, 0.58, na) * (1.0 - smoothstep(14.0, 30.0, trail)) * smoothstep(0.0, 4.0, trail);
                 float dome = 0.5;
