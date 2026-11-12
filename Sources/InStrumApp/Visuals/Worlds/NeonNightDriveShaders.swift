@@ -1355,7 +1355,7 @@ enum NeonNightDriveShaders {
         float rip = vn2(float2(p.x * 1.3, zw * 3.1) + float2(0.0, u.a.y * 1.7));
         float patches = mix(1.0, 0.35 + 1.9 * rip * rip, 0.5 + 0.5 * spread);
         // The blur: the surface's sideways roughness over the distance beyond, in the copy's texels (half resolution).
-        float sigma = (water > 0.5 ? 0.012 : 0.003 + 0.008 * rough) * spread;
+        float sigma = (water > 0.5 ? 0.014 : 0.01 + 0.012 * rough) * spread;
         float lod = clamp(log2(max(sigma / max(u.a.w * 2.0, 1e-5), 1.0)), 1.6 + rough * 0.4, 4.0);
         // The streak: taps down the screen (towards you) and a few up, widening with roughness.
         // Jittered a pixel at a time (interleaved noise) so a bright line doesn't repeat down the road in bands.
@@ -1379,8 +1379,8 @@ enum NeonNightDriveShaders {
         // mirror fades with the distance beyond.
         float3 hz = driveProject(float3(d.x, 0.0, d.z), sky, u);
         float aboveH = smoothstep(hz.y - 0.02, hz.y + 0.04, sp.y);
-        float edges = smoothstep(0.0, 0.06, uv.x) * smoothstep(1.0, 0.94, uv.x);
-        float fade = 1.0 / (1.0 + beyond / 120.0);
+        float edges = smoothstep(0.0, 0.14, uv.x) * smoothstep(1.0, 0.86, uv.x);
+        float fade = 1.0 / (1.0 + beyond / 80.0);
         float F = fresnelWet(-d.y);
         float strength = F * wet * (water > 0.5 ? 0.9 : 0.55 + 0.6 * puddle) * aboveH * edges * fade * patches;
         float k = 1.0 - exp(-t / max(u.haze.w, 1.0));
