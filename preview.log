@@ -1,0 +1,1524 @@
+Fetching https://github.com/sparkle-project/Sparkle
+[1/44348] Fetching sparkle
+Fetched https://github.com/sparkle-project/Sparkle from cache (2.65s)
+Computing version for https://github.com/sparkle-project/Sparkle
+Computed https://github.com/sparkle-project/Sparkle at 2.6.4 (9.23s)
+Creating working copy for https://github.com/sparkle-project/Sparkle
+Working copy of https://github.com/sparkle-project/Sparkle resolved at 2.6.4
+Downloading binary artifact https://github.com/sparkle-project/Sparkle/releases/download/2.6.4/Sparkle-for-Swift-Package-Manager.zip
+[41027/9272451] Downloading https://github.com/sparkle-project/Sparkle/releases/download/2.6.4/Sparkle-for-Swift-Package-Manager.zip
+Downloaded https://github.com/sparkle-project/Sparkle/releases/download/2.6.4/Sparkle-for-Swift-Package-Manager.zip (0.84s)
+Building for debugging...
+[0/36] Write sources
+[1/36] Write InStrumMeants-entitlement.plist
+[2/36] /Users/runner/work/instrumentum/instrumentum/.build/arm64-apple-macosx/debug/InStrumMeantsPackageTests.derived/runner.swift
+[3/36] Write swift-version--79AA4F9932D1E87A.txt
+[4/36] Copying Sparkle.framework
+[5/36] Write sources
+[6/36] Compiling InStrumDSP TeaHouseKoto.cpp
+[7/36] Compiling InStrumDSP Synth.cpp
+[7/36] Compiling InStrumDSP ZenShakuhachi.cpp
+[9/36] Compiling InStrumDSP SpaceReverb.cpp
+[10/36] Compiling InStrumDSP ReplicantBrass.cpp
+[11/36] Compiling InStrumDSP SingleNoteGrand.cpp
+[12/36] Compiling InStrumDSP ReefMarimba.cpp
+[13/36] Compiling InStrumDSP PlanktonKeys.cpp
+[14/36] Compiling InStrumDSP PolarChoir.cpp
+[15/36] Compiling InStrumDSP OrbitPad.cpp
+[16/36] Compiling InStrumDSP MagmaBass.cpp
+[17/36] Compiling InStrumDSP MorningBox.cpp
+[18/36] Compiling InStrumDSP HoneyTape.cpp
+[19/36] Compiling InStrumDSP HazeBells.cpp
+[20/36] Compiling InStrumDSP FeltGlass.cpp
+[21/36] Compiling InStrumDSP EndlessRise.cpp
+[22/36] Compiling InStrumDSP CabinFelt.cpp
+[22/36] Write sources
+[29/36] Compiling InStrumDSP BlueDepth.cpp
+[30/85] Compiling InStrumDSP Ambience.cpp
+[32/85] Compiling InStrumCore AppSettings.swift
+[33/85] Compiling InStrumCore AutoQuality.swift
+[34/85] Compiling InStrumCore ButterflyGardenModel.swift
+[35/85] Compiling InStrumCore ButterflyLooks.swift
+[36/85] Compiling InStrumCore ButterflyParams.swift
+[37/85] Compiling InStrumCore ComputerKeyMap.swift
+[38/85] Compiling InStrumCore Excitement.swift
+[39/85] Compiling InStrumCore FlashLimiter.swift
+[40/85] Compiling InStrumCore InStrumCore.swift
+[41/85] Compiling InStrumCore InputRouting.swift
+[42/85] Compiling InStrumCore Inputs.swift
+[43/85] Compiling InStrumCore KeyboardLayout.swift
+[44/85] Compiling InStrumCore LaunchGuard.swift
+[45/85] Compiling InStrumCore Links.swift
+[46/85] Compiling InStrumCore MIDIChannelFilter.swift
+[47/85] Compiling InStrumCore MIDIMessage.swift
+[48/85] Compiling InStrumCore MidnightSteinwayModel.swift
+[49/85] Compiling InStrumCore MidnightSteinwayScene.swift
+[50/85] Compiling InStrumCore Parameters.swift
+[51/85] Compiling InStrumCore PerformanceState.swift
+[52/85] Compiling InStrumCore PlayingAnalyzer.swift
+[53/85] Compiling InStrumCore Presets.swift
+[54/85] Compiling InStrumCore ReactionPresets.swift
+[55/85] Compiling InStrumCore Roles.swift
+[56/85] Emitting module InStrumCore
+[57/85] Compiling InStrumCore SceneControls.swift
+[58/85] Compiling InStrumCore SceneDirector.swift
+[59/85] Compiling InStrumCore ScriptedPerformance.swift
+[60/85] Compiling InStrumCore InStrumSet.swift
+[61/85] Compiling InStrumCore AnvilCrawlers.swift
+[62/85] Compiling InStrumCore Astronomy.swift
+[63/85] Compiling InStrumCore Aurora.swift
+[64/85] Compiling InStrumCore Cities.swift
+[65/85] Compiling InStrumCore ConstellationLines.swift
+[66/85] Compiling InStrumCore HaloOptics.swift
+[67/85] Compiling InStrumCore LivingSky.swift
+[68/85] Compiling InStrumCore MeteorShowers.swift
+[69/85] Compiling InStrumCore MeteorSky.swift
+[70/85] Compiling InStrumCore RedSprites.swift
+[71/85] Compiling InStrumCore Satellites.swift
+[72/85] Compiling InStrumCore SheetLightning.swift
+[73/85] Compiling InStrumCore SkyClock.swift
+[74/85] Compiling InStrumCore SolarLongitude.swift
+[75/85] Compiling InStrumCore StarCatalogue.swift
+[76/85] Compiling InStrumCore StarTexture.swift
+[77/85] Compiling InStrumCore Supercell.swift
+[78/85] Compiling InStrumCore Weather.swift
+[79/85] Compiling InStrumCore SleepFade.swift
+[80/85] Compiling InStrumCore AmbienceScene.swift
+[81/133] Compiling InStrumCore GreatBarrierReefModel.swift
+[82/133] Compiling InStrumCore LakeRipples.swift
+[83/133] Compiling InStrumCore LightTrails.swift
+[84/133] Compiling InStrumCore LightningPlainsModel.swift
+[85/133] Compiling InStrumCore MagmaVeins.swift
+[86/133] Compiling InStrumCore MarineSnow.swift
+[87/133] Compiling InStrumCore MoonlitLakeModel.swift
+[88/133] Compiling InStrumCore NeonNightDriveModel.swift
+[89/133] Compiling InStrumCore OceanSwell.swift
+[90/133] Compiling InStrumCore RakeLines.swift
+[91/133] Compiling InStrumCore SnowboundCabinModel.swift
+[92/133] Compiling InStrumCore SpaceshipLoungeModel.swift
+[93/133] Compiling InStrumCore SteamLines.swift
+[94/133] Compiling InStrumCore StrikeLines.swift
+[95/133] Compiling InStrumCore SubmarineWindowModel.swift
+[96/133] Compiling InStrumCore SupercellSkyModel.swift
+[97/133] Compiling InStrumCore TeaHouseSnowModel.swift
+[98/133] Compiling InStrumCore TideLines.swift
+[99/133] Compiling InStrumCore VolcanoRimModel.swift
+[100/133] Compiling InStrumCore WallCloud.swift
+[101/133] Compiling InStrumCore WeatherAmbience.swift
+[102/133] Compiling InStrumCore WindField.swift
+[103/133] Compiling InStrumCore WorldWeather.swift
+[104/133] Compiling InStrumCore ZenRockGardenModel.swift
+[105/133] Compiling InStrumCore Credit.swift
+[106/133] Compiling InStrumCore DemoPhrases.swift
+[107/133] Compiling InStrumCore ListenLink.swift
+[108/133] Compiling InStrumCore Mood.swift
+[109/133] Compiling InStrumCore Patch.swift
+[110/133] Compiling InStrumCore ThemeModel.swift
+[111/133] Compiling InStrumCore TouchCurve.swift
+[112/133] Compiling InStrumCore VisualScene.swift
+[113/133] Compiling InStrumCore AuroraFjordModel.swift
+[114/133] Compiling InStrumCore BedroomDawnModel.swift
+[115/133] Compiling InStrumCore BioluminescentBayModel.swift
+[116/133] Compiling InStrumCore Cloth.swift
+[117/133] Compiling InStrumCore CoastLights.swift
+[118/133] Compiling InStrumCore CoastRoadModel.swift
+[119/133] Compiling InStrumCore CoralPulse.swift
+[120/133] Compiling InStrumCore CoralSpawning.swift
+[121/133] Compiling InStrumCore CurtainLight.swift
+[122/133] Compiling InStrumCore CurtainLights.swift
+[123/133] Compiling InStrumCore DeepLights.swift
+[124/133] Compiling InStrumCore FrostField.swift
+[125/133] Compiling InStrumCore FrostGrow.swift
+[126/133] Compiling InStrumCore GalaxyWarp.swift
+[127/133] Compiling InStrumCore GlowWake.swift
+[128/133] Compiling InStrumCore GoldenHourBeachModel.swift
+[129/175] Compiling InStrumCoreTests ButterflyGardenModelTests.swift
+[130/175] Compiling InStrumCoreTests ClothTests.swift
+[131/175] Compiling InStrumCoreTests CoastLightsTests.swift
+[132/175] Compiling InStrumCoreTests AstronomyTests.swift
+[133/175] Compiling InStrumCoreTests AuroraTests.swift
+[134/175] Compiling InStrumCoreTests BloomTests.swift
+[135/175] Emitting module InStrumAudio
+[136/178] Compiling InStrumAudio OutputDevices.swift
+[137/178] Compiling InStrumAudio PluginCatalog.swift
+[138/178] Compiling InStrumAudio SoundCharacter.swift
+[139/242] Emitting module InStrumCoreTests
+[140/259] Emitting module InStrumAudioTests
+[141/269] Emitting module InStrumApp
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Visuals/Worlds/BedroomDawnRenderer.swift:124:47: warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 13 |     static func moteBudget(_ q: QualityLevel) -> Int { CurtainLight.moteBudget(q) }
+ 14 |     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
+ 15 |     static let fieldSeed: UInt64 = 0xBED5
+    |                `- note: static property declared here
+ 16 |     /// Degrees the view turns left of a low sun, so it rises right of the middle bar and the beams slant.
+ 17 |     static let sunOffset = 10.0
+    :
+122 |         sky.verticalFOV = 50
+123 |         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+124 |             let field = FrostField(seed: Self.fieldSeed, columns: 2, rows: 3, bar: 0.014)
+    |                                               `- warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+125 |             DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
+126 |         }
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Visuals/Worlds/SnowboundCabinRenderer.swift:87:47: warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 12 |     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
+ 13 |     static let maxSparks = 36
+ 14 |     static let fieldSeed: UInt64 = 0xCAB1
+    |                `- note: static property declared here
+ 15 | 
+ 16 |     /// The window: three panes by two in log wood, filling about 70% of the frame, never wider than about 1.8:1.
+    :
+ 85 |         // The frost grows once, off the main thread; the glass draws a plain fallback until it's ready.
+ 86 |         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+ 87 |             let field = FrostField(seed: Self.fieldSeed, columns: 3, rows: 2, bar: 0.018)
+    |                                               `- warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 88 |             DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
+ 89 |         }
+[142/289] Compiling InStrumApp AppModel.swift
+[143/289] Compiling InStrumApp AppUpdates.swift
+[144/289] Compiling InStrumApp InStrumMeantsApp.swift
+[145/289] Compiling InStrumApp InstrumentEngine.swift
+[146/289] Compiling InStrumApp AdvancedView.swift
+[147/289] Compiling InStrumApp BuiltInPanel.swift
+[148/289] Compiling InStrumApp CardArt.swift
+[149/289] Compiling InStrumApp InspiredByCard.swift
+[150/289] Compiling InStrumApp InstrumentPicker.swift
+[151/289] Compiling InStrumApp KeyRouting.swift
+[152/289] Compiling InStrumApp SettingsPanel.swift
+[153/289] Compiling InStrumApp SettingsPopover.swift
+[154/289] Compiling InStrumApp SkyControls.swift
+[155/289] Compiling InStrumAudioTests ReefMarimbaTests.swift
+[156/289] Compiling InStrumAudioTests ReplicantBrassTests.swift
+[157/289] Compiling InStrumAudioTests SingleNoteGrandTests.swift
+[158/289] Compiling InStrumAudioTests SpaceReverbTests.swift
+[159/289] Compiling InStrumAudioTests SynthRender.swift
+[160/289] Compiling InStrumAudioTests TeaHouseKotoTests.swift
+[161/289] Compiling InStrumAudioTests ZenShakuhachiTests.swift
+[162/289] Compiling InStrumAudioTests DialReaderTests.swift
+[163/289] Compiling InStrumAudioTests MIDIInputTests.swift
+[164/289] Compiling InStrumAudioTests SoundCharacterTests.swift
+[165/289] Compiling InStrumApp PostShaders.swift
+[166/289] Compiling InStrumApp PreviewRenderer.swift
+[167/289] Compiling InStrumApp RenderStack.swift
+[168/289] Compiling InStrumApp Spectrogram.swift
+[179/289] Compiling InStrumApp MainView.swift
+[180/289] Compiling InStrumApp MappingEdits.swift
+[181/289] Compiling InStrumApp OnScreenKeyboard.swift
+[182/289] Compiling InStrumApp ParamControl.swift
+[183/289] Compiling InStrumApp PluginWindowController.swift
+[184/289] Compiling InStrumApp PresetBar.swift
+[185/289] Compiling InStrumApp SetsGallery.swift
+[199/289] Compiling InStrumCoreTests SatellitesTests.swift
+[200/289] Compiling InStrumCoreTests SceneDirectorTests.swift
+[201/289] Compiling InStrumCoreTests SetsTests.swift
+[202/289] Compiling InStrumCoreTests SettingsStoreTests.swift
+[203/289] Compiling InStrumCoreTests SleepFadeTests.swift
+[204/289] Compiling InStrumCoreTests SmokeTests.swift
+[205/289] Compiling InStrumCoreTests StarCatalogueTests.swift
+[206/289] Compiling InStrumCoreTests SteamLinesTests.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:643:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 641 |         }
+ 642 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 643 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 644 |         var beam = Path()
+ 645 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:643:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 641 |         }
+ 642 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 643 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 644 |         var beam = Path()
+ 645 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:643:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 641 |         }
+ 642 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 643 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 644 |         var beam = Path()
+ 645 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:643:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 641 |         }
+ 642 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 643 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 644 |         var beam = Path()
+ 645 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:643:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 641 |         }
+ 642 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 643 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 644 |         var beam = Path()
+ 645 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:643:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 641 |         }
+ 642 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 643 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 644 |         var beam = Path()
+ 645 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:643:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 641 |         }
+ 642 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 643 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 644 |         var beam = Path()
+ 645 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:643:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 641 |         }
+ 642 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 643 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 644 |         var beam = Path()
+ 645 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:643:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 641 |         }
+ 642 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 643 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 644 |         var beam = Path()
+ 645 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:643:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 641 |         }
+ 642 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 643 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 644 |         var beam = Path()
+ 645 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:643:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 641 |         }
+ 642 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 643 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 644 |         var beam = Path()
+ 645 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:643:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 641 |         }
+ 642 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 643 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 644 |         var beam = Path()
+ 645 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:643:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 641 |         }
+ 642 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 643 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 644 |         var beam = Path()
+ 645 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:643:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 641 |         }
+ 642 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 643 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 644 |         var beam = Path()
+ 645 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:643:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 641 |         }
+ 642 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 643 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 644 |         var beam = Path()
+ 645 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:643:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 641 |         }
+ 642 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 643 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 644 |         var beam = Path()
+ 645 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:643:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 641 |         }
+ 642 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 643 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 644 |         var beam = Path()
+ 645 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:643:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 641 |         }
+ 642 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 643 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 644 |         var beam = Path()
+ 645 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:643:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 641 |         }
+ 642 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 643 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 644 |         var beam = Path()
+ 645 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:643:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 641 |         }
+ 642 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 643 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 644 |         var beam = Path()
+ 645 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:643:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 641 |         }
+ 642 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 643 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 644 |         var beam = Path()
+ 645 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+[248/309] Compiling InStrumApp WindowKit.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Visuals/Worlds/BedroomDawnRenderer.swift:124:47: warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 13 |     static func moteBudget(_ q: QualityLevel) -> Int { CurtainLight.moteBudget(q) }
+ 14 |     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
+ 15 |     static let fieldSeed: UInt64 = 0xBED5
+    |                `- note: static property declared here
+ 16 |     /// Degrees the view turns left of a low sun, so it rises right of the middle bar and the beams slant.
+ 17 |     static let sunOffset = 10.0
+    :
+122 |         sky.verticalFOV = 50
+123 |         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+124 |             let field = FrostField(seed: Self.fieldSeed, columns: 2, rows: 3, bar: 0.014)
+    |                                               `- warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+125 |             DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
+126 |         }
+[249/309] Compiling InStrumApp WindowKitShaders.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Visuals/Worlds/BedroomDawnRenderer.swift:124:47: warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 13 |     static func moteBudget(_ q: QualityLevel) -> Int { CurtainLight.moteBudget(q) }
+ 14 |     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
+ 15 |     static let fieldSeed: UInt64 = 0xBED5
+    |                `- note: static property declared here
+ 16 |     /// Degrees the view turns left of a low sun, so it rises right of the middle bar and the beams slant.
+ 17 |     static let sunOffset = 10.0
+    :
+122 |         sky.verticalFOV = 50
+123 |         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+124 |             let field = FrostField(seed: Self.fieldSeed, columns: 2, rows: 3, bar: 0.014)
+    |                                               `- warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+125 |             DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
+126 |         }
+[250/309] Compiling InStrumApp WindscreenLayer.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Visuals/Worlds/BedroomDawnRenderer.swift:124:47: warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 13 |     static func moteBudget(_ q: QualityLevel) -> Int { CurtainLight.moteBudget(q) }
+ 14 |     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
+ 15 |     static let fieldSeed: UInt64 = 0xBED5
+    |                `- note: static property declared here
+ 16 |     /// Degrees the view turns left of a low sun, so it rises right of the middle bar and the beams slant.
+ 17 |     static let sunOffset = 10.0
+    :
+122 |         sky.verticalFOV = 50
+123 |         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+124 |             let field = FrostField(seed: Self.fieldSeed, columns: 2, rows: 3, bar: 0.014)
+    |                                               `- warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+125 |             DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
+126 |         }
+[251/309] Compiling InStrumApp WindscreenShaders.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Visuals/Worlds/BedroomDawnRenderer.swift:124:47: warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 13 |     static func moteBudget(_ q: QualityLevel) -> Int { CurtainLight.moteBudget(q) }
+ 14 |     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
+ 15 |     static let fieldSeed: UInt64 = 0xBED5
+    |                `- note: static property declared here
+ 16 |     /// Degrees the view turns left of a low sun, so it rises right of the middle bar and the beams slant.
+ 17 |     static let sunOffset = 10.0
+    :
+122 |         sky.verticalFOV = 50
+123 |         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+124 |             let field = FrostField(seed: Self.fieldSeed, columns: 2, rows: 3, bar: 0.014)
+    |                                               `- warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+125 |             DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
+126 |         }
+[252/309] Compiling InStrumApp AuroraFjordRenderer.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Visuals/Worlds/BedroomDawnRenderer.swift:124:47: warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 13 |     static func moteBudget(_ q: QualityLevel) -> Int { CurtainLight.moteBudget(q) }
+ 14 |     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
+ 15 |     static let fieldSeed: UInt64 = 0xBED5
+    |                `- note: static property declared here
+ 16 |     /// Degrees the view turns left of a low sun, so it rises right of the middle bar and the beams slant.
+ 17 |     static let sunOffset = 10.0
+    :
+122 |         sky.verticalFOV = 50
+123 |         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+124 |             let field = FrostField(seed: Self.fieldSeed, columns: 2, rows: 3, bar: 0.014)
+    |                                               `- warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+125 |             DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
+126 |         }
+[253/309] Compiling InStrumApp AuroraFjordShaders.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Visuals/Worlds/BedroomDawnRenderer.swift:124:47: warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 13 |     static func moteBudget(_ q: QualityLevel) -> Int { CurtainLight.moteBudget(q) }
+ 14 |     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
+ 15 |     static let fieldSeed: UInt64 = 0xBED5
+    |                `- note: static property declared here
+ 16 |     /// Degrees the view turns left of a low sun, so it rises right of the middle bar and the beams slant.
+ 17 |     static let sunOffset = 10.0
+    :
+122 |         sky.verticalFOV = 50
+123 |         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+124 |             let field = FrostField(seed: Self.fieldSeed, columns: 2, rows: 3, bar: 0.014)
+    |                                               `- warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+125 |             DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
+126 |         }
+[254/309] Compiling InStrumApp BedroomDawnRenderer.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Visuals/Worlds/BedroomDawnRenderer.swift:124:47: warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 13 |     static func moteBudget(_ q: QualityLevel) -> Int { CurtainLight.moteBudget(q) }
+ 14 |     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
+ 15 |     static let fieldSeed: UInt64 = 0xBED5
+    |                `- note: static property declared here
+ 16 |     /// Degrees the view turns left of a low sun, so it rises right of the middle bar and the beams slant.
+ 17 |     static let sunOffset = 10.0
+    :
+122 |         sky.verticalFOV = 50
+123 |         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+124 |             let field = FrostField(seed: Self.fieldSeed, columns: 2, rows: 3, bar: 0.014)
+    |                                               `- warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+125 |             DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
+126 |         }
+[255/309] Compiling InStrumApp BedroomDawnShaders.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Visuals/Worlds/BedroomDawnRenderer.swift:124:47: warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 13 |     static func moteBudget(_ q: QualityLevel) -> Int { CurtainLight.moteBudget(q) }
+ 14 |     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
+ 15 |     static let fieldSeed: UInt64 = 0xBED5
+    |                `- note: static property declared here
+ 16 |     /// Degrees the view turns left of a low sun, so it rises right of the middle bar and the beams slant.
+ 17 |     static let sunOffset = 10.0
+    :
+122 |         sky.verticalFOV = 50
+123 |         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+124 |             let field = FrostField(seed: Self.fieldSeed, columns: 2, rows: 3, bar: 0.014)
+    |                                               `- warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+125 |             DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
+126 |         }
+[256/309] Compiling InStrumApp BioluminescentBayRenderer.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Visuals/Worlds/BedroomDawnRenderer.swift:124:47: warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 13 |     static func moteBudget(_ q: QualityLevel) -> Int { CurtainLight.moteBudget(q) }
+ 14 |     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
+ 15 |     static let fieldSeed: UInt64 = 0xBED5
+    |                `- note: static property declared here
+ 16 |     /// Degrees the view turns left of a low sun, so it rises right of the middle bar and the beams slant.
+ 17 |     static let sunOffset = 10.0
+    :
+122 |         sky.verticalFOV = 50
+123 |         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+124 |             let field = FrostField(seed: Self.fieldSeed, columns: 2, rows: 3, bar: 0.014)
+    |                                               `- warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+125 |             DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
+126 |         }
+[257/309] Compiling InStrumApp BioluminescentBayShaders.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Visuals/Worlds/BedroomDawnRenderer.swift:124:47: warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 13 |     static func moteBudget(_ q: QualityLevel) -> Int { CurtainLight.moteBudget(q) }
+ 14 |     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
+ 15 |     static let fieldSeed: UInt64 = 0xBED5
+    |                `- note: static property declared here
+ 16 |     /// Degrees the view turns left of a low sun, so it rises right of the middle bar and the beams slant.
+ 17 |     static let sunOffset = 10.0
+    :
+122 |         sky.verticalFOV = 50
+123 |         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+124 |             let field = FrostField(seed: Self.fieldSeed, columns: 2, rows: 3, bar: 0.014)
+    |                                               `- warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+125 |             DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
+126 |         }
+[258/309] Compiling InStrumApp CoastRoadRenderer.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Visuals/Worlds/BedroomDawnRenderer.swift:124:47: warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 13 |     static func moteBudget(_ q: QualityLevel) -> Int { CurtainLight.moteBudget(q) }
+ 14 |     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
+ 15 |     static let fieldSeed: UInt64 = 0xBED5
+    |                `- note: static property declared here
+ 16 |     /// Degrees the view turns left of a low sun, so it rises right of the middle bar and the beams slant.
+ 17 |     static let sunOffset = 10.0
+    :
+122 |         sky.verticalFOV = 50
+123 |         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+124 |             let field = FrostField(seed: Self.fieldSeed, columns: 2, rows: 3, bar: 0.014)
+    |                                               `- warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+125 |             DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
+126 |         }
+[259/309] Compiling InStrumApp CoastRoadShaders.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Visuals/Worlds/BedroomDawnRenderer.swift:124:47: warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 13 |     static func moteBudget(_ q: QualityLevel) -> Int { CurtainLight.moteBudget(q) }
+ 14 |     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
+ 15 |     static let fieldSeed: UInt64 = 0xBED5
+    |                `- note: static property declared here
+ 16 |     /// Degrees the view turns left of a low sun, so it rises right of the middle bar and the beams slant.
+ 17 |     static let sunOffset = 10.0
+    :
+122 |         sky.verticalFOV = 50
+123 |         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+124 |             let field = FrostField(seed: Self.fieldSeed, columns: 2, rows: 3, bar: 0.014)
+    |                                               `- warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+125 |             DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
+126 |         }
+[260/309] Compiling InStrumApp GoldenHourBeachRenderer.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Visuals/Worlds/BedroomDawnRenderer.swift:124:47: warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 13 |     static func moteBudget(_ q: QualityLevel) -> Int { CurtainLight.moteBudget(q) }
+ 14 |     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
+ 15 |     static let fieldSeed: UInt64 = 0xBED5
+    |                `- note: static property declared here
+ 16 |     /// Degrees the view turns left of a low sun, so it rises right of the middle bar and the beams slant.
+ 17 |     static let sunOffset = 10.0
+    :
+122 |         sky.verticalFOV = 50
+123 |         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+124 |             let field = FrostField(seed: Self.fieldSeed, columns: 2, rows: 3, bar: 0.014)
+    |                                               `- warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+125 |             DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
+126 |         }
+[261/309] Compiling InStrumApp GoldenHourBeachShaders.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Visuals/Worlds/BedroomDawnRenderer.swift:124:47: warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 13 |     static func moteBudget(_ q: QualityLevel) -> Int { CurtainLight.moteBudget(q) }
+ 14 |     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
+ 15 |     static let fieldSeed: UInt64 = 0xBED5
+    |                `- note: static property declared here
+ 16 |     /// Degrees the view turns left of a low sun, so it rises right of the middle bar and the beams slant.
+ 17 |     static let sunOffset = 10.0
+    :
+122 |         sky.verticalFOV = 50
+123 |         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+124 |             let field = FrostField(seed: Self.fieldSeed, columns: 2, rows: 3, bar: 0.014)
+    |                                               `- warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+125 |             DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
+126 |         }
+[262/309] Compiling InStrumApp GreatBarrierReefRenderer.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Visuals/Worlds/BedroomDawnRenderer.swift:124:47: warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 13 |     static func moteBudget(_ q: QualityLevel) -> Int { CurtainLight.moteBudget(q) }
+ 14 |     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
+ 15 |     static let fieldSeed: UInt64 = 0xBED5
+    |                `- note: static property declared here
+ 16 |     /// Degrees the view turns left of a low sun, so it rises right of the middle bar and the beams slant.
+ 17 |     static let sunOffset = 10.0
+    :
+122 |         sky.verticalFOV = 50
+123 |         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+124 |             let field = FrostField(seed: Self.fieldSeed, columns: 2, rows: 3, bar: 0.014)
+    |                                               `- warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+125 |             DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
+126 |         }
+[263/309] Compiling InStrumApp GreatBarrierReefShaders.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Visuals/Worlds/BedroomDawnRenderer.swift:124:47: warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 13 |     static func moteBudget(_ q: QualityLevel) -> Int { CurtainLight.moteBudget(q) }
+ 14 |     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
+ 15 |     static let fieldSeed: UInt64 = 0xBED5
+    |                `- note: static property declared here
+ 16 |     /// Degrees the view turns left of a low sun, so it rises right of the middle bar and the beams slant.
+ 17 |     static let sunOffset = 10.0
+    :
+122 |         sky.verticalFOV = 50
+123 |         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+124 |             let field = FrostField(seed: Self.fieldSeed, columns: 2, rows: 3, bar: 0.014)
+    |                                               `- warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+125 |             DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
+126 |         }
+[264/309] Compiling InStrumApp LightTrailsRenderer.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Visuals/Worlds/BedroomDawnRenderer.swift:124:47: warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 13 |     static func moteBudget(_ q: QualityLevel) -> Int { CurtainLight.moteBudget(q) }
+ 14 |     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
+ 15 |     static let fieldSeed: UInt64 = 0xBED5
+    |                `- note: static property declared here
+ 16 |     /// Degrees the view turns left of a low sun, so it rises right of the middle bar and the beams slant.
+ 17 |     static let sunOffset = 10.0
+    :
+122 |         sky.verticalFOV = 50
+123 |         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+124 |             let field = FrostField(seed: Self.fieldSeed, columns: 2, rows: 3, bar: 0.014)
+    |                                               `- warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+125 |             DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
+126 |         }
+[265/309] Compiling InStrumApp LightTrailsShaders.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Visuals/Worlds/BedroomDawnRenderer.swift:124:47: warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 13 |     static func moteBudget(_ q: QualityLevel) -> Int { CurtainLight.moteBudget(q) }
+ 14 |     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
+ 15 |     static let fieldSeed: UInt64 = 0xBED5
+    |                `- note: static property declared here
+ 16 |     /// Degrees the view turns left of a low sun, so it rises right of the middle bar and the beams slant.
+ 17 |     static let sunOffset = 10.0
+    :
+122 |         sky.verticalFOV = 50
+123 |         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+124 |             let field = FrostField(seed: Self.fieldSeed, columns: 2, rows: 3, bar: 0.014)
+    |                                               `- warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+125 |             DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
+126 |         }
+[266/309] Compiling InStrumApp LightningPlainsRenderer.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Visuals/Worlds/BedroomDawnRenderer.swift:124:47: warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 13 |     static func moteBudget(_ q: QualityLevel) -> Int { CurtainLight.moteBudget(q) }
+ 14 |     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
+ 15 |     static let fieldSeed: UInt64 = 0xBED5
+    |                `- note: static property declared here
+ 16 |     /// Degrees the view turns left of a low sun, so it rises right of the middle bar and the beams slant.
+ 17 |     static let sunOffset = 10.0
+    :
+122 |         sky.verticalFOV = 50
+123 |         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+124 |             let field = FrostField(seed: Self.fieldSeed, columns: 2, rows: 3, bar: 0.014)
+    |                                               `- warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+125 |             DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
+126 |         }
+[267/309] Compiling InStrumApp LightningPlainsShaders.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Visuals/Worlds/BedroomDawnRenderer.swift:124:47: warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 13 |     static func moteBudget(_ q: QualityLevel) -> Int { CurtainLight.moteBudget(q) }
+ 14 |     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
+ 15 |     static let fieldSeed: UInt64 = 0xBED5
+    |                `- note: static property declared here
+ 16 |     /// Degrees the view turns left of a low sun, so it rises right of the middle bar and the beams slant.
+ 17 |     static let sunOffset = 10.0
+    :
+122 |         sky.verticalFOV = 50
+123 |         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+124 |             let field = FrostField(seed: Self.fieldSeed, columns: 2, rows: 3, bar: 0.014)
+    |                                               `- warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+125 |             DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
+126 |         }
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumCoreTests/VolcanoRimTests.swift:524:44: warning: 'is' test is always true
+522 |     func testRedSpritesAreTheSkysAndTheCraterSendsEmbers() {
+523 |         XCTAssertTrue(VolcanoRimModel.emberSource)
+524 |         XCTAssertTrue(VolcanoRimModel.self is SkyWorldFlags.Type)
+    |                                            `- warning: 'is' test is always true
+525 |         var stormy = night(); stormy.farStorm = 1
+526 |         var surprise = excitement(energy: 0.4)
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumCoreTests/VolcanoRimTests.swift:524:44: warning: 'is' test is always true
+522 |     func testRedSpritesAreTheSkysAndTheCraterSendsEmbers() {
+523 |         XCTAssertTrue(VolcanoRimModel.emberSource)
+524 |         XCTAssertTrue(VolcanoRimModel.self is SkyWorldFlags.Type)
+    |                                            `- warning: 'is' test is always true
+525 |         var stormy = night(); stormy.farStorm = 1
+526 |         var surprise = excitement(energy: 0.4)
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumCoreTests/VolcanoRimTests.swift:524:44: warning: 'is' test is always true
+522 |     func testRedSpritesAreTheSkysAndTheCraterSendsEmbers() {
+523 |         XCTAssertTrue(VolcanoRimModel.emberSource)
+524 |         XCTAssertTrue(VolcanoRimModel.self is SkyWorldFlags.Type)
+    |                                            `- warning: 'is' test is always true
+525 |         var stormy = night(); stormy.farStorm = 1
+526 |         var surprise = excitement(energy: 0.4)
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumCoreTests/VolcanoRimTests.swift:524:44: warning: 'is' test is always true
+522 |     func testRedSpritesAreTheSkysAndTheCraterSendsEmbers() {
+523 |         XCTAssertTrue(VolcanoRimModel.emberSource)
+524 |         XCTAssertTrue(VolcanoRimModel.self is SkyWorldFlags.Type)
+    |                                            `- warning: 'is' test is always true
+525 |         var stormy = night(); stormy.farStorm = 1
+526 |         var surprise = excitement(energy: 0.4)
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumCoreTests/VolcanoRimTests.swift:524:44: warning: 'is' test is always true
+522 |     func testRedSpritesAreTheSkysAndTheCraterSendsEmbers() {
+523 |         XCTAssertTrue(VolcanoRimModel.emberSource)
+524 |         XCTAssertTrue(VolcanoRimModel.self is SkyWorldFlags.Type)
+    |                                            `- warning: 'is' test is always true
+525 |         var stormy = night(); stormy.farStorm = 1
+526 |         var surprise = excitement(energy: 0.4)
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumCoreTests/VolcanoRimTests.swift:524:44: warning: 'is' test is always true
+522 |     func testRedSpritesAreTheSkysAndTheCraterSendsEmbers() {
+523 |         XCTAssertTrue(VolcanoRimModel.emberSource)
+524 |         XCTAssertTrue(VolcanoRimModel.self is SkyWorldFlags.Type)
+    |                                            `- warning: 'is' test is always true
+525 |         var stormy = night(); stormy.farStorm = 1
+526 |         var surprise = excitement(energy: 0.4)
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumCoreTests/VolcanoRimTests.swift:524:44: warning: 'is' test is always true
+522 |     func testRedSpritesAreTheSkysAndTheCraterSendsEmbers() {
+523 |         XCTAssertTrue(VolcanoRimModel.emberSource)
+524 |         XCTAssertTrue(VolcanoRimModel.self is SkyWorldFlags.Type)
+    |                                            `- warning: 'is' test is always true
+525 |         var stormy = night(); stormy.farStorm = 1
+526 |         var surprise = excitement(energy: 0.4)
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumCoreTests/VolcanoRimTests.swift:524:44: warning: 'is' test is always true
+522 |     func testRedSpritesAreTheSkysAndTheCraterSendsEmbers() {
+523 |         XCTAssertTrue(VolcanoRimModel.emberSource)
+524 |         XCTAssertTrue(VolcanoRimModel.self is SkyWorldFlags.Type)
+    |                                            `- warning: 'is' test is always true
+525 |         var stormy = night(); stormy.farStorm = 1
+526 |         var surprise = excitement(energy: 0.4)
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumCoreTests/VolcanoRimTests.swift:524:44: warning: 'is' test is always true
+522 |     func testRedSpritesAreTheSkysAndTheCraterSendsEmbers() {
+523 |         XCTAssertTrue(VolcanoRimModel.emberSource)
+524 |         XCTAssertTrue(VolcanoRimModel.self is SkyWorldFlags.Type)
+    |                                            `- warning: 'is' test is always true
+525 |         var stormy = night(); stormy.farStorm = 1
+526 |         var surprise = excitement(energy: 0.4)
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumCoreTests/VolcanoRimTests.swift:524:44: warning: 'is' test is always true
+522 |     func testRedSpritesAreTheSkysAndTheCraterSendsEmbers() {
+523 |         XCTAssertTrue(VolcanoRimModel.emberSource)
+524 |         XCTAssertTrue(VolcanoRimModel.self is SkyWorldFlags.Type)
+    |                                            `- warning: 'is' test is always true
+525 |         var stormy = night(); stormy.farStorm = 1
+526 |         var surprise = excitement(energy: 0.4)
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumCoreTests/VolcanoRimTests.swift:524:44: warning: 'is' test is always true
+522 |     func testRedSpritesAreTheSkysAndTheCraterSendsEmbers() {
+523 |         XCTAssertTrue(VolcanoRimModel.emberSource)
+524 |         XCTAssertTrue(VolcanoRimModel.self is SkyWorldFlags.Type)
+    |                                            `- warning: 'is' test is always true
+525 |         var stormy = night(); stormy.farStorm = 1
+526 |         var surprise = excitement(energy: 0.4)
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumCoreTests/VolcanoRimTests.swift:524:44: warning: 'is' test is always true
+522 |     func testRedSpritesAreTheSkysAndTheCraterSendsEmbers() {
+523 |         XCTAssertTrue(VolcanoRimModel.emberSource)
+524 |         XCTAssertTrue(VolcanoRimModel.self is SkyWorldFlags.Type)
+    |                                            `- warning: 'is' test is always true
+525 |         var stormy = night(); stormy.farStorm = 1
+526 |         var surprise = excitement(energy: 0.4)
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumCoreTests/VolcanoRimTests.swift:524:44: warning: 'is' test is always true
+522 |     func testRedSpritesAreTheSkysAndTheCraterSendsEmbers() {
+523 |         XCTAssertTrue(VolcanoRimModel.emberSource)
+524 |         XCTAssertTrue(VolcanoRimModel.self is SkyWorldFlags.Type)
+    |                                            `- warning: 'is' test is always true
+525 |         var stormy = night(); stormy.farStorm = 1
+526 |         var surprise = excitement(energy: 0.4)
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumCoreTests/VolcanoRimTests.swift:524:44: warning: 'is' test is always true
+522 |     func testRedSpritesAreTheSkysAndTheCraterSendsEmbers() {
+523 |         XCTAssertTrue(VolcanoRimModel.emberSource)
+524 |         XCTAssertTrue(VolcanoRimModel.self is SkyWorldFlags.Type)
+    |                                            `- warning: 'is' test is always true
+525 |         var stormy = night(); stormy.farStorm = 1
+526 |         var surprise = excitement(energy: 0.4)
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumCoreTests/VolcanoRimTests.swift:524:44: warning: 'is' test is always true
+522 |     func testRedSpritesAreTheSkysAndTheCraterSendsEmbers() {
+523 |         XCTAssertTrue(VolcanoRimModel.emberSource)
+524 |         XCTAssertTrue(VolcanoRimModel.self is SkyWorldFlags.Type)
+    |                                            `- warning: 'is' test is always true
+525 |         var stormy = night(); stormy.farStorm = 1
+526 |         var surprise = excitement(energy: 0.4)
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumCoreTests/VolcanoRimTests.swift:524:44: warning: 'is' test is always true
+522 |     func testRedSpritesAreTheSkysAndTheCraterSendsEmbers() {
+523 |         XCTAssertTrue(VolcanoRimModel.emberSource)
+524 |         XCTAssertTrue(VolcanoRimModel.self is SkyWorldFlags.Type)
+    |                                            `- warning: 'is' test is always true
+525 |         var stormy = night(); stormy.farStorm = 1
+526 |         var surprise = excitement(energy: 0.4)
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumCoreTests/VolcanoRimTests.swift:524:44: warning: 'is' test is always true
+522 |     func testRedSpritesAreTheSkysAndTheCraterSendsEmbers() {
+523 |         XCTAssertTrue(VolcanoRimModel.emberSource)
+524 |         XCTAssertTrue(VolcanoRimModel.self is SkyWorldFlags.Type)
+    |                                            `- warning: 'is' test is always true
+525 |         var stormy = night(); stormy.farStorm = 1
+526 |         var surprise = excitement(energy: 0.4)
+[285/309] Compiling InStrumApp MagmaVeinsRenderer.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Visuals/Worlds/SnowboundCabinRenderer.swift:87:47: warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 12 |     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
+ 13 |     static let maxSparks = 36
+ 14 |     static let fieldSeed: UInt64 = 0xCAB1
+    |                `- note: static property declared here
+ 15 | 
+ 16 |     /// The window: three panes by two in log wood, filling about 70% of the frame, never wider than about 1.8:1.
+    :
+ 85 |         // The frost grows once, off the main thread; the glass draws a plain fallback until it's ready.
+ 86 |         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+ 87 |             let field = FrostField(seed: Self.fieldSeed, columns: 3, rows: 2, bar: 0.018)
+    |                                               `- warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 88 |             DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
+ 89 |         }
+[286/309] Compiling InStrumApp MagmaVeinsShaders.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Visuals/Worlds/SnowboundCabinRenderer.swift:87:47: warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 12 |     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
+ 13 |     static let maxSparks = 36
+ 14 |     static let fieldSeed: UInt64 = 0xCAB1
+    |                `- note: static property declared here
+ 15 | 
+ 16 |     /// The window: three panes by two in log wood, filling about 70% of the frame, never wider than about 1.8:1.
+    :
+ 85 |         // The frost grows once, off the main thread; the glass draws a plain fallback until it's ready.
+ 86 |         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+ 87 |             let field = FrostField(seed: Self.fieldSeed, columns: 3, rows: 2, bar: 0.018)
+    |                                               `- warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 88 |             DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
+ 89 |         }
+[287/309] Compiling InStrumApp MoonlitLakeRenderer.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Visuals/Worlds/SnowboundCabinRenderer.swift:87:47: warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 12 |     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
+ 13 |     static let maxSparks = 36
+ 14 |     static let fieldSeed: UInt64 = 0xCAB1
+    |                `- note: static property declared here
+ 15 | 
+ 16 |     /// The window: three panes by two in log wood, filling about 70% of the frame, never wider than about 1.8:1.
+    :
+ 85 |         // The frost grows once, off the main thread; the glass draws a plain fallback until it's ready.
+ 86 |         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+ 87 |             let field = FrostField(seed: Self.fieldSeed, columns: 3, rows: 2, bar: 0.018)
+    |                                               `- warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 88 |             DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
+ 89 |         }
+[288/309] Compiling InStrumApp MoonlitLakeShaders.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Visuals/Worlds/SnowboundCabinRenderer.swift:87:47: warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 12 |     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
+ 13 |     static let maxSparks = 36
+ 14 |     static let fieldSeed: UInt64 = 0xCAB1
+    |                `- note: static property declared here
+ 15 | 
+ 16 |     /// The window: three panes by two in log wood, filling about 70% of the frame, never wider than about 1.8:1.
+    :
+ 85 |         // The frost grows once, off the main thread; the glass draws a plain fallback until it's ready.
+ 86 |         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+ 87 |             let field = FrostField(seed: Self.fieldSeed, columns: 3, rows: 2, bar: 0.018)
+    |                                               `- warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 88 |             DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
+ 89 |         }
+[289/309] Compiling InStrumApp NeonNightDriveRenderer.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Visuals/Worlds/SnowboundCabinRenderer.swift:87:47: warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 12 |     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
+ 13 |     static let maxSparks = 36
+ 14 |     static let fieldSeed: UInt64 = 0xCAB1
+    |                `- note: static property declared here
+ 15 | 
+ 16 |     /// The window: three panes by two in log wood, filling about 70% of the frame, never wider than about 1.8:1.
+    :
+ 85 |         // The frost grows once, off the main thread; the glass draws a plain fallback until it's ready.
+ 86 |         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+ 87 |             let field = FrostField(seed: Self.fieldSeed, columns: 3, rows: 2, bar: 0.018)
+    |                                               `- warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 88 |             DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
+ 89 |         }
+[290/309] Compiling InStrumApp NeonNightDriveShaders.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Visuals/Worlds/SnowboundCabinRenderer.swift:87:47: warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 12 |     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
+ 13 |     static let maxSparks = 36
+ 14 |     static let fieldSeed: UInt64 = 0xCAB1
+    |                `- note: static property declared here
+ 15 | 
+ 16 |     /// The window: three panes by two in log wood, filling about 70% of the frame, never wider than about 1.8:1.
+    :
+ 85 |         // The frost grows once, off the main thread; the glass draws a plain fallback until it's ready.
+ 86 |         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+ 87 |             let field = FrostField(seed: Self.fieldSeed, columns: 3, rows: 2, bar: 0.018)
+    |                                               `- warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 88 |             DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
+ 89 |         }
+[291/309] Compiling InStrumApp SnowboundCabinRenderer.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Visuals/Worlds/SnowboundCabinRenderer.swift:87:47: warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 12 |     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
+ 13 |     static let maxSparks = 36
+ 14 |     static let fieldSeed: UInt64 = 0xCAB1
+    |                `- note: static property declared here
+ 15 | 
+ 16 |     /// The window: three panes by two in log wood, filling about 70% of the frame, never wider than about 1.8:1.
+    :
+ 85 |         // The frost grows once, off the main thread; the glass draws a plain fallback until it's ready.
+ 86 |         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+ 87 |             let field = FrostField(seed: Self.fieldSeed, columns: 3, rows: 2, bar: 0.018)
+    |                                               `- warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 88 |             DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
+ 89 |         }
+[292/309] Compiling InStrumApp SnowboundCabinShaders.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Visuals/Worlds/SnowboundCabinRenderer.swift:87:47: warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 12 |     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
+ 13 |     static let maxSparks = 36
+ 14 |     static let fieldSeed: UInt64 = 0xCAB1
+    |                `- note: static property declared here
+ 15 | 
+ 16 |     /// The window: three panes by two in log wood, filling about 70% of the frame, never wider than about 1.8:1.
+    :
+ 85 |         // The frost grows once, off the main thread; the glass draws a plain fallback until it's ready.
+ 86 |         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+ 87 |             let field = FrostField(seed: Self.fieldSeed, columns: 3, rows: 2, bar: 0.018)
+    |                                               `- warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 88 |             DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
+ 89 |         }
+[293/309] Compiling InStrumApp SpaceshipLoungeRenderer.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Visuals/Worlds/SnowboundCabinRenderer.swift:87:47: warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 12 |     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
+ 13 |     static let maxSparks = 36
+ 14 |     static let fieldSeed: UInt64 = 0xCAB1
+    |                `- note: static property declared here
+ 15 | 
+ 16 |     /// The window: three panes by two in log wood, filling about 70% of the frame, never wider than about 1.8:1.
+    :
+ 85 |         // The frost grows once, off the main thread; the glass draws a plain fallback until it's ready.
+ 86 |         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+ 87 |             let field = FrostField(seed: Self.fieldSeed, columns: 3, rows: 2, bar: 0.018)
+    |                                               `- warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 88 |             DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
+ 89 |         }
+[294/309] Compiling InStrumApp SpaceshipLoungeShaders.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Visuals/Worlds/SnowboundCabinRenderer.swift:87:47: warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 12 |     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
+ 13 |     static let maxSparks = 36
+ 14 |     static let fieldSeed: UInt64 = 0xCAB1
+    |                `- note: static property declared here
+ 15 | 
+ 16 |     /// The window: three panes by two in log wood, filling about 70% of the frame, never wider than about 1.8:1.
+    :
+ 85 |         // The frost grows once, off the main thread; the glass draws a plain fallback until it's ready.
+ 86 |         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+ 87 |             let field = FrostField(seed: Self.fieldSeed, columns: 3, rows: 2, bar: 0.018)
+    |                                               `- warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 88 |             DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
+ 89 |         }
+[295/309] Compiling InStrumApp SubmarineWindowRenderer.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Visuals/Worlds/SnowboundCabinRenderer.swift:87:47: warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 12 |     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
+ 13 |     static let maxSparks = 36
+ 14 |     static let fieldSeed: UInt64 = 0xCAB1
+    |                `- note: static property declared here
+ 15 | 
+ 16 |     /// The window: three panes by two in log wood, filling about 70% of the frame, never wider than about 1.8:1.
+    :
+ 85 |         // The frost grows once, off the main thread; the glass draws a plain fallback until it's ready.
+ 86 |         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+ 87 |             let field = FrostField(seed: Self.fieldSeed, columns: 3, rows: 2, bar: 0.018)
+    |                                               `- warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 88 |             DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
+ 89 |         }
+[296/309] Compiling InStrumApp SubmarineWindowShaders.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Visuals/Worlds/SnowboundCabinRenderer.swift:87:47: warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 12 |     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
+ 13 |     static let maxSparks = 36
+ 14 |     static let fieldSeed: UInt64 = 0xCAB1
+    |                `- note: static property declared here
+ 15 | 
+ 16 |     /// The window: three panes by two in log wood, filling about 70% of the frame, never wider than about 1.8:1.
+    :
+ 85 |         // The frost grows once, off the main thread; the glass draws a plain fallback until it's ready.
+ 86 |         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+ 87 |             let field = FrostField(seed: Self.fieldSeed, columns: 3, rows: 2, bar: 0.018)
+    |                                               `- warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 88 |             DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
+ 89 |         }
+[297/309] Compiling InStrumApp SupercellSkyRenderer.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Visuals/Worlds/SnowboundCabinRenderer.swift:87:47: warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 12 |     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
+ 13 |     static let maxSparks = 36
+ 14 |     static let fieldSeed: UInt64 = 0xCAB1
+    |                `- note: static property declared here
+ 15 | 
+ 16 |     /// The window: three panes by two in log wood, filling about 70% of the frame, never wider than about 1.8:1.
+    :
+ 85 |         // The frost grows once, off the main thread; the glass draws a plain fallback until it's ready.
+ 86 |         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+ 87 |             let field = FrostField(seed: Self.fieldSeed, columns: 3, rows: 2, bar: 0.018)
+    |                                               `- warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 88 |             DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
+ 89 |         }
+[298/309] Compiling InStrumApp SupercellSkyShaders.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Visuals/Worlds/SnowboundCabinRenderer.swift:87:47: warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 12 |     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
+ 13 |     static let maxSparks = 36
+ 14 |     static let fieldSeed: UInt64 = 0xCAB1
+    |                `- note: static property declared here
+ 15 | 
+ 16 |     /// The window: three panes by two in log wood, filling about 70% of the frame, never wider than about 1.8:1.
+    :
+ 85 |         // The frost grows once, off the main thread; the glass draws a plain fallback until it's ready.
+ 86 |         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+ 87 |             let field = FrostField(seed: Self.fieldSeed, columns: 3, rows: 2, bar: 0.018)
+    |                                               `- warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 88 |             DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
+ 89 |         }
+[299/309] Compiling InStrumApp TeaHouseSnowRenderer.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Visuals/Worlds/SnowboundCabinRenderer.swift:87:47: warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 12 |     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
+ 13 |     static let maxSparks = 36
+ 14 |     static let fieldSeed: UInt64 = 0xCAB1
+    |                `- note: static property declared here
+ 15 | 
+ 16 |     /// The window: three panes by two in log wood, filling about 70% of the frame, never wider than about 1.8:1.
+    :
+ 85 |         // The frost grows once, off the main thread; the glass draws a plain fallback until it's ready.
+ 86 |         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+ 87 |             let field = FrostField(seed: Self.fieldSeed, columns: 3, rows: 2, bar: 0.018)
+    |                                               `- warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 88 |             DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
+ 89 |         }
+[300/309] Compiling InStrumApp TeaHouseSnowShaders.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Visuals/Worlds/SnowboundCabinRenderer.swift:87:47: warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 12 |     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
+ 13 |     static let maxSparks = 36
+ 14 |     static let fieldSeed: UInt64 = 0xCAB1
+    |                `- note: static property declared here
+ 15 | 
+ 16 |     /// The window: three panes by two in log wood, filling about 70% of the frame, never wider than about 1.8:1.
+    :
+ 85 |         // The frost grows once, off the main thread; the glass draws a plain fallback until it's ready.
+ 86 |         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+ 87 |             let field = FrostField(seed: Self.fieldSeed, columns: 3, rows: 2, bar: 0.018)
+    |                                               `- warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 88 |             DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
+ 89 |         }
+[301/309] Compiling InStrumApp VolcanoRimRenderer.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Visuals/Worlds/SnowboundCabinRenderer.swift:87:47: warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 12 |     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
+ 13 |     static let maxSparks = 36
+ 14 |     static let fieldSeed: UInt64 = 0xCAB1
+    |                `- note: static property declared here
+ 15 | 
+ 16 |     /// The window: three panes by two in log wood, filling about 70% of the frame, never wider than about 1.8:1.
+    :
+ 85 |         // The frost grows once, off the main thread; the glass draws a plain fallback until it's ready.
+ 86 |         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+ 87 |             let field = FrostField(seed: Self.fieldSeed, columns: 3, rows: 2, bar: 0.018)
+    |                                               `- warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 88 |             DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
+ 89 |         }
+[302/309] Compiling InStrumApp VolcanoRimShaders.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Visuals/Worlds/SnowboundCabinRenderer.swift:87:47: warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 12 |     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
+ 13 |     static let maxSparks = 36
+ 14 |     static let fieldSeed: UInt64 = 0xCAB1
+    |                `- note: static property declared here
+ 15 | 
+ 16 |     /// The window: three panes by two in log wood, filling about 70% of the frame, never wider than about 1.8:1.
+    :
+ 85 |         // The frost grows once, off the main thread; the glass draws a plain fallback until it's ready.
+ 86 |         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+ 87 |             let field = FrostField(seed: Self.fieldSeed, columns: 3, rows: 2, bar: 0.018)
+    |                                               `- warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 88 |             DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
+ 89 |         }
+[303/309] Compiling InStrumApp ZenRockGardenRenderer.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Visuals/Worlds/SnowboundCabinRenderer.swift:87:47: warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 12 |     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
+ 13 |     static let maxSparks = 36
+ 14 |     static let fieldSeed: UInt64 = 0xCAB1
+    |                `- note: static property declared here
+ 15 | 
+ 16 |     /// The window: three panes by two in log wood, filling about 70% of the frame, never wider than about 1.8:1.
+    :
+ 85 |         // The frost grows once, off the main thread; the glass draws a plain fallback until it's ready.
+ 86 |         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+ 87 |             let field = FrostField(seed: Self.fieldSeed, columns: 3, rows: 2, bar: 0.018)
+    |                                               `- warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 88 |             DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
+ 89 |         }
+[304/309] Compiling InStrumApp ZenRockGardenShaders.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Visuals/Worlds/SnowboundCabinRenderer.swift:87:47: warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 12 |     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
+ 13 |     static let maxSparks = 36
+ 14 |     static let fieldSeed: UInt64 = 0xCAB1
+    |                `- note: static property declared here
+ 15 | 
+ 16 |     /// The window: three panes by two in log wood, filling about 70% of the frame, never wider than about 1.8:1.
+    :
+ 85 |         // The frost grows once, off the main thread; the glass draws a plain fallback until it's ready.
+ 86 |         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+ 87 |             let field = FrostField(seed: Self.fieldSeed, columns: 3, rows: 2, bar: 0.018)
+    |                                               `- warning: main actor-isolated static property 'fieldSeed' can not be referenced from a Sendable closure; this is an error in the Swift 6 language mode
+ 88 |             DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
+ 89 |         }
+[305/328] Compiling InStrumMeants main.swift
+[306/328] Emitting module InStrumMeants
+[306/328] Write Objects.LinkFileList
+[307/328] Linking InStrumMeants
+[308/328] Applying InStrumMeants
+[310/328] Emitting module InStrumAppTests
+[311/335] Compiling InStrumAppTests MappingEditorTests.swift
+[312/335] Compiling InStrumAppTests NeonNightDriveRendererTests.swift
+[313/335] Compiling InStrumAppTests PortholeTests.swift
+[314/335] Compiling InStrumAppTests RenderStackTests.swift
+[315/335] Compiling InStrumAppTests SettingsPanelTests.swift
+[316/335] Compiling InStrumAppTests ShaderTests.swift
+[317/335] Compiling InStrumAppTests SkyControlsTests.swift
+[318/335] Compiling InStrumAppTests SkyExtrasRendererTests.swift
+[319/335] Compiling InStrumAppTests AppModelTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/AppModelTests.swift:225:16: warning: instance will be immediately deallocated because property 'midi' is 'weak'
+ 223 |     func testRescanReleasesHeldNotes() {
+ 224 |         let m = makeModel()
+ 225 |         m.midi = FakeMIDI()
+     |                |- warning: instance will be immediately deallocated because property 'midi' is 'weak'
+     |                `- note: a strong reference is required to prevent the instance from being deallocated
+ 226 |         let before = engine.panicCount
+ 227 |         m.rescanMIDI()
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/AppModel.swift:396:21: note: 'midi' declared here
+394 |     @Published public private(set) var disabledMIDISources: Set<String>
+395 |     /// The MIDI input (weak: the app container owns it). Setting it hands over the saved on/off choices.
+396 |     public weak var midi: MIDIControlling? {
+    |                     `- note: 'midi' declared here
+397 |         didSet { midi?.setDisabled(disabledMIDISources) }
+398 |     }
+[320/335] Compiling InStrumAppTests AppUpdatesTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/AppModelTests.swift:225:16: warning: instance will be immediately deallocated because property 'midi' is 'weak'
+ 223 |     func testRescanReleasesHeldNotes() {
+ 224 |         let m = makeModel()
+ 225 |         m.midi = FakeMIDI()
+     |                |- warning: instance will be immediately deallocated because property 'midi' is 'weak'
+     |                `- note: a strong reference is required to prevent the instance from being deallocated
+ 226 |         let before = engine.panicCount
+ 227 |         m.rescanMIDI()
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/AppModel.swift:396:21: note: 'midi' declared here
+394 |     @Published public private(set) var disabledMIDISources: Set<String>
+395 |     /// The MIDI input (weak: the app container owns it). Setting it hands over the saved on/off choices.
+396 |     public weak var midi: MIDIControlling? {
+    |                     `- note: 'midi' declared here
+397 |         didSet { midi?.setDisabled(disabledMIDISources) }
+398 |     }
+[321/335] Compiling InStrumAppTests ButterflyRendererTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/AppModelTests.swift:225:16: warning: instance will be immediately deallocated because property 'midi' is 'weak'
+ 223 |     func testRescanReleasesHeldNotes() {
+ 224 |         let m = makeModel()
+ 225 |         m.midi = FakeMIDI()
+     |                |- warning: instance will be immediately deallocated because property 'midi' is 'weak'
+     |                `- note: a strong reference is required to prevent the instance from being deallocated
+ 226 |         let before = engine.panicCount
+ 227 |         m.rescanMIDI()
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/AppModel.swift:396:21: note: 'midi' declared here
+394 |     @Published public private(set) var disabledMIDISources: Set<String>
+395 |     /// The MIDI input (weak: the app container owns it). Setting it hands over the saved on/off choices.
+396 |     public weak var midi: MIDIControlling? {
+    |                     `- note: 'midi' declared here
+397 |         didSet { midi?.setDisabled(disabledMIDISources) }
+398 |     }
+[322/335] Compiling InStrumAppTests DemoRenderTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/AppModelTests.swift:225:16: warning: instance will be immediately deallocated because property 'midi' is 'weak'
+ 223 |     func testRescanReleasesHeldNotes() {
+ 224 |         let m = makeModel()
+ 225 |         m.midi = FakeMIDI()
+     |                |- warning: instance will be immediately deallocated because property 'midi' is 'weak'
+     |                `- note: a strong reference is required to prevent the instance from being deallocated
+ 226 |         let before = engine.panicCount
+ 227 |         m.rescanMIDI()
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/AppModel.swift:396:21: note: 'midi' declared here
+394 |     @Published public private(set) var disabledMIDISources: Set<String>
+395 |     /// The MIDI input (weak: the app container owns it). Setting it hands over the saved on/off choices.
+396 |     public weak var midi: MIDIControlling? {
+    |                     `- note: 'midi' declared here
+397 |         didSet { midi?.setDisabled(disabledMIDISources) }
+398 |     }
+[323/335] Compiling InStrumAppTests GreatBarrierReefRendererTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/AppModelTests.swift:225:16: warning: instance will be immediately deallocated because property 'midi' is 'weak'
+ 223 |     func testRescanReleasesHeldNotes() {
+ 224 |         let m = makeModel()
+ 225 |         m.midi = FakeMIDI()
+     |                |- warning: instance will be immediately deallocated because property 'midi' is 'weak'
+     |                `- note: a strong reference is required to prevent the instance from being deallocated
+ 226 |         let before = engine.panicCount
+ 227 |         m.rescanMIDI()
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/AppModel.swift:396:21: note: 'midi' declared here
+394 |     @Published public private(set) var disabledMIDISources: Set<String>
+395 |     /// The MIDI input (weak: the app container owns it). Setting it hands over the saved on/off choices.
+396 |     public weak var midi: MIDIControlling? {
+    |                     `- note: 'midi' declared here
+397 |         didSet { midi?.setDisabled(disabledMIDISources) }
+398 |     }
+[324/335] Compiling InStrumAppTests InspiredByCardTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/AppModelTests.swift:225:16: warning: instance will be immediately deallocated because property 'midi' is 'weak'
+ 223 |     func testRescanReleasesHeldNotes() {
+ 224 |         let m = makeModel()
+ 225 |         m.midi = FakeMIDI()
+     |                |- warning: instance will be immediately deallocated because property 'midi' is 'weak'
+     |                `- note: a strong reference is required to prevent the instance from being deallocated
+ 226 |         let before = engine.panicCount
+ 227 |         m.rescanMIDI()
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/AppModel.swift:396:21: note: 'midi' declared here
+394 |     @Published public private(set) var disabledMIDISources: Set<String>
+395 |     /// The MIDI input (weak: the app container owns it). Setting it hands over the saved on/off choices.
+396 |     public weak var midi: MIDIControlling? {
+    |                     `- note: 'midi' declared here
+397 |         didSet { midi?.setDisabled(disabledMIDISources) }
+398 |     }
+[325/335] Compiling InStrumAppTests KeyRoutingTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/AppModelTests.swift:225:16: warning: instance will be immediately deallocated because property 'midi' is 'weak'
+ 223 |     func testRescanReleasesHeldNotes() {
+ 224 |         let m = makeModel()
+ 225 |         m.midi = FakeMIDI()
+     |                |- warning: instance will be immediately deallocated because property 'midi' is 'weak'
+     |                `- note: a strong reference is required to prevent the instance from being deallocated
+ 226 |         let before = engine.panicCount
+ 227 |         m.rescanMIDI()
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/AppModel.swift:396:21: note: 'midi' declared here
+394 |     @Published public private(set) var disabledMIDISources: Set<String>
+395 |     /// The MIDI input (weak: the app container owns it). Setting it hands over the saved on/off choices.
+396 |     public weak var midi: MIDIControlling? {
+    |                     `- note: 'midi' declared here
+397 |         didSet { midi?.setDisabled(disabledMIDISources) }
+398 |     }
+[326/335] Compiling InStrumAppTests LightningPlainsRendererTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/AppModelTests.swift:225:16: warning: instance will be immediately deallocated because property 'midi' is 'weak'
+ 223 |     func testRescanReleasesHeldNotes() {
+ 224 |         let m = makeModel()
+ 225 |         m.midi = FakeMIDI()
+     |                |- warning: instance will be immediately deallocated because property 'midi' is 'weak'
+     |                `- note: a strong reference is required to prevent the instance from being deallocated
+ 226 |         let before = engine.panicCount
+ 227 |         m.rescanMIDI()
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/AppModel.swift:396:21: note: 'midi' declared here
+394 |     @Published public private(set) var disabledMIDISources: Set<String>
+395 |     /// The MIDI input (weak: the app container owns it). Setting it hands over the saved on/off choices.
+396 |     public weak var midi: MIDIControlling? {
+    |                     `- note: 'midi' declared here
+397 |         didSet { midi?.setDisabled(disabledMIDISources) }
+398 |     }
+[327/335] Compiling InStrumAppTests SkySpecialisationTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/WorldKitTests.swift:2180:59: warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2095 | 
+2096 |     /// Steps the bedroom at 60 fps (notes go down at 0.5 s and stay held) and renders the frame at `seconds`.
+2097 |     private func renderBedroom(notes: [UInt8], at seconds: Double, state: ThemeState = ThemeState(),
+     |                  `- note: 'renderBedroom(notes:at:state:sky:quality:gentle:width:height:skyEdit:each:)' declared here
+2098 |                                sky: SkySettings = BedroomDawnRendererTests.sky(hour: 13), quality: QualityLevel = .high,
+2099 |                                gentle: Bool = false, width: Int = 640, height: Int = 360,
+     :
+2178 |     func testBedroomHonoursGentleVisuals() throws {
+2179 |         var plain: (glint: Float, glow: Float) = (0, 0), gentle: (glint: Float, glow: Float) = (0, 0)
+2180 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3) { r, _ in plain = (max(plain.glint, r.glintOut), max(plain.glow, r.glowOut)) }
+     |                                                           `- warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2181 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3, gentle: true) { r, _ in gentle = (max(gentle.glint, r.glintOut), max(gentle.glow, r.glowOut)) }
+2182 |         XCTAssertGreaterThan(plain.glow, 0.3)
+
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/WorldKitTests.swift:2181:73: warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2095 | 
+2096 |     /// Steps the bedroom at 60 fps (notes go down at 0.5 s and stay held) and renders the frame at `seconds`.
+2097 |     private func renderBedroom(notes: [UInt8], at seconds: Double, state: ThemeState = ThemeState(),
+     |                  `- note: 'renderBedroom(notes:at:state:sky:quality:gentle:width:height:skyEdit:each:)' declared here
+2098 |                                sky: SkySettings = BedroomDawnRendererTests.sky(hour: 13), quality: QualityLevel = .high,
+2099 |                                gentle: Bool = false, width: Int = 640, height: Int = 360,
+     :
+2179 |         var plain: (glint: Float, glow: Float) = (0, 0), gentle: (glint: Float, glow: Float) = (0, 0)
+2180 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3) { r, _ in plain = (max(plain.glint, r.glintOut), max(plain.glow, r.glowOut)) }
+2181 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3, gentle: true) { r, _ in gentle = (max(gentle.glint, r.glintOut), max(gentle.glow, r.glowOut)) }
+     |                                                                         `- warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2182 |         XCTAssertGreaterThan(plain.glow, 0.3)
+2183 |         XCTAssertLessThanOrEqual(gentle.glint, plain.glint * 0.55)
+[328/335] Compiling InStrumAppTests SubmarineWindowRendererTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/WorldKitTests.swift:2180:59: warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2095 | 
+2096 |     /// Steps the bedroom at 60 fps (notes go down at 0.5 s and stay held) and renders the frame at `seconds`.
+2097 |     private func renderBedroom(notes: [UInt8], at seconds: Double, state: ThemeState = ThemeState(),
+     |                  `- note: 'renderBedroom(notes:at:state:sky:quality:gentle:width:height:skyEdit:each:)' declared here
+2098 |                                sky: SkySettings = BedroomDawnRendererTests.sky(hour: 13), quality: QualityLevel = .high,
+2099 |                                gentle: Bool = false, width: Int = 640, height: Int = 360,
+     :
+2178 |     func testBedroomHonoursGentleVisuals() throws {
+2179 |         var plain: (glint: Float, glow: Float) = (0, 0), gentle: (glint: Float, glow: Float) = (0, 0)
+2180 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3) { r, _ in plain = (max(plain.glint, r.glintOut), max(plain.glow, r.glowOut)) }
+     |                                                           `- warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2181 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3, gentle: true) { r, _ in gentle = (max(gentle.glint, r.glintOut), max(gentle.glow, r.glowOut)) }
+2182 |         XCTAssertGreaterThan(plain.glow, 0.3)
+
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/WorldKitTests.swift:2181:73: warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2095 | 
+2096 |     /// Steps the bedroom at 60 fps (notes go down at 0.5 s and stay held) and renders the frame at `seconds`.
+2097 |     private func renderBedroom(notes: [UInt8], at seconds: Double, state: ThemeState = ThemeState(),
+     |                  `- note: 'renderBedroom(notes:at:state:sky:quality:gentle:width:height:skyEdit:each:)' declared here
+2098 |                                sky: SkySettings = BedroomDawnRendererTests.sky(hour: 13), quality: QualityLevel = .high,
+2099 |                                gentle: Bool = false, width: Int = 640, height: Int = 360,
+     :
+2179 |         var plain: (glint: Float, glow: Float) = (0, 0), gentle: (glint: Float, glow: Float) = (0, 0)
+2180 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3) { r, _ in plain = (max(plain.glint, r.glintOut), max(plain.glow, r.glowOut)) }
+2181 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3, gentle: true) { r, _ in gentle = (max(gentle.glint, r.glintOut), max(gentle.glow, r.glowOut)) }
+     |                                                                         `- warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2182 |         XCTAssertGreaterThan(plain.glow, 0.3)
+2183 |         XCTAssertLessThanOrEqual(gentle.glint, plain.glint * 0.55)
+[329/335] Compiling InStrumAppTests SupercellSkyRendererTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/WorldKitTests.swift:2180:59: warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2095 | 
+2096 |     /// Steps the bedroom at 60 fps (notes go down at 0.5 s and stay held) and renders the frame at `seconds`.
+2097 |     private func renderBedroom(notes: [UInt8], at seconds: Double, state: ThemeState = ThemeState(),
+     |                  `- note: 'renderBedroom(notes:at:state:sky:quality:gentle:width:height:skyEdit:each:)' declared here
+2098 |                                sky: SkySettings = BedroomDawnRendererTests.sky(hour: 13), quality: QualityLevel = .high,
+2099 |                                gentle: Bool = false, width: Int = 640, height: Int = 360,
+     :
+2178 |     func testBedroomHonoursGentleVisuals() throws {
+2179 |         var plain: (glint: Float, glow: Float) = (0, 0), gentle: (glint: Float, glow: Float) = (0, 0)
+2180 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3) { r, _ in plain = (max(plain.glint, r.glintOut), max(plain.glow, r.glowOut)) }
+     |                                                           `- warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2181 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3, gentle: true) { r, _ in gentle = (max(gentle.glint, r.glintOut), max(gentle.glow, r.glowOut)) }
+2182 |         XCTAssertGreaterThan(plain.glow, 0.3)
+
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/WorldKitTests.swift:2181:73: warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2095 | 
+2096 |     /// Steps the bedroom at 60 fps (notes go down at 0.5 s and stay held) and renders the frame at `seconds`.
+2097 |     private func renderBedroom(notes: [UInt8], at seconds: Double, state: ThemeState = ThemeState(),
+     |                  `- note: 'renderBedroom(notes:at:state:sky:quality:gentle:width:height:skyEdit:each:)' declared here
+2098 |                                sky: SkySettings = BedroomDawnRendererTests.sky(hour: 13), quality: QualityLevel = .high,
+2099 |                                gentle: Bool = false, width: Int = 640, height: Int = 360,
+     :
+2179 |         var plain: (glint: Float, glow: Float) = (0, 0), gentle: (glint: Float, glow: Float) = (0, 0)
+2180 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3) { r, _ in plain = (max(plain.glint, r.glintOut), max(plain.glow, r.glowOut)) }
+2181 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3, gentle: true) { r, _ in gentle = (max(gentle.glint, r.glintOut), max(gentle.glow, r.glowOut)) }
+     |                                                                         `- warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2182 |         XCTAssertGreaterThan(plain.glow, 0.3)
+2183 |         XCTAssertLessThanOrEqual(gentle.glint, plain.glint * 0.55)
+[330/335] Compiling InStrumAppTests UnderwaterKitTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/WorldKitTests.swift:2180:59: warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2095 | 
+2096 |     /// Steps the bedroom at 60 fps (notes go down at 0.5 s and stay held) and renders the frame at `seconds`.
+2097 |     private func renderBedroom(notes: [UInt8], at seconds: Double, state: ThemeState = ThemeState(),
+     |                  `- note: 'renderBedroom(notes:at:state:sky:quality:gentle:width:height:skyEdit:each:)' declared here
+2098 |                                sky: SkySettings = BedroomDawnRendererTests.sky(hour: 13), quality: QualityLevel = .high,
+2099 |                                gentle: Bool = false, width: Int = 640, height: Int = 360,
+     :
+2178 |     func testBedroomHonoursGentleVisuals() throws {
+2179 |         var plain: (glint: Float, glow: Float) = (0, 0), gentle: (glint: Float, glow: Float) = (0, 0)
+2180 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3) { r, _ in plain = (max(plain.glint, r.glintOut), max(plain.glow, r.glowOut)) }
+     |                                                           `- warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2181 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3, gentle: true) { r, _ in gentle = (max(gentle.glint, r.glintOut), max(gentle.glow, r.glowOut)) }
+2182 |         XCTAssertGreaterThan(plain.glow, 0.3)
+
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/WorldKitTests.swift:2181:73: warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2095 | 
+2096 |     /// Steps the bedroom at 60 fps (notes go down at 0.5 s and stay held) and renders the frame at `seconds`.
+2097 |     private func renderBedroom(notes: [UInt8], at seconds: Double, state: ThemeState = ThemeState(),
+     |                  `- note: 'renderBedroom(notes:at:state:sky:quality:gentle:width:height:skyEdit:each:)' declared here
+2098 |                                sky: SkySettings = BedroomDawnRendererTests.sky(hour: 13), quality: QualityLevel = .high,
+2099 |                                gentle: Bool = false, width: Int = 640, height: Int = 360,
+     :
+2179 |         var plain: (glint: Float, glow: Float) = (0, 0), gentle: (glint: Float, glow: Float) = (0, 0)
+2180 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3) { r, _ in plain = (max(plain.glint, r.glintOut), max(plain.glow, r.glowOut)) }
+2181 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3, gentle: true) { r, _ in gentle = (max(gentle.glint, r.glintOut), max(gentle.glow, r.glowOut)) }
+     |                                                                         `- warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2182 |         XCTAssertGreaterThan(plain.glow, 0.3)
+2183 |         XCTAssertLessThanOrEqual(gentle.glint, plain.glint * 0.55)
+[331/335] Compiling InStrumAppTests VolcanoRimRendererTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/WorldKitTests.swift:2180:59: warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2095 | 
+2096 |     /// Steps the bedroom at 60 fps (notes go down at 0.5 s and stay held) and renders the frame at `seconds`.
+2097 |     private func renderBedroom(notes: [UInt8], at seconds: Double, state: ThemeState = ThemeState(),
+     |                  `- note: 'renderBedroom(notes:at:state:sky:quality:gentle:width:height:skyEdit:each:)' declared here
+2098 |                                sky: SkySettings = BedroomDawnRendererTests.sky(hour: 13), quality: QualityLevel = .high,
+2099 |                                gentle: Bool = false, width: Int = 640, height: Int = 360,
+     :
+2178 |     func testBedroomHonoursGentleVisuals() throws {
+2179 |         var plain: (glint: Float, glow: Float) = (0, 0), gentle: (glint: Float, glow: Float) = (0, 0)
+2180 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3) { r, _ in plain = (max(plain.glint, r.glintOut), max(plain.glow, r.glowOut)) }
+     |                                                           `- warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2181 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3, gentle: true) { r, _ in gentle = (max(gentle.glint, r.glintOut), max(gentle.glow, r.glowOut)) }
+2182 |         XCTAssertGreaterThan(plain.glow, 0.3)
+
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/WorldKitTests.swift:2181:73: warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2095 | 
+2096 |     /// Steps the bedroom at 60 fps (notes go down at 0.5 s and stay held) and renders the frame at `seconds`.
+2097 |     private func renderBedroom(notes: [UInt8], at seconds: Double, state: ThemeState = ThemeState(),
+     |                  `- note: 'renderBedroom(notes:at:state:sky:quality:gentle:width:height:skyEdit:each:)' declared here
+2098 |                                sky: SkySettings = BedroomDawnRendererTests.sky(hour: 13), quality: QualityLevel = .high,
+2099 |                                gentle: Bool = false, width: Int = 640, height: Int = 360,
+     :
+2179 |         var plain: (glint: Float, glow: Float) = (0, 0), gentle: (glint: Float, glow: Float) = (0, 0)
+2180 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3) { r, _ in plain = (max(plain.glint, r.glintOut), max(plain.glow, r.glowOut)) }
+2181 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3, gentle: true) { r, _ in gentle = (max(gentle.glint, r.glintOut), max(gentle.glow, r.glowOut)) }
+     |                                                                         `- warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2182 |         XCTAssertGreaterThan(plain.glow, 0.3)
+2183 |         XCTAssertLessThanOrEqual(gentle.glint, plain.glint * 0.55)
+[332/335] Compiling InStrumAppTests WindowKitTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/WorldKitTests.swift:2180:59: warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2095 | 
+2096 |     /// Steps the bedroom at 60 fps (notes go down at 0.5 s and stay held) and renders the frame at `seconds`.
+2097 |     private func renderBedroom(notes: [UInt8], at seconds: Double, state: ThemeState = ThemeState(),
+     |                  `- note: 'renderBedroom(notes:at:state:sky:quality:gentle:width:height:skyEdit:each:)' declared here
+2098 |                                sky: SkySettings = BedroomDawnRendererTests.sky(hour: 13), quality: QualityLevel = .high,
+2099 |                                gentle: Bool = false, width: Int = 640, height: Int = 360,
+     :
+2178 |     func testBedroomHonoursGentleVisuals() throws {
+2179 |         var plain: (glint: Float, glow: Float) = (0, 0), gentle: (glint: Float, glow: Float) = (0, 0)
+2180 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3) { r, _ in plain = (max(plain.glint, r.glintOut), max(plain.glow, r.glowOut)) }
+     |                                                           `- warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2181 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3, gentle: true) { r, _ in gentle = (max(gentle.glint, r.glintOut), max(gentle.glow, r.glowOut)) }
+2182 |         XCTAssertGreaterThan(plain.glow, 0.3)
+
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/WorldKitTests.swift:2181:73: warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2095 | 
+2096 |     /// Steps the bedroom at 60 fps (notes go down at 0.5 s and stay held) and renders the frame at `seconds`.
+2097 |     private func renderBedroom(notes: [UInt8], at seconds: Double, state: ThemeState = ThemeState(),
+     |                  `- note: 'renderBedroom(notes:at:state:sky:quality:gentle:width:height:skyEdit:each:)' declared here
+2098 |                                sky: SkySettings = BedroomDawnRendererTests.sky(hour: 13), quality: QualityLevel = .high,
+2099 |                                gentle: Bool = false, width: Int = 640, height: Int = 360,
+     :
+2179 |         var plain: (glint: Float, glow: Float) = (0, 0), gentle: (glint: Float, glow: Float) = (0, 0)
+2180 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3) { r, _ in plain = (max(plain.glint, r.glintOut), max(plain.glow, r.glowOut)) }
+2181 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3, gentle: true) { r, _ in gentle = (max(gentle.glint, r.glintOut), max(gentle.glow, r.glowOut)) }
+     |                                                                         `- warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2182 |         XCTAssertGreaterThan(plain.glow, 0.3)
+2183 |         XCTAssertLessThanOrEqual(gentle.glint, plain.glint * 0.55)
+[333/335] Compiling InStrumAppTests WorldKitTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/WorldKitTests.swift:2180:59: warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2095 | 
+2096 |     /// Steps the bedroom at 60 fps (notes go down at 0.5 s and stay held) and renders the frame at `seconds`.
+2097 |     private func renderBedroom(notes: [UInt8], at seconds: Double, state: ThemeState = ThemeState(),
+     |                  `- note: 'renderBedroom(notes:at:state:sky:quality:gentle:width:height:skyEdit:each:)' declared here
+2098 |                                sky: SkySettings = BedroomDawnRendererTests.sky(hour: 13), quality: QualityLevel = .high,
+2099 |                                gentle: Bool = false, width: Int = 640, height: Int = 360,
+     :
+2178 |     func testBedroomHonoursGentleVisuals() throws {
+2179 |         var plain: (glint: Float, glow: Float) = (0, 0), gentle: (glint: Float, glow: Float) = (0, 0)
+2180 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3) { r, _ in plain = (max(plain.glint, r.glintOut), max(plain.glow, r.glowOut)) }
+     |                                                           `- warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2181 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3, gentle: true) { r, _ in gentle = (max(gentle.glint, r.glintOut), max(gentle.glow, r.glowOut)) }
+2182 |         XCTAssertGreaterThan(plain.glow, 0.3)
+
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/WorldKitTests.swift:2181:73: warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2095 | 
+2096 |     /// Steps the bedroom at 60 fps (notes go down at 0.5 s and stay held) and renders the frame at `seconds`.
+2097 |     private func renderBedroom(notes: [UInt8], at seconds: Double, state: ThemeState = ThemeState(),
+     |                  `- note: 'renderBedroom(notes:at:state:sky:quality:gentle:width:height:skyEdit:each:)' declared here
+2098 |                                sky: SkySettings = BedroomDawnRendererTests.sky(hour: 13), quality: QualityLevel = .high,
+2099 |                                gentle: Bool = false, width: Int = 640, height: Int = 360,
+     :
+2179 |         var plain: (glint: Float, glow: Float) = (0, 0), gentle: (glint: Float, glow: Float) = (0, 0)
+2180 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3) { r, _ in plain = (max(plain.glint, r.glintOut), max(plain.glow, r.glowOut)) }
+2181 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3, gentle: true) { r, _ in gentle = (max(gentle.glint, r.glintOut), max(gentle.glow, r.glowOut)) }
+     |                                                                         `- warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2182 |         XCTAssertGreaterThan(plain.glow, 0.3)
+2183 |         XCTAssertLessThanOrEqual(gentle.glint, plain.glint * 0.55)
+[334/337] Emitting module InStrumMeantsPackageTests
+[335/337] Compiling InStrumMeantsPackageTests runner.swift
+[335/337] Write Objects.LinkFileList
+[336/337] Linking InStrumMeantsPackageTests
+Build complete! (212.57s)
+Test Suite 'Selected tests' started at 2026-11-12 07:12:11.678.
+Test Suite 'InStrumMeantsPackageTests.xctest' started at 2026-11-12 07:12:11.680.
+Test Suite 'DriveFrameTimeTests' started at 2026-11-12 07:12:11.680.
+Test Case '-[InStrumAppTests.DriveFrameTimeTests testDriveFrameTime]' started.
+Test Case '-[InStrumAppTests.DriveFrameTimeTests testDriveFrameTime]' passed (7.460 seconds).
+Test Suite 'DriveFrameTimeTests' passed at 2026-11-12 07:12:19.140.
+	 Executed 1 test, with 0 failures (0 unexpected) in 7.460 (7.460) seconds
+Test Suite 'SkyExtrasFrameTimeTests' started at 2026-11-12 07:12:19.140.
+Test Case '-[InStrumAppTests.SkyExtrasFrameTimeTests testSkyExtrasFrameTime]' started.
+Test Case '-[InStrumAppTests.SkyExtrasFrameTimeTests testSkyExtrasFrameTime]' passed (3.027 seconds).
+Test Suite 'SkyExtrasFrameTimeTests' passed at 2026-11-12 07:12:22.167.
+	 Executed 1 test, with 0 failures (0 unexpected) in 3.027 (3.027) seconds
+Test Suite 'SkyProgramFrameTimeTests' started at 2026-11-12 07:12:22.167.
+Test Case '-[InStrumAppTests.SkyProgramFrameTimeTests testPlainAgainstStormProgram]' started.
+Test Case '-[InStrumAppTests.SkyProgramFrameTimeTests testPlainAgainstStormProgram]' passed (11.677 seconds).
+Test Suite 'SkyProgramFrameTimeTests' passed at 2026-11-12 07:12:33.844.
+	 Executed 1 test, with 0 failures (0 unexpected) in 11.677 (11.677) seconds
+Test Suite 'SkySpecialisationTests' started at 2026-11-12 07:12:33.845.
+Test Case '-[InStrumAppTests.SkySpecialisationTests testAPlainSkyLooksTheSameThroughEitherProgram]' started.
+Test Case '-[InStrumAppTests.SkySpecialisationTests testAPlainSkyLooksTheSameThroughEitherProgram]' passed (2.097 seconds).
+Test Case '-[InStrumAppTests.SkySpecialisationTests testSkyLibrariesSpecialise]' started.
+Test Case '-[InStrumAppTests.SkySpecialisationTests testSkyLibrariesSpecialise]' passed (1.580 seconds).
+Test Case '-[InStrumAppTests.SkySpecialisationTests testTheStormProgramIsMadeOnceWhenNeeded]' started.
+Test Case '-[InStrumAppTests.SkySpecialisationTests testTheStormProgramIsMadeOnceWhenNeeded]' passed (0.724 seconds).
+Test Case '-[InStrumAppTests.SkySpecialisationTests testTheStormRowsChooseTheProgram]' started.
+Test Case '-[InStrumAppTests.SkySpecialisationTests testTheStormRowsChooseTheProgram]' passed (0.002 seconds).
+Test Suite 'SkySpecialisationTests' passed at 2026-11-12 07:12:38.247.
+	 Executed 4 tests, with 0 failures (0 unexpected) in 4.402 (4.403) seconds
+Test Suite 'SupercellFrameTimeTests' started at 2026-11-12 07:12:38.247.
+Test Case '-[InStrumAppTests.SupercellFrameTimeTests testSupercellFrameTime]' started.
+Test Case '-[InStrumAppTests.SupercellFrameTimeTests testSupercellFrameTime]' passed (3.463 seconds).
+Test Suite 'SupercellFrameTimeTests' passed at 2026-11-12 07:12:41.711.
+	 Executed 1 test, with 0 failures (0 unexpected) in 3.463 (3.464) seconds
+Test Suite 'VolcanoFrameTimeTests' started at 2026-11-12 07:12:41.711.
+Test Case '-[InStrumAppTests.VolcanoFrameTimeTests testVolcanoFrameTime]' started.
+Test Case '-[InStrumAppTests.VolcanoFrameTimeTests testVolcanoFrameTime]' passed (2.940 seconds).
+Test Suite 'VolcanoFrameTimeTests' passed at 2026-11-12 07:12:44.651.
+	 Executed 1 test, with 0 failures (0 unexpected) in 2.940 (2.940) seconds
+Test Suite 'WorldPreviewTests' started at 2026-11-12 07:12:44.651.
+Test Case '-[InStrumAppTests.WorldPreviewTests testWriteSkyExtraPreviews]' started.
+Test Case '-[InStrumAppTests.WorldPreviewTests testWriteSkyExtraPreviews]' passed (9.045 seconds).
+Test Case '-[InStrumAppTests.WorldPreviewTests testWriteSupercellPreviews]' started.
+Test Case '-[InStrumAppTests.WorldPreviewTests testWriteSupercellPreviews]' passed (7.451 seconds).
+Test Case '-[InStrumAppTests.WorldPreviewTests testWriteVolcanoPreviews]' started.
+Test Case '-[InStrumAppTests.WorldPreviewTests testWriteVolcanoPreviews]' passed (7.026 seconds).
+Test Case '-[InStrumAppTests.WorldPreviewTests testWriteWeatherPreviews]' started.
+Test Case '-[InStrumAppTests.WorldPreviewTests testWriteWeatherPreviews]' passed (21.666 seconds).
+Test Suite 'WorldPreviewTests' passed at 2026-11-12 07:13:29.839.
+	 Executed 4 tests, with 0 failures (0 unexpected) in 45.187 (45.188) seconds
+Test Suite 'InStrumMeantsPackageTests.xctest' passed at 2026-11-12 07:13:29.840.
+	 Executed 13 tests, with 0 failures (0 unexpected) in 78.157 (78.160) seconds
+Test Suite 'Selected tests' passed at 2026-11-12 07:13:29.840.
+	 Executed 13 tests, with 0 failures (0 unexpected) in 78.157 (78.162) seconds
+FRAME TIME drive Smooth 1280x720: passes 8.61 ms, passes+finish 8.79 ms (median of 20)
+FRAME TIME drive High 1280x720: passes 8.81 ms, passes+finish 9.06 ms (median of 20)
+TIMING sky-extras plain-night 1280x720: dome 1.557 ms (median of 24)
+TIMING sky-extras storm-sprites-satellites 1280x720: dome 2.378 ms (median of 24)
+TIMING sky-extras plain-golden 1280x720: dome 1.052 ms (median of 24)
+TIMING sky-extras supercell-approach 1280x720: dome 2.951 ms (median of 24)
+TIMING sky-extras supercell-core 1280x720: dome 1.526 ms (median of 24)
+TIMING sky-extras supercell-clearing 1280x720: dome 2.259 ms (median of 24)
+TIMING sky-extras ashfall-night 1280x720: dome 1.721 ms (median of 24)
+TIMING sky-program supercell High 1280x720: plain 13.80 ms, storm program 14.43 ms (interleaved, median of 5×6)
+TIMING sky-program drive High 1280x720: plain 8.83 ms, storm program 9.08 ms (interleaved, median of 5×6)
+TIMING sky-program dome-night High 1280x720: plain 1.45 ms, storm program 1.94 ms (interleaved, median of 5×6)
+TIMING sky-program lounge-reference High 1280x720: 2.91 ms (median of 24)
+FRAME TIME supercell Smooth 1280x720: scene 11.96 ms, scene+finish 12.17 ms (median of 20)
+FRAME TIME supercell High 1280x720: scene 13.65 ms, scene+finish 13.87 ms (median of 20)
+FRAME TIME volcano Smooth 1280x720: scene 9.06 ms, scene+finish 9.21 ms (median of 20)
+FRAME TIME volcano High 1280x720: scene 9.87 ms, scene+finish 10.07 ms (median of 20)
+◇ Test run started.
+↳ Testing Library Version: 124.4
+↳ Target Platform: arm64e-apple-macos14.0
+✔ Test run with 0 tests passed after 0.001 seconds.
+exit 0
