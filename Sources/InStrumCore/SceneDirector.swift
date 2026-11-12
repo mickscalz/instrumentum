@@ -335,12 +335,20 @@ public final class SceneDirector {
 
     /// What the ambience should play for a frame: a world's own soundscape (silence for the other themes), with the key
     /// the player is in (spec §7.1). Every theme carries the key, so a bell heard after a switch to a world already sits
-    /// in your key. `t` is the frame's time.
+    /// in your key. While breathing is on (Small Wins spec §5) its beds swell and recede at the controls' depth. `t` is
+    /// the frame's time (real time, so the beds breathe on through a held moment).
     public func ambience(for frame: Any, at t: Double) -> AmbienceScene {
         var scene = (frame as? AmbienceProviding)?.ambience ?? .silent
         scene.key = key
+        if controls.breath.enabled {
+            breath.depth = controls.breath.depth
+            breath.apply(to: &scene, at: t)
+        }
         return scene
     }
+
+    /// The beds' breath, on its own seed.
+    private var breath = AmbienceBreath(seed: 0xB4EA_7E)
 
     private var box: AnyThemeBoxProtocol
     private var analyzer = PlayingAnalyzer()
