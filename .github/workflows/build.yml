@@ -133,7 +133,9 @@ jobs:
     # Builds the installer as soon as the app compiles, so a failing test never holds back a playable build. Only the
     # integration branches package (task branches only test, so they never queue behind installers).
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/storms' || github.ref == 'refs/heads/fire-neon' || github.ref == 'refs/heads/small-wins' || startsWith(github.ref, 'refs/heads/pkg-')
-    runs-on: macos-15
+    # Releases package on GitHub's Intel Macs: the app is Intel-only (x86_64), so they build it natively, and they stay
+    # free when the Apple silicon queue is full (12 Nov: Fire & Neon's release waited an hour for an arm64 runner).
+    runs-on: ${{ github.ref == 'refs/heads/main' && 'macos-15-intel' || 'macos-15' }}
     permissions:
       contents: write
     steps:
