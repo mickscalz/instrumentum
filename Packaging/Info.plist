@@ -15,6 +15,10 @@
     <key>NSPrincipalClass</key><string>NSApplication</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>NSSupportsAutomaticGraphicsSwitching</key><true/>
+    <key>SUFeedURL</key><string>https://github.com/mickscalz/instrumentum/releases/latest/download/appcast.xml</string>
+    <key>SUPublicEDKey</key><string>8APL1L4Umo8jgd9zTe5wnPvH/eDtIesuG8VnB2T04PM=</string>
+    <key>SUEnableAutomaticChecks</key><true/>
+    <key>SUScheduledCheckInterval</key><integer>3600</integer>
     <key>NSMicrophoneUsageDescription</key><string>In Strum Meants listens to the microphone only when you turn on Listen → Microphone, so the visuals can react to music in the room.</string>
 </dict>
 </plist>

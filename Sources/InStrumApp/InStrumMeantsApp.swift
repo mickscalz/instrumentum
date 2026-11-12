@@ -34,6 +34,7 @@ public struct InStrumMeantsApp: App {
 
     public init() {
         NSApplication.shared.setActivationPolicy(.regular)
+        AppUpdates.start()
     }
 
     public var body: some Scene {
@@ -42,6 +43,9 @@ public struct InStrumMeantsApp: App {
                 .frame(minWidth: 900, minHeight: 560)
                 .preferredColorScheme(.dark)
         }
-        .commands { PlayMenu(model: container.model) }
+        .commands {
+            UpdateCommands()
+            PlayMenu(model: container.model)
+        }
     }
 }
