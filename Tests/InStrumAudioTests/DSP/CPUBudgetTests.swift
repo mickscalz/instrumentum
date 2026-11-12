@@ -265,25 +265,53 @@ final class CPUBudgetTests: XCTestCase {
         }
     }
 
-    /// Felt Glass and Orbit Pad with all 50 ambience sources at 0.6 (the sonar pinging, the whale singing, a burst of
-    /// bubbles, the birds taking flight, a truck crossing the grid, a far truck passing and four rolls of thunder). (The g++
-    /// mirror: 19.3–21.0% on the build machine against 15.3–17.2% for the 38 before, which CI ran in 6.9%: about 8–8.5%
-    /// there.)
+    /// Volcano Rim's and Neon Night Drive's families together (Fire & Neon spec §14, plan Task 10: all 12 < 8% at level
+    /// 0.6), in full cry: the lake surging and glowing, an eruption's boom, a steam blast, a rockfall, four cracks of the
+    /// plume's thunder; at 90 km/h on a wet road, eight wiper sweeps, four cars passing (one a truck) and the far siren
+    /// calling. (The g++ mirror: 3.5% of a core on this build machine, where the supercell scene, about 1.5% in CI, takes
+    /// 2.15%: about 2.4% there.)
+    func testFireNeonAmbienceBudget() {
+        typealias A = AmbienceTests
+        let scene = A.fireNeon.map { A.level($0, 0.6) } + Self.fireNeonEvents
+        let seconds = bestOfThree { _ = A.render(seconds: 10, actions: scene) }
+        XCTAssertLessThan(seconds / 10, 0.08, "the Fire & Neon ambience used \(String(format: "%.1f", seconds * 10))% of real time")
+    }
+
+    /// The events of `testFireNeonAmbienceBudget` (with the lake, the speed and the wet road they play over).
+    static var fireNeonEvents: [AmbienceTests.Action] {
+        typealias A = AmbienceTests
+        var e: [A.Action] = [A.lake(surge: 0.6, glow: 0.6), A.speed(0.5), A.wetness(0.8), A.trigger(ISD_AMB_FAR_SIREN, at: 0),
+                             A.post(ISD_AMB_ERUPTION_BOOM, at: 0.2, delay: 1), A.post(ISD_AMB_STEAM_VENT, at: 0.5, delay: 0.5, pan: 0.3, distance: 0.2),
+                             A.post(ISD_AMB_ROCKFALL, at: 1, delay: 0.5, pan: -0.3, distance: 0.3)]
+        e += (0..<4).map { A.post(ISD_AMB_PLUME_THUNDER, at: 0.3 + 2 * Double($0), delay: 1.6, strength: 0.7, pan: 0.2) }
+        e += (0..<8).map { A.post(ISD_AMB_WIPERS, at: 0.2 + 1.2 * Double($0), strength: 0.7, speed: 1.2) }
+        e += (0..<4).map { k in
+            A.post(ISD_AMB_DRIVE_PASSING_CAR, at: 0.2 + 2 * Double(k), delay: 2.5, pan: k % 2 == 1 ? 1 : -1, speed: k % 2 == 1 ? 56 : 8,
+                   distance: k % 2 == 1 ? 13 : 3.6, kind: k == 3 ? 1 : 0)
+        }
+        return e
+    }
+
+    /// Felt Glass and Orbit Pad with all 62 ambience sources at 0.6 (the sonar pinging, the whale singing, a burst of
+    /// bubbles, the birds taking flight, a truck crossing the grid, a far truck passing, four rolls of thunder, and the
+    /// Fire & Neon events of `testFireNeonAmbienceBudget`). (The g++ mirror: 13.9–14.4% on this build machine against
+    /// 11.5–11.9% for the 50 before, which CI ran in about 8–8.5%: about 10% there.)
     func testCombinedBudget() {
         var felt = [R.pedal(0, 127)]
         for n: UInt8 in [36, 43, 48, 52, 55, 60, 64, 67, 71, 72, 76, 79, 83, 84, 88, 91] { felt.append(R.noteOn(0, n, 90)) }
         let pad = [48, 55, 60, 63, 67, 70, 72, 75].map { R.noteOn(0, UInt8($0), 90) }
-        XCTAssertEqual(ISD_AMB_COUNT.rawValue, 50)
+        XCTAssertEqual(ISD_AMB_COUNT.rawValue, 62)
         let playing = Int(ISD_AMB_COUNT.rawValue)
         var ambience: [AmbienceTests.Action] = (0..<playing).map { AmbienceTests.level(ISDAmbienceSource(UInt32($0)), 0.6) }
         ambience += [AmbienceTests.pingSonar(at: 0), AmbienceTests.startWhale(at: 0), AmbienceTests.bubbles(0.8, at: 1)]
         ambience += [ISD_AMB_BIRDS_FLEE, ISD_AMB_CATTLE_GRID, ISD_AMB_FAR_TRUCK].map { AmbienceTests.trigger($0, at: 0.5) }
         ambience += (0..<4).map { AmbienceTests.queueThunder(0.5 + 2 * Float($0), 0.8, at: 0.2) }
+        ambience += Self.fireNeonEvents
         let seconds = bestOfThree {
             _ = R.render(seconds: 10, events: felt)
             _ = R.render(ISD_ENGINE_ORBIT_PAD, seconds: 10, events: pad)
             _ = AmbienceTests.render(seconds: 10, actions: ambience)
         }
-        XCTAssertLessThan(seconds / 10, 0.11, "Felt Glass + Orbit Pad + ambience used \(String(format: "%.1f", seconds * 10))% of real time")
+        XCTAssertLessThan(seconds / 10, 0.125, "Felt Glass + Orbit Pad + ambience used \(String(format: "%.1f", seconds * 10))% of real time")
     }
 }
