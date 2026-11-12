@@ -29,7 +29,7 @@ enum LightTrailsShaders {
         float wx2 = w * w + pix * pix;
         float wy2 = w * w * stretch * stretch + pix * pix;
         float core = exp(-pass.x * pass.x / wx2 - pass.y * pass.y / wy2) * (w * w * stretch / sqrt(wx2 * wy2));
-        float halo = exp(-sqrt(pass.x * pass.x + pass.y * pass.y / (stretch * stretch)) / 0.45) * 0.035;
+        float halo = exp(-sqrt(pass.x * pass.x + pass.y * pass.y / (stretch * stretch)) / 0.2) * 0.03;
         float ends = smoothstep(tail, tail + 3.0, pass.z) * smoothstep(head, head - 1.5, pass.z);
         float headGlow = 1.0 + 0.6 * smoothstep(head - 10.0, head, pass.z);
         return (core + halo) * ends * headGlow;
@@ -68,11 +68,11 @@ enum LightTrailsShaders {
                 float3 c = st.b.rgb;
                 if (near) {
                     float4 p = passLine(d, st.a.x, st.a.y, eye);
-                    if (p.w < sceneT + 0.5) col += c * streakLight(p, st.a.z, st.a.w, 0.07, 1.0, pa) * 2.6;
+                    if (p.w < sceneT + 0.5) col += c * streakLight(p, st.a.z, st.a.w, 0.05, 1.0, pa) * 3.0;
                 }
                 if (nearMirror) {
                     float4 m = passLine(d, st.a.x, -st.a.y, eye);
-                    col += c * streakLight(m, st.a.z, st.a.w, 0.07, 3.5, pa) * F * 1.6;
+                    col += c * streakLight(m, st.a.z, st.a.w, 0.05, 3.5, pa) * F * 1.8;
                 }
             }
         }

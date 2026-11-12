@@ -1058,9 +1058,19 @@ enum NeonNightDriveShaders {
                 float fz = tw * pa / max(abs(d.x), 0.02), fy = tw * pa;
                 bool railing = side != 1 && bridge && z > bs && z < be;
                 // Concrete, wet, lit by the street lights and your headlights near; a dark drain line along its foot.
-                float3 lit = u.amb.rgb * 0.8 + u.haze.rgb * 1.6 + kLampColour * 0.05 + float3(1.0, 0.9, 0.76) * 0.5 * exp(-z / 14.0);
-                float3 concrete = float3(0.09, 0.088, 0.085) * (0.75 + 0.5 * vn2(float2(zw * 0.8, y * 3.0))) * lit;
+                // Each street light pools on the wall below it; the joints between its cast panels, every 4.8 m; the
+                // rain's dark streaks down its face.
+                float3 rx = lampRowX(side == 0 ? 0 : 1, u);
+                float lz = (zw - rx.y) / kLampSpacing;
+                float pool = sq(0.5 + 0.5 * cos(6.2831853 * lz));
+                float poolVis = 1.0 - smoothstep(0.3, 0.8, fz / kLampSpacing * 4.0);
+                pool = mix(0.375, pool, poolVis);
+                float3 lit = u.amb.rgb * 0.8 + u.haze.rgb * 1.6 + kLampColour * (0.03 + 0.26 * pool) * u.neon.z
+                           + float3(1.0, 0.9, 0.76) * 0.16 * exp(-z / 12.0);
+                float stain = vn2(float2(zw * 2.3, y * 0.35 + 3.0));
+                float3 concrete = float3(0.09, 0.088, 0.085) * (0.75 + 0.5 * vn2(float2(zw * 0.8, y * 3.0))) * (0.8 + 0.35 * stain) * lit;
                 concrete *= 1.0 - 0.6 * boxCover(y, 0.0, 0.12, fy);
+                concrete *= 1.0 - 0.5 * pulseTrain(zw + 0.03, 4.8, 0.06, fz);
                 concrete += float3(0.02, 0.02, 0.025) * smoothstep(top - 0.05, top, y) * u.move.w;
                 if (railing) {
                     float post = pulseTrain(zw, 2.4, 0.12, fz);
