@@ -350,9 +350,10 @@ final class FireNeonWeatherRendererTests: XCTestCase {
         let start = Date(timeIntervalSince1970: 1_793_000_000)
         for i in 1...(480 * 30) {
             let st = sky.step(now: start.addingTimeInterval(Double(i) * dt), dt: dt, meteors: .never)
-            guard i > 150 * 30, i < 330 * 30 else { continue }   // the Core
+            // Both layers run from the start (their limiters settled at the scene's exposure); the Core is recorded.
             plain.update(st, quality: .lite, size: CGSize(width: 320, height: 180), dt: dt, surface: .none)
             gentle.update(st, quality: .lite, size: CGSize(width: 320, height: 180), dt: dt, surface: .none)
+            guard i > 150 * 30, i < 330 * 30 else { continue }   // the Core
             plainBoost.append(plain.exposureBoost); gentleBoost.append(gentle.exposureBoost)
         }
         func jumps(_ b: [Float]) -> (count: Int, worstSecond: Int) {
@@ -421,7 +422,7 @@ extension WorldPreviewTests {
         typealias R = FireNeonWeatherRendererTests
         let held = ThemeState()
         let beach = settings(hour: 13, phase: 0.5, weather: .clear)
-        for (name, phase, glow) in [("beach-supercell-approach", 0.2, Float(0)), ("beach-supercell-core", 0.45, Float(0)),
+        for (name, phase, glow) in [("beach-supercell-approach", 0.12, Float(0)), ("beach-supercell-core", 0.45, Float(0)),
                                     ("beach-supercell-core-flash", 0.47, Float(0.9)),
                                     ("beach-supercell-clearing", WorldWeather.supercellHeld, Float(0))] {
             let image = try XCTUnwrap(preview.render(themeID: GoldenHourBeachModel.id, at: [5], state: held, quality: .high,
@@ -430,7 +431,7 @@ extension WorldPreviewTests {
         }
         // The Approach over the lake by night, flickering; and the Clearing with the stars coming out.
         let lakeNight = settings(hour: 23, phase: 0.1, weather: .clear)
-        for (name, phase, glow) in [("lake-supercell-approach-night", 0.22, Float(0.8)), ("lake-supercell-clearing-night", 0.85, Float(0))] {
+        for (name, phase, glow) in [("lake-supercell-approach-night", 0.12, Float(0.8)), ("lake-supercell-clearing-night", 0.85, Float(0))] {
             let image = try XCTUnwrap(preview.render(themeID: MoonlitLakeModel.id, at: [5], quality: .high, sky: lakeNight, mood: .serene,
                                                      skyEdit: { s in s = R.supercell(s, phase: phase, glow: glow) }).first)
             try PreviewRenderer.writePNG(image, to: url.appendingPathComponent("\(name).png"))
