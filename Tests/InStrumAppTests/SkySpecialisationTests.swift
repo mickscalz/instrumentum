@@ -110,7 +110,7 @@ final class SkySpecialisationTests: XCTestCase {
         guard let device = MTLCreateSystemDefaultDevice() else { throw XCTSkip("No Metal device") }
         let preview = try XCTUnwrap(PreviewRenderer(width: 160, height: 90))
         let size = CGSize(width: 160, height: 90)
-        let cell = R.supercell(R.golden(), phase: 0.2)
+        let cell = R.supercell(R.golden(), phase: 0.45)   // (the Core: `cellStrips` frames a snapshot)
         defer { SkyLayer.cellAtOnce = true }
         SkyLayer.cellAtOnce = false
         let r = try XCTUnwrap(SkyOnlyRenderer(device: device))

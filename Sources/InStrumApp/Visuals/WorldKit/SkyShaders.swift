@@ -1548,14 +1548,11 @@ enum SkyShaders {
         float blend = saturate((q - idx) / 0.9);
         float older = floor(idx / 3.0), newer = idx - 3.0 * older;
         bool flash = u.cellB.z > 0.0;
-        float r1;
-        float4 s = cellSnapshot(cell, x, y, newer, flash, r1);
-        recept = r1;
+        float4 s = cellSnapshot(cell, x, y, newer, flash, recept);
         if (blend < 0.999 && older != newer) {
+            // (How it takes the lightning: the newer's alone, a flash being a moment.)
             float r0;
-            float4 s0 = cellSnapshot(cell, x, y, older, flash, r0);
-            s = mix(s0, s, blend);
-            recept = mix(r0, r1, blend);
+            s = mix(cellSnapshot(cell, x, y, older, false, r0), s, blend);
         }
         // (Its sides fade over the last 2%, past the view's own edge.)
         float fade = smoothstep(0.0, 0.02, x) * smoothstep(1.0, 0.98, x);
