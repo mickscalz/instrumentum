@@ -496,6 +496,11 @@ final class VolcanoRimTests: XCTestCase {
     func testSurprisesAllPlayAndEnd() {
         for kind in VolcanoSurprise.Kind.allCases {
             var m = model()
+            if kind == .redSprites {
+                // The sky's sprites need a storm to stand over at night (without one the surprise is a fireball).
+                var stormy = night(); stormy.farStorm = 1
+                m.setSky(stormy)
+            }
             run(&m, seconds: 0.2)
             var e = excitement(energy: 0.4)
             e.surprise = WorldSurprise(index: kind.rawValue, seed: 0xABC + UInt64(kind.rawValue))
@@ -509,6 +514,92 @@ final class VolcanoRimTests: XCTestCase {
             for s in later.surprises where s.kind == kind { still = true }
             XCTAssertFalse(still, "\(kind) ends")
         }
+    }
+
+    /// Red sprites are the sky's (Fire & Neon fix pass): the surprise calls them for the director's next sky step, once,
+    /// only when the sky has a storm at night to stand over, and is a fireball when it hasn't; the crater draws neither a
+    /// storm nor sprites of its own. And the crater is the shared sky's ember source in ashfall.
+    func testRedSpritesAreTheSkysAndTheCraterSendsEmbers() {
+        XCTAssertTrue(VolcanoRimModel.emberSource)
+        XCTAssertTrue(VolcanoRimModel.self is SkyWorldFlags.Type)
+        var stormy = night(); stormy.farStorm = 1
+        var surprise = excitement(energy: 0.4)
+        surprise.surprise = WorldSurprise(index: VolcanoSurprise.Kind.redSprites.rawValue, seed: 9)
+        var m = model()
+        m.setSky(stormy)
+        run(&m, seconds: 0.2)
+        XCTAssertNil(m.spriteCall)
+        m.setExcitement(surprise)
+        var f = run(&m, seconds: 1.0 / 60)
+        XCTAssertGreaterThan(m.spriteCall ?? 0, 0.5, "called")
+        XCTAssertTrue(f.surprises.contains { $0.kind == .redSprites })
+        run(&m, seconds: 1.0 / 60)
+        XCTAssertNil(m.spriteCall, "once")
+        // No storm to stand over: a fireball instead, and no call.
+        var clear = model()
+        run(&clear, seconds: 0.2)
+        clear.setExcitement(surprise)
+        f = run(&clear, seconds: 1.0 / 60)
+        XCTAssertNil(clear.spriteCall)
+        XCTAssertFalse(f.surprises.contains { $0.kind == .redSprites })
+        XCTAssertTrue(f.surprises.contains { $0.kind == .fireball })
+        // The sky's rules: night and a storm (a far one, or the weather's own).
+        XCTAssertTrue(RedSprites.couldStand(over: stormy))
+        var day = stormy; day.sun = SkyDirection(azimuth: 250, altitude: 20)
+        XCTAssertFalse(RedSprites.couldStand(over: day), "not by day")
+        var dusk = stormy; dusk.sun = SkyDirection(azimuth: 250, altitude: -8)
+        XCTAssertFalse(RedSprites.couldStand(over: dusk), "not at dusk")
+        var thunder = night(); thunder.weather = .thunderheads
+        XCTAssertTrue(RedSprites.couldStand(over: thunder))
+        XCTAssertFalse(RedSprites.couldStand(over: night()))
+    }
+
+    /// Through the director: a world's call reaches the sky's sprites on the next step, over a storm at night, as a big
+    /// moment's does (and none on a clear night); Volcano Rim at ashfall sends the shared embers up.
+    func testTheDirectorTakesTheWorldsCallsToTheSky() {
+        let start = Date(timeIntervalSince1970: 1_793_000_000)
+        func spawned(_ entry: ThemeEntry, _ weather: WeatherKind) -> Int {
+            let d = SceneDirector(entry: entry, state: ThemeState(), reaction: ReactionPresets.expressivePianist)
+            var s = SkySettings(); s.timeMode = .frozen; s.frozenHour = 23; s.frozenPhase = 0; s.cityID = "melbourne"
+            s.weatherMode = .pick; s.weather = weather; s.spritesMode = .natural
+            s.crawlersMode = .off; s.sheetMode = .off; s.satellitesMode = .off
+            d.sky.reset(settings: s)
+            d.clock = { start }
+            for i in 1...6 { _ = d.step(dt: 1.0 / 60, t: Double(i) / 60, quality: .high) }
+            return d.sky.spriteSky.spawned
+        }
+        XCTAssertGreaterThan(spawned(ThemeEntry.make(SpriteCaller.self), .thunderheads), 0, "called over a storm")
+        XCTAssertEqual(spawned(ThemeEntry.make(SpriteCaller.self), .clear), 0, "no storm to stand over")
+        XCTAssertEqual(spawned(ThemeEntry.make(SpriteSilent.self), .thunderheads), 0, "not called (Natural's gaps are 20 s+)")
+        // Ashfall at the volcano: the shared embers.
+        let d = SceneDirector(themeID: VolcanoRimModel.id, state: ThemeState(), reaction: ReactionPresets.expressivePianist)
+        var s = SkySettings(); s.timeMode = .frozen; s.frozenHour = 22; s.cityID = "melbourne"; s.weatherMode = .pick
+        s.weather = .ashfall
+        d.sky.reset(settings: s)
+        d.clock = { start }
+        _ = d.step(dt: 1, t: 1, quality: .high)
+        XCTAssertEqual(d.lastSky?.embers ?? -1, 1, accuracy: 1e-6)
+    }
+
+    struct SpriteCaller: ThemeModel, SkyAware, SpriteCalling {
+        static let id = "sprite-caller", displayName = "Sprite caller"
+        static let parameters: [ParamSpec] = []
+        static let macroTargets: [Macro: [(id: String, weight: Double)]] = [:]
+        var spriteCall: Float? { 1 }
+        init() {}
+        mutating func handle(_ e: PerformanceEvent) {}
+        mutating func setSky(_ s: SkyState) {}
+        mutating func step(dt: Double, params: ParameterSet, roles: RoleValues, inputs: InputFrame, quality: QualityLevel) -> Int { 0 }
+    }
+
+    struct SpriteSilent: ThemeModel, SkyAware {
+        static let id = "sprite-silent", displayName = "Sprite silent"
+        static let parameters: [ParamSpec] = []
+        static let macroTargets: [Macro: [(id: String, weight: Double)]] = [:]
+        init() {}
+        mutating func handle(_ e: PerformanceEvent) {}
+        mutating func setSky(_ s: SkyState) {}
+        mutating func step(dt: Double, params: ParameterSet, roles: RoleValues, inputs: InputFrame, quality: QualityLevel) -> Int { 0 }
     }
 
     /// The volcano family (spec §8.3; plan Task 10): its six sources up and the stand-ins gone; the lake's surge and glow

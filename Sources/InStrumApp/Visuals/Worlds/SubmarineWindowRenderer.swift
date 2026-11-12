@@ -142,7 +142,8 @@ final class SubmarineWindowRenderer: ThemeRenderer {
     let warp: WarpLayer
     let glass: WindowGlassLayer
     private var showWarp = false
-    private let sea, sprites, cabin, keys: MTLRenderPipelineState
+    private let sea: SkyPipeline
+    private let sprites, cabin, keys: MTLRenderPipelineState
     private(set) var uniforms = [SIMD4<Float>](repeating: .zero, count: uniformCount)
 
     /// A sprite: position (NDC), radius (NDC-y), kind + lamp light; colour (rgb), a parameter.
@@ -182,10 +183,10 @@ final class SubmarineWindowRenderer: ThemeRenderer {
         guard let s = SkyLayer(device: device), let gw = WarpLayer(device: device), let g = WindowGlassLayer(device: device),
               let lib = try? device.makeLibrary(source: SubmarineWindowShaders.source, options: nil) else { return nil }
         enum Blend { case opaque, premultiplied }
-        func make(_ v: String, _ f: String, _ blend: Blend, writesDepth: Bool = true) -> MTLRenderPipelineState? {
+        func make(_ v: String, _ f: String, _ blend: Blend, writesDepth: Bool = true, storms: Bool = false) -> MTLRenderPipelineState? {
             let d = MTLRenderPipelineDescriptor()
-            d.vertexFunction = lib.makeFunction(name: v)
-            d.fragmentFunction = lib.makeFunction(name: f)
+            d.vertexFunction = lib.skyFunction(v, storms: storms)
+            d.fragmentFunction = lib.skyFunction(f, storms: storms)
             d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
             d.colorAttachments[1].pixelFormat = RenderStack.depthFormat
             if blend == .premultiplied {
@@ -197,7 +198,7 @@ final class SubmarineWindowRenderer: ThemeRenderer {
             if !writesDepth { d.colorAttachments[1].writeMask = [] }
             return try? device.makeRenderPipelineState(descriptor: d)
         }
-        guard let se = make("sub_full_vertex", "sub_sea_fragment", .opaque),
+        guard let se = SkyPipeline(build: { make("sub_full_vertex", "sub_sea_fragment", .opaque, storms: $0) }),
               let sp = make("sub_sprite_vertex", "sub_sprite_fragment", .premultiplied, writesDepth: false),
               let cb = make("sub_full_vertex", "sub_cabin_fragment", .opaque),
               let k = make("sub_keys_vertex", "sub_keys_fragment", .opaque) else { return nil }
@@ -273,6 +274,7 @@ final class SubmarineWindowRenderer: ThemeRenderer {
         sky.viewAzimuth = viewAz
         sky.verticalFOV = Double(2 * atan(tanR / max(R, 0.05)) * 180 / .pi)
         sky.horizonY = 0
+        sky.gentle = gentle
         sky.update(s, quality: quality, size: size, time: time)
         showWarp = frame.warp != nil
         let sparkleScale = FlashLimiter.sparkleScale(gentle: gentle)
@@ -503,7 +505,7 @@ final class SubmarineWindowRenderer: ThemeRenderer {
               var e = cb.makeRenderCommandEncoder(descriptor: pass) else { return }
         let skyU = sky.uniforms
         // The sea, the warp through it, and the living light and the snow.
-        e.setRenderPipelineState(sea)
+        e.setRenderPipelineState(sea.state(storms: sky.storms))
         skyU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
         uniforms.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
         sky.bindStars(e)

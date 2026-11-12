@@ -10,12 +10,12 @@ final class WorldKitTests: XCTestCase {
         guard let device = MTLCreateSystemDefaultDevice() else { throw XCTSkip("No Metal device") }
         let lib = try device.makeLibrary(source: SkyShaders.source, options: nil)
         for name in ["sky_dome_vertex", "sky_dome_fragment", "weather_vertex", "weather_fragment", "ring_vertex", "ring_fragment"] {
-            XCTAssertNotNil(lib.makeFunction(name: name), name)
+            XCTAssertNotNil(lib.skyFunction(name), name)
         }
         // The Swift rows match the MSL SkyU byte for byte, the flash row last (the pipeline's own reflection says so).
         let d = MTLRenderPipelineDescriptor()
-        d.vertexFunction = lib.makeFunction(name: "sky_dome_vertex")
-        d.fragmentFunction = lib.makeFunction(name: "sky_dome_fragment")
+        d.vertexFunction = lib.skyFunction("sky_dome_vertex")
+        d.fragmentFunction = lib.skyFunction("sky_dome_fragment")
         d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
         d.colorAttachments[1].pixelFormat = RenderStack.depthFormat
         var reflection: MTLAutoreleasedRenderPipelineReflection?
@@ -45,8 +45,8 @@ final class WorldKitTests: XCTestCase {
         XCTAssertEqual(SkyLayer.uniformCount * MemoryLayout<SIMD4<Float>>.stride, 1088)
         // WeatherU: the set's params, then sea smoke's tint and glow (48 bytes, bound for every weather set).
         let w = MTLRenderPipelineDescriptor()
-        w.vertexFunction = lib.makeFunction(name: "weather_vertex")
-        w.fragmentFunction = lib.makeFunction(name: "weather_fragment")
+        w.vertexFunction = lib.skyFunction("weather_vertex")
+        w.fragmentFunction = lib.skyFunction("weather_fragment")
         w.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
         w.colorAttachments[1].pixelFormat = RenderStack.depthFormat
         var weatherReflection: MTLAutoreleasedRenderPipelineReflection?
@@ -785,7 +785,7 @@ final class MoonlitLakeRendererTests: XCTestCase {
         guard let device = MTLCreateSystemDefaultDevice() else { throw XCTSkip("No Metal device") }
         let lib = try device.makeLibrary(source: MoonlitLakeShaders.source, options: nil)
         for name in ["lake_vertex", "lake_fragment", "firefly_vertex", "firefly_fragment", "lake_keys_vertex", "lake_keys_fragment"] {
-            XCTAssertNotNil(lib.makeFunction(name: name), name)
+            XCTAssertNotNil(lib.skyFunction(name), name)
         }
     }
 
@@ -967,11 +967,11 @@ final class SpaceshipLoungeRendererTests: XCTestCase {
         guard let device = MTLCreateSystemDefaultDevice() else { throw XCTSkip("No Metal device") }
         let lib = try device.makeLibrary(source: SpaceshipLoungeShaders.source, options: nil)
         for name in ["lounge_vertex", "lounge_space_fragment", "lounge_frame_fragment", "lounge_keys_vertex", "lounge_keys_fragment"] {
-            XCTAssertNotNil(lib.makeFunction(name: name), name)
+            XCTAssertNotNil(lib.skyFunction(name), name)
         }
         let warp = try device.makeLibrary(source: WarpShaders.source, options: nil)
         for name in ["warp_streak_vertex", "warp_streak_fragment", "warp_nebula_vertex", "warp_nebula_fragment"] {
-            XCTAssertNotNil(warp.makeFunction(name: name), name)
+            XCTAssertNotNil(warp.skyFunction(name), name)
         }
     }
 
@@ -1145,7 +1145,7 @@ final class GoldenHourBeachRendererTests: XCTestCase {
         guard let device = MTLCreateSystemDefaultDevice() else { throw XCTSkip("No Metal device") }
         let lib = try device.makeLibrary(source: GoldenHourBeachShaders.source, options: nil)
         for name in ["beach_vertex", "beach_fragment", "beach_keys_vertex", "beach_keys_fragment"] {
-            XCTAssertNotNil(lib.makeFunction(name: name), name)
+            XCTAssertNotNil(lib.skyFunction(name), name)
         }
     }
 
@@ -1336,7 +1336,7 @@ final class CoastRoadRendererTests: XCTestCase {
         let lib = try device.makeLibrary(source: CoastRoadShaders.source, options: nil)
         for name in ["road_vertex", "road_fragment", "road_lights_vertex", "road_lights_fragment", "road_frame_fragment",
                      "road_keys_vertex", "road_keys_fragment"] {
-            XCTAssertNotNil(lib.makeFunction(name: name), name)
+            XCTAssertNotNil(lib.skyFunction(name), name)
         }
     }
 
@@ -1860,7 +1860,7 @@ final class SnowboundCabinRendererTests: XCTestCase {
         let lib = try device.makeLibrary(source: SnowboundCabinShaders.source, options: nil)
         for name in ["cabin_glass_vertex", "cabin_full_vertex", "cabin_scene_fragment", "cabin_spark_vertex", "cabin_spark_fragment",
                      "cabin_room_fragment", "cabin_keys_vertex", "cabin_keys_fragment"] {
-            XCTAssertNotNil(lib.makeFunction(name: name), name)
+            XCTAssertNotNil(lib.skyFunction(name), name)
         }
         let own = String(SnowboundCabinShaders.source.dropFirst(SkyShaders.common.count))
         XCTAssertFalse(own.contains("pow("), "squares and powers are written out")
@@ -2079,7 +2079,7 @@ final class BedroomDawnRendererTests: XCTestCase {
         for name in ["bed_glass_vertex", "bed_full_vertex", "bed_scene_fragment", "bed_room_fragment", "bed_shaft_fragment",
                      "bed_curtain_vertex", "bed_curtain_fragment", "bed_sprite_vertex", "bed_sprite_fragment",
                      "bed_keys_vertex", "bed_keys_fragment"] {
-            XCTAssertNotNil(lib.makeFunction(name: name), name)
+            XCTAssertNotNil(lib.skyFunction(name), name)
         }
         let own = String(BedroomDawnShaders.source.dropFirst(SkyShaders.common.count))
         XCTAssertFalse(own.contains("pow("), "squares and powers are written out")
@@ -2309,7 +2309,7 @@ final class AuroraFjordRendererTests: XCTestCase {
         let lib = try device.makeLibrary(source: AuroraFjordShaders.source, options: nil)
         for name in ["fjord_vertex", "fjord_scene_fragment", "fjord_village_vertex", "fjord_village_fragment", "fjord_floe_vertex",
                      "fjord_floe_fragment", "fjord_rail_vertex", "fjord_rail_fragment", "fjord_keys_vertex", "fjord_keys_fragment"] {
-            XCTAssertNotNil(lib.makeFunction(name: name), name)
+            XCTAssertNotNil(lib.skyFunction(name), name)
         }
         let own = String(AuroraFjordShaders.source.dropFirst(SkyShaders.common.count))
         XCTAssertFalse(own.contains("pow("), "squares and powers are written out")
@@ -2630,14 +2630,14 @@ final class BioluminescentBayRendererTests: XCTestCase {
         guard let device = MTLCreateSystemDefaultDevice() else { throw XCTSkip("No Metal device") }
         let lib = try device.makeLibrary(source: BioluminescentBayShaders.source, options: nil)
         for name in ["bay_vertex", "bay_fragment", "bay_keys_vertex", "bay_keys_fragment"] {
-            XCTAssertNotNil(lib.makeFunction(name: name), name)
+            XCTAssertNotNil(lib.skyFunction(name), name)
         }
         let own = String(BioluminescentBayShaders.source.dropFirst(SkyShaders.common.count + OceanShaders.common.count))
         XCTAssertFalse(own.contains("pow("), "squares and powers are written out")
         // The Swift uniform arrays match the MSL structs byte for byte (the pipeline's own reflection says so).
         let d = MTLRenderPipelineDescriptor()
-        d.vertexFunction = lib.makeFunction(name: "bay_vertex")
-        d.fragmentFunction = lib.makeFunction(name: "bay_fragment")
+        d.vertexFunction = lib.skyFunction("bay_vertex")
+        d.fragmentFunction = lib.skyFunction("bay_fragment")
         d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
         d.colorAttachments[1].pixelFormat = RenderStack.depthFormat
         var reflection: MTLAutoreleasedRenderPipelineReflection?
@@ -2901,14 +2901,14 @@ final class TeaHouseSnowRendererTests: XCTestCase {
         let lib = try device.makeLibrary(source: TeaHouseSnowShaders.source, options: nil)
         for name in ["tea_full_vertex", "tea_rect_vertex", "tea_garden_fragment", "tea_paper_fragment", "tea_room_fragment",
                      "tea_steam_fragment", "tea_keys_vertex", "tea_keys_fragment"] {
-            XCTAssertNotNil(lib.makeFunction(name: name), name)
+            XCTAssertNotNil(lib.skyFunction(name), name)
         }
         let own = String(TeaHouseSnowShaders.source.dropFirst(SkyShaders.common.count))
         XCTAssertFalse(own.contains("pow("), "squares and powers are written out")
         // The Swift uniform array matches the MSL struct byte for byte (the pipeline's own reflection says so).
         let d = MTLRenderPipelineDescriptor()
-        d.vertexFunction = lib.makeFunction(name: "tea_full_vertex")
-        d.fragmentFunction = lib.makeFunction(name: "tea_room_fragment")
+        d.vertexFunction = lib.skyFunction("tea_full_vertex")
+        d.fragmentFunction = lib.skyFunction("tea_room_fragment")
         d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
         d.colorAttachments[1].pixelFormat = RenderStack.depthFormat
         var reflection: MTLAutoreleasedRenderPipelineReflection?
@@ -3183,15 +3183,15 @@ final class ZenRockGardenRendererTests: XCTestCase {
         guard let device = MTLCreateSystemDefaultDevice() else { throw XCTSkip("No Metal device") }
         let lib = try device.makeLibrary(source: ZenRockGardenShaders.source, options: nil)
         for name in ["garden_vertex", "garden_fragment", "garden_keys_vertex", "garden_keys_fragment"] {
-            XCTAssertNotNil(lib.makeFunction(name: name), name)
+            XCTAssertNotNil(lib.skyFunction(name), name)
         }
         let own = String(ZenRockGardenShaders.source.dropFirst(SkyShaders.common.count))
         XCTAssertFalse(own.contains("pow("), "squares and powers are written out")
         // The Swift uniform array matches the MSL struct byte for byte (the pipeline's own reflection says so), and the
         // rake field is bound at texture 1 beside the stars.
         let d = MTLRenderPipelineDescriptor()
-        d.vertexFunction = lib.makeFunction(name: "garden_vertex")
-        d.fragmentFunction = lib.makeFunction(name: "garden_fragment")
+        d.vertexFunction = lib.skyFunction("garden_vertex")
+        d.fragmentFunction = lib.skyFunction("garden_fragment")
         d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
         d.colorAttachments[1].pixelFormat = RenderStack.depthFormat
         var reflection: MTLAutoreleasedRenderPipelineReflection?

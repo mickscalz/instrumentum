@@ -23,7 +23,8 @@ final class CoastRoadRenderer: ThemeRenderer {
     let weather: WeatherLayer
     let warp: WarpLayer
     private var showWarp = false
-    private let road, lights, frame, keys, posts: MTLRenderPipelineState
+    private let road: SkyPipeline
+    private let lights, frame, keys, posts: MTLRenderPipelineState
     private var roadU = [SIMD4<Float>](repeating: .zero, count: 6)
     private var oceanU = [SIMD4<Float>](repeating: .zero, count: 7)
     private var lightInstances: [SIMD4<Float>] = []
@@ -50,10 +51,10 @@ final class CoastRoadRenderer: ThemeRenderer {
         guard let s = SkyLayer(device: device), let w = WeatherLayer(device: device), let gw = WarpLayer(device: device),
               let lib = try? device.makeLibrary(source: CoastRoadShaders.source, options: nil) else { return nil }
         enum Blend { case opaque, premultiplied, additive }
-        func make(_ v: String, _ f: String, _ blend: Blend, writesDepth: Bool = true) -> MTLRenderPipelineState? {
+        func make(_ v: String, _ f: String, _ blend: Blend, writesDepth: Bool = true, storms: Bool = false) -> MTLRenderPipelineState? {
             let d = MTLRenderPipelineDescriptor()
-            d.vertexFunction = lib.makeFunction(name: v)
-            d.fragmentFunction = lib.makeFunction(name: f)
+            d.vertexFunction = lib.skyFunction(v, storms: storms)
+            d.fragmentFunction = lib.skyFunction(f, storms: storms)
             d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
             d.colorAttachments[1].pixelFormat = RenderStack.depthFormat
             let c = d.colorAttachments[0]!
@@ -71,7 +72,7 @@ final class CoastRoadRenderer: ThemeRenderer {
             if !writesDepth { d.colorAttachments[1].writeMask = [] }
             return try? device.makeRenderPipelineState(descriptor: d)
         }
-        guard let r = make("road_vertex", "road_fragment", .premultiplied),
+        guard let r = SkyPipeline(build: { make("road_vertex", "road_fragment", .premultiplied, storms: $0) }),
               let l = make("road_lights_vertex", "road_lights_fragment", .additive, writesDepth: false),
               let f = make("road_vertex", "road_frame_fragment", .premultiplied, writesDepth: false),
               let k = make("road_keys_vertex", "road_keys_fragment", .opaque),
@@ -119,6 +120,7 @@ final class CoastRoadRenderer: ThemeRenderer {
         sky.viewAzimuth = viewAzimuth
         sky.horizonY = horizonY
         sky.roll = frame.roll
+        sky.gentle = gentle
         sky.update(s, quality: quality, size: size, time: Float(frame.time))
         // Sea smoke over the sea below the cliffs, inside the window: from the scrub's highest tops (the shader's scrub
         // line, bottom + 0.34 + up to 0.116) to the horizon. It passes right to left with the car, like the sea about
@@ -258,7 +260,7 @@ final class CoastRoadRenderer: ThemeRenderer {
         if showWarp { warp.draw(e) }
 
         let skyU = sky.uniforms
-        e.setRenderPipelineState(road)
+        e.setRenderPipelineState(road.state(storms: sky.storms))
         skyU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
         roadU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
         oceanU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 2) }

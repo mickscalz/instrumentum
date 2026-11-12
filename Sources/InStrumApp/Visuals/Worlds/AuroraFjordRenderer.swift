@@ -33,7 +33,8 @@ final class AuroraFjordRenderer: ThemeRenderer {
     let weather: WeatherLayer
     let warp: WarpLayer
     private var showWarp = false
-    private let scene, village, floe, rail, keys: MTLRenderPipelineState
+    private let scene: SkyPipeline
+    private let village, floe, rail, keys: MTLRenderPipelineState
     private var fjordU = [SIMD4<Float>](repeating: .zero, count: 9)
     private var villageInstances: [VillageInstance] = []
     private var floeInstances: [SIMD4<Float>] = []
@@ -77,10 +78,10 @@ final class AuroraFjordRenderer: ThemeRenderer {
         guard let s = SkyLayer(device: device), let w = WeatherLayer(device: device), let gw = WarpLayer(device: device),
               let lib = try? device.makeLibrary(source: AuroraFjordShaders.source, options: nil) else { return nil }
         enum Blend { case opaque, premultiplied, additive }
-        func make(_ v: String, _ f: String, _ blend: Blend, writesDepth: Bool = true) -> MTLRenderPipelineState? {
+        func make(_ v: String, _ f: String, _ blend: Blend, writesDepth: Bool = true, storms: Bool = false) -> MTLRenderPipelineState? {
             let d = MTLRenderPipelineDescriptor()
-            d.vertexFunction = lib.makeFunction(name: v)
-            d.fragmentFunction = lib.makeFunction(name: f)
+            d.vertexFunction = lib.skyFunction(v, storms: storms)
+            d.fragmentFunction = lib.skyFunction(f, storms: storms)
             d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
             d.colorAttachments[1].pixelFormat = RenderStack.depthFormat
             let c = d.colorAttachments[0]!
@@ -98,7 +99,7 @@ final class AuroraFjordRenderer: ThemeRenderer {
             if !writesDepth { d.colorAttachments[1].writeMask = [] }
             return try? device.makeRenderPipelineState(descriptor: d)
         }
-        guard let sc = make("fjord_vertex", "fjord_scene_fragment", .opaque),
+        guard let sc = SkyPipeline(build: { make("fjord_vertex", "fjord_scene_fragment", .opaque, storms: $0) }),
               let v = make("fjord_village_vertex", "fjord_village_fragment", .additive, writesDepth: false),
               let fl = make("fjord_floe_vertex", "fjord_floe_fragment", .premultiplied, writesDepth: false),
               let r = make("fjord_rail_vertex", "fjord_rail_fragment", .premultiplied),
@@ -219,6 +220,7 @@ final class AuroraFjordRenderer: ThemeRenderer {
         shown.auroraAltitude = Self.framedAltitude(s.auroraAltitude)
         let tense = frame.tensePulse.isFinite ? min(max(frame.tensePulse, 0), 1) : 0
         shown.auroraStorm = max(s.auroraStorm, Self.tenseFlare * tense * sparkle)
+        sky.gentle = gentle
         sky.update(shown, quality: quality, size: size, time: skyTime)
         let cam = sky.camera(latitude: s.latitude, aspect: aspect)
 
@@ -409,7 +411,7 @@ final class AuroraFjordRenderer: ThemeRenderer {
             skyU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
             fjordU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
         }
-        e.setRenderPipelineState(scene)
+        e.setRenderPipelineState(scene.state(storms: sky.storms))
         bindUniforms()
         sky.bindStars(e)
         e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)

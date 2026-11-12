@@ -43,7 +43,8 @@ final class BioluminescentBayRenderer: ThemeRenderer {
     let weather: WeatherLayer
     let warp: WarpLayer
     private var showWarp = false
-    private let bay, keys: MTLRenderPipelineState
+    private let bay: SkyPipeline
+    private let keys: MTLRenderPipelineState
     private var bayU = [SIMD4<Float>](repeating: .zero, count: 12 + GlowWake.cap + 2 * GlowWake.wakeCap + 2 * GlowWake.dartCap)
     private var oceanU = [SIMD4<Float>](repeating: .zero, count: 7)   // the bay doesn't travel: travel stays 0
     private var keyInstances: [KeyInstance] = []
@@ -79,15 +80,15 @@ final class BioluminescentBayRenderer: ThemeRenderer {
     init?(device: MTLDevice) {
         guard let s = SkyLayer(device: device), let w = WeatherLayer(device: device), let gw = WarpLayer(device: device),
               let lib = try? device.makeLibrary(source: BioluminescentBayShaders.source, options: nil) else { return nil }
-        func make(_ v: String, _ f: String) -> MTLRenderPipelineState? {
+        func make(_ v: String, _ f: String, storms: Bool = false) -> MTLRenderPipelineState? {
             let d = MTLRenderPipelineDescriptor()
-            d.vertexFunction = lib.makeFunction(name: v)
-            d.fragmentFunction = lib.makeFunction(name: f)
+            d.vertexFunction = lib.skyFunction(v, storms: storms)
+            d.fragmentFunction = lib.skyFunction(f, storms: storms)
             d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
             d.colorAttachments[1].pixelFormat = RenderStack.depthFormat
             return try? device.makeRenderPipelineState(descriptor: d)
         }
-        guard let b = make("bay_vertex", "bay_fragment"), let k = make("bay_keys_vertex", "bay_keys_fragment") else { return nil }
+        guard let b = SkyPipeline(build: { make("bay_vertex", "bay_fragment", storms: $0) }), let k = make("bay_keys_vertex", "bay_keys_fragment") else { return nil }
         sky = s; weather = w; warp = gw; bay = b; keys = k
         sky.verticalFOV = 62
     }
@@ -147,6 +148,7 @@ final class BioluminescentBayRenderer: ThemeRenderer {
         // overhead near the poles: above this nearly level view).
         var shown = s
         shown.auroraAltitude = AuroraFjordRenderer.framedAltitude(s.auroraAltitude)
+        sky.gentle = gentle
         sky.update(shown, quality: quality, size: size, time: Float(frame.time))
         // Sea smoke over the bay, from the waterline out to the horizon (spec §6.4).
         let shore = SkyLayer.waterY(out: Self.waterline, height: Self.cameraHeight, horizonY: horizon, verticalFOV: sky.verticalFOV)
@@ -293,7 +295,7 @@ final class BioluminescentBayRenderer: ThemeRenderer {
         if showWarp { warp.draw(e) }
 
         let skyU = sky.uniforms
-        e.setRenderPipelineState(bay)
+        e.setRenderPipelineState(bay.state(storms: sky.storms))
         skyU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
         bayU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
         oceanU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 2) }

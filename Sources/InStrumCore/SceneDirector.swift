@@ -7,8 +7,8 @@ public protocol MoodAware { var mood: Mood { get set } }
 public protocol SkyAware { mutating func setSky(_ s: SkyState) }
 
 /// A world's flags for the shared sky (Fire & Neon spec §6.2, §7.1): a city's skyglow hides the satellites fainter than
-/// `skyglowLimit` (a magnitude; nil: a dark sky), and an `emberSource` sends embers up through ashfall (Volcano Rim, when
-/// it comes). A world without them has neither.
+/// `skyglowLimit` (a magnitude; nil: a dark sky), and an `emberSource` sends embers up through ashfall (Volcano Rim). A
+/// world without them has neither.
 public protocol SkyWorldFlags {
     static var skyglowLimit: Float? { get }
     static var emberSource: Bool { get }
@@ -17,6 +17,13 @@ public protocol SkyWorldFlags {
 public extension SkyWorldFlags {
     static var skyglowLimit: Float? { nil }
     static var emberSource: Bool { false }
+}
+
+/// A world that calls the shared sky's red sprites itself (a surprise; Fire & Neon fix pass): the strength of its call
+/// (0…1) for the next sky step, nil when it has none. The sky makes them only where its own rules allow (at night, over
+/// a storm its far storms or the weather bring), as it does for a big moment's call.
+public protocol SpriteCalling {
+    var spriteCall: Float? { get }
 }
 
 /// A model that wants the built-in instrument's pulse (spec §7.6): the director hands it `instrumentPulse` before every
@@ -187,6 +194,8 @@ protocol AnyThemeBoxProtocol {
     /// The world's sky flags (`SkyWorldFlags`): none for a model without them.
     var skyglowLimit: Float? { get }
     var emberSource: Bool { get }
+    /// The world's call for the sky's red sprites (`SpriteCalling`): nil for a model without one.
+    var spriteCall: Float? { get }
 }
 
 struct ThemeBox<T: ThemeModel>: AnyThemeBoxProtocol {
@@ -230,6 +239,10 @@ struct ThemeBox<T: ThemeModel>: AnyThemeBoxProtocol {
     }
     var skyglowLimit: Float? { (T.self as? SkyWorldFlags.Type)?.skyglowLimit ?? nil }
     var emberSource: Bool { (T.self as? SkyWorldFlags.Type)?.emberSource ?? false }
+    var spriteCall: Float? {
+        guard T.self is SpriteCalling.Type else { return nil }
+        return (model as? SpriteCalling)?.spriteCall
+    }
 }
 
 /// Ties playing, inputs, reactions, settings and the active theme together each frame.
@@ -394,7 +407,8 @@ public final class SceneDirector {
             // adds a gust front where storms appear and virga in dry worlds. All are read every step, so they leave with
             // the world. This step's big moment (Excitement stepped first) calls a crawler and a sheet flash (spec §6), a red
             // sprite and a satellite's flare (Fire & Neon §6); the world may choose its own sprites and satellites, and
-            // its flags hide faint satellites in a city's skyglow and send embers up through ashfall.
+            // its flags hide faint satellites in a city's skyglow and send embers up through ashfall. A world's own surprise
+            // may call the sprites too (`SpriteCalling`, set on the step before).
             let storm = StormInputs(crawlers: SkyExtraMode(rawValue: parameters.choice(SkyExtraMode.crawlersID)),
                                     sheet: SkyExtraMode(rawValue: parameters.choice(SkyExtraMode.sheetID)),
                                     supercell: SupercellStage(rawValue: parameters.choice(SupercellStage.id)),
@@ -402,7 +416,7 @@ public final class SceneDirector {
                                     randomExtras: WorldWeather.randomExtras(for: themeID),
                                     sprites: SkyExtraMode(rawValue: parameters.choice(SkyExtraMode.spritesID)),
                                     satellites: SkyExtraMode(rawValue: parameters.choice(SkyExtraMode.satellitesID)),
-                                    skyglowLimit: box.skyglowLimit, emberSource: box.emberSource)
+                                    skyglowLimit: box.skyglowLimit, emberSource: box.emberSource, spriteCall: box.spriteCall)
             let s = sky.step(now: clock(), dt: dt, hold: hold, aurora: aurora, meteors: meteors, storm: storm)
             lastSky = s
             box.setSky(s)

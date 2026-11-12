@@ -13,7 +13,7 @@ final class SubmarineWindowRendererTests: XCTestCase {
         let lib = try device.makeLibrary(source: SubmarineWindowShaders.source, options: nil)
         for name in ["sub_full_vertex", "sub_sea_fragment", "sub_sprite_vertex", "sub_sprite_fragment", "sub_cabin_fragment",
                      "sub_keys_vertex", "sub_keys_fragment"] {
-            XCTAssertNotNil(lib.makeFunction(name: name), name)
+            XCTAssertNotNil(lib.skyFunction(name), name)
         }
         let own = String(SubmarineWindowShaders.source.dropFirst(SkyShaders.common.count + UnderwaterShaders.common.count))
         XCTAssertTrue(own.contains("struct SubU"), "the world's own source follows the kits'")
@@ -21,8 +21,8 @@ final class SubmarineWindowRendererTests: XCTestCase {
         // The Swift rows match the MSL structs byte for byte (the pipeline's own reflection says so).
         func buffers(_ v: String, _ f: String) throws -> [MTLBufferBinding] {
             let d = MTLRenderPipelineDescriptor()
-            d.vertexFunction = lib.makeFunction(name: v)
-            d.fragmentFunction = lib.makeFunction(name: f)
+            d.vertexFunction = lib.skyFunction(v)
+            d.fragmentFunction = lib.skyFunction(f)
             d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
             d.colorAttachments[1].pixelFormat = RenderStack.depthFormat
             var reflection: MTLAutoreleasedRenderPipelineReflection?

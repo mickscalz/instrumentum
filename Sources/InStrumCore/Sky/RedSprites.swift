@@ -255,6 +255,18 @@ public struct RedSprites {
     static let callSpacing = 1.0
     static let arrivalCap = 64
 
+    /// Whether a call could bring sprites to this sky (as `LivingSky` decides it): night, and a storm to stand over (a
+    /// far one, or the weather's own). A world asks before calling them (its own surprise).
+    public static func couldStand(over s: SkyState) -> Bool {
+        guard s.sun.altitude < darkBelow else { return false }
+        let kinds: [WeatherKind] = [.storm, .thunderheads, .dryLightning]
+        let t = min(1, max(0, s.weatherBlend.isFinite ? s.weatherBlend : 0))
+        let blend = t * t * (3 - 2 * t)
+        let weather = (kinds.contains(s.weather) ? 1 - blend : 0) + (kinds.contains(s.nextWeather) ? blend : 0)
+        let far = s.farStorm.isFinite ? s.farStorm : 0
+        return weather + far >= 0.5
+    }
+
     public private(set) var time = 0.0
     public private(set) var spawned = 0
     public private(set) var births: [Double] = []
