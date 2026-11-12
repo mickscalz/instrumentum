@@ -78,7 +78,7 @@ final class ThemeCanvas: NSObject, MTKViewDelegate {
         self.autoQuality = AutoQuality(setting: model.quality)
         self.appleGPU = device.supportsFamily(.apple7)
         super.init()
-        director.sky.reset(settings: model.skySettings)   // launch with the chosen weather, not a blend into it
+        director.sky.reset(settings: model.skySettings.holdingBack())   // launch with the chosen weather, not a blend into it
     }
 
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
@@ -100,7 +100,7 @@ final class ThemeCanvas: NSObject, MTKViewDelegate {
         }
         autoQuality.setting = model.quality
         director.reaction = model.reaction
-        director.sky.settings = model.skySettings
+        director.sky.settings = model.skySettings.holdingBack()   // held-back weathers never run
         director.mood = model.mood
     }
 

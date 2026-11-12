@@ -261,3 +261,27 @@ struct WeatherMachine {
         return choices.last ?? .clear
     }
 }
+
+// MARK: - Held back from a release
+
+public extension WeatherKind {
+    /// Weathers that are built but held back from this release: not in the picker or the random list, and never chosen
+    /// at random. The Supercell (Fire & Neon §7.2) waits until its shared-sky drawing is at the bar and within budget
+    /// (12 Nov: Fire & Neon went out without it). Empty this set to release them.
+    static let heldBack: Set<WeatherKind> = [.supercell]
+    /// The weathers the app offers, in order.
+    static var offered: [WeatherKind] { allCases.filter { !heldBack.contains($0) } }
+}
+
+public extension SkySettings {
+    /// These settings as the app's sky runs them: a held-back weather is never picked (a pick of one is clear sky) and
+    /// never chosen at random, even where a world's Random Beautiful table offers it. The saved settings are untouched.
+    func holdingBack() -> SkySettings {
+        var s = self
+        for k in WeatherKind.allCases where WeatherKind.heldBack.contains(k) && !s.randomExcluded.contains(k) {
+            s.randomExcluded.append(k)
+        }
+        if WeatherKind.heldBack.contains(s.weather) { s.weather = .clear }
+        return s
+    }
+}
