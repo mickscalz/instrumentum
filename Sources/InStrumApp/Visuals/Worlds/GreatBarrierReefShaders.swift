@@ -811,9 +811,9 @@ enum GreatBarrierReefShaders {
     float reefShark(float2 p, float beat, float px, thread float& pale, thread float& dark) {
         float x = p.x, y = p.y;
         float e = (x - 0.12) / 0.8;
-        float half = 0.14 * sqrt(max(0.0, 1.0 - e * e));
+        float halfH = 0.14 * sqrt(max(0.0, 1.0 - e * e));
         float stock = (x < -0.5 && x > -0.8) ? 0.03 + 0.05 * (x + 0.8) / 0.3 : 0.0;
-        float body = 1.0 - smoothstep(-px, px, abs(y - 0.01 * x) - max(half, stock));
+        float body = 1.0 - smoothstep(-px, px, abs(y - 0.01 * x) - max(halfH, stock));
         float k = 0.55 + 0.45 * abs(cos(beat * 6.2831853));
         float2 d1 = p - float2(-0.04, 0.17);
         float2 r1 = float2(d1.x * 0.88 + d1.y * 0.47, -d1.x * 0.47 + d1.y * 0.88);

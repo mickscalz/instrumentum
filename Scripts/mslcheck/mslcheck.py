@@ -106,6 +106,23 @@ LIT = re.compile(r'(?<![\w.])((?:\d+\.\d*|\.\d+)(?:[eE][-+]?\d+)?|\d+[eE][-+]?\d
 def msl_to_cpp(src):
     return LIT.sub(lambda m: m.group(1) + 'f', src)
 
+# Metal's built-in scalar and vector type names: C++ lets a variable shadow a typedef, Metal's compiler does not (13 Nov:
+# `float half = …` passed here and failed on the real compiler, so two worlds had no renderer). Names Metal only uses
+# as attributes or library types (`patch`, `flat`, `texture`, `sampler`) are fine as variables, and shipping shaders
+# use them.
+MSL_RESERVED = ('half|half2|half3|half4|char|uchar|short|ushort|uint|uint2|uint3|uint4|long|ulong|bool2|bool3|bool4|'
+                'float2|float3|float4|int2|int3|int4|size_t|ptrdiff_t')
+RESERVED_DECL = re.compile(r'\b(?:float|int|uint|half|bool)[234]?(?:x[234])?\s+(?:[A-Za-z_]\w*\s*(?:=[^,;]*)?,\s*)*(' + MSL_RESERVED + r')\s*[=;,)\[]')
+
+def reserved_names(src):
+    out = []
+    for n, line in enumerate(src.split('\n'), 1):
+        code = line.split('//')[0]
+        m = RESERVED_DECL.search(code)
+        if m:
+            out.append((n, m.group(1), code.strip()))
+    return out
+
 def main():
     root = sys.argv[1]
     out = os.path.join(HERE, 'out'); only = None; rev = None
@@ -136,9 +153,13 @@ def main():
                             '-Wno-unknown-attributes', '-Wno-ignored-attributes', '-Wno-unused-value', '-x', 'c++', fn],
                            capture_output=True, text=True)
         errs = [l for l in r.stderr.split('\n') if ': error:' in l]
-        status = 'OK' if r.returncode == 0 else f'{len(errs)} error(s)'
+        taken = reserved_names(src)
+        bad = r.returncode != 0 or bool(taken)
+        status = 'OK' if not bad else f'{len(errs) + len(taken)} error(s)'
         print(f'== {key[0]} ({statics[key][0]}): {status}')
-        if r.returncode != 0:
+        for n, name, code in taken:
+            print(f'   {key[0]}.cpp:{n}: error: `{name}` is a Metal type name, not a variable name: {code[:120]}')
+        if bad:
             failures += 1
             for l in r.stderr.split('\n'):
                 if ': error:' in l or ': note:' in l:

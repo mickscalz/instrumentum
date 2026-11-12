@@ -73,6 +73,12 @@ jobs:
         run: |
           grep -E "error:|warning: |passed|failed|skipped|FRAME TIME|TIMING|exit " preview.log | tail -n 60 > report.txt || true
           python3 -c "t=open('report.txt').read()[-60000:];print('::notice title=look-report::'+t.replace('%','%25').replace('\r','').replace('\n','%0A'))"
+      - name: Fail if the render failed
+        # The render step always passes so the previews and the report still publish; this one shows the red cross
+        # (13 Nov: a failed build looked like a success and published nothing).
+        run: |
+          [ -f .github/look-filter ] || exit 0
+          grep -q "^exit 0$" preview.log
 
   previews:
     needs: test

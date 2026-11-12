@@ -44,9 +44,9 @@ enum SubmarineWindowShaders {
         float yb = y - 0.11 * b * back * back;
         // The body: fuller toward the head, a small dorsal hump two-thirds back, the stock narrowing to the flukes.
         float e = (x - 0.12) / 0.93;
-        float half = 0.19 * sqrt(max(0.0, 1.0 - e * e)) * (0.82 + 0.18 * smoothstep(-0.8, 0.5, x));
+        float halfH = 0.19 * sqrt(max(0.0, 1.0 - e * e)) * (0.82 + 0.18 * smoothstep(-0.8, 0.5, x));
         float stock = (x < -0.5 && x > -1.18) ? 0.028 + 0.1 * smoothstep(-1.18, -0.5, x) : 0.0;
-        float top = max(half, stock) + (yb > 0.0 ? 0.035 * exp(-((x + 0.42) / 0.07) * ((x + 0.42) / 0.07)) : 0.0);
+        float top = max(halfH, stock) + (yb > 0.0 ? 0.035 * exp(-((x + 0.42) / 0.07) * ((x + 0.42) / 0.07)) : 0.0);
         float body = 1.0 - smoothstep(-px, px, abs(yb + 0.015 * x) - top);
         // The flukes, edge on: a thin blade at the stock's end, pitching with the beat.
         float2 fq = float2(x + 1.24, yb + 0.11 * b * 0.6);
