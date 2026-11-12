@@ -312,15 +312,24 @@ public final class SceneDirector {
         return AmbienceKey(root: root, major: !analyzer.keyIsMinor)
     }
 
+    /// Hold the moment (Small Wins spec §4): once time is let go it eases back in over this long, on a smoothstep.
+    public static let holdEase = 0.6
+    /// The sleep dim's night (spec §3): the sun slides toward this altitude (a deep blue night), never up from below it.
+    public static let nightAltitude = -14.0
+
     /// What the app asks of the clock (Small Wins: hold the moment, the sleep dim, Reduce Motion, breathing), set before
     /// each frame's events.
     public var controls = SceneControls()
-    /// True while time is held.
+    /// True while time is held: asked for (the hourglass, ⌘⇧H), or the hold pedal down. All notes off lets the pedal go.
     public private(set) var holding = false
-    /// How far the renderers step this frame: the step's dt, which held time, the sleep dim and Reduce Motion shape.
+    /// How fast time runs for the sky and the world, 0…1: 0 while held, then smoothstep(0, `holdEase`, t − release), so
+    /// time eases back in where it stopped.
+    public private(set) var timeScale = 1.0
+    /// How far the renderers step this frame: the world's dt (held time and the sleep dim shape it), halved again while
+    /// the Mac asks for less motion. 0 while time is held.
     public private(set) var visualDt = 0.0
-    /// The post exposure's multiplier (the sleep dim lowers it by up to a stop): 1 while nothing dims the world.
-    public var exposureScale: Float { 1 }
+    /// The post exposure's multiplier: the sleep dim lowers it by up to a stop, exp2(−dim); 1 while nothing dims the world.
+    public private(set) var exposureScale: Float = 1
     /// What the app reads back after each step.
     public var report: SceneReport { SceneReport(holding: holding, sky: lastSky, key: key) }
 
@@ -336,6 +345,23 @@ public final class SceneDirector {
     private var box: AnyThemeBoxProtocol
     private var analyzer = PlayingAnalyzer()
     private var held: Set<UInt8> = []
+
+    /// What the world reads each step: the inputs and what the reaction map makes of them.
+    private struct WorldInputs {
+        var frame: InputFrame
+        var roles: RoleValues
+        var offsets: [String: Double]
+    }
+    /// The hold pedals down now (CC 66 and 67, whichever one holds the moment).
+    private var holdPedals: Set<UInt8> = []
+    /// When time was let go (the step's t), while it eases back in.
+    private var releasedAt: Double?
+    /// The hold's first inputs, handed to the world again while time stands still.
+    private var stillInputs: WorldInputs?
+    /// The instant the sky stood at when time was held; it glides back from here to the clock's as time eases in.
+    private var heldInstant: Date?
+    /// The instant the sky showed on the latest step.
+    private var shownInstant: Date?
 
     public init(themeID: String, state: ThemeState, reaction: ReactionMap) {
         let id = ThemeRegistry.resolve(themeID)
@@ -375,7 +401,10 @@ public final class SceneDirector {
                 for note in held { excitement.noteOff(Int(note)) }
                 held.removeAll()
                 pressure = 0
+                holdPedals.removeAll()   // a panic lets the hold pedal go (an asked-for hold stays)
             case let .pressure(p): pressure = min(1, max(0, p))
+            case let .control(controller, value) where controller == 66 || controller == 67:
+                if value >= 0.5 { holdPedals.insert(controller) } else { holdPedals.remove(controller) }
             default: break
             }
             box.handle(e)
@@ -385,17 +414,34 @@ public final class SceneDirector {
     }
 
     /// Returns the theme's frame (GardenFrame, SteinwayFrame or a world's frame).
+    ///
+    /// Small Wins (spec §3, §4, §6): held time steps the sky and the world by 0 and hands the world the hold's first
+    /// inputs, then eases back in; the sleep dim slows the world (not the weather) by up to half, slides the sun toward
+    /// night and lowers the exposure; Reduce Motion halves the renderers' dt (`visualDt`) and keeps Galaxy Warp adrift.
     public func step(dt: Double, t: Double, quality: QualityLevel) -> Any {
-        visualDt = dt
+        stepClock(t: t)
+        let skyDt = dt * timeScale
+        let worldDt = skyDt * (1 - 0.5 * controls.sleepDim)
+        visualDt = controls.reduceMotion ? worldDt / 2 : worldDt
+        exposureScale = Float(exp2(-controls.sleepDim))
+        let instant = skyInstant()
         hub.set(.held, held.isEmpty ? 0 : 1, at: t)
         analyzer.publish(to: hub, at: t)
-        let frame = hub.frame(at: t, listenStrength: listenStrength)
-        let (roles, offsets) = reaction.evaluate(frame)
-        lastRoles = roles
+        let inputs: WorldInputs
+        if timeScale == 0, let still = stillInputs {
+            inputs = still
+        } else {
+            var frame = hub.frame(at: t, listenStrength: listenStrength)
+            frame.values[.reduceMotion] = controls.reduceMotion ? 1 : 0
+            let (roles, offsets) = reaction.evaluate(frame)
+            inputs = WorldInputs(frame: frame, roles: roles, offsets: offsets)
+            stillInputs = timeScale == 0 ? inputs : nil
+        }
+        lastRoles = inputs.roles
         box.setInstrument(pressure: instrumentPressure, repeating: instrumentRepeat)
         box.setMood(mood)
         box.setPulse(instrumentPulse)
-        stepExcitement(dt: dt)
+        stepExcitement(dt: worldDt)
         if box.wantsSky {
             // All three are world parameters, read every step: a world without them (choice "") follows the sky and the
             // calendar, so leaving a world whose aurora or meteors are "Always" leaves them behind.
@@ -417,17 +463,61 @@ public final class SceneDirector {
                                     sprites: SkyExtraMode(rawValue: parameters.choice(SkyExtraMode.spritesID)),
                                     satellites: SkyExtraMode(rawValue: parameters.choice(SkyExtraMode.satellitesID)),
                                     skyglowLimit: box.skyglowLimit, emberSource: box.emberSource, spriteCall: box.spriteCall)
-            let s = sky.step(now: clock(), dt: dt, hold: hold, aurora: aurora, meteors: meteors, storm: storm)
+            let s = sky.step(now: instant, dt: skyDt, hold: hold, aurora: aurora, meteors: meteors, storm: storm,
+                             dim: controls.sleepDim)
             lastSky = s
             box.setSky(s)
         }
-        return box.step(dt: dt, params: parameters.withOffsets(offsets), roles: roles, inputs: frame, quality: quality)
+        return box.step(dt: worldDt, params: parameters.withOffsets(inputs.offsets), roles: inputs.roles, inputs: inputs.frame,
+                        quality: quality)
     }
 
-    /// Steps Excitement by the step's dt, hands its frame to the theme, and works out the instrument's tension and cue
-    /// (Storms spec §3, §4.1). A drop is cued only on the step its moment arrives, so it reaches the engine once.
+    /// Held time for this step (spec §4): holding (asked for, or the hold pedal down) and `timeScale`, 0 while held and
+    /// then a smoothstep back to 1 over `holdEase` from the first step let go. The sky's instant stands where it was
+    /// shown as a hold begins.
+    private func stepClock(t: Double) {
+        let pedal = controls.holdPedal.controller.map { holdPedals.contains($0) } ?? false
+        let hold = controls.holdRequested || pedal
+        if hold {
+            if !holding { heldInstant = shownInstant }
+            releasedAt = nil
+            timeScale = 0
+        } else {
+            if holding { releasedAt = t }
+            if let released = releasedAt {
+                let x = min(1, max(0, (t - released) / Self.holdEase))
+                timeScale = x * x * (3 - 2 * x)
+                if x >= 1 { releasedAt = nil }
+            } else {
+                timeScale = 1
+            }
+        }
+        holding = hold
+    }
+
+    /// The instant the sky shows: the clock's, but while time is held it stands where it was, and as time eases back in
+    /// it glides from there to the clock's by `timeScale`, so after a long hold in real time the sky catches up without
+    /// a jump. (Quick mode runs on the sky's dt instead, so it resumes where it stopped.)
+    private func skyInstant() -> Date {
+        let now = clock()
+        var shown = now
+        if timeScale < 1 {
+            let from = heldInstant ?? now
+            heldInstant = from
+            shown = from.addingTimeInterval(now.timeIntervalSince(from) * timeScale)
+        } else {
+            heldInstant = nil
+        }
+        shownInstant = shown
+        return shown
+    }
+
+    /// Steps Excitement by the world's dt, hands its frame to the theme, and works out the instrument's tension and cue
+    /// (Storms spec §3, §4.1). A drop is cued only on the step its moment arrives, so it reaches the engine once. Held
+    /// time freezes it; the sleep fade turns its moments and surprises off.
     private func stepExcitement(dt: Double) {
         excitement.holding = holding
+        excitement.sleeping = controls.sleepDim > 0
         excitement.reduceMotion = controls.reduceMotion
         var e = excitement.step(dt: dt, surpriseCount: box.surpriseCount)
         e.gentle = controls.gentle   // for the worlds' sound (the drive's far siren); Excitement's own pacing is untouched

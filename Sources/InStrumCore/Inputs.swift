@@ -62,6 +62,10 @@ public struct InputID: Hashable, Codable, RawRepresentable {
     public static let mid = InputID("listening.mid")
     public static let treble = InputID("listening.treble")
     public static let beat = InputID("listening.beat")
+
+    /// The Mac's Reduce Motion while the app follows it (Small Wins spec §6): 1 or 0. The director puts it into every
+    /// step's frame itself, never into the hub, so the mapping editor never offers it; Galaxy Warp drifts while it is up.
+    public static let reduceMotion = InputID("comfort.reduceMotion")
 }
 
 /// Smoothed input values for one frame. Missing inputs read 0.
