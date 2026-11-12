@@ -736,7 +736,9 @@ enum VolcanoRimShaders {
         float3 N = normalize(n1 + n2 * 0.55);
         float3 Lb = normalize(float3(-0.1, -1.0, 0.55));
         float dome = saturate(0.5 + 0.5 * dot(N, Lb) * 1.6);
-        float shade = mix(0.75, dome, body) * (0.7 + 0.3 * smoothstep(0.0, 0.25, c1));
+        // Gas, not clay: light scatters through it, so the billows' shading is soft and the thin parts glow through.
+        float through = exp(-dens * 1.6);
+        float shade = mix(0.75, dome, 0.65 * body) * (0.75 + 0.25 * smoothstep(0.0, 0.25, c1)) + 0.35 * through;
         // Lit from below: brightest at its foot (the lake's disc), fading with height.
         float R = u.lake.x;
         float fall = R * R / (R * R + sq(max(z, 0.0) + 30.0)) * (0.25 + 0.75 * exp(-max(z, 0.0) / 110.0));
@@ -964,7 +966,7 @@ enum VolcanoRimShaders {
         float t = clamp(s.info.y, 450.0, 2200.0);
         float inv = 1.0 / t;
         float3 bb = float3(1.0, exp(0.38 - 1848.0 * inv), exp(2.036 - 8727.0 * inv)) * exp((t - 1150.0) * 0.0086957);
-        o.col = bb * (s.info.z / (1.0 + 0.8 * L));
+        o.col = bb * (s.info.z / (1.0 + 0.5 * L));
         o.soft = s.info.w;
         o.len = L;
         return o;
@@ -973,7 +975,10 @@ enum VolcanoRimShaders {
         float2 p = in.uv;
         float dy = max(abs(p.y) - in.len, 0.0);
         float r2 = p.x * p.x + dy * dy;
-        float sharp = exp(-r2 * 3.0);
+        // A comet, not a dash: brightest at its head (ahead, along its motion), its trail fading and thinning behind.
+        float along = in.len > 0.05 ? saturate((p.y + in.len + 1.0) / (2.0 * in.len + 2.0)) : 1.0;
+        float thin = 0.45 + 0.55 * along;
+        float sharp = exp(-(p.x * p.x / (thin * thin) + dy * dy) * 3.0) * (0.12 + 0.88 * along * along);
         float disc = (1.0 - smoothstep(0.75, 1.0, sqrt(r2))) * (0.55 + 0.45 * smoothstep(0.9, 0.5, sqrt(r2)));
         float a = mix(sharp, 0.5 * disc, in.soft);
         if (a < 0.002) discard_fragment();

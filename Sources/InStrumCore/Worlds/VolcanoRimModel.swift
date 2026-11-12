@@ -671,7 +671,7 @@ public struct VolcanoRimModel: ThemeModel, MoodAware, SkyAware, ExcitementAware,
         // The light the scene asks for: the lightning, the eruption, a fireball (the renderer's limiter governs it).
         var flash: Float = 0
         for s in strokes { flash = max(flash, s.brightness) }
-        if let e = eruption { flash = max(flash, 0.8 * e.light * (e.age < 0.3 ? 1 : 0.6)) }
+        if let e = eruption { flash = max(flash, 0.8 * e.light * (e.age < 0.3 ? 1 : 0.4)) }
         for s in surprises where s.kind == .fireball {
             let x = s.progress
             flash = max(flash, 0.5 * Self.smooth(0.5, 0.75, x) * (1 - Self.smooth(0.75, 1, x)))
