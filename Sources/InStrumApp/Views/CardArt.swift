@@ -2589,13 +2589,13 @@ extension CardArt {
             var gully = Path()
             gully.addLines([a, m, b])
             ctx.stroke(gully, with: .linearGradient(
-                Gradient(stops: [.init(color: hollow.opacity(0), location: 0), .init(color: hollow.opacity(0.5), location: 0.6),
-                                 .init(color: hollow.opacity(0.2), location: 1)]),
+                Gradient(stops: [.init(color: hollow.opacity(0), location: 0), .init(color: hollow.opacity(0.65), location: 0.6),
+                                 .init(color: hollow.opacity(0.25), location: 1)]),
                 startPoint: a, endPoint: b), lineWidth: wide)
             guard g % 2 == 0 else { continue }
             var rib = Path()
             rib.addLines([CGPoint(x: a.x + 0.9 * wide, y: a.y + 0.02 * h), CGPoint(x: m.x + 0.9 * wide, y: m.y), CGPoint(x: b.x + 0.9 * wide, y: b.y)])
-            light.stroke(rib, with: .linearGradient(Gradient(colors: [glowRib.opacity(0), glowRib.opacity(0.14)]), startPoint: a, endPoint: b),
+            light.stroke(rib, with: .linearGradient(Gradient(colors: [glowRib.opacity(0), glowRib.opacity(0.2)]), startPoint: a, endPoint: b),
                          lineWidth: 0.6 * k)
         }
         for (band, f) in [0.42, 0.74].enumerated() {
@@ -2723,7 +2723,7 @@ extension CardArt {
             let radius: CGFloat = max(1e-3, spread / n)
             let fromHot: Double = hypot(Double(plate.seed.x) - fountain.u, Double(plate.seed.y) - fountain.v)
             let young: Double = max(0, 1 - fromHot / 0.45)
-            let gap: CGFloat = (0.30 + CGFloat(0.35 + 0.65 * hash(index, 522)) * depth + CGFloat(1.1 * young)) * k
+            let gap: CGFloat = (0.30 + CGFloat(0.35 + 0.65 * hash(index, 522)) * depth + CGFloat(1.6 * young)) * k
             let s: CGFloat = max(0.2, 1 - gap / radius)
             let q: [CGPoint] = corners.map { CGPoint(x: mx + ($0.x - mx) * s, y: my + ($0.y - my) * s) }
             /// The point `f` of the way from `a` to `b`.

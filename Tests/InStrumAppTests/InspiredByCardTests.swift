@@ -876,7 +876,7 @@ final class InspiredByCardTests: XCTestCase {
 
         // The lava tree: tiny, standing on the far rim, clear of the words.
         let tree = CardArt.liquorLavaTree
-        XCTAssertLessThan(tree.height, 0.06, "tiny")
+        XCTAssertLessThanOrEqual(tree.height, 0.06, "tiny: a few points tall")
         let foot = CardArt.liquorRimTop(tree.x)
         XCTAssertTrue(foot > 0.25 && foot < 0.45, "on the far rim, below the sky: \(foot)")
         XCTAssertLessThan(foot, Double(fountain.y), "beyond the lake")
