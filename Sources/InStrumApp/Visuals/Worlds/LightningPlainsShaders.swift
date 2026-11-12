@@ -910,9 +910,11 @@ enum LightningPlainsShaders {
         float time = p.frame.y;
         float baseM = c.x;
         float slant = X + c.z * Y;
-        // Fine streaks, softly (wide bright ones read as a shower curtain hung across the sky).
-        float streak = 0.65 * vnoise3(float3(slant / max(1.6, 0.007 * t), Y / max(40.0, 0.15 * t) + time * 2.5, 6.1))
-                     + 0.35 * vnoise3(float3(slant / max(5.0, 0.02 * t), Y / max(90.0, 0.3 * t) + time * 1.8, 2.7));
+        // Fine streaks a few pixels wide however near the rain is (measured as angles, not metres: wide bright bands
+        // read as a shower curtain hung across the sky), long and falling.
+        float sx = slant / t, sy = Y / t;
+        float streak = 0.65 * vnoise3(float3(sx / 0.0035, sy / 0.09 + time * 2.5, 6.1))
+                     + 0.35 * vnoise3(float3(sx / 0.012, sy / 0.2 + time * 1.8, 2.7));
         float reach = mix(1.0, smoothstep(c.y * baseM, (c.y + 0.25) * baseM, Y), b.z);
         float rainA = c.w * (0.5 + 0.5 * streak) * reach;
         float3 lit = p.flash.rgb * 0.25 + float3(0.82, 0.84, 1.0) * p.shake.z * 0.3;

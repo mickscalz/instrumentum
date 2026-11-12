@@ -635,7 +635,7 @@ enum SupercellSkyShaders {
         float a0 = (f0 - k) * spacing * r0 + 0.6 * width * wander, a1 = (f1 - k) * spacing * r1 + 0.6 * width * wander;
         float across = a0 * a1 <= 0.0 ? 0.0 : (abs(a0) < abs(a1) ? a0 : a1);   // km off the band's line, at the nearest
         float off = abs(across);
-        float profile = 1.0 - smoothstep(0.2 * width, width, off);
+        float profile = 1.0 - smoothstep(0.0, 1.3 * width, off);   // soft-edged: a band of cloud, not a thread
         profile *= profile;
         float streak = fbm2(float2((r + flow) * 0.6, 0.5 * (a0 + a1) * 3.0 + k * 3.7), octaves);
         float ends = smoothstep(u.wall.z * 0.9, u.wall.z * 2.0, r) * (1.0 - smoothstep(rMax * 0.4, rMax * 0.8, r));
@@ -645,7 +645,7 @@ enum SupercellSkyShaders {
         // Far off and low over the horizon (seen nearly edge-on) they fade too: there they drew a faint line under the
         // base.
         ends *= mix(0.15, 1.0, smoothstep(0.04, 0.1, d.z / max(length(d), 1e-4)));
-        float dens = profile * ends * smoothstep(0.3, 0.65, streak) * (0.32 + 0.18 * u.play.x);
+        float dens = profile * ends * smoothstep(0.3, 0.65, streak) * (0.22 + 0.16 * u.play.x);
         // A note's glow running up this band into the wall cloud.
         float glow = 0.0;
         for (int i = 0; i < 8; i++) {
@@ -661,7 +661,7 @@ enum SupercellSkyShaders {
         float a = saturate(dens + 0.3 * glow);
         if (a <= 0.002) return L;
         float3 c = (u.amb.rgb * 0.26 + float3(0.03, 0.032, 0.04)) * (0.8 + 0.4 * streak)
-                 + u.sunCol.rgb * float3(1.0, 0.82, 0.64) * ((0.12 + 0.12 * streak) * u.sunCol.w);
+                 + u.sunCol.rgb * float3(1.0, 0.82, 0.64) * ((0.05 + 0.06 * streak) * u.sunCol.w);
         c *= 1.1 - 0.5 * u.look.x;
         c = (c * dens + float3(1.0, 0.66, 0.34) * (0.26 * glow * (0.6 + 0.4 * streak))) / a;
         L.a = a;
@@ -1107,7 +1107,9 @@ enum SupercellSkyShaders {
                 case 6: ly = base(o, d, ndc, u, octaves, lt); break;
                 case 7: ly = tower(o, d, ndc, u, octaves, lt); break;
                 case 8: ly = flankingLine(o, d, ndc, u, octaves, 0, lt); break;
-                case 9: ly = flankingLine(o, d, ndc, u, octaves, 1, lt); break;
+                case 9:                                            // (the second tower behind: not on Smooth)
+                    if (octaves < 3) { ly.a = 0.0; lt = 1e9; } else { ly = flankingLine(o, d, ndc, u, octaves, 1, lt); }
+                    break;
                 default: ly = anvil(o, d, ndc, u, octaves, lt); anvilCover = ly.a; break;
             }
             if (ly.a <= 0.0 || lt >= groundT) continue;
@@ -1169,10 +1171,12 @@ enum SupercellSkyShaders {
         }
         if (u.after.y > 0.0 && dE.z > 0.0) {
             float angle = toDeg(acos(clamp(dot(dE, anti), -1.0, 1.0)));
-            float3 bow = rainbowBow(angle);
-            float darkBand = angle > 42.5 && angle < 50.5 ? 0.88 : 1.0;
+            // The sun's disc (half a degree) blurs the bands into each other, as a real bow's colours run together.
+            float3 bow = 0.25 * rainbowBow(angle - 0.35) + 0.5 * rainbowBow(angle) + 0.25 * rainbowBow(angle + 0.35);
+            bow = mix(bow, float3(dot(bow, float3(0.2126, 0.7152, 0.0722))), 0.2);
+            float darkBand = angle > 42.5 && angle < 50.5 ? 0.9 : 1.0;
             float strength = u.after.y * (1.0 - anvilCover);
-            col = col * mix(1.0, darkBand, strength) + bow * (0.55 * strength) * (0.6 + u.sunCol.rgb * 0.3);
+            col = col * mix(1.0, darkBand, strength) + bow * (0.4 * strength) * (0.6 + u.sunCol.rgb * 0.3);
         }
         // Lightning: the strikes (blue-white, through the limiter) and the crawlers on the cloud.
         col += strikes(ndc, u);
