@@ -337,27 +337,41 @@ enum BioluminescentBayShaders {
 
     // ---------------------------------------------------------------- water and sand
 
-    /// The bay's water at q (across, out; `f` out), seen along d: its own colour (turquoise over the sand by day, dark at
-    /// night), mirroring the headlands, the boat and the sky (stars, aurora, moon) by Fresnel, the moon's and the sun's
-    /// paths, the lantern's light and the lighthouse's flash on it, then Glow Wake (emissive, unreflected).
-    float3 bayWater(float3 d, float2 q, float f, float camAz, float2 fwd, float2 rgt, int octaves,
-                    constant SkyU& u, constant BayU& b, constant OceanU& o, texture2d<float> stars) {
-        float footprint = oceanFootprint(d, f, u);
-        float2 slope = oceanSlope(q, o, footprint);
-        float3 nrm = oceanNormal(slope, fwd, rgt);
-        float3 rd0 = reflect(d, nrm);
-        float3 rd = normalize(float3(rd0.xy, max(rd0.z, 0.002)));
+    /// The water's surface at q (across, out; `f` out) seen along d, and what it mirrors: its footprint, normal and
+    /// reflected rays, and whether the headlands or their mangroves fill the mirror there (else the sky does, along `rd`).
+    struct BayMirror { float footprint; float3 nrm; float3 rd0; float3 rd; float rAlt; bool land; bool mangrove; };
+    BayMirror bayMirror(float3 d, float2 q, float f, float camAz, float2 fwd, float2 rgt, int octaves, constant SkyU& u,
+                        constant OceanU& o) {
+        BayMirror m;
+        m.footprint = oceanFootprint(d, f, u);
+        float2 slope = oceanSlope(q, o, m.footprint);
+        m.nrm = oceanNormal(slope, fwd, rgt);
+        m.rd0 = reflect(d, m.nrm);
+        m.rd = normalize(float3(m.rd0.xy, max(m.rd0.z, 0.002)));
         // What the mirror shows: the boat, the headlands and their mangroves, else the sky.
-        float rAz = bayWrap(atan2(rd.x, rd.y) - camAz), rAlt = asin(clamp(rd.z, -1.0, 1.0));
+        float rAz = bayWrap(atan2(m.rd.x, m.rd.y) - camAz);
+        m.rAlt = asin(clamp(m.rd.z, -1.0, 1.0));
         float landS = bayLandSmooth(rAz);
-        float mang = rAlt < toRad(1.2) ? bayMangroves(rAz) : 0.0;
-        float land = (landS > -0.5 && rAlt < landS + toRad(1.0)) ? bayLand(rAz, min(octaves, 2)) : -1.0;
+        float mang = m.rAlt < toRad(1.2) ? bayMangroves(rAz) : 0.0;
+        float land = (landS > -0.5 && m.rAlt < landS + toRad(1.0)) ? bayLand(rAz, min(octaves, 2)) : -1.0;
+        m.land = m.rAlt < land || m.rAlt < mang;
+        m.mangrove = m.rAlt < mang;
+        return m;
+    }
+
+    /// The bay's water at q (across, out; `f` out), seen along d: its own colour (turquoise over the sand by day, dark at
+    /// night), mirroring the headlands, the boat and the sky (stars, aurora, moon; `sky`, the sky's light along the
+    /// mirror's ray, drawn by the fragment's one call) by Fresnel, the moon's and the sun's paths, the lantern's light and
+    /// the lighthouse's flash on it, then Glow Wake (emissive, unreflected).
+    float3 bayWater(float3 d, float2 q, float f, float2 fwd, float2 rgt, BayMirror mirror, float3 sky, constant SkyU& u,
+                    constant BayU& b, constant OceanU& o) {
+        float footprint = mirror.footprint;
+        float3 nrm = mirror.nrm, rd0 = mirror.rd0, rd = mirror.rd;
         float3 refl;
-        if (rAlt < land || rAlt < mang) {
-            refl = bayLandColor(rAlt, rAlt < mang, u, b, o) * 0.85;
+        if (mirror.land) {
+            refl = bayLandColor(mirror.rAlt, mirror.mangrove, u, b, o) * 0.85;
         } else {
-            float mm;
-            refl = skyRadiance(rd, u, mm, stars);
+            refl = sky;
         }
         float3 boatCol = float3(0);
         float boat = bayBoatMirrored(rd, q, fwd, rgt, b, u, o, boatCol);
@@ -404,10 +418,24 @@ enum BioluminescentBayShaders {
         return col;
     }
 
+    /// Whether the sand at q mirrors the sky (wet toward the waterline or after rain, or under a wavelet's wash), and in
+    /// `dir` the way it mirrors (its ripples roughening it): the fragment draws the sky there in its one call.
+    bool baySandMirror(float3 d, float2 q, float f, float edge, constant BayU& b, thread float3& dir) {
+        float wet = max(smoothstep(edge - 1.2, edge - 0.3, f), 0.6 * b.c.w);
+        float front = edge - bayWash(b).x;
+        bool sheet = f > front;
+        if (!(wet > 0.01 || sheet)) return false;
+        float2 rough = (float2(vnoise3(float3(q * 3.0, 2.0)), vnoise3(float3(q * 3.0 + 7.0, 4.0))) - 0.5) * (sheet ? 0.025 : 0.07);
+        float3 rd = reflect(d, normalize(float3(rough, 1.0)));
+        rd.z = max(rd.z, 0.002);
+        dir = normalize(rd);
+        return true;
+    }
+
     /// The sand: white by day, mirror-dark and wet toward the waterline (and all over after rain), under the thin sheet of
-    /// each wavelet's wash.
-    float3 baySand(float3 d, float2 q, float f, float edge, constant SkyU& u, constant BayU& b, constant OceanU& o,
-                   texture2d<float> stars) {
+    /// each wavelet's wash; `sky` is the sky's light it mirrors (baySandMirror's way).
+    float3 baySand(float3 d, float2 q, float f, float edge, float3 sky, constant SkyU& u, constant BayU& b,
+                   constant OceanU& o) {
         float3 zenith = u.zenith.rgb, horizon = u.horizon.rgb;
         float grain = vnoise3(float3(q * float2(9.0, 5.0), 3.0));
         float ripple = 0.5 + 0.5 * sin(q.y * 9.0 + 2.0 * vnoise3(float3(q * 0.7, 1.0)) + q.x * 0.6);
@@ -420,11 +448,7 @@ enum BioluminescentBayShaders {
         float front = edge - bayWash(b).x;
         bool sheet = f > front;
         if (wet > 0.01 || sheet) {
-            float2 rough = (float2(vnoise3(float3(q * 3.0, 2.0)), vnoise3(float3(q * 3.0 + 7.0, 4.0))) - 0.5) * (sheet ? 0.025 : 0.07);
-            float3 rd = reflect(d, normalize(float3(rough, 1.0)));
-            rd.z = max(rd.z, 0.002);
-            float mm;
-            float3 refl = skyRadiance(normalize(rd), u, mm, stars);
+            float3 refl = sky;
             float m = 1.0 - saturate(-d.z);
             float fres = 0.25 + 0.6 * m * m * m;
             col = mix(col, mix(sand * light * 0.2, refl, fres), wet);
@@ -541,28 +565,65 @@ enum BioluminescentBayShaders {
         float boat = bayBoatSeen(d, fwd, rgt, b, u, o, boatCol);
         float3 col;
         float depth = 1.0;
+        // The sky's light is drawn at one call site: above the horizon the sky itself, below it the sky in the water's
+        // or the wet sand's mirror. Each call inlines the whole sky again (a second one made every sky about sevenfold
+        // slower on CI; the bay had three), so each branch first works out the way it needs the sky, then the sky is
+        // drawn once, then each branch finishes with it.
+        bool wantSky = false;
+        float3 skyDir = d;
+        bool hitLand = false;
+        float mang = 0.0, farPalm = 0.0, tower = 0.0, lampRoom = 0.0;
+        float f = 0.0, s = 0.0, edge = 0.0;
+        float2 q = float2(0.0);
+        bool water = false;
+        BayMirror mirror;
+        mirror.footprint = 0.0; mirror.nrm = float3(0.0, 0.0, 1.0); mirror.rd0 = d; mirror.rd = d; mirror.rAlt = 0.0;
+        mirror.land = false; mirror.mangrove = false;
         if (alt >= 0.0) {
             // Above the horizon: the headlands with their mangroves and palms, the lighthouse, else the sky (only where
             // something of the bay's own is drawn; elsewhere the dome shows).
             bool low = alt < toRad(14.0);
             float landS = low ? bayLandSmooth(azRel) : -1.0;
-            float mang = alt < toRad(1.2) ? bayMangroves(azRel) : 0.0;
+            mang = alt < toRad(1.2) ? bayMangroves(azRel) : 0.0;
             float land = (landS > -0.5 && alt < landS + toRad(1.0)) ? bayLand(azRel, min(octaves, 2)) : -1.0;
-            float farPalm = low ? bayFarPalms(azRel, alt, px, b.c.z, o) : 0.0;
-            float lampRoom = 0.0;
-            float tower = low ? bayTower(azRel, alt, px, b, lampRoom) : 0.0;
-            bool hitLand = alt < land || alt < mang;
+            farPalm = low ? bayFarPalms(azRel, alt, px, b.c.z, o) : 0.0;
+            tower = low ? bayTower(azRel, alt, px, b, lampRoom) : 0.0;
+            hitLand = alt < land || alt < mang;
             if (!hitLand && farPalm < 0.002 && tower < 0.002 && boat < 0.002 && palm < 0.002 && air.x + air.y + air.z < 0.004) {
                 discard_fragment();
                 out.color = float4(0, 0, 0, 1); out.depth = float4(1, 0, 0, 1);
                 return out;
             }
+            wantSky = !hitLand;
+        } else {
+            // Below it: where the ray meets the bay (the eye is a.z metres up), the water beyond the wandering waterline
+            // and the sand before it.
+            float t = b.a.z / max(-d.z, 1e-4);
+            float3 P = d * t;
+            f = dot(P.xy, fwd);
+            s = dot(P.xy, rgt);
+            q = float2(s, f);
+            edge = b.d.x + 0.35 * (vnoise3(float3(s * 0.22, 5.0, 1.5 * sin(o.phases.w))) - 0.5);
+            water = f > edge;
+            if (water) {
+                mirror = bayMirror(d, q, f, camAz, fwd, rgt, octaves, u, o);
+                wantSky = !mirror.land;
+                skyDir = mirror.rd;
+            } else {
+                wantSky = baySandMirror(d, q, f, edge, b, skyDir);
+            }
+        }
+        float3 sky = float3(0.0);
+        if (wantSky) {
+            float mm;
+            sky = skyRadiance(skyDir, u, mm, stars);
+        }
+        if (alt >= 0.0) {
             if (hitLand) {
                 col = bayLandColor(alt, alt < mang, u, b, o);
                 depth = alt < mang ? 0.95 : 0.97;
             } else {
-                float mm;
-                col = skyRadiance(d, u, mm, stars);
+                col = sky;
             }
             if (farPalm > 0.002) col = mix(col, bayLandColor(alt, false, u, b, o) * 0.8, farPalm);
             if (tower > 0.002) {
@@ -572,17 +633,11 @@ enum BioluminescentBayShaders {
                 if (tower > 0.5) depth = 0.98;
             }
         } else {
-            // Below it: where the ray meets the bay (the eye is a.z metres up), the water beyond the wandering waterline
-            // and the sand before it, with the glow line along their edge.
-            float t = b.a.z / max(-d.z, 1e-4);
-            float3 P = d * t;
-            float f = dot(P.xy, fwd), s = dot(P.xy, rgt);
-            float2 q = float2(s, f);
-            float edge = b.d.x + 0.35 * (vnoise3(float3(s * 0.22, 5.0, 1.5 * sin(o.phases.w))) - 0.5);
-            if (f > edge) {
-                col = bayWater(d, q, f, camAz, fwd, rgt, octaves, u, b, o, stars);
+            // Below it: the water or the sand, with the glow line along their edge.
+            if (water) {
+                col = bayWater(d, q, f, fwd, rgt, mirror, sky, u, b, o);
             } else {
-                col = baySand(d, q, f, edge, u, b, o, stars);
+                col = baySand(d, q, f, edge, sky, u, b, o);
             }
             col += bayGlowLine(s, f, edge, b, o);
             // Haze over the bay, thicker far away.
