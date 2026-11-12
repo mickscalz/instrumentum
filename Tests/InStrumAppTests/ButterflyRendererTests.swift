@@ -81,6 +81,7 @@ final class PreviewRenderTests: XCTestCase {
     /// The "Inspired by" cards (PREVIEW_DIR).
     func testWriteCardPreviews() throws {
         guard let dir = ProcessInfo.processInfo.environment["PREVIEW_DIR"] else { throw XCTSkip("PREVIEW_DIR not set") }
+        try XCTSkipUnless(InspiredByCardTests.canRenderCards, "this GPU can't draw SwiftUI's Canvas filters (a virtual machine)")
         let url = URL(fileURLWithPath: dir, isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         for c in CreditLibrary.all {

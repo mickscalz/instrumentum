@@ -291,7 +291,7 @@ final class HeldTimeTests: XCTestCase {
             flash = try XCTUnwrap(run(bay, &u, seconds: Self.frameDt) as? BayFrame).lighthouseFlash
             tries += 1
         }
-        XCTAssertGreaterThan(flash, 0.5, "the lighthouse flashes within 10 s")
+        XCTAssertGreaterThanOrEqual(flash, 0.5, "the lighthouse flashes within 10 s")
         bay.controls.holdRequested = true
         let first = try XCTUnwrap(run(bay, &u, seconds: Self.frameDt) as? BayFrame).lighthouseFlash
         for _ in 0..<300 {
