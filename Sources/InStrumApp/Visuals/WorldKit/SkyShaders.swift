@@ -757,7 +757,8 @@ enum SkyShaders {
         float3 spot = supercellSpot(u);
         float sl = length(spot);
         float sd = sl > 1e-3 ? dot(dS, spot / sl) : 1.0;
-        float heart = 0.6 * exp((sd - 1.0) / 0.012) + 0.3 * exp((sd - 1.0) / 0.07) + 0.12 * exp((sd - 1.0) / 0.35);
+        // (A hot heart a few degrees round the strike, falling off fast: lightning in the cloud, not moonlight on it.)
+        float heart = 0.95 * exp((sd - 1.0) / 0.007) + 0.3 * exp((sd - 1.0) / 0.04) + 0.08 * exp((sd - 1.0) / 0.3);
         return float3(0.62, 0.66, 0.85) * (glow * (0.04 * cover + recept * heart));
     }
 
@@ -1217,7 +1218,7 @@ enum SkyShaders {
                     // Mammatus: Supercell Sky's pouches (the same sum of bumps and the same light), in the frame where a
                     // pouch stays round on screen: each lit on its flank toward the low sun, the folds between soft and
                     // shaded.
-                    float2 gm = gq / 1.5 + 0.35 * float2(na, skyNoise2(P * 0.09 + 4.0));
+                    float2 gm = gq / 1.5 + 0.35 * float2(bil, skyNoise2(gq * 0.11 + 4.0));
                     float3 nq = mammatusNormal(gm, pm, 1.6, dome);
                     // The frame's axes round you (across, outward) into the storm's (along, right).
                     float2 out2 = P / max(length(P), 1e-3);
