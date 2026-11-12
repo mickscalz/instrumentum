@@ -23,18 +23,23 @@ enum LightTrailsShaders {
         return float4(ex, ey, d.z * t, t);
     }
 
-    float streakLight(float4 pass, float tail, float head, float w, float stretch, float pa) {
+    /// A streak's light where the ray passes it: a crisp line whose width is the light's own (`w`, m) far off but never more
+    /// than `maxPx` pixels near (a long exposure's trail stays thin at every depth), with a faint glow a few pixels wide.
+    /// `soften` widens the line's profile across (a mirror on the wet road: thin, but softer than the trail).
+    float streakLight(float4 pass, float tail, float head, float w, float maxPx, float soften, float pa) {
         if (pass.w <= 0.0 || pass.z < tail || pass.z > head) return 0.0;
         float pix = pass.w * pa;
-        float wx2 = w * w + pix * pix;
-        float wy2 = w * w * stretch * stretch + pix * pix;
-        float core = exp(-pass.x * pass.x / wx2 - pass.y * pass.y / wy2) * (w * w * stretch / sqrt(wx2 * wy2));
-        float halo = exp(-sqrt(pass.x * pass.x + pass.y * pass.y / (stretch * stretch)) / 0.2) * 0.02;
+        float wEff = min(w, maxPx * pix);
+        float r = sqrt(pass.x * pass.x + pass.y * pass.y);
+        float w2 = wEff * wEff * soften * soften + pix * pix;
+        // The profile's height keeps a line's total light across it the same whether it is a pixel wide or more.
+        float core = exp(-r * r / w2) * (wEff / sqrt(w2));
+        float glowR = min(0.12, 3.0 * pix);
+        float halo = exp(-r / glowR) * 0.05 / soften;
         float ends = smoothstep(tail, tail + 3.0, pass.z) * smoothstep(head, head - 1.5, pass.z);
         float headGlow = 1.0 + 0.6 * smoothstep(head - 10.0, head, pass.z);
         return (core + halo) * ends * headGlow;
     }
-
     fragment float4 trails_fragment(DriveOut in [[stage_in]], constant SkyU& sky [[buffer(0)]],
                                     constant DriveU& u [[buffer(1)]], constant TrailsU& tu [[buffer(2)]],
                                     constant Streak* streaks [[buffer(3)]], texture2d<float> depth [[texture(0)]]) {
@@ -69,11 +74,12 @@ enum LightTrailsShaders {
                 float3 c = st.b.rgb;
                 if (near) {
                     float4 p = passLine(d, st.a.x, st.a.y, eye);
-                    if (p.w < sceneT + 0.5) laneCol += c * streakLight(p, st.a.z, st.a.w, 0.05, 1.0, pa) * 2.6;
+                    if (p.w < sceneT + 0.5) laneCol += c * streakLight(p, st.a.z, st.a.w, 0.05, 1.5, 1.0, pa) * 2.6;
                 }
                 if (nearMirror) {
+                    // The mirror: the same line below the deck, reaching a little nearer, softer and dimmer.
                     float4 m = passLine(d, st.a.x, -st.a.y, eye);
-                    laneCol += c * streakLight(m, st.a.z, st.a.w, 0.05, 3.5, pa) * F * 1.4;
+                    laneCol += c * streakLight(m, st.a.z * 0.8, st.a.w, 0.05, 2.0, 1.6, pa) * F * 1.2;
                 }
             }
             // A crowded lane reads as many lines, not one blaze: its light grows as the root of its count past four.
