@@ -282,7 +282,7 @@ enum NeonNightDriveShaders {
         float w2 = tube * tube + fp * fp;
         float energy = tube * tube / w2;
         float core = exp(-dist * dist / w2) * energy;
-        float halo = exp(-dist / (tube * 5.0 + fp)) * 0.3 + exp(-dist / (tube * 16.0 + fp)) * 0.06;
+        float halo = exp(-dist / (tube * 3.5 + fp)) * 0.3 + exp(-dist / (tube * 7.0 + fp)) * 0.035;
         float3 hot = mix(colour, float3(1.0), 0.18);
         return (hot * core * 3.4 + colour * halo) * level;
     }
@@ -312,9 +312,10 @@ enum NeonNightDriveShaders {
         if (glass) {
             float floorLit = hash12(float2(fl * 1.3 + seed, seed * 31.0 + floor(col / 7.0)));
             lit = step(floorLit, litShare * 1.4) * step(hash12(float2(col * 1.7 + seed, fl * 3.1)), 0.88);
-            wc = h5 < 0.7 ? float3(0.78, 0.9, 1.0) : float3(1.0, 0.84, 0.62);
+            float tint = hash12(float2(fl * 0.7 + seed, floor(col / 7.0)));
+            wc = h5 < 0.7 ? (tint < 0.6 ? float3(0.74, 0.9, 1.0) : float3(0.95, 0.96, 0.9)) : float3(1.0, 0.84, 0.62);
             // Desks and partitions break the floor's light up; its ceiling panels are the brightest.
-            bright = (0.26 + 0.3 * hash12(float2(fl, seed))) * (0.55 + 0.9 * hash12(float2(floor(u / 0.9), fl + seed)));
+            bright = (0.34 + 0.4 * hash12(float2(fl, seed))) * (0.3 + 1.2 * hash12(float2(floor(u / 0.9), fl + seed)));
         } else {
             float winLit = hash12(float2(col * 1.7 + seed * 5.0, fl * 3.1 + seed));
             lit = step(winLit, litShare);
@@ -324,7 +325,10 @@ enum NeonNightDriveShaders {
         }
         // Under its ceiling a window is brighter (the room's lights), towards its sill darker.
         float vin = clamp((fract((v + floorH * (1.0 - winH) * 0.5) / floorH) * floorH) / (floorH * winH), 0.0, 1.0);
-        float inner = glass ? 0.55 + 0.45 * vin + 1.4 * smoothstep(0.82, 0.95, vin) : 0.7 + 0.55 * vin;
+        // An office's ceiling panels in rows; below them, the desks' dark shapes against the far wall's light.
+        float panels = glass ? smoothstep(0.84, 0.93, vin) * step(fract(u / 1.2 + seed), 0.55) : 0.0;
+        float desks = glass ? 1.0 - 0.55 * step(vin, 0.32) * step(0.4, hash12(float2(floor(u / 1.6), fl * 1.9 + seed))) : 1.0;
+        float inner = glass ? (0.5 + 0.45 * vin) * desks + 2.2 * panels : 0.7 + 0.55 * vin;
         // Recessed windows hide behind their reveals when seen at a grazing angle; flush glass mirrors instead.
         float reveal = glass ? 0.35 + 0.65 * smoothstep(0.02, 0.4, cosI) : smoothstep(0.04, 0.45, cosI);
         float3 sharp = wc * (lit * bright * inner);
@@ -339,11 +343,20 @@ enum NeonNightDriveShaders {
         float3 nightWall = wall * (u0.haze.rgb * 2.2 + u0.glow.rgb * u0.glow.w * 0.6 * (glass ? up : 0.2) + float3(0.002));
         float3 base = mix(dayWall, nightWall, night) * (1.0 - 0.6 * cover * (1.0 - far));
         // The street's light washing the lowest floors; a lit crown on some towers.
-        float wash = exp(-max(v - 4.0, 0.0) / 10.0) * 0.03 * night * (1.0 - near);
-        float crownOn = step(0.62, h2) * night * u0.neon.z * (1.0 - 0.6 * near);
-        float crownV = smoothstep(height - 7.0, height - 0.5, v) * step(v, height);
-        float3 crown = mix(float3(1.0, 0.7, 0.4), float3(0.65, 0.82, 1.0), step(0.75, h1)) * (0.3 * crownOn * crownV);
-        return base + windowLight * 0.95 + float3(1.0, 0.6, 0.28) * wash + crown;
+        float pools = 0.35 + 0.65 * sq(0.5 + 0.5 * cos(u * 0.157 + seed * 6.0));
+        float wash = exp(-max(v - 3.0, 0.0) / 7.0) * 0.016 * pools * night * (1.0 - near);
+        // Tall towers' crowns are washed by uplights: cones of light fanning up from a ledge, brightest at their feet.
+        float crownOn = step(0.62, h2) * step(45.0, height) * night * u0.neon.z * (1.0 - 0.6 * near);
+        float cz = v - (height - 9.0);
+        float crownV = step(0.0, cz) * step(v, height) * exp(-max(cz, 0.0) / 5.0);
+        float spacing = 3.2;
+        float across = (fract(u / spacing) - 0.5) * spacing;
+        float spread = 0.35 + 0.22 * max(cz, 0.0);
+        float cone = exp(-across * across / (spread * spread)) * (0.35 / spread + 0.15);
+        float coneAvg = 0.2 + 0.05 * spread;
+        cone = mix(cone, coneAvg, smoothstep(0.5, 1.5, fu / spacing));
+        float3 crown = mix(float3(1.0, 0.72, 0.45), float3(0.65, 0.82, 1.0), step(0.75, h1)) * (0.22 * crownOn * crownV * cone);
+        return base + windowLight * 0.95 + float3(1.0, 0.8, 0.6) * wash + crown;
     }
 
     /// A neon sign on a building: `mode` 0 stands on its roof against the sky, 1 is a tall banner on its wall, 2 a framed
@@ -749,7 +762,7 @@ enum NeonNightDriveShaders {
         if (inTunnel) pools *= 0.0;
         float3 light = u.amb.rgb * 0.6 + u.haze.rgb * 0.5 + head + pools * u.neon.z;
         float3 col = albedo * light;
-        float3 paintCol = float3(0.55, 0.55, 0.52) * (light + head * 2.0) * (1.0 - 0.3 * wet);
+        float3 paintCol = float3(0.42, 0.42, 0.4) * (light + head * 0.8) * (1.0 - 0.45 * wet);
         col = mix(col, paintCol, paint * 0.85);
         // Studs along the lines: glinting back in your headlights; the arp's pulses racing down them.
         float studLight = 0.0;
@@ -1093,7 +1106,20 @@ enum NeonNightDriveShaders {
                             float win = boxCover(yt, 9.7, 11.1, fp) * pulseTrain(car + 0.6, 2.2, 1.45, fp);
                             float3 shell = float3(0.08, 0.085, 0.09) * (u.amb.rgb + u.haze.rgb * 1.4);
                             float stripe = boxCover(yt, 9.2, 9.4, fp);
-                            col = shell + float3(0.0, 0.05, 0.09) * stripe * 0.4 + float3(1.0, 0.9, 0.74) * win * 2.6;
+                            // Inside: each carriage cool or warm, each window a little different, the ceiling's strip of
+                            // light brightest, now and then a passenger's head and shoulders against it.
+                            float carIdx = floor(along / 20.0);
+                            float pos = fract((car + 0.6) / 2.2) * 2.2 - 0.725;
+                            float hw = hash12(float2(floor((car + 0.6) / 2.2), carIdx + 7.0));
+                            float vin = saturate((yt - 9.7) / 1.4);
+                            float3 tint = hash11(carIdx * 3.1 + 0.4) < 0.6 ? float3(0.82, 0.94, 1.0) : float3(1.0, 0.84, 0.62);
+                            float inside = (0.32 + 0.3 * hw) * (0.7 + 0.5 * vin) + 0.7 * smoothstep(0.86, 0.97, vin);
+                            float c0 = (hw - 0.5) * 0.7;
+                            float headD = length(float2(pos - c0, yt - 10.42)) - 0.12;
+                            float shoulders = max(abs(pos - c0) - 0.26, yt - 10.24);
+                            float person = step(0.5, hw) * smoothstep(fp, -fp, min(headD, shoulders));
+                            inside *= 1.0 - 0.85 * person;
+                            col = shell + float3(0.0, 0.05, 0.09) * stripe * 0.4 + tint * win * inside;
                         }
                     }
                 }
@@ -1257,15 +1283,19 @@ enum NeonNightDriveShaders {
         float puddle = smoothstep(0.56, 0.74, fbm2(float2(p.x * 0.21, zw * 0.07), oct)) * u.rain.z;
         float rough = water > 0.5 ? 0.35 : clamp(0.8 - 0.5 * puddle, 0.2, 1.0);
         // The streak: taps down the screen (towards you) and a few up, widening with roughness.
+        // Jittered a pixel at a time (interleaved noise) so a bright line doesn't repeat down the road in bands.
         float3 acc = float3(0);
         float wsum = 0.0;
         float reach = 0.05 + 0.22 * rough;
-        for (int i = -2; i <= 7; i++) {
-            float k = float(i) / 7.0;
+        float jit = fract(52.9829189 * fract(dot(in.pos.xy, float2(0.06711056, 0.00583715))));
+        int taps = oct > 2 ? 12 : 8;
+        float stepK = 9.0 / float(taps);
+        for (int i = 0; i < taps; i++) {
+            float k = (float(i) + jit) * stepK / 7.0 - 2.0 / 7.0;
             float w = exp(-k * k * 2.2);
             float2 q = uv + float2(0.0, k * reach);
             if (q.y < 0.0 || q.y > 1.0) continue;
-            acc += view.sample(s, q, level(1.0 + rough)).rgb * w;
+            acc += view.sample(s, q, level(1.6 + rough)).rgb * w;
             wsum += w;
         }
         float3 refl = wsum > 0.0 ? acc / wsum : float3(0);

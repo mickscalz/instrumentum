@@ -124,7 +124,8 @@ enum WindscreenShaders {
         float2 c = floor(g);
         float h0 = sh12(c + seed), h1 = sh12(c * 1.37 + seed + 3.1), h2 = sh12(c * 0.71 + seed + 7.7);
         if (h0 > density) return float3(0);
-        float r = rmax * (0.45 + 0.55 * h1 * h1);
+        float h3 = sh12(c * 2.13 + seed + 1.9);
+        float r = rmax * (0.35 + 0.65 * h3 * h3);
         float margin = r / cell;
         float2 centre = (c + float2(margin + (1.0 - 2.0 * margin) * h1, margin + (1.0 - 2.0 * margin) * h2)) * cell;
         // Has it landed since its place was last wiped (and not while sheltered)?
@@ -136,7 +137,11 @@ enum WindscreenShaders {
         // A new drop swells to its size over its first second.
         float grow = min(1.0, 0.55 + landed);
         r *= grow;
-        float2 off = (q - centre) / r;
+        // Not quite round: the wind of the car's speed flattens and leans each a little.
+        float2 rel = q - centre;
+        float lean = (h1 - 0.5) * 0.5;
+        rel = float2(rel.x - rel.y * lean * 0.3, rel.y * (1.0 + 0.25 * h2));
+        float2 off = rel / r;
         if (dot(off, off) >= 1.0) return float3(0);
         return float3(off, r);
     }
@@ -167,9 +172,9 @@ enum WindscreenShaders {
             A = af;
         }
         // Three sizes of drop, the biggest first (a smaller one shows only where no bigger one sits).
-        float3 drop = dropAt(q, 0.075, 0.026, 1.7, density * 0.8, fill * 1.6, u);
-        if (drop.z <= 0.0) drop = dropAt(q, 0.036, 0.013, 5.3, density, fill, u);
-        if (drop.z <= 0.0 && !smooth) drop = dropAt(q, 0.016, 0.0055, 9.1, density * 1.1, fill * 0.7, u);
+        float3 drop = dropAt(q, 0.075, 0.026, 1.7, density * 0.35, fill * 1.6, u);
+        if (drop.z <= 0.0) drop = dropAt(q, 0.036, 0.013, 5.3, density * 0.55, fill, u);
+        if (drop.z <= 0.0 && !smooth) drop = dropAt(q, 0.016, 0.0055, 9.1, density * 0.8, fill * 0.7, u);
         if (drop.z > 0.0) {
             float2 off = drop.xy;
             float r = sqrt(dot(off, off));
@@ -262,7 +267,7 @@ enum WindscreenShaders {
             col *= 1.0 - 0.6 * vent;
             // The keys: a slim strip of light along the dashboard's edge, each lit in the neon's colour by its note.
             if (u.keyInfo.w > 0.5) {
-                float y0 = dy - 0.022, y1 = dy - 0.008;
+                float y0 = dy - 0.036, y1 = dy - 0.01;
                 float kx = (p.x + 0.92) / 1.84;
                 float ky = (p.y - y0) / (y1 - y0);
                 if (ky > -0.6 && ky < 1.6 && kx > -0.02 && kx < 1.02) {
@@ -273,9 +278,11 @@ enum WindscreenShaders {
                         float f = fract(kx * 52.0);
                         float edge = k.y > 0.5 ? 1.0 : smoothstep(0.0, 0.08, f) * smoothstep(1.0, 0.92, f);
                         float on = step(0.0, ky) * step(ky, 1.0) * edge;
-                        float3 dim = k.y > 0.5 ? float3(0.006, 0.006, 0.008) : float3(0.05, 0.05, 0.06) + outside * 0.15;
-                        col = mix(col, dim + u.keyInfo.rgb * glow * 1.8, on * 0.9);
-                        float halo = exp(-max(max(-ky, ky - 1.0), 0.0) * 4.0) * glow * 0.18;
+                        // Unlit, a white key is a faint pale slot brighter towards its front edge; a black key darker.
+                        float3 dim = k.y > 0.5 ? float3(0.004, 0.004, 0.006)
+                                               : (float3(0.03, 0.03, 0.038) + outside * 0.12) * (0.6 + 0.6 * (1.0 - saturate(ky)));
+                        col = mix(col, dim + u.keyInfo.rgb * glow * 2.4, on * 0.95);
+                        float halo = exp(-max(max(-ky, ky - 1.0), 0.0) * 3.0) * glow * 0.25;
                         col += u.keyInfo.rgb * halo * (1.0 - on);
                     }
                 }
