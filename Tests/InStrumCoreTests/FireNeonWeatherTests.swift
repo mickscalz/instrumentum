@@ -278,7 +278,7 @@ final class FireNeonWeatherTests: XCTestCase {
         let cellWorlds: Set<String> = [CoastRoadModel.id, GoldenHourBeachModel.id, MoonlitLakeModel.id, NeonNightDriveModel.id]
         for (id, _) in ThemeRegistry.all {
             let extras = WorldWeather.randomExtras(for: id)
-            XCTAssertNil(extras[.ashfall], id)
+            XCTAssertEqual(extras[.ashfall] != nil, id == VolcanoRimModel.id, id)
             XCTAssertEqual(extras[.supercell] != nil, cellWorlds.contains(id), id)
         }
         XCTAssertEqual(WorldWeather.randomExtras(for: "volcano-rim"), [.ashfall: 0.5])
