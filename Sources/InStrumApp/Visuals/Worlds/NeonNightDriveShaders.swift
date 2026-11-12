@@ -301,7 +301,7 @@ enum NeonNightDriveShaders {
         float colW = glass ? 1.5 + 0.6 * h2 : 1.8 + 1.4 * h2;
         float winW = glass ? 0.93 : 0.42 + 0.22 * h3;
         float winH = glass ? 0.84 : 0.46 + 0.18 * h5;
-        float litShare = (glass ? 0.1 + 0.32 * h3 : 0.08 + 0.3 * h3) * (1.0 - 0.5 * near) * night * u0.neon.z;
+        float litShare = (glass ? 0.06 + 0.2 * h3 : 0.05 + 0.2 * h3) * (1.0 - 0.5 * near) * night * u0.neon.z;
         float cu = pulseTrain(u + colW * (1.0 - winW) * 0.5, colW, colW * winW, fu);
         float cv = pulseTrain(v + floorH * (1.0 - winH) * 0.5, floorH, floorH * winH, fv);
         float cover = cu * cv;
@@ -312,15 +312,15 @@ enum NeonNightDriveShaders {
         if (glass) {
             float floorLit = hash12(float2(fl * 1.3 + seed, seed * 31.0 + floor(col / 7.0)));
             lit = step(floorLit, litShare * 1.4) * step(hash12(float2(col * 1.7 + seed, fl * 3.1)), 0.88);
-            wc = h5 < 0.55 ? float3(0.8, 0.9, 1.0) : float3(1.0, 0.84, 0.62);
+            wc = h5 < 0.7 ? float3(0.78, 0.9, 1.0) : float3(1.0, 0.84, 0.62);
             // Desks and partitions break the floor's light up; its ceiling panels are the brightest.
-            bright = (0.18 + 0.2 * hash12(float2(fl, seed))) * (0.55 + 0.9 * hash12(float2(floor(u / 0.9), fl + seed)));
+            bright = (0.26 + 0.3 * hash12(float2(fl, seed))) * (0.55 + 0.9 * hash12(float2(floor(u / 0.9), fl + seed)));
         } else {
             float winLit = hash12(float2(col * 1.7 + seed * 5.0, fl * 3.1 + seed));
             lit = step(winLit, litShare);
             float temp = hash12(float2(col + seed, fl * 0.37));
             wc = temp < 0.08 ? float3(0.55, 0.7, 1.0) : mix(float3(1.0, 0.5, 0.18), float3(1.0, 0.72, 0.42), temp);
-            bright = 0.25 + 0.5 * hash12(float2(col * 3.3 + seed, fl));
+            bright = 0.35 + 0.7 * hash12(float2(col * 3.3 + seed, fl));
         }
         // Under its ceiling a window is brighter (the room's lights), towards its sill darker.
         float vin = clamp((fract((v + floorH * (1.0 - winH) * 0.5) / floorH) * floorH) / (floorH * winH), 0.0, 1.0);
@@ -329,8 +329,8 @@ enum NeonNightDriveShaders {
         float reveal = glass ? 0.35 + 0.65 * smoothstep(0.02, 0.4, cosI) : smoothstep(0.04, 0.45, cosI);
         float3 sharp = wc * (lit * bright * inner);
         float far = smoothstep(0.45, 1.5, max(fu / colW, fv / floorH));
-        float3 avgCol = (glass ? (h5 < 0.55 ? float3(0.8, 0.9, 1.0) : float3(1.0, 0.84, 0.62)) * 0.3 * 1.4
-                               : float3(1.0, 0.6, 0.3) * 0.5) * litShare;
+        float3 avgCol = (glass ? (h5 < 0.7 ? float3(0.78, 0.9, 1.0) : float3(1.0, 0.84, 0.62)) * 0.41 * 1.4
+                               : float3(1.0, 0.6, 0.3) * 0.7) * litShare;
         float3 windowLight = mix(sharp * cover, avgCol * (winW * winH), far) * reveal;
         // The wall: dark concrete, or dark glass catching the city's glow (more of it higher up); by day, the sky's light.
         float up = saturate(v / max(height, 1.0));
@@ -402,7 +402,7 @@ enum NeonNightDriveShaders {
         float unitsPerM = 2.0 / cellM;
         float tube = 0.075;
         float f = fp * unitsPerM;
-        int cslot = hash11(seed * 3.7) < 0.8 ? slot % 3 : 3 + slot % 3;
+        int cslot = hash11(seed * 3.7) < 0.7 ? slot % 3 : 3 + slot % 3;
         float3 colour = neonColour(cslot, u);
         float pulse = u.signs[slot / 4][slot % 4];
         float wave = 0.0;
@@ -650,7 +650,7 @@ enum NeonNightDriveShaders {
         float core = exp(-a2 / s2) * (head * head / s2) * 9.0;
         float r = 2.2 + 3.5 * rain;
         float off = sqrt(a2) * dist;
-        float halo = exp(-off / r) * (0.04 + 0.12 * rain) + exp(-off / (r * 4.0)) * 0.012;
+        float halo = exp(-off / r) * (0.03 + 0.08 * rain) + exp(-off / (r * 4.0)) * 0.0035;
         return colour * strength * (core + halo);
     }
 
@@ -691,7 +691,7 @@ enum NeonNightDriveShaders {
     }
     constant float kLampSpacing = 40.0;
     constant float kLampHeight = 9.6;
-    constant float3 kLampColour = float3(1.0, 0.74, 0.46);
+    constant float3 kLampColour = float3(1.0, 0.84, 0.64);
 
     // ---------------------------------------------------------------- the road
     /// The deck at `p` seen along `d` from `t` away: wet asphalt, its paint and studs, lit by your headlights and the

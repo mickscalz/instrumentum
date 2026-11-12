@@ -37,7 +37,9 @@ final class NeonNightDriveRenderer: ThemeRenderer {
     /// "None" for a span or an overpass in the shader's rows.
     nonisolated static let farAway: Float = 1e5
     /// The accent neon (lime, warm white, red) beside the chord's palette.
-    nonisolated static let accents: [SIMD3<Float>] = [SIMD3(0.35, 1.0, 0.18), SIMD3(1.0, 0.78, 0.5), SIMD3(1.0, 0.07, 0.05)]
+    /// The warm white of a few signs (the third accent; the first two are the other family's, so a warm city keeps a few
+    /// cool signs and a cool one a few warm).
+    nonisolated static let warmWhite = SIMD3<Float>(1.0, 0.78, 0.5)
 
     let sky: SkyLayer
     let weather: WeatherLayer
@@ -107,11 +109,13 @@ final class NeonNightDriveRenderer: ThemeRenderer {
         return SIMD2(max(-farAway, min(farAway, s.start)), max(-farAway, min(farAway, s.end)))
     }
 
-    /// The neon now: the chord's three colours at the frame's warmth, then the accents.
+    /// The neon now: the chord's three colours at the frame's warmth, then the accents (the other family's first and
+    /// third colours, and a warm white).
     nonisolated static func palette(warmth: Float) -> [SIMD3<Float>] {
-        var p: [SIMD3<Float>] = []
-        for i in 0..<3 { p.append(NeonPalette.colour(slot: i, warmth: warmth)) }
-        return p + accents
+        let w: Float = warmth.isFinite ? min(1, max(0, warmth)) : 0.5
+        return [NeonPalette.colour(slot: 0, warmth: w), NeonPalette.colour(slot: 1, warmth: w),
+                NeonPalette.colour(slot: 2, warmth: w), NeonPalette.colour(slot: 0, warmth: 1 - w),
+                NeonPalette.colour(slot: 2, warmth: 1 - w), warmWhite]
     }
 
     /// The tunnel's strobe on the cabin and the view at `distance` (0…1): the light under each ceiling lamp as it passes.
@@ -186,11 +190,11 @@ final class NeonNightDriveRenderer: ThemeRenderer {
         let rain = Self.unit(frame.rain)
         let wetRain: Float = max(rain, Self.unit(frame.glassRain))
         let ambient: SIMD3<Float> = (s.zenith * 0.7 + s.horizon * 0.3) * 0.8
-        let hazeNight: SIMD3<Float> = (SIMD3<Float>(0.034, 0.022, 0.03) * 0.8 + avg * 0.012) * (0.55 + 0.9 * wetRain)
+        let hazeNight: SIMD3<Float> = (SIMD3<Float>(0.010, 0.014, 0.028) + avg * 0.010) * (0.55 + 0.9 * wetRain)
         let hazeDay: SIMD3<Float> = s.horizon * 0.9
         let haze: SIMD3<Float> = hazeNight * night + hazeDay * (1 - night)
         let hazeDistance: Float = 1300 - 500 * wetRain - 300 * Self.unit(s.mist)
-        let glowColour: SIMD3<Float> = SIMD3<Float>(1.0, 0.48, 0.40) * 0.75 + avg * 0.25
+        let glowColour: SIMD3<Float> = SIMD3<Float>(0.85, 0.52, 0.58) * 0.5 + avg * 0.5
         let glowStrength: Float = 0.3 * (0.6 + 0.4 * Self.unit(s.cloudCover))
 
         // The rows.
