@@ -26,6 +26,19 @@ final class AmbienceTests: XCTestCase {
         return (left, right)
     }
 
+    /// Renders several ambiences side by side (each its own instance, so they share nothing), in the jobs' order: the
+    /// long renders were most of the suite's time in series.
+    static func renderAll(_ jobs: [(seconds: Double, actions: [Action])]) -> [(l: [Float], r: [Float])] {
+        var out = [(l: [Float], r: [Float])](repeating: ([], []), count: jobs.count)
+        out.withUnsafeMutableBufferPointer { slots in
+            let base = slots.baseAddress!
+            DispatchQueue.concurrentPerform(iterations: jobs.count) { k in
+                base[k] = render(seconds: jobs[k].seconds, actions: jobs[k].actions)
+            }
+        }
+        return out
+    }
+
     static func level(_ s: ISDAmbienceSource, _ v: Float, at t: Double = 0) -> Action { (t, { isd_ambience_set_level($0, s, v) }) }
     static func wave(_ strength: Float, at t: Double) -> Action { (t, { isd_ambience_trigger_wave($0, strength) }) }
     static func speed(_ v: Float, at t: Double = 0) -> Action { (t, { isd_ambience_set_speed($0, v) }) }
@@ -91,10 +104,16 @@ final class AmbienceTests: XCTestCase {
             (ISD_AMB_WINDOW_WIND, "window wind", 300...4000, 0.8, false, 30),
             (ISD_AMB_PASSING_CAR, "passing car", 80...3000, 0, false, 120),
         ]
-        for (source, name, band, speed, waves, seconds) in table {
+        var jobs: [(seconds: Double, actions: [Action])] = []
+        for (source, _, _, speed, waves, seconds) in table {
             var actions: [Action] = [Self.level(source, 1), Self.density(1.5), Self.speed(speed)]
             if waves { for t in stride(from: 1.0, to: seconds, by: 9) { actions.append(Self.wave(0.7, at: t)) } }
-            let out = Self.render(seconds: seconds, actions: actions)
+            jobs.append((seconds: seconds, actions: actions))
+        }
+        let rendered = Self.renderAll(jobs)
+        for (k, row) in table.enumerated() {
+            let name = row.1, band = row.2, seconds = row.5
+            let out = rendered[k]
             let body = SynthRender.slice(out.l, 3, seconds)
             XCTAssertGreaterThan(Self.bandShare(body, band.lowerBound, band.upperBound), 0.5, name)
             XCTAssertTrue(out.l.allSatisfy(\.isFinite) && out.r.allSatisfy(\.isFinite), name)
@@ -226,8 +245,13 @@ final class AmbienceTests: XCTestCase {
 
     /// Owl, chime and hull ticks are rare: at least one event in 300 s, silent most of the time.
     func testRareEventsHappen() {
-        for (source, name) in [(ISD_AMB_OWL, "owl"), (ISD_AMB_CHIME, "chime"), (ISD_AMB_HULL_TICKS, "hull ticks")] {
-            let out = Self.render(seconds: 300, actions: [Self.level(source, 1)])
+        let rows = [(ISD_AMB_OWL, "owl"), (ISD_AMB_CHIME, "chime"), (ISD_AMB_HULL_TICKS, "hull ticks")]
+        var jobs: [(seconds: Double, actions: [Action])] = []
+        for row in rows { jobs.append((seconds: 300, actions: [Self.level(row.0, 1)])) }
+        let rendered = Self.renderAll(jobs)
+        for (k, row) in rows.enumerated() {
+            let name = row.1
+            let out = rendered[k]
             let w = Self.windows(out.l)
             let loud = w.filter { $0 > -60 }.count
             XCTAssertGreaterThanOrEqual(loud, 1, "\(name): no event in 300 s")

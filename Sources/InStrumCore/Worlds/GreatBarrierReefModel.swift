@@ -64,8 +64,9 @@ public struct GreatBarrierReefModel: ThemeModel, MoodAware, SkyAware {
     static let crossfadeTau = 0.4
     /// The sources heard below the water (the rest are above it; rain on the water is both: see `levels`).
     public static let below: Set<AmbienceSource> = [.snappingShrimp, .fishChorus, .whaleSong, .bubbles]
-    /// The shrimp's level before the hour's factor; the fish chorus at dawn and dusk, and at night; the whales.
-    public static let shrimpLevel = 0.55
+    /// The shrimp's level before the hour's factor (0.4: at dusk, 0.64, the crackle's peaks stay near −7 dBFS; at 0.55
+    /// they reached −3 dBFS); the fish chorus at dawn and dusk, and at night; the whales.
+    public static let shrimpLevel = 0.4
     public static let fishPeak = 0.4, fishNight = 0.15
     public static let whaleLevel = 0.3
     /// A burst of bubbles as the lens goes under: at most one every this many seconds.
@@ -287,7 +288,7 @@ public struct GreatBarrierReefModel: ThemeModel, MoodAware, SkyAware {
             .snappingShrimp: shrimpLevel * shrimpFactor(s),
             .fishChorus: fishChorus(s),
             .whaleSong: whaleSeason(s) ? whaleLevel : 0,
-            .bubbles: 0.15,
+            .bubbles: 0.35,
         ]
         if wind > 0.6 { levels[.wind] = (wind - 0.6) * 2 }
         WeatherAmbience.levels(s, base: &levels)

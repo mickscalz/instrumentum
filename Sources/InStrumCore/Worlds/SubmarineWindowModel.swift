@@ -345,7 +345,7 @@ public struct SubmarineWindowModel: ThemeModel, MoodAware, SkyAware, PulseAware 
             .hullCreak: 0.25 + 0.35 * d,
             .sonar: 0.5,
             .whaleSong: 0.2 + 0.15 * midDepth,
-            .bubbles: 0.15,
+            .bubbles: 0.5,   // a burst near −36 dBFS through the hull (at 0.15 it was −50: lost)
             .snappingShrimp: 0.3 * rise * rise * shallow,
             .rainOnWater: rain * rise * 0.5 * shallow,
         ]

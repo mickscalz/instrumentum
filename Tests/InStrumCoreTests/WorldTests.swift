@@ -2281,7 +2281,7 @@ extension WorldTests {
         XCTAssertEqual(a.level(.airFlow), 0.3, accuracy: 1e-9)
         XCTAssertEqual(a.level(.hullTicks), 0.15, accuracy: 1e-9)
         XCTAssertEqual(a.level(.sonar), 0.5, accuracy: 1e-9)
-        XCTAssertEqual(a.level(.bubbles), 0.15, accuracy: 1e-9, "a low bed, so a burst can sound")
+        XCTAssertEqual(a.level(.bubbles), 0.5, accuracy: 1e-9, "a burst is heard through the hull")
         XCTAssertEqual(a.level(.hullCreak), 0.25 + 0.35 * 0.35, accuracy: 1e-6)
         XCTAssertEqual(a.level(.whaleSong), 0.2 + 0.15 * 0.7, accuracy: 1e-6)
         XCTAssertEqual(a.indoors, 0.85, accuracy: 1e-9)
@@ -2608,8 +2608,8 @@ extension WorldTests {
         XCTAssertEqual(day.level(.lapping), 0.45, accuracy: 1e-9)
         XCTAssertEqual(day.level(.breeze), 0.25, accuracy: 1e-9)
         XCTAssertEqual(day.level(.gulls), 0.15, accuracy: 1e-9)
-        XCTAssertEqual(day.level(.snappingShrimp), 0.55, accuracy: 1e-9)
-        XCTAssertEqual(day.level(.bubbles), 0.15, accuracy: 1e-9)
+        XCTAssertEqual(day.level(.snappingShrimp), GreatBarrierReefModel.shrimpLevel, accuracy: 1e-9)
+        XCTAssertEqual(day.level(.bubbles), 0.35, accuracy: 1e-9)
         XCTAssertEqual(day.level(.fishChorus), 0)
         XCTAssertEqual(day.level(.whaleSong), 0, "November: the humpbacks have gone south")
         XCTAssertEqual(day.level(.rainOnWater), 0)
@@ -2626,10 +2626,10 @@ extension WorldTests {
         XCTAssertEqual(GreatBarrierReefModel.shrimpFactor(reefSky(sun: 40, hour: 13)), 1, accuracy: 1e-12)
         XCTAssertEqual(GreatBarrierReefModel.shrimpFactor(reefSky(sun: -3, hour: 18.7)), 1.6, accuracy: 1e-12)
         XCTAssertEqual(GreatBarrierReefModel.shrimpFactor(reefSky(sun: -30, hour: 23)), 1.25, accuracy: 1e-12)
-        XCTAssertEqual(scene(reefSky(sun: -3, hour: 18.7)).level(.snappingShrimp), 0.88, accuracy: 1e-9, "dusk")
-        XCTAssertEqual(scene(reefSky(sun: -3, hour: 5.6)).level(.snappingShrimp), 0.88, accuracy: 1e-9, "dawn")
-        XCTAssertEqual(scene(reefSky(sun: -30, hour: 23)).level(.snappingShrimp), 0.6875, accuracy: 1e-9, "night")
-        XCTAssertEqual(scene(reefSky(sun: 8, hour: 17.5)).level(.snappingShrimp), 0.55 * 1.3, accuracy: 1e-9, "gliding into dusk")
+        XCTAssertEqual(scene(reefSky(sun: -3, hour: 18.7)).level(.snappingShrimp), GreatBarrierReefModel.shrimpLevel * 1.6, accuracy: 1e-9, "dusk")
+        XCTAssertEqual(scene(reefSky(sun: -3, hour: 5.6)).level(.snappingShrimp), GreatBarrierReefModel.shrimpLevel * 1.6, accuracy: 1e-9, "dawn")
+        XCTAssertEqual(scene(reefSky(sun: -30, hour: 23)).level(.snappingShrimp), GreatBarrierReefModel.shrimpLevel * 1.25, accuracy: 1e-9, "night")
+        XCTAssertEqual(scene(reefSky(sun: 8, hour: 17.5)).level(.snappingShrimp), GreatBarrierReefModel.shrimpLevel * 1.3, accuracy: 1e-9, "gliding into dusk")
         for alt in stride(from: -40.0, through: 60, by: 2.5) {
             let f = GreatBarrierReefModel.shrimpFactor(reefSky(sun: alt, hour: 18))
             XCTAssertTrue(f >= 1 - 1e-12 && f <= 1.6 + 1e-12, "\(alt)°: \(f)")
@@ -2684,8 +2684,9 @@ extension WorldTests {
             XCTAssertEqual(dipped[source] ?? -1, expected, accuracy: 1e-9, "\(source)")
         }
         XCTAssertEqual(dipped[.rainOnWater] ?? -1, 0.4 * (0.5 * 0.7 + 0.25 * 1.3), accuracy: 1e-6)
-        XCTAssertEqual(GreatBarrierReefModel.levels(reefSky(sun: -3, hour: 18.7), under: 1)[.snappingShrimp] ?? -1, 1,
-                       accuracy: 1e-12, "capped at 1")
+        let duskUnder = min(1, GreatBarrierReefModel.shrimpLevel * 1.6 * 1.3)
+        XCTAssertEqual(GreatBarrierReefModel.levels(reefSky(sun: -3, hour: 18.7), under: 1)[.snappingShrimp] ?? -1, duskUnder,
+                       accuracy: 1e-12, "lifted under the surface, never past 1")
 
         // In a storm the swell carries the lens under now and then; every frame's mix stays within those bounds and glides.
         var storm = reefSky(sun: 30, hour: 14)
