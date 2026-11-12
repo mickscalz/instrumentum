@@ -419,6 +419,10 @@ final class SkyLayer {
         u[Self.flashRow].w = 1 + Float(3 * older + cellNewer) + 0.9 * min(blend, 1)
     }
 
+    /// Waits (running the main run loop) until the shared star texture has arrived; for previews and tests.
+    @discardableResult
+    func awaitStars(timeout: TimeInterval = 5) -> Bool { StarTextureCache.shared.awaitTexture(timeout: timeout) }
+
     /// The aurora's pole-ward azimuth (degrees): north (0°) in the northern hemisphere, south (180°) in the southern,
     /// wandering ±20° over tens of minutes.
     nonisolated static func auroraAzimuth(hemisphere: Float, time: Float) -> Double {
