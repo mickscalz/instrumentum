@@ -57,21 +57,22 @@ public struct MagmaVein: Equatable {
         return points
     }
 
-    /// Its branches: two or three forks off the main channel, 4 points each.
+    /// Its distributaries: two or three channels forking off the upper half of the main channel and fanning out from it
+    /// (a delta), 4 points each.
     public func branches() -> [[SIMD2<Float>]] {
         let main = path()
         var rng = SeededRandom(seed: seed ^ 0xB4A2_C4E5)
         let count = 2 + Int(seed % 2)
         var out: [[SIMD2<Float>]] = []
         for k in 0..<count {
-            let at = 2 + (k * 2 + Int(seed % 3)) % 5
+            let at = 4 + (k + Int(seed % 3)) % 4
             var p = main[at]
-            let side: Float = rng.unit() < 0.5 ? -1 : 1
-            var heading = side * rng.range(0.6, 1.1)
+            let along = main[min(at + 1, main.count - 1)] - main[at]
+            var heading = atan2(along.x, along.y) + (k % 2 == 0 ? -1 : 1) * rng.range(0.35, 0.7)
             var line: [SIMD2<Float>] = [p]
-            let step = length / 12
+            let step = length / 10
             for _ in 0..<3 {
-                heading += rng.range(-0.35, 0.35)
+                heading += rng.range(-0.3, 0.3)
                 p += SIMD2(sin(heading), cos(heading)) * step
                 line.append(p)
             }

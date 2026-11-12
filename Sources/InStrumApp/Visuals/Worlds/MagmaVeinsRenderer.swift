@@ -46,16 +46,14 @@ final class MagmaVeinsRenderer: ThemeRenderer {
             d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
             d.colorAttachments[1].pixelFormat = RenderStack.depthFormat
             if additive {
-                // The strokes take the brighter of theirs and what's there (a crack's light doesn't add where two strokes
-                // overlap at a joint, so no bright knots).
+                // The channels lie over the crust (premultiplied): their dark levees hide it, overlapping strokes of a
+                // channel never add up to bright knots.
                 let c = d.colorAttachments[0]!
                 c.isBlendingEnabled = true
-                c.rgbBlendOperation = .max
-                c.alphaBlendOperation = .max
                 c.sourceRGBBlendFactor = .one
                 c.sourceAlphaBlendFactor = .one
-                c.destinationRGBBlendFactor = .one
-                c.destinationAlphaBlendFactor = .one
+                c.destinationRGBBlendFactor = .oneMinusSourceAlpha
+                c.destinationAlphaBlendFactor = .oneMinusSourceAlpha
                 d.colorAttachments[1].writeMask = []
             }
             return try? device.makeRenderPipelineState(descriptor: d)
@@ -127,7 +125,7 @@ final class MagmaVeinsRenderer: ThemeRenderer {
         veinsDrawn = 0
         linksDrawn = 0
         func ndc(_ v: MagmaVein, _ q: SIMD2<Float>) -> SIMD2<Float> {
-            SIMD2(-1 + 2 * v.origin + 2 * q.x / aspect, -1 + 2 * q.y)
+            SIMD2(-1 + 2 * v.origin + 2 * q.x / aspect, -1.06 + 2 * q.y)
         }
         func add(_ a: SIMD2<Float>, _ b: SIMD2<Float>, width: Float, kelvin: Float, light: Float, halo: Float) {
             guard instances.count < Self.segmentCapacity * 2 else { return }
@@ -139,8 +137,9 @@ final class MagmaVeinsRenderer: ThemeRenderer {
             let path = v.path()
             let reach = v.reach
             let steps = Float(path.count - 1)
-            let width = pixel * (0.9 + 2.2 * v.strength)
-            let light: Float = soft * (0.55 + 0.45 * v.strength)
+            // A channel opening as it bursts through: wider the harder the note, widening as it grows.
+            let width = pixel * (3.0 + 7.0 * v.strength) * (0.55 + 0.45 * v.reach)
+            let light: Float = soft
             var drawn = false
             for i in 0..<(path.count - 1) {
                 let from = Float(i) / steps
@@ -148,15 +147,15 @@ final class MagmaVeinsRenderer: ThemeRenderer {
                 let to = min(1, Float(i + 1) / steps)
                 let part = min(1, (reach - from) / max(to - from, 1e-4))
                 let a = path[i], b = path[i] + (path[i + 1] - path[i]) * part
-                let taper = 1 - 0.6 * from
+                let taper = 1 - 0.45 * from
                 add(ndc(v, a), ndc(v, b), width: width * taper, kelvin: v.temperature, light: light, halo: 0.6)
                 drawn = true
             }
             if reach > 0.5 {
                 for branch in v.branches() {
                     for i in 0..<(branch.count - 1) {
-                        add(ndc(v, branch[i]), ndc(v, branch[i + 1]), width: width * 0.45, kelvin: v.temperature - 60,
-                            light: light * 0.7, halo: 0.3)
+                        add(ndc(v, branch[i]), ndc(v, branch[i + 1]), width: width * 0.6 * (1 - 0.25 * Float(i)),
+                            kelvin: v.temperature - 50, light: light, halo: 0.3)
                     }
                 }
             }
@@ -175,7 +174,7 @@ final class MagmaVeinsRenderer: ThemeRenderer {
                 let f = Float(k) / 4
                 var p = a + (b - a) * f
                 if k < 4 { p += SIMD2(rng.range(-0.02, 0.02), rng.range(-0.03, 0.03)) }
-                add(prev, p, width: pixel * 1.4, kelvin: min(v.temperature, w.temperature) - 30, light: soft * 0.8, halo: 0.5)
+                add(prev, p, width: pixel * 2.4, kelvin: min(v.temperature, w.temperature) - 40, light: soft, halo: 0.5)
                 prev = p
             }
             linksDrawn += 1
