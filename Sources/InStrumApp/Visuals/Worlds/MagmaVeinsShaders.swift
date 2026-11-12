@@ -102,44 +102,55 @@ enum MagmaVeinsShaders {
             if (dd < best) { best = dd; i1 = k; }
         }
         float2 c1 = u.plates[i1].xy;
-        float border = 1e9, border2 = 1e9;
-        int i2 = i1, i3 = i1;
+        // The three nearest cracks (a junction's third crack never drops out, so its halo never shows a wedge).
+        float bd[3] = { 1e9, 1e9, 1e9 };
+        int bj[3] = { i1, i1, i1 };
         for (int k = 0; k < 24; k++) {
             if (k == i1) continue;
             float2 n = u.plates[k].xy - c1;
             float ln = length(n);
             if (ln < 1e-4) continue;
             float dist = dot(0.5 * (c1 + u.plates[k].xy) - q, n / ln);
-            if (dist < border) { border2 = border; i3 = i2; border = dist; i2 = k; }
-            else if (dist < border2) { border2 = dist; i3 = k; }
+            if (dist < bd[0]) { bd[2] = bd[1]; bj[2] = bj[1]; bd[1] = bd[0]; bj[1] = bj[0]; bd[0] = dist; bj[0] = k; }
+            else if (dist < bd[1]) { bd[2] = bd[1]; bj[2] = bj[1]; bd[1] = dist; bj[1] = k; }
+            else if (dist < bd[2]) { bd[2] = dist; bj[2] = k; }
         }
         float split = u.b.x;
         float energy = u.b.y;
-        // The two nearest cracks, each its own width and heat (wider and hotter as the plates split apart); the
-        // brighter shows, so a junction never steps.
+        // Each crack its own width and heat (wider and hotter as the plates split apart); the brightest shows, so a
+        // junction never steps. Their light spills onto the crust beside them.
         float3 col = float3(0);
-        float dm = max(border, 0.0) * m;
-        for (int c = 0; c < 2; c++) {
-            int j = c == 0 ? i2 : i3;
-            float bd = max(c == 0 ? border : border2, 0.0) * m;
+        float3 spill = float3(0);
+        float dm = max(bd[0], 0.0) * m;
+        for (int c = 0; c < 3; c++) {
+            int j = bj[c];
+            float bdm = max(bd[c], 0.0) * m;
             float heat = 0.5 * (u.plates[i1].z + u.plates[j].z);
             float pair = hash12(float2(float(min(i1, j)) * 7.13, float(max(i1, j)) * 3.71));
             float along = vn2(q * 14.0 + pair * 31.0);
             float w = (0.12 + 0.3 * pair) * (0.3 + 1.4 * along) + split * (1.2 + 2.0 * along);
             float T = u.c.x - 60.0 + 90.0 * pair + 80.0 * energy + 230.0 * split + 60.0 * heat + 60.0 * (along - 0.5);
-            float3 cj = blackbody(T) * lineLight(bd, w, pix * m) + blackbody(T - 200.0) * (0.22 * lineLight(bd, w * 3.0 + 0.5, pix * m));
+            float3 cj = blackbody(T) * lineLight(bdm, w, pix * m) + blackbody(T - 200.0) * (0.12 * lineLight(bdm, w * 2.5 + 0.4, pix * m));
             col = max(col, cj);
+            spill = max(spill, blackbody(T) * exp(-bdm / (1.2 + 2.0 * w)));
         }
-        // The plate: its skin, its fine cracks, darker in its middle.
+        // The plate: its skin (ropy wrinkles, glassy patches), its fine cracks, darker in its middle; the cracks' light
+        // shows the skin's texture near them.
         float2 local = (p - c1) * m + float2(hash12(float2(float(i1), 1.7)) * 97.0, hash12(float2(float(i1), 4.1)) * 61.0);
         float skin = fbm2(local * 0.12, oct);
         float Tc = mix(u.c.z, u.c.y, u.plates[i1].z) + 80.0 * (skin - 0.5) + 40.0 * energy + 110.0 * exp(-dm / 1.1);
         col += blackbody(Tc);
+        float2 rw = local * 0.9 + 3.0 * float2(vn2(local * 0.08), vn2(local * 0.08 + 5.0));
+        float ropes = 1.0 - abs(sin(rw.x * 1.3 + 2.0 * vn2(rw * 0.3)));
+        float glassy = smoothstep(0.35, 0.8, fbm2(local * 0.4 + float2(2.0, 9.0), oct));
+        float albedo = 0.05 + 0.05 * ropes * (1.0 - glassy) + 0.03 * skin;
+        col += spill * (albedo * (0.8 + 0.6 * glassy));
         float fine = fineNet(local + 7.0 * float2(skin, vn2(local * 0.05)), 5.5);
-        col += blackbody(Tc + 200.0 + 80.0 * energy) * (0.16 * lineLight(fine, 0.06, pix * m)) * (0.2 + 0.8 * u.plates[i1].z);
+        // Only some of the fine cracks glow (the skin's hotter seams), so they never read as a net.
+        float seam = smoothstep(0.45, 0.75, vn2(local * 0.35 + 4.0));
+        col += blackbody(Tc + 300.0 + 80.0 * energy) * (0.3 * lineLight(fine, 0.06, pix * m)) * seam * (0.25 + 0.75 * u.plates[i1].z);
         // A sheen of reflected glow over the glassy skin.
-        float rough = smoothstep(0.3, 0.75, fbm2(local * 0.4 + float2(2.0, 9.0), oct));
-        col += float3(0.03, 0.014, 0.008) * (0.6 - 0.45 * rough) * (0.4 + 0.6 * energy);
+        col += float3(0.03, 0.014, 0.008) * (0.15 + 0.45 * glassy) * (0.4 + 0.6 * energy);
         // The drop's flood: bright magma breaking through everywhere for a moment.
         col += blackbody(1260.0) * (u.b.z * 0.35 * smoothstep(0.45, 0.8, vn2(p * 6.0 + u.a.y * 0.3)));
         ColorDepth out;
@@ -172,10 +183,16 @@ enum MagmaVeinsShaders {
         float2 ab = b - a;
         float s = clamp(dot(p - a, ab) / max(dot(ab, ab), 1e-10), 0.0, 1.0);
         float dist = length(p - (a + ab * s));
-        float w = max(in.info.x, view.w);
-        float core = exp(-(dist * dist) / (w * w));
+        // A channel, not a ruled line: its width swells and pinches, its edges are torn, its heat comes in pulses (the
+        // noise is in view space, so it runs on unbroken across the strokes' joints).
+        float wv = vn2(p * 38.0 + 3.0);
+        float w = max(in.info.x * (0.55 + 0.9 * wv), view.w);
+        float torn = (vn2(p * 160.0) - 0.5) * 1.1 * w;
+        float dd = max(dist + torn, 0.0);
+        float core = exp(-(dd * dd) / (w * w));
         float halo = exp(-dist / (w * (2.0 + 4.0 * in.info.w)));
-        float3 c = blackbody(in.info.y) * (core * 1.4) + blackbody(in.info.y - 180.0) * (halo * 0.45);
+        float pulse = 0.7 + 0.3 * vn2(p * 22.0 + 9.0);
+        float3 c = blackbody(in.info.y - 120.0 * (1.0 - pulse)) * (core * 1.4) + blackbody(in.info.y - 220.0) * (halo * 0.35);
         c *= in.info.z;
         if (lum(c) < 0.0005) discard_fragment();
         return float4(c, 0.0);

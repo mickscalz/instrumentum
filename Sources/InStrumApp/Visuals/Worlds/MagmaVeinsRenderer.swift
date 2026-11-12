@@ -25,6 +25,7 @@ final class MagmaVeinsRenderer: ThemeRenderer {
     private(set) var bufferAllocations = 0
     private var view = SIMD4<Float>(16.0 / 9, 0, 0, 0)
     private var limiter = FlashLimiter()
+    private var primed = false
     private var splitShown: Float = 0
     private(set) var post = PostSettings()
     /// What was drawn (tests): the strokes, the veins drawn, the split as shown.
@@ -45,8 +46,12 @@ final class MagmaVeinsRenderer: ThemeRenderer {
             d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
             d.colorAttachments[1].pixelFormat = RenderStack.depthFormat
             if additive {
+                // The strokes take the brighter of theirs and what's there (a crack's light doesn't add where two strokes
+                // overlap at a joint, so no bright knots).
                 let c = d.colorAttachments[0]!
                 c.isBlendingEnabled = true
+                c.rgbBlendOperation = .max
+                c.alphaBlendOperation = .max
                 c.sourceRGBBlendFactor = .one
                 c.sourceAlphaBlendFactor = .one
                 c.destinationRGBBlendFactor = .one
@@ -84,6 +89,11 @@ final class MagmaVeinsRenderer: ThemeRenderer {
         let base: Float = MoodLook.exposure(mood) * 1.25
         let asked: Float = gentle ? min(0.16, 0.3 * splitShown) : 0.6 * splitShown
         limiter.gentle = gentle
+        if !primed {
+            // The limiter starts from black: settle it on the view's own exposure first, so arriving is never a flash.
+            primed = true
+            for _ in 0..<16 { _ = limiter.limit(exposure: base, sparkle: 1, dt: 1) }
+        }
         let limited = limiter.limit(exposure: base * (1 + asked), sparkle: 1, dt: dt)
         let pixel: Float = 2 / height
         view = SIMD4(aspect, 0, 0, pixel)
