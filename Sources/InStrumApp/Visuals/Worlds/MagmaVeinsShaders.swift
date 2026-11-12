@@ -204,8 +204,10 @@ enum MagmaVeinsShaders {
         float cover = 1.0 - smoothstep(1.45, 1.8, x + 0.2 * (vn2(p * 50.0) - 0.5));
         float3 levee = float3(0.022, 0.017, 0.014) * (0.6 + 0.7 * vn2(p * 120.0))
                      + blackbody(in.info.y - 380.0) * (0.35 * exp(-max(x - 1.0, 0.0) / 0.2));
-        float3 c = mix(levee, blackbody(T) * 0.85, inChan);
-        float a2 = cover * in.info.z;
+        // Two passes (view.y): first every channel's levees (so one stroke's levee never covers the next one's core at a
+        // joint), then the channels' molten cores over them.
+        float3 c = view.y < 0.5 ? levee : blackbody(T) * 0.45;
+        float a2 = (view.y < 0.5 ? cover : inChan) * in.info.z;
         if (a2 < 0.003) discard_fragment();
         return float4(c * a2, a2);
     }

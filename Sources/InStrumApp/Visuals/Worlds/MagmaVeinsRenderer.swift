@@ -17,7 +17,7 @@ final class MagmaVeinsRenderer: ThemeRenderer {
     /// Metres of lake a view height spans.
     nonisolated static let metresPerView: Float = 46
 
-    private let crust, segs: MTLRenderPipelineState
+    private let crust, segs, cores: MTLRenderPipelineState
     private var veinsU = [SIMD4<Float>](repeating: .zero, count: MagmaVeinsRenderer.uniformCount)
     private var instances: [SIMD4<Float>] = []
     private var ring: [MTLBuffer] = []
@@ -39,7 +39,7 @@ final class MagmaVeinsRenderer: ThemeRenderer {
 
     init?(device: MTLDevice) {
         guard let lib = try? device.makeLibrary(source: MagmaVeinsShaders.source, options: nil) else { return nil }
-        func make(_ v: String, _ f: String, additive: Bool) -> MTLRenderPipelineState? {
+        func make(_ v: String, _ f: String, additive: Bool, brighter: Bool = false) -> MTLRenderPipelineState? {
             let d = MTLRenderPipelineDescriptor()
             d.vertexFunction = lib.makeFunction(name: v)
             d.fragmentFunction = lib.makeFunction(name: f)
@@ -54,19 +54,27 @@ final class MagmaVeinsRenderer: ThemeRenderer {
                 c.sourceAlphaBlendFactor = .one
                 c.destinationRGBBlendFactor = .oneMinusSourceAlpha
                 c.destinationAlphaBlendFactor = .oneMinusSourceAlpha
+                if brighter {
+                    // The cores: the brighter of theirs and what's there (no seams where strokes meet).
+                    c.rgbBlendOperation = .max
+                    c.alphaBlendOperation = .max
+                    c.destinationRGBBlendFactor = .one
+                    c.destinationAlphaBlendFactor = .one
+                }
                 d.colorAttachments[1].writeMask = []
             }
             return try? device.makeRenderPipelineState(descriptor: d)
         }
         guard let c = make("veins_vertex", "veins_crust_fragment", additive: false),
-              let s = make("veins_seg_vertex", "veins_seg_fragment", additive: true) else { return nil }
+              let s = make("veins_seg_vertex", "veins_seg_fragment", additive: true),
+              let k = make("veins_seg_vertex", "veins_seg_fragment", additive: true, brighter: true) else { return nil }
         let bytes = Self.segmentCapacity * 2 * MemoryLayout<SIMD4<Float>>.stride
         var buffers: [MTLBuffer] = []
         for _ in 0..<3 {
             guard let buf = device.makeBuffer(length: bytes, options: .storageModeShared) else { return nil }
             buffers.append(buf)
         }
-        crust = c; segs = s
+        crust = c; segs = s; cores = k
         ring = buffers
         bufferAllocations = buffers.count
         instances.reserveCapacity(Self.segmentCapacity * 2)
@@ -197,8 +205,13 @@ final class MagmaVeinsRenderer: ThemeRenderer {
             e.setVertexBuffer(buf, offset: 0, index: 0)
             var vw = view
             e.setVertexBytes(&vw, length: MemoryLayout<SIMD4<Float>>.size, index: 1)
-            e.setFragmentBytes(&vw, length: MemoryLayout<SIMD4<Float>>.size, index: 0)
-            e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6, instanceCount: segmentCount)
+            // The levees first, then the molten cores over them (view.y picks the pass).
+            for pass in 0..<2 {
+                e.setRenderPipelineState(pass == 0 ? segs : cores)
+                var pv = SIMD4<Float>(vw.x, Float(pass), vw.z, vw.w)
+                e.setFragmentBytes(&pv, length: MemoryLayout<SIMD4<Float>>.size, index: 0)
+                e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6, instanceCount: segmentCount)
+            }
         }
         e.endEncoding()
     }
