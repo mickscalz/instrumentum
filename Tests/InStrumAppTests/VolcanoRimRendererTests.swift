@@ -343,9 +343,39 @@ final class VolcanoRimRendererTests: XCTestCase {
 
     // MARK: - Surprises
 
+    /// The crater draws no far storm or sprites of its own (Fire & Neon fix pass): with none in the sky, its sky draws with
+    /// the plain program and the crater's own row stays empty, even through the red-sprites surprise; a far storm and its
+    /// sprites come only with the sky's (SkyKit's, stood here in the sky's state), drawn by the sky.
+    func testTheCraterDrawsNoStormUnlessTheSkyBringsOne() throws {
+        var ownRow = false, stormProgram = false, stormRows = false
+        let calm = try Self.renderVolcano(at: 2.13, energy: 0.3, surprises: [120: WorldSurprise(index: 3, seed: 5)],
+                                          width: 320, height: 180, each: { _, r, _ in
+            let row = r.uniforms[VolcanoRimRenderer.rowSprites]
+            if row.x >= 0 || row.y != 0 || row.w != 0 { ownRow = true }
+            if r.sky.storms { stormProgram = true }
+            if r.sky.uniforms[SkyLayer.stormRow].z > 0 || r.sky.uniforms[SkyLayer.spriteARow].w > 0 { stormRows = true }
+        })
+        XCTAssertFalse(ownRow, "no storm or sprites of the crater's own")
+        XCTAssertFalse(stormProgram, "the plain sky")
+        XCTAssertFalse(stormRows)
+        XCTAssertFalse(calm.frame.sky.farStorm > 0)
+        let stormy = try Self.renderVolcano(at: 2.13, energy: 0.3, width: 320, height: 180,
+                                            edit: { _, f in f.sky = SkyExtrasRendererTests.stormy(f.sky) })
+        XCTAssertTrue(stormy.renderer.sky.storms, "the sky's storm program")
+        XCTAssertGreaterThan(stormy.renderer.sky.uniforms[SkyLayer.stormRow].z, 0, "the sky's far storm")
+        XCTAssertGreaterThan(stormy.renderer.sky.uniforms[SkyLayer.spriteARow].w, 0, "its sprites")
+        let row = stormy.renderer.uniforms[VolcanoRimRenderer.rowSprites]
+        XCTAssertLessThan(row.x, 0)
+        XCTAssertEqual(row.w, 0)
+        let a = try XCTUnwrap(calm.image), b = try XCTUnwrap(stormy.image)
+        XCTAssertGreaterThan(PreviewRenderer.difference(a, b), 0, "drawn")
+    }
+
+    /// Each surprise draws; the red sprites are the sky's, and under these clear skies (no storm for them to stand over)
+    /// that surprise is a fireball.
     func testSurprisesAllDraw() throws {
         let rows = [VolcanoRimRenderer.rowFireball, VolcanoRimRenderer.rowRockfall, VolcanoRimRenderer.rowSteam,
-                    VolcanoRimRenderer.rowSprites, VolcanoRimRenderer.rowTree]
+                    VolcanoRimRenderer.rowFireball, VolcanoRimRenderer.rowTree]
         for kind in VolcanoSurprise.Kind.allCases {
             var seen = false
             _ = try Self.renderVolcano(at: 1, energy: 0.4, surprises: [10: WorldSurprise(index: kind.rawValue, seed: 77)],
@@ -436,9 +466,10 @@ extension WorldPreviewTests {
         // Smooth.
         try write(try T.renderVolcano(at: 6, quality: .lite, energy: 0.5, notes: T.playing, width: 1280, height: 720),
                   "volcano-smooth")
-        // Red sprites over the far storm (a surprise), mid-burst.
-        try write(try T.renderVolcano(at: 2.13, energy: 0.3, surprises: [120: WorldSurprise(index: 3, seed: 5)], width: 1280,
-                                      height: 720), "volcano-sprites")
+        // SkyKit's far storm and its red sprites over the crater, as the sky brings them on a stormy night (the crater has
+        // none of its own): the storm low on the horizon over the rim, the sprites lit high over it.
+        try write(try T.renderVolcano(at: 2.13, energy: 0.3, width: 1280, height: 720,
+                                      edit: { _, f in f.sky = SkyExtrasRendererTests.stormy(f.sky) }), "volcano-sprites")
         // A rockfall down the inner wall and a steam blast by the other (surprises), mid-way.
         try write(try T.renderVolcano(at: 4.6, energy: 0.4, surprises: [120: WorldSurprise(index: 1, seed: 5),
                                                                          150: WorldSurprise(index: 2, seed: 9)],

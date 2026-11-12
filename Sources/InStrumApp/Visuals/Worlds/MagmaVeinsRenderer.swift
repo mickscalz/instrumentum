@@ -4,16 +4,19 @@ import simd
 import InStrumCore
 
 /// Draws Magma Veins (Fire & Neon spec §8.2), Volcano Rim's second visual: the view straight down into the lava lake.
-/// One full-screen pass draws the crust's plates and cracks (`MagmaVeinsShaders`); each vein (a note's channel and its
-/// branches, grown as far as it has reached) and each chord's joining crack is a run of instanced strokes over it, lit
-/// by the vein's own temperature as it cools. A moment's split eases open (quickly, or slowly under gentle visuals) and
+/// One full-screen pass draws the crust's plates and cracks (`MagmaVeinsShaders`); each vein (a note's molten channel,
+/// lens-shaped along its length and grown as far as it has reached, with a braid or two leaving it and rejoining it
+/// round an island of crust) and each chord's joining channel is a run of instanced strokes over it, lit by the vein's
+/// own temperature as it cools, hottest near its source. A moment's split eases open (quickly, or slowly under gentle visuals) and
 /// the light it brings passes through a `FlashLimiter`. The instance buffers (a ring of three) are made once.
 @MainActor
 final class MagmaVeinsRenderer: ThemeRenderer {
     nonisolated static let uniformCount = 27
     nonisolated static let plateBase = 3
-    /// The strokes at most: every vein's channel (8) and branches (3 × 3), and a joining crack (4) for each.
-    nonisolated static let segmentCapacity = MagmaVeins.capacity * (8 + 9 + 4)
+    /// The strokes at most: every vein's channel (16, its path smoothed), two braids (6 each) and a joining channel (4).
+    nonisolated static let segmentCapacity = MagmaVeins.capacity * (16 + 12 + 4)
+    /// Each stroke's rows: its ends, its start's width and temperature (with its light and halo), its end's.
+    nonisolated static let rowsPerSegment = 3
     /// Metres of lake a view height spans.
     nonisolated static let metresPerView: Float = 46
 
@@ -68,7 +71,7 @@ final class MagmaVeinsRenderer: ThemeRenderer {
         guard let c = make("veins_vertex", "veins_crust_fragment", additive: false),
               let s = make("veins_seg_vertex", "veins_seg_fragment", additive: true),
               let k = make("veins_seg_vertex", "veins_seg_fragment", additive: true, brighter: true) else { return nil }
-        let bytes = Self.segmentCapacity * 2 * MemoryLayout<SIMD4<Float>>.stride
+        let bytes = Self.segmentCapacity * Self.rowsPerSegment * MemoryLayout<SIMD4<Float>>.stride
         var buffers: [MTLBuffer] = []
         for _ in 0..<3 {
             guard let buf = device.makeBuffer(length: bytes, options: .storageModeShared) else { return nil }
@@ -77,7 +80,7 @@ final class MagmaVeinsRenderer: ThemeRenderer {
         crust = c; segs = s; cores = k
         ring = buffers
         bufferAllocations = buffers.count
-        instances.reserveCapacity(Self.segmentCapacity * 2)
+        instances.reserveCapacity(Self.segmentCapacity * Self.rowsPerSegment)
     }
 
     private static func unit(_ v: Float) -> Float { v.isFinite ? min(1, max(0, v)) : 0 }
@@ -102,7 +105,7 @@ final class MagmaVeinsRenderer: ThemeRenderer {
         }
         let limited = limiter.limit(exposure: base * (1 + asked), sparkle: 1, dt: dt)
         let pixel: Float = 2 / height
-        view = SIMD4(aspect, 0, 0, pixel)
+        view = SIMD4(aspect, 0, t, pixel)
         let octaves: Float = quality == .lite ? 2 : 3
         veinsU[0] = SIMD4(aspect, t, octaves, 1 / height)
         veinsU[1] = SIMD4(splitShown, Self.unit(frame.energy), Self.unit(frame.drop), 0)
@@ -126,8 +129,29 @@ final class MagmaVeinsRenderer: ThemeRenderer {
             time: t, quality: quality)
     }
 
-    /// Each vein's channel and branches, grown as far as it has reached (view heights from its origin at the foot of the
-    /// view), and the jagged cracks joining a chord's veins.
+    /// A vein's channel: its path smoothed (Catmull-Rom halfway points: 17), each point's share along it.
+    nonisolated static func smoothed(_ path: [SIMD2<Float>]) -> [SIMD2<Float>] {
+        guard path.count > 2 else { return path }
+        var out: [SIMD2<Float>] = []
+        out.reserveCapacity(path.count * 2 - 1)
+        for i in 0..<(path.count - 1) {
+            let p0 = path[max(0, i - 1)], p1 = path[i], p2 = path[i + 1], p3 = path[min(path.count - 1, i + 2)]
+            out.append(p1)
+            out.append((p1 * 9 + p2 * 9 - p0 - p3) / 16)
+        }
+        out.append(path[path.count - 1])
+        return out
+    }
+
+    /// A lens along a channel (0 at its ends, 1 at its middle): never quite pinched shut, so the channel stays whole.
+    nonisolated static func lens(_ s: Float) -> Float {
+        let x = min(1, max(0, s))
+        let k = sin(Float.pi * x)
+        return 0.14 + 0.86 * k.squareRoot() * (0.55 + 0.45 * k)
+    }
+
+    /// Each vein's lens-shaped channel and its braids, grown as far as it has reached (view heights from its origin at
+    /// the foot of the view), and the channels joining a chord's veins.
     private func buildSegments(_ frame: VeinsFrame, aspect: Float, pixel: Float, gentle: Bool) {
         instances.removeAll(keepingCapacity: true)
         veinsDrawn = 0
@@ -135,41 +159,69 @@ final class MagmaVeinsRenderer: ThemeRenderer {
         func ndc(_ v: MagmaVein, _ q: SIMD2<Float>) -> SIMD2<Float> {
             SIMD2(-1 + 2 * v.origin + 2 * q.x / aspect, -1.06 + 2 * q.y)
         }
-        func add(_ a: SIMD2<Float>, _ b: SIMD2<Float>, width: Float, kelvin: Float, light: Float, halo: Float) {
-            guard instances.count < Self.segmentCapacity * 2 else { return }
+        func add(_ a: SIMD2<Float>, _ b: SIMD2<Float>, width: (Float, Float), kelvin: (Float, Float), light: Float, halo: Float) {
+            guard instances.count < Self.segmentCapacity * Self.rowsPerSegment else { return }
             instances.append(SIMD4(a.x, a.y, b.x, b.y))
-            instances.append(SIMD4(width, kelvin, light, halo))
+            instances.append(SIMD4(width.0, kelvin.0, light, halo))
+            instances.append(SIMD4(width.1, kelvin.1, 0, 0))
         }
         let soft: Float = gentle ? 0.8 : 1
         for v in frame.veins where v.alive {
-            let path = v.path()
+            let path = Self.smoothed(v.path())
             let reach = v.reach
+            guard reach > 0 else { continue }
             let steps = Float(path.count - 1)
-            // A channel opening as it bursts through: wider the harder the note, widening as it grows.
-            let width = pixel * (4.5 + 9.0 * v.strength) * (0.55 + 0.45 * v.reach)
-            let light: Float = soft
+            // A channel of magma opening through the crust: wider the harder the note, widening as it grows, a lens over
+            // the length it has reached; hottest near its source, cooler toward its tip, a hot pulse along it.
+            let widest = pixel * (7.0 + 12.0 * v.strength) * (0.6 + 0.4 * reach)
+            let phase = Float(v.seed % 997) / 997 * 6.2832
+            func width(_ s: Float) -> Float { widest * Self.lens(s / max(reach, 0.12)) }
+            func kelvin(_ s: Float) -> Float { v.temperature + 70 - 190 * s + 45 * sin(phase + 9 * s) }
             var drawn = false
             for i in 0..<(path.count - 1) {
                 let from = Float(i) / steps
                 guard from < reach else { break }
-                let to = min(1, Float(i + 1) / steps)
-                let part = min(1, (reach - from) / max(to - from, 1e-4))
+                let to = min(reach, Float(i + 1) / steps)
+                let part = (to - from) * steps
                 let a = path[i], b = path[i] + (path[i + 1] - path[i]) * part
-                let taper = 1 - 0.45 * from
-                add(ndc(v, a), ndc(v, b), width: width * taper, kelvin: v.temperature, light: light, halo: 0.6)
+                add(ndc(v, a), ndc(v, b), width: (width(from), width(to)), kelvin: (kelvin(from), kelvin(to)),
+                    light: soft, halo: 0.6)
                 drawn = true
             }
-            if reach > 0.5 {
-                for branch in v.branches() {
-                    for i in 0..<(branch.count - 1) {
-                        add(ndc(v, branch[i]), ndc(v, branch[i + 1]), width: width * 0.6 * (1 - 0.25 * Float(i)),
-                            kelvin: v.temperature - 50, light: light, halo: 0.3)
+            // Braids: a channel leaves the main one and rejoins it further up, round a lens-shaped island of crust; a
+            // harder note has a second, on the other side, higher up.
+            let side: Float = v.seed % 2 == 0 ? 1 : -1
+            var braids: [(Int, Int, Float)] = [(3, 11, side)]
+            if v.strength > 0.45 { braids.append((8, 14, -side)) }
+            for (k, b) in braids.enumerated() {
+                let (i0, i1, sgn) = b
+                guard i1 < path.count else { continue }
+                let span = Float(i1 - i0)
+                let bulge = (2.4 + 0.9 * Float((v.seed >> (8 + UInt64(k) * 4)) % 7) / 6) * widest / 2
+                var prev: SIMD2<Float>?
+                var prevS: Float = 0
+                for i in i0...i1 {
+                    let s = Float(i) / steps
+                    guard s <= reach else { break }
+                    let t = Float(i - i0) / span
+                    let along = path[min(i + 1, path.count - 1)] - path[max(i - 1, 0)]
+                    let len = max(simd_length(along), 1e-5)
+                    let normal = SIMD2<Float>(along.y, -along.x) / len
+                    let q = path[i] + normal * (sgn * bulge * sin(Float.pi * t))
+                    if let p0 = prev {
+                        let tp = Float(i - 1 - i0) / span
+                        func bw(_ tt: Float, _ ss: Float) -> Float { width(ss) * (0.32 + 0.3 * sin(Float.pi * tt)) }
+                        add(ndc(v, p0), ndc(v, q), width: (bw(tp, prevS), bw(t, s)), kelvin: (kelvin(prevS) - 50, kelvin(s) - 50),
+                            light: soft, halo: 0.4)
                     }
+                    prev = q
+                    prevS = s
                 }
             }
             if drawn { veinsDrawn += 1 }
         }
-        // A chord's joining cracks: from 40% up one vein to 40% up the next, jagged, at the cooler of the two.
+        // A chord's joining channels: from a third of the way up one vein to a third of the way up the next, a narrower
+        // lens, a little jagged, at the cooler of the two.
         for v in frame.veins where v.alive {
             guard let l = v.link, l >= 0, l < frame.veins.count else { continue }
             let w = frame.veins[l]
@@ -177,17 +229,20 @@ final class MagmaVeinsRenderer: ThemeRenderer {
             let pa = v.path(), pb = w.path()
             let a = ndc(v, pa[3]), b = ndc(w, pb[3])
             var rng = SeededRandom(seed: v.seed ^ w.seed)
+            let widest = pixel * (3.0 + 5.0 * min(v.strength, w.strength))
+            let kelvin = min(v.temperature, w.temperature) - 60
             var prev = a
             for k in 1...4 {
                 let f = Float(k) / 4
                 var p = a + (b - a) * f
-                if k < 4 { p += SIMD2(rng.range(-0.02, 0.02), rng.range(-0.03, 0.03)) }
-                add(prev, p, width: pixel * 2.4, kelvin: min(v.temperature, w.temperature) - 40, light: soft, halo: 0.5)
+                if k < 4 { p += SIMD2(rng.range(-0.015, 0.015), rng.range(-0.02, 0.02)) }
+                add(prev, p, width: (widest * Self.lens(f - 0.25), widest * Self.lens(f)), kelvin: (kelvin, kelvin),
+                    light: soft, halo: 0.5)
                 prev = p
             }
             linksDrawn += 1
         }
-        segmentCount = instances.count / 2
+        segmentCount = instances.count / Self.rowsPerSegment
     }
 
     func render(stack: RenderStack, commandBuffer cb: MTLCommandBuffer) {

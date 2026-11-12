@@ -251,7 +251,8 @@ public struct LavaFountain: Equatable {
 }
 
 /// A surprise playing now (spec §8.1): a fireball, a rockfall down the inner wall, a steam blast from a vent, red
-/// sprites over the far storm on the plain, a lava tree left standing as the river drops.
+/// sprites (the sky's, called over a storm the sky brings; a fireball when it has none), a lava tree left standing as
+/// the river drops.
 public struct VolcanoSurprise: Equatable {
     public enum Kind: Int, CaseIterable { case fireball, rockfall, steamBlast, redSprites, lavaTree }
     public var kind: Kind
@@ -405,6 +406,8 @@ public struct VolcanoRimModel: ThemeModel, MoodAware, SkyAware, ExcitementAware,
     private var shakeAge: Float = 99
     private var shakePhase: Float = 0
     private var surprises: [VolcanoSurprise] = []
+    /// The red-sprites surprise's call for the sky's sprites, for the director's next sky step (`SpriteCalling`).
+    private var spriteCallNow: Float?
     private var fountainPhase: [Float] = [0.3, 1.7]
     /// The soundscape's one-shots this step (the boom, the plume's cracks, a rockfall, a steam blast).
     private var events: [AmbienceEvent] = []
@@ -508,6 +511,7 @@ public struct VolcanoRimModel: ThemeModel, MoodAware, SkyAware, ExcitementAware,
         let surprise = excite.surprise
         excite.moment = nil
         excite.surprise = nil
+        spriteCallNow = nil
         events.removeAll(keepingCapacity: true)
 
         // Notes: a crack cell lit where the key falls on the lake, spits below C3 (the lake's own visual); veins (Magma
@@ -927,7 +931,13 @@ public struct VolcanoRimModel: ThemeModel, MoodAware, SkyAware, ExcitementAware,
     // MARK: - Surprises
 
     private mutating func surprised(_ s: WorldSurprise) {
-        guard let kind = VolcanoSurprise.Kind(rawValue: s.index) else { return }
+        guard var kind = VolcanoSurprise.Kind(rawValue: s.index) else { return }
+        // Red sprites are the sky's (SkyKit's), over a storm its far storms or the weather bring: the surprise calls them
+        // when the sky has one at night to stand over, and is a fireball when it hasn't.
+        if kind == .redSprites {
+            if RedSprites.couldStand(over: rawSky) { spriteCallNow = 0.6 + 0.4 * Float(s.seed % 1000) / 1000 }
+            else { kind = .fireball }
+        }
         guard !surprises.contains(where: { $0.kind == kind }) else { return }
         var r = SeededRandom(seed: s.seed)
         let angle: Float
@@ -1046,4 +1056,11 @@ extension VolcanoRimModel {
         .chaos: [("activity", 0.4)],
         .temperature: [],
     ]
+}
+
+/// The shared sky's flags (Fire & Neon fix pass): the crater sends embers up through ashfall, and its red-sprites
+/// surprise calls the sky's own sprites (it draws no storm or sprites of its own).
+extension VolcanoRimModel: SkyWorldFlags, SpriteCalling {
+    public static var emberSource: Bool { true }
+    public var spriteCall: Float? { spriteCallNow }
 }

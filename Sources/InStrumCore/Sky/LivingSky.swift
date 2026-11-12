@@ -153,14 +153,18 @@ public struct StormInputs: Equatable {
     public var satellites: SkyExtraMode?
     public var skyglowLimit: Float?
     public var emberSource: Bool
+    /// A world's own call for red sprites this step (a surprise; `SpriteCalling`), 0…1: like a big moment's, it makes
+    /// one only where the sprites' rules allow (at night, over a storm).
+    public var spriteCall: Float?
 
     public init(crawlers: SkyExtraMode? = nil, sheet: SkyExtraMode? = nil, supercell: SupercellStage? = nil,
                 moment: BigMoment? = nil, farStorm: Float = 0, randomExtras: [WeatherKind: Float] = [:],
                 sprites: SkyExtraMode? = nil, satellites: SkyExtraMode? = nil, skyglowLimit: Float? = nil,
-                emberSource: Bool = false) {
+                emberSource: Bool = false, spriteCall: Float? = nil) {
         self.crawlers = crawlers; self.sheet = sheet; self.supercell = supercell; self.moment = moment
         self.farStorm = farStorm; self.randomExtras = randomExtras
         self.sprites = sprites; self.satellites = satellites; self.skyglowLimit = skyglowLimit; self.emberSource = emberSource
+        self.spriteCall = spriteCall
     }
 }
 
@@ -536,8 +540,11 @@ public final class LivingSky {
         let stormy = weather.weight(of: .storm) + weather.weight(of: .thunderheads) + weather.weight(of: .dryLightning) + far
         let spriteNight = s.sun.altitude < RedSprites.darkBelow
         let spriteBearing = farNow.map { Double($0.bearing) }
+        // A world's own call (a surprise) counts as a big moment's does, the stronger of the two.
+        let worldCall = inputs.spriteCall.flatMap { $0.isFinite ? min(1, max(0, $0)) : nil }
+        let spriteCall = [call, worldCall].compactMap { $0 }.max()
         let sprites = spriteSky.step(dt: dt, mode: spritesMode, eligible: spriteNight && stormy >= 0.5, bearing: spriteBearing,
-                                     call: call)
+                                     call: spriteCall)
         if let f = farNow {
             s.stormBearing = f.bearing
             s.stormEpisode = f.episode

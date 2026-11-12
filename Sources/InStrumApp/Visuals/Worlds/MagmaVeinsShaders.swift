@@ -1,8 +1,9 @@
 /// Metal source for Magma Veins (Fire & Neon spec §8.2): a full-frame view straight down into the lava lake. One pass
 /// draws the crust (24 plates through a warped Voronoi, their cracks a blackbody core and halo, the plates' skin and its
-/// fine cracks; a moment's split widens every crack to the bright magma beneath); the veins (each note's channel and its
-/// branches, and the cracks joining a chord's veins) are instanced distance-field strokes over it, each lit by its own
-/// cooling temperature. Smooth rules: no ray marching, at most 3 octaves (2 on Smooth), no pow.
+/// fine cracks; a moment's split widens every crack to the bright magma beneath); the veins (each note's lens-shaped
+/// channel and its braids, and the channels joining a chord's veins) are instanced distance-field strokes over it, each
+/// lit by its own cooling temperature along its length. Smooth rules: no ray marching, at most 3 octaves (2 on Smooth),
+/// no pow.
 enum MagmaVeinsShaders {
     static let source = SkyShaders.common + """
     struct VeinsU {
@@ -165,14 +166,17 @@ enum MagmaVeinsShaders {
         return out;
     }
 
-    // One segment of a vein (or of a chord's joining crack): an instanced quad round it, lit by distance.
-    struct Seg { float4 seg; float4 info; };   // NDC x0, y0, x1, y1; half width (NDC y), temperature (K), light, halo
-    struct SegOut { float4 pos [[position]]; float2 p; float4 seg; float4 info; };
+    // One segment of a vein's channel (or a braid of it, or a chord's joining channel): an instanced quad round it, lit
+    // by distance. Its width and its core's temperature run from one end's to the other's, so a channel of segments
+    // swells and pinches (a lens) and cools along its length without a step at the joints.
+    struct Seg { float4 seg; float4 info; float4 tail; };   // NDC x0, y0, x1, y1; half width (NDC y) at the start,
+                                                            // temperature (K) there, light, halo; width and temperature at the end
+    struct SegOut { float4 pos [[position]]; float2 p; float4 seg; float4 info; float2 tail; };
     vertex SegOut veins_seg_vertex(uint vid [[vertex_id]], uint iid [[instance_id]], constant Seg* segs [[buffer(0)]],
                                    constant float4& view [[buffer(1)]]) {
         float2 c[6] = { float2(0, 0), float2(1, 0), float2(0, 1), float2(1, 0), float2(1, 1), float2(0, 1) };
         Seg s = segs[iid];
-        float pad = s.info.x * (2.0 + 6.0 * s.info.w) + 0.014;
+        float pad = max(s.info.x, s.tail.x) * (2.2 + 6.0 * s.info.w) + 0.014;
         float2 lo = min(s.seg.xy, s.seg.zw) - float2(pad / view.x, pad);
         float2 hi = max(s.seg.xy, s.seg.zw) + float2(pad / view.x, pad);
         SegOut o;
@@ -181,32 +185,38 @@ enum MagmaVeinsShaders {
         o.p = at;
         o.seg = s.seg;
         o.info = s.info;
+        o.tail = s.tail.xy;
         return o;
     }
     fragment float4 veins_seg_fragment(SegOut in [[stage_in]], constant float4& view [[buffer(0)]]) {
         float2 a = float2(in.seg.x * view.x, in.seg.y), b = float2(in.seg.z * view.x, in.seg.w);
         float2 p0 = float2(in.p.x * view.x, in.p.y);
         // The channel meanders off its polyline (a smooth field in view space, the same for every stroke).
-        float2 p = p0 + (float2(vn2(p0 * 14.0 + 1.0), vn2(p0 * 14.0 + 7.0)) - 0.5) * 0.016;
+        float2 p = p0 + (float2(vn2(p0 * 9.0 + 1.0), vn2(p0 * 9.0 + 7.0)) - 0.5) * 0.016;
         float2 ab = b - a;
         float s = clamp(dot(p - a, ab) / max(dot(ab, ab), 1e-10), 0.0, 1.0);
         float dist = length(p - (a + ab * s));
-        // A channel of magma burst through the crust: its width swells and pinches, its banks torn; a bright core,
-        // cooling across to its banks, and outside them dark levees of chilled crust (the noise is in view space, so it
-        // runs on unbroken across the strokes' joints).
-        float wv = vn2(p * 38.0 + 3.0);
-        float w = max(in.info.x * (0.7 + 0.6 * wv), view.w * 1.2);
-        float torn = (vn2(p * 70.0) - 0.5) * 0.3 * w;
+        float width = mix(in.info.x, in.tail.x, s);
+        float Tcore = mix(in.info.y, in.tail.y, s);
+        // A channel of magma burst through the crust, lens-shaped along its length: its banks torn, a hot core whose
+        // light varies along it (fresher here, rafts of skin there, drifting up the channel), cooling across to its
+        // banks; outside them, wide levees of dark chilled crust (the noise is in view space, so it runs on unbroken
+        // across the strokes' joints).
+        float wv = vn2(p * 30.0 + 3.0);
+        float w = max(width * (0.8 + 0.4 * wv), view.w * 1.2);
+        float torn = (vn2(p * 60.0) - 0.5) * 0.25 * w;
         float x = max(dist + torn, 0.0) / w;
-        float pulse = 0.8 + 0.2 * vn2(p * 12.0 + 9.0);
-        float T = in.info.y - 100.0 * (1.0 - pulse) - 420.0 * smoothstep(0.3, 1.0, x);
-        float inChan = 1.0 - smoothstep(0.92, 1.05, x);
-        float cover = 1.0 - smoothstep(1.45, 1.8, x + 0.2 * (vn2(p * 50.0) - 0.5));
-        float3 levee = float3(0.022, 0.017, 0.014) * (0.6 + 0.7 * vn2(p * 120.0))
-                     + blackbody(in.info.y - 380.0) * (0.35 * exp(-max(x - 1.0, 0.0) / 0.2));
+        float2 flow = p - float2(0.0, view.z * 0.03);
+        float pulse = vn2(flow * 7.0 + 9.0);
+        float raft = smoothstep(0.66, 0.86, vn2(flow * 17.0 + float2(5.0, 1.0)) * 0.8 + 0.25 * vn2(flow * 43.0));
+        float T = Tcore - 140.0 * (1.0 - pulse) - 240.0 * raft * (1.0 - 0.5 * x) - 430.0 * smoothstep(0.4, 1.0, x);
+        float inChan = 1.0 - smoothstep(0.9, 1.05, x);
+        float cover = 1.0 - smoothstep(1.4, 1.85, x + 0.3 * (vn2(p * 40.0) - 0.5));
+        float3 levee = float3(0.02, 0.016, 0.013) * (0.5 + 0.9 * vn2(p * 110.0)) * (0.7 + 0.5 * vn2(p * 23.0))
+                     + blackbody(Tcore - 420.0) * (0.3 * exp(-max(x - 1.0, 0.0) / 0.15));
         // Two passes (view.y): first every channel's levees (so one stroke's levee never covers the next one's core at a
         // joint), then the channels' molten cores over them.
-        float3 c = view.y < 0.5 ? levee : blackbody(T) * 0.45;
+        float3 c = view.y < 0.5 ? levee : blackbody(T) * 0.4;
         float a2 = (view.y < 0.5 ? cover : inChan) * in.info.z;
         if (a2 < 0.003) discard_fragment();
         return float4(c * a2, a2);
