@@ -90,11 +90,14 @@ final class PreviewRenderTests: XCTestCase {
         // Every song card, the "Underwater" card (Set 11) among them.
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.appendingPathComponent("card-underwater.png").path))
         // The place cards (sets born from their place, no song): card-place-tea-house-snow, card-place-zen-rock-garden,
-        // card-place-great-barrier-reef.
+        // card-place-great-barrier-reef, card-place-neon-night-drive.
         for set in SetLibrary.all where set.creditID == nil {
             let image = try XCTUnwrap(InspiredByCardTests.render(place: set, at: 2.4), set.id)
             try PreviewRenderer.writePNG(image, to: url.appendingPathComponent("card-place-\(set.id).png"))
         }
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.appendingPathComponent("card-place-great-barrier-reef.png").path))
+        // Fire & Neon (Sets 13 & 14): the volcano's song card and the drive's place card, among the rest.
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.appendingPathComponent("card-hold-my-liquor.png").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.appendingPathComponent("card-place-neon-night-drive.png").path))
     }
 }

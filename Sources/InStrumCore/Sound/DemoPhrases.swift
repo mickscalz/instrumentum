@@ -400,6 +400,92 @@ public enum DemoPhrases {
         return m.sorted
     }()
 
+    /// E Phrygian at 104 BPM for about 15.5 s, the way Magma Bass plays (Fire & Neon spec §4.2): a growl line in the left
+    /// hand for two bars, eighths and the odd sixteenth on E1 with the Phrygian F biting against it, harder on the beats so
+    /// the filter opens on the accents; then the eruption riff: a hard low E chord (E1 B1 E2, fff within 8 ms, its mean
+    /// pitch far below C3, so the rumble swells under it), a riff answering it, a climb up the mode from E1 to E2 getting
+    /// louder all the way, a hard F chord and a hard E chord straight after it, a bar of the growl line again, and a last
+    /// fff E chord with B2 on top, pressed into (aftertouch opens it and adds growl) and left to ring. The chords are three
+    /// notes, not four, so the engine's limiter holds them by about 3 dB rather than 6 (on the g++ mirror). Original
+    /// material, nothing quoted from any record.
+    public static let magmaBass: Phrase = {
+        var m = Builder()
+        let beat = 60.0 / 104
+        func t(_ beats: Double) -> Double { 0.3 + beats * beat }
+        /// The growl line: (beat, note, velocity, length in beats).
+        let line: [(Double, UInt8, UInt8, Double)] = [
+            (0, 28, 96, 0.4), (0.75, 28, 70, 0.2), (1, 40, 88, 0.4), (1.5, 28, 76, 0.4), (2, 29, 100, 0.9), (3, 28, 84, 0.4),
+            (3.5, 31, 92, 0.4),
+            (4, 28, 104, 0.4), (4.75, 28, 72, 0.2), (5, 40, 96, 0.4), (5.5, 38, 88, 0.4), (6, 36, 100, 0.4), (6.5, 35, 96, 0.4),
+            (7, 33, 104, 0.4), (7.5, 31, 110, 0.4)]
+        for (b, n, v, len) in line { m.note(t(b), n, v, len * beat) }
+        /// A hard chord: struck within 12 ms at fff (the four-note one; 8 ms for three), the lowest first.
+        func chord(_ b: Double, _ notes: [UInt8], beats: Double) {
+            for (k, n) in notes.enumerated() {
+                let start = t(b) + 0.004 * Double(k)
+                m.note(start, n, UInt8(122 - 2 * k), t(b + beats) - start)
+            }
+        }
+        // The eruption: a hard low E chord, and a riff answering it.
+        chord(8, [28, 35, 40], beats: 1.75)
+        for (b, n, v) in [(10.0, 28, 96), (10.5, 29, 100), (11.0, 28, 90), (11.5, 35, 104)] as [(Double, UInt8, UInt8)] {
+            m.note(t(b), n, v, 0.4 * beat)
+        }
+        // The climb up the mode, E1 to E2, louder all the way.
+        for (k, n) in ([28, 29, 31, 33, 35, 36, 38, 40] as [UInt8]).enumerated() {
+            m.note(t(12 + 0.5 * Double(k)), n, UInt8(80 + 5 * k), 0.4 * beat)
+        }
+        // A hard F chord, then a hard E chord.
+        chord(16, [29, 36, 41], beats: 1.5)
+        chord(18, [28, 35, 40], beats: 2)
+        // A bar of the growl line again.
+        for (b, n, v, len) in line.prefix(7) { m.note(t(20 + b), n, v, len * beat) }
+        // The last chord, B2 on top, pressed into and left to ring.
+        chord(24, [28, 35, 40, 47], beats: 2.5)
+        m.pressure(t(24.25), from: 0, to: 0.5, over: 1.2 * beat)
+        m.pressure(t(26.2), from: 0.5, to: 0, over: 0.15)
+        return m.sorted
+    }()
+
+    /// A minor at 120 BPM for about 14 s, the way Replicant Brass plays (Fire & Neon spec §4.3, its default preset): the
+    /// left hand holds a root, fifth and octave below the C3 split and Chrome Bass's arp plays them on the sixteenths in
+    /// the order they were pressed; it plays alone for a bar, then the brass comes in over it as a soft A minor chord that
+    /// swells open (the Swell dial's slow filter attack). Every two bars the left hand moves (A, F, G, A) and the brass with
+    /// it: F major 7, leaned into (aftertouch brightens it and fades a vibrato in), G, and back to A minor with A4 on top,
+    /// struck at full velocity for the blare, held two bars and let go together. Original material, nothing quoted from any
+    /// record or film.
+    public static let replicantBrass: Phrase = {
+        var m = Builder()
+        let beat = 60.0 / 120
+        func t(_ beats: Double) -> Double { 0.3 + beats * beat }
+        /// The left hand: root, fifth and octave pressed 25 ms apart (so the arp keeps that order), let go 30 ms before the
+        /// next; played mf, so the brass's blare stays clear of the engine's limiter (0.84 at its top on the g++ mirror).
+        func bass(_ b: Double, _ notes: [UInt8], until e: Double) {
+            for (k, n) in notes.enumerated() {
+                let start = t(b) + 0.025 * Double(k)
+                m.note(start, n, 70, t(e) - 0.03 - start)
+            }
+        }
+        /// The brass: a chord struck together, let go 40 ms before the next.
+        func brass(_ b: Double, _ notes: [UInt8], _ velocity: UInt8, until e: Double) {
+            for (k, n) in notes.enumerated() {
+                let start = t(b) + 0.006 * Double(k)
+                m.note(start, n, velocity, t(e) - 0.04 - start)
+            }
+        }
+        bass(0, [33, 40, 45], until: 8)               // A1 E2 A2
+        brass(4, [57, 60, 64], 80, until: 8)          // A minor, swelling in over the arp
+        bass(8, [29, 36, 41], until: 16)              // F1 C2 F2
+        brass(8, [53, 57, 60, 64], 84, until: 16)     // F major 7, leaned into
+        m.pressure(t(10), from: 0, to: 0.8, over: 4 * beat)
+        m.pressure(t(14.5), from: 0.8, to: 0, over: 1 * beat)
+        bass(16, [31, 38, 43], until: 20)             // G1 D2 G2
+        brass(16, [55, 59, 62, 67], 96, until: 20)    // G
+        bass(20, [33, 40, 45], until: 27.5)           // A1 E2 A2
+        brass(20, [57, 60, 64, 69], 127, until: 27.5) // A minor with A4 on top: the blare
+        return m.sorted
+    }()
+
     private struct Builder {
         var events: Phrase = []
         mutating func note(_ t: Double, _ n: UInt8, _ v: UInt8, _ length: Double) {

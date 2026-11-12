@@ -5,19 +5,20 @@ final class SetsTests: XCTestCase {
     /// Every set is whole: its world, visual and preset exist, and it carries a song's credit or, born from its place, none
     /// (the App's `InspiredByCardTests.testEverySetHasACardOrPlaceArt` checks that each one then has its card). Sets 11 and
     /// 12 ("Deep Water") come after the still places, the submarine then the reef; Sets 17 and 18 ("Storms", built before
-    /// Sets 13 to 16) come last, the supercell then the plains (Storms spec §12), so the plains are the newest.
+    /// Sets 13 to 16) after them, the supercell then the plains (Storms spec §12); and Sets 13 and 14 ("Fire & Neon") come
+    /// last, the volcano then the drive (Fire & Neon spec §2), so the drive is the newest.
     func testStormSetsAreComplete() throws {
         let ids = SetLibrary.all.map(\.id)
         let expected = ["moonlit-lake", "spaceship-lounge", "golden-hour-beach", "coast-road", "snowbound-cabin", "bedroom-dawn",
                         "aurora-fjord", "bioluminescent-bay", "tea-house-snow", "zen-rock-garden", "submarine-window",
-                        "great-barrier-reef", "supercell-sky", "lightning-plains"]
+                        "great-barrier-reef", "supercell-sky", "lightning-plains", "volcano-rim", "neon-night-drive"]
         XCTAssertEqual(ids, expected)
-        XCTAssertEqual(ids.count, 14)
+        XCTAssertEqual(ids.count, 16)
         let uniqueIDs = Set(ids).count
-        XCTAssertEqual(uniqueIDs, 14, "ids are unique")
+        XCTAssertEqual(uniqueIDs, 16, "ids are unique")
         let worlds = Set(SetLibrary.all.map(\.worldID)).count
-        XCTAssertEqual(worlds, 14, "one world each")
-        XCTAssertEqual(SetLibrary.newest, SetLibrary.lightningPlains, "the newest is the last in the gallery")
+        XCTAssertEqual(worlds, 16, "one world each")
+        XCTAssertEqual(SetLibrary.newest, SetLibrary.neonNightDrive, "the newest is the last in the gallery")
         for s in SetLibrary.all {
             XCTAssertEqual(ThemeRegistry.resolve(s.worldID), s.worldID, s.id)
             let visual = try XCTUnwrap(ThemeRegistry.parameters(for: s.worldID).first { $0.id == "visual" }, s.id)
@@ -184,14 +185,130 @@ final class SetsTests: XCTestCase {
         XCTAssertEqual(plains.ambience, AmbienceSettings())
         XCTAssertEqual(plains.creditID, CreditLibrary.runaway.id)
         XCTAssertEqual(plains.creditID, "runaway")
-        // Only the two still places and the reef go without a song.
-        XCTAssertEqual(SetLibrary.all.filter { $0.creditID == nil }.map(\.id), ["tea-house-snow", "zen-rock-garden", "great-barrier-reef"])
+        // Fire & Neon (spec §2, §11): the volcano after "Hold My Liquor", the drive born from its place.
+        let volcano = try XCTUnwrap(SetLibrary.set(id: "volcano-rim"))
+        XCTAssertEqual(volcano, SetLibrary.volcanoRim)
+        XCTAssertEqual(volcano.name, "Volcano Rim")
+        XCTAssertEqual(volcano.moodName, "Molten")
+        XCTAssertEqual(volcano.mood, .molten)
+        XCTAssertEqual(volcano.worldID, VolcanoRimModel.id)
+        XCTAssertEqual(volcano.worldID, "volcano-rim")
+        XCTAssertEqual(volcano.visual, "Lava Lake")
+        XCTAssertEqual(volcano.patchID, "magma-bass")
+        XCTAssertEqual(volcano.ambience, AmbienceSettings())
+        XCTAssertEqual(volcano.creditID, CreditLibrary.holdMyLiquor.id)
+        XCTAssertEqual(volcano.creditID, "hold-my-liquor")
+        let drive = try XCTUnwrap(SetLibrary.set(id: "neon-night-drive"))
+        XCTAssertEqual(drive, SetLibrary.neonNightDrive)
+        XCTAssertEqual(drive.name, "Neon Night Drive")
+        XCTAssertEqual(drive.moodName, "Wired")
+        XCTAssertEqual(drive.mood, .wired)
+        XCTAssertEqual(drive.worldID, NeonNightDriveModel.id)
+        XCTAssertEqual(drive.worldID, "neon-night-drive")
+        XCTAssertEqual(drive.visual, "Light Trails")
+        XCTAssertEqual(drive.patchID, "replicant-brass")
+        XCTAssertEqual(drive.ambience, AmbienceSettings())
+        XCTAssertNil(drive.creditID, "born from its place, not a song")
+        // Only the two still places, the reef and the drive go without a song.
+        XCTAssertEqual(SetLibrary.all.filter { $0.creditID == nil }.map(\.id),
+                       ["tea-house-snow", "zen-rock-garden", "great-barrier-reef", "neon-night-drive"])
         // Every set's mood is its own.
         let setMoods = SetLibrary.all.map(\.mood)
         for i in 0..<setMoods.count { for j in (i + 1)..<setMoods.count { XCTAssertNotEqual(setMoods[i], setMoods[j]) } }
         XCTAssertNil(SetLibrary.set(id: "nope"))
         // Each set's built-in preset carries the same credit as the set.
         for s in SetLibrary.all { XCTAssertEqual(PatchLibrary.all.first { $0.id == s.patchID }?.creditID, s.creditID) }
+    }
+
+    /// Sets 13 and 14 ("Fire & Neon", spec §2, §11) have one of everything each (1:1:1:1:1:1): their own world with its
+    /// own visual, Galaxy Warp beside it as the other worlds have; their own instrument on its default preset, carrying the
+    /// set's credit (Magma Bass "Hold My Liquor", Replicant Brass none, the drive being born from its place); their own
+    /// mood; their own ambience family; and their own sky feature and weather (red sprites and Ashfall at the volcano,
+    /// satellites and the Supercell on the drive), which reach every sky world. They close the gallery, the volcano then
+    /// the drive, and the drive is the newest, so this build opens on it once.
+    func testFireAndNeonSetsAreComplete() throws {
+        let volcano = SetLibrary.volcanoRim, drive = SetLibrary.neonNightDrive
+        XCTAssertEqual(Array(SetLibrary.all.suffix(2)), [volcano, drive], "at the end of the gallery, in this order")
+        XCTAssertEqual(SetLibrary.newest, drive)
+        // Worlds and visuals, Galaxy Warp beside each.
+        XCTAssertEqual(ThemeRegistry.resolve(volcano.worldID), VolcanoRimModel.id)
+        XCTAssertEqual(ThemeRegistry.resolve(drive.worldID), NeonNightDriveModel.id)
+        XCTAssertEqual(VolcanoRimModel.visuals.first, volcano.visual, "the lake's own visual first")
+        XCTAssertTrue(VolcanoRimModel.visuals.contains("Magma Veins"))
+        XCTAssertTrue(VolcanoRimModel.visuals.contains("Galaxy Warp"))
+        XCTAssertEqual(NeonNightDriveModel.visuals.first, drive.visual)
+        XCTAssertTrue(NeonNightDriveModel.visuals.contains("Galaxy Warp"))
+        // Instruments: each its own engine, on its default preset, which carries the set's credit (or none).
+        let magma = try XCTUnwrap(PatchLibrary.all.first { $0.id == volcano.patchID })
+        XCTAssertEqual(magma.engine, .magmaBass)
+        XCTAssertEqual(magma.name, "Magma")
+        XCTAssertEqual(PatchLibrary.defaultPatch(for: .magmaBass), magma)
+        XCTAssertEqual(magma.credit, CreditLibrary.holdMyLiquor)
+        for p in PatchLibrary.patches(for: .magmaBass) { XCTAssertEqual(p.creditID, "hold-my-liquor", p.id) }
+        XCTAssertEqual(PatchLibrary.patches(for: .magmaBass).map(\.id), ["magma-bass", "basalt", "fissure", "ember-glide"])
+        let brass = try XCTUnwrap(PatchLibrary.all.first { $0.id == drive.patchID })
+        XCTAssertEqual(brass.engine, .replicantBrass)
+        XCTAssertEqual(brass.name, "Replicant")
+        XCTAssertEqual(PatchLibrary.defaultPatch(for: .replicantBrass), brass)
+        XCTAssertEqual(brass.values["split"], 48, "Chrome Bass split at C3")
+        for p in PatchLibrary.patches(for: .replicantBrass) { XCTAssertNil(p.creditID, p.id) }
+        XCTAssertEqual(PatchLibrary.patches(for: .replicantBrass).map(\.id), ["replicant-brass", "tears-in-rain", "chrome-rush", "night-brass"])
+        XCTAssertEqual(magma.displayName, "Magma · after \"Hold My Liquor\"")
+        XCTAssertEqual(brass.displayName, "Replicant")
+        // One instrument, world and mood each, nobody else's.
+        for other in SetLibrary.all.dropLast(2) {
+            let engine = PatchLibrary.all.first { $0.id == other.patchID }?.engine
+            XCTAssertNotEqual(engine, .magmaBass, other.id)
+            XCTAssertNotEqual(engine, .replicantBrass, other.id)
+            XCTAssertNotEqual(other.mood, .molten, other.id)
+            XCTAssertNotEqual(other.mood, .wired, other.id)
+        }
+        // Their own sky features and weathers (spec §6, §7), in every sky world.
+        XCTAssertEqual(SkySettings().spritesMode, .natural)
+        XCTAssertEqual(SkySettings().satellitesMode, .natural)
+        XCTAssertTrue(WeatherKind.allCases.contains(.ashfall))
+        XCTAssertTrue(WeatherKind.allCases.contains(.supercell))
+        // Their own ambience families (spec §8.3, §9.3).
+        let volcanoFamily: [AmbienceSource] = [.ventRumble, .lavaHiss, .steamVent, .rockfall, .eruptionBoom, .plumeThunder]
+        let driveFamily: [AmbienceSource] = [.wetTyres, .wipers, .driveEngine, .drivePassingCar, .roofRain, .farSiren]
+        XCTAssertEqual(Set(volcanoFamily).count, 6)
+        XCTAssertEqual(Set(driveFamily).count, 6)
+        XCTAssertTrue(Set(volcanoFamily).isDisjoint(with: driveFamily))
+        // The credit (spec §11): words and a link only; its key and tempo are machine-detected, so no key is claimed and
+        // the card breathes at 104 until it is checked by ear.
+        let credit = CreditLibrary.holdMyLiquor
+        XCTAssertEqual(credit.id, "hold-my-liquor")
+        XCTAssertEqual(credit.song, "Hold My Liquor")
+        XCTAssertEqual(credit.artist, "Kanye West")
+        XCTAssertEqual(credit.album, "Yeezus")
+        XCTAssertEqual(credit.year, 2013)
+        XCTAssertEqual(credit.trackNumber, 5)
+        XCTAssertEqual(credit.key, "", "no key claimed until it is heard")
+        XCTAssertEqual(credit.tempoBPM, 104)
+        XCTAssertEqual(credit.pulsePeriod, 60.0 / 104, accuracy: 1e-12)
+        XCTAssertFalse(credit.line.isEmpty)
+        XCTAssertFalse(credit.line.contains("\""), "a line of our own, quoting nothing")
+        XCTAssertEqual(CreditLibrary.credit(id: "hold-my-liquor"), credit)
+        XCTAssertEqual(CreditLibrary.all.last, credit)
+        XCTAssertEqual(ListenLink.spotifyWeb(for: credit).path, "/search/Kanye West Hold My Liquor")
+        XCTAssertEqual(ListenLink.spotifyApp(for: credit).absoluteString, "spotify:search:Kanye%20West%20Hold%20My%20Liquor")
+    }
+
+    /// The arp's own dials (Fire & Neon spec §4.4): the instruments with an arpeggiator say so, and name the dials that run
+    /// it, in the order the instrument panel's Arp row shows them: Blue Depth's own (Blink, Tempo) and Replicant Brass's
+    /// shared one, which plays Chrome Bass (Arp, Rate, Tempo, Split). Magma Bass has none, nor does any other engine.
+    func testOnlyTheArpeggiatingInstrumentsHaveAnArp() {
+        XCTAssertEqual(BuiltInEngine.allCases.filter(\.supportsArp), [.blueDepth, .replicantBrass])
+        XCTAssertEqual(BuiltInEngine.blueDepth.arpDials, ["blink", "tempo"])
+        XCTAssertEqual(BuiltInEngine.replicantBrass.arpDials, ["arp", "rate", "tempo", "split"])
+        XCTAssertFalse(BuiltInEngine.magmaBass.supportsArp)
+        XCTAssertEqual(BuiltInEngine.magmaBass.arpDials, [])
+        // Each arp dial is one its presets set.
+        for engine in BuiltInEngine.allCases where engine.supportsArp {
+            for p in PatchLibrary.patches(for: engine) {
+                for dial in engine.arpDials { XCTAssertNotNil(p.values[dial], "\(p.id) sets \(dial)") }
+            }
+        }
     }
 
     /// Sets saved by older builds always carried a credit; they still decode now it is optional. A set born from its
@@ -211,7 +328,7 @@ final class SetsTests: XCTestCase {
             XCTAssertEqual(try JSONDecoder().decode(InStrumSet.self, from: JSONEncoder().encode(s)), s, s.id)
         }
         let places = SetLibrary.all.filter { $0.creditID == nil }
-        XCTAssertEqual(places, [SetLibrary.teaHouseSnow, SetLibrary.zenRockGarden, SetLibrary.greatBarrierReef])
+        XCTAssertEqual(places, [SetLibrary.teaHouseSnow, SetLibrary.zenRockGarden, SetLibrary.greatBarrierReef, SetLibrary.neonNightDrive])
         for place in places {
             let written = try JSONEncoder().encode(place)
             XCTAssertFalse(String(decoding: written, as: UTF8.self).contains("creditID"), place.id)
@@ -233,7 +350,7 @@ final class SetsTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode([InStrumSet].self, from: stored), eight)
         let after = Array(SetLibrary.all.dropFirst(8))
         let laterSets = [SetLibrary.teaHouseSnow, SetLibrary.zenRockGarden, SetLibrary.submarineWindow, SetLibrary.greatBarrierReef,
-                         SetLibrary.supercellSky, SetLibrary.lightningPlains]
+                         SetLibrary.supercellSky, SetLibrary.lightningPlains, SetLibrary.volcanoRim, SetLibrary.neonNightDrive]
         XCTAssertEqual(after, laterSets)
     }
 
@@ -256,8 +373,11 @@ final class SetsTests: XCTestCase {
         XCTAssertEqual(Mood.stormTense, stormTense)
         let plainsVast = Mood(energy: 0.45, warmth: 0.3, brightness: 0.4, space: 1.0, motion: 0.4)
         XCTAssertEqual(Mood.plainsVast, plainsVast)
+        // Fire & Neon (spec §10): molten and wired, the most energetic moods in the app.
+        XCTAssertEqual(Mood.molten, Mood(energy: 0.85, warmth: 0.95, brightness: 0.4, space: 0.75, motion: 0.65))
+        XCTAssertEqual(Mood.wired, Mood(energy: 0.9, warmth: 0.3, brightness: 0.8, space: 0.55, motion: 0.95))
         let moods = [Mood.serene, .dreamy, .warmHaze, .restless, .hushedWarm, .softWaking, .electricAwe, .secretGlow,
-                     .delicate, .orderedCalm, .deepHush, .reefAlive, .stormTense, .plainsVast]
+                     .delicate, .orderedCalm, .deepHush, .reefAlive, .stormTense, .plainsVast, .molten, .wired]
         for i in 0..<moods.count { for j in (i + 1)..<moods.count { XCTAssertNotEqual(moods[i], moods[j]) } }
         // A mood saved by a set decodes as itself.
         let stored = try? JSONEncoder().encode(Mood.plainsVast)

@@ -14,7 +14,7 @@ final class InspiredByCardTests: XCTestCase {
 
     func testEverySetHasItsOwnCardColours() {
         let count = SetLibrary.all.count
-        XCTAssertEqual(count, 14)
+        XCTAssertEqual(count, 16)
         let fallback = SetsGallery.tint(for: "no-such-set")
         var seen: [[Color]] = []
         for set in SetLibrary.all {
@@ -41,6 +41,12 @@ final class InspiredByCardTests: XCTestCase {
         let duskAmber = [Color(red: 0.10, green: 0.09, blue: 0.18), Color(red: 0.55, green: 0.40, blue: 0.25)]
         XCTAssertEqual(plains, duskAmber)
         XCTAssertNotEqual(supercell, plains)
+        // Fire & Neon (spec §11): the crater's black basalt to the lake's molten orange; the wet night to the neon's magenta.
+        let volcano = SetsGallery.tint(for: SetLibrary.volcanoRim.id)
+        XCTAssertEqual(volcano, [Color(red: 0.08, green: 0.03, blue: 0.02), Color(red: 0.78, green: 0.28, blue: 0.06)])
+        let drive = SetsGallery.tint(for: SetLibrary.neonNightDrive.id)
+        XCTAssertEqual(drive, [Color(red: 0.05, green: 0.03, blue: 0.11), Color(red: 0.62, green: 0.10, blue: 0.48)])
+        XCTAssertNotEqual(volcano, drive)
     }
 
     /// No two cards look alike.
@@ -81,7 +87,9 @@ final class InspiredByCardTests: XCTestCase {
                 XCTAssertNotNil(CardArt.place(for: set.id), "\(set.id) has no credit and no place card")
             }
         }
-        XCTAssertEqual(SetLibrary.all.compactMap { CardArt.place(for: $0.id) }, [.teaHouseSnow, .zenRockGarden, .greatBarrierReef])
+        XCTAssertEqual(SetLibrary.all.compactMap { CardArt.place(for: $0.id) }, [.teaHouseSnow, .zenRockGarden, .greatBarrierReef, .neonNightDrive])
+        XCTAssertEqual(SetLibrary.volcanoRim.creditID.flatMap { CardArt.art(for: $0) }, CardArt.holdMyLiquor)
+        XCTAssertNil(CardArt.place(for: SetLibrary.volcanoRim.id), "the volcano has its song's card")
         XCTAssertEqual(SetLibrary.submarineWindow.creditID.flatMap { CardArt.art(for: $0) }, CardArt.underwater)
         XCTAssertNil(CardArt.place(for: SetLibrary.submarineWindow.id), "the submarine has its song's card")
         for c in CreditLibrary.all { XCTAssertFalse(CardArt.art(for: c.id)?.isPlace ?? true, c.id) }
@@ -227,7 +235,7 @@ final class InspiredByCardTests: XCTestCase {
             if d <= 0.02 { XCTFail("the reef card and \(c.id) differ by only \(d)") }
         }
         let places = SetLibrary.all.filter { $0.creditID == nil && $0.id != SetLibrary.greatBarrierReef.id }
-        XCTAssertEqual(places.map(\.id), ["tea-house-snow", "zen-rock-garden"])
+        XCTAssertEqual(places.map(\.id), ["tea-house-snow", "zen-rock-garden", "neon-night-drive"])
         for place in places {
             let other = try XCTUnwrap(Self.render(place: place, at: 1.0), place.id)
             let d = PreviewRenderer.difference(picture, other)
@@ -764,6 +772,232 @@ final class InspiredByCardTests: XCTestCase {
             let other = try XCTUnwrap(Self.render(c, at: 1.0), c.id)
             let d = PreviewRenderer.difference(mine, other)
             if d <= 0.02 { XCTFail("the Runaway card and \(c.id) differ by only \(d)") }
+        }
+    }
+
+    // MARK: - Fire & Neon (Sets 13 & 14)
+
+    /// The card's words, as the song cards set them: the liner notes (top right), the title block (bottom left) and the
+    /// Listen button, on a 600 × 360 card.
+    private static let songWords: [CGRect] = [CGRect(x: 360, y: 0, width: 240, height: 36),
+                                              CGRect(x: 0, y: 244.8, width: 432, height: 115.2),
+                                              CGRect(x: 492, y: 309.6, width: 108, height: 50.4)]
+
+    /// The credit for "Hold My Liquor" (Fire & Neon spec §2, §11), exactly: words and a Spotify search link only. Its place
+    /// on *Yeezus*, track 5, is a verified fact; its key and tempo come only from key-detection sites (A♭ major at 104),
+    /// so it claims no key and the card breathes at 104 until it is checked by ear: the liner notes read
+    /// "TRACK 5 · 104 BPM". Magma Bass's presets carry it.
+    func testHoldMyLiquorCredit() {
+        let c = CreditLibrary.holdMyLiquor
+        XCTAssertEqual(c.id, "hold-my-liquor")
+        XCTAssertEqual(c.song, "Hold My Liquor")
+        XCTAssertEqual(c.artist, "Kanye West")
+        XCTAssertEqual(c.album, "Yeezus")
+        XCTAssertEqual(c.year, 2013)
+        XCTAssertEqual(c.trackNumber, 5)
+        XCTAssertEqual(c.key, "", "no key claimed: it is machine-detected, to be checked by ear")
+        XCTAssertEqual(c.tempoBPM, 104)
+        XCTAssertEqual(c.line, "A heavy, slow-burning pulse with distortion glowing under it like heat.")
+        XCTAssertEqual(CreditLibrary.credit(id: "hold-my-liquor"), c)
+        XCTAssertTrue(CreditLibrary.all.contains(c))
+        XCTAssertEqual(c.pulsePeriod, 60.0 / 104, accuracy: 1e-12)
+        // Words and a link only: a credit holds its words and nothing else (no artwork, no images, no lyrics).
+        XCTAssertEqual(Mirror(reflecting: c).children.compactMap(\.label),
+                       ["id", "song", "artist", "album", "year", "trackNumber", "key", "tempoBPM", "line"])
+        // Listen finds it with a Spotify search: nothing of the record is hosted or shown here.
+        XCTAssertEqual(ListenLink.spotifyApp(for: c).absoluteString, "spotify:search:Kanye%20West%20Hold%20My%20Liquor")
+        XCTAssertEqual(ListenLink.spotifyWeb(for: c).absoluteString, "https://open.spotify.com/search/Kanye%20West%20Hold%20My%20Liquor")
+        // Magma Bass's presets carry it.
+        XCTAssertEqual(PatchLibrary.patches(for: .magmaBass).count, 4)
+        for p in PatchLibrary.patches(for: .magmaBass) { XCTAssertEqual(p.credit, c, p.id) }
+        // The card says it in words: the song, the artist, the album and its year, and the liner notes with its track and
+        // tempo but no key; a Listen button finds it.
+        let card = InspiredByCard(credit: c)
+        XCTAssertEqual(card.subject, .song(c))
+        XCTAssertEqual(card.art, .holdMyLiquor)
+        XCTAssertEqual(card.words.kicker, "INSPIRED BY")
+        XCTAssertEqual(card.words.title, "Hold My Liquor")
+        XCTAssertEqual(card.words.subtitle, "Kanye West · Yeezus · 2013")
+        XCTAssertEqual(card.words.linerNotes, "TRACK 5 · 104 BPM")
+        XCTAssertEqual(card.words.line, c.line)
+        XCTAssertEqual(card.words.listen, c)
+        XCTAssertEqual(card.words.accessibility,
+                       "Inspired by Hold My Liquor by Kanye West, Yeezus, 2013. A heavy, slow-burning pulse with distortion glowing under it like heat.")
+    }
+
+    /// The "Hold My Liquor" card is original art from the set's world (nothing from the record, its packaging or its
+    /// words): a lava lake in a crater at night, its black crust broken into plates whose cracks glow, a fountain, a
+    /// leaning plume, the far rim. It breathes at the felt pulse, 104: the cracks throb on every beat, the fountain throws
+    /// its spatter and one ember rises from it on every beat, four in the air at once; and on the far rim stands a tiny
+    /// lava tree (the easter egg), clear of the words. The picture repeats exactly once a bar, its fountain glows warm, and
+    /// it looks like no other card.
+    func testHoldMyLiquorCardEasterEggs() throws {
+        let credit = CreditLibrary.holdMyLiquor
+        let art = try XCTUnwrap(CardArt.art(for: credit.id))
+        XCTAssertEqual(art, .holdMyLiquor)
+        XCTAssertFalse(art.isPlace)
+        XCTAssertFalse(art.titleCase)
+        let beat = 60.0 / 104, bar = 4 * beat
+        XCTAssertEqual(art.pulse(for: credit), beat, accuracy: 1e-12, "it breathes at 104")
+        XCTAssertEqual(InspiredByCard(credit: credit).pulse, beat, accuracy: 1e-12)
+        for c in CreditLibrary.all where c.id != credit.id { XCTAssertNotEqual(CardArt.art(for: c.id), art, c.id) }
+
+        // The cracks throb on the beat: full on it, easing off through it, the same a beat later.
+        for b in 1...4 {
+            XCTAssertEqual(CardArt.liquorThrob(at: Double(b) * beat + 1e-9, pulse: beat), 1, accuracy: 1e-6, "on beat \(b)")
+            XCTAssertLessThan(CardArt.liquorThrob(at: (Double(b) + 0.95) * beat, pulse: beat), 0.1)
+        }
+        // One ember leaves the fountain on every beat and rises for four: four in the air, the newest at the fountain.
+        let fountain = CardArt.liquorLakePoint(u: CardArt.liquorFountain.u, v: CardArt.liquorFountain.v)
+        for b in [1, 2, 7] {
+            let embers = CardArt.liquorEmbers(at: Double(b) * beat + 1e-6, pulse: beat)
+            XCTAssertEqual(embers.count, 4)
+            let newest = try XCTUnwrap(embers.max { $0.heat < $1.heat })
+            XCTAssertGreaterThan(newest.heat, 0.99, "one just left on beat \(b)")
+            XCTAssertEqual(newest.x, Double(fountain.x), accuracy: 0.01)
+            XCTAssertEqual(newest.y, Double(fountain.y), accuracy: 0.03)
+            let heats = embers.map { $0.heat }.sorted()
+            for (lower, higher) in zip(heats, heats.dropFirst()) { XCTAssertEqual(higher - lower, 0.25, accuracy: 1e-6, "a beat apart") }
+            for e in embers {
+                XCTAssertLessThanOrEqual(e.y, Double(fountain.y) + 1e-9, "they rise")
+                XCTAssertTrue(e.light >= 0 && e.light <= 1)
+            }
+        }
+        for t in [0.3, 1.7, 5.2] {
+            let now = CardArt.liquorEmbers(at: t, pulse: beat), later = CardArt.liquorEmbers(at: t + bar, pulse: beat)
+            for (then, again) in zip(now, later) {
+                XCTAssertEqual(then.x, again.x, accuracy: 1e-9, "a bar later the embers are where they were")
+                XCTAssertEqual(then.y, again.y, accuracy: 1e-9)
+            }
+        }
+        // The crust: well over a hundred plates, each a closed cell.
+        XCTAssertGreaterThan(CardArt.liquorPlates.count, 100)
+        for plate in CardArt.liquorPlates { XCTAssertGreaterThanOrEqual(plate.cell.count, 3) }
+
+        // The lava tree: tiny, standing on the far rim, clear of the words.
+        let tree = CardArt.liquorLavaTree
+        XCTAssertLessThan(tree.height, 0.06, "tiny")
+        let foot = CardArt.liquorRimTop(tree.x)
+        XCTAssertTrue(foot > 0.25 && foot < 0.45, "on the far rim, below the sky: \(foot)")
+        XCTAssertLessThan(foot, Double(fountain.y), "beyond the lake")
+        let body = CGRect(x: 600 * tree.x - 6, y: 360 * (foot - tree.height), width: 12, height: 360 * tree.height)
+        for rect in Self.songWords { XCTAssertFalse(body.intersects(rect), "the lava tree covers \(rect)") }
+
+        // The picture: it draws and moves, repeats exactly once a bar, and its fountain glows warm.
+        let a = try XCTUnwrap(Self.render(credit, at: 0.4))
+        let stats = PreviewRenderer.stats(a)
+        XCTAssertGreaterThan(stats.meanLuminance, 0.05)
+        XCTAssertGreaterThan(stats.variance, 0.001)
+        let barLater = try XCTUnwrap(Self.render(credit, at: 0.4 + bar))
+        let again = PreviewRenderer.difference(a, barLater)
+        XCTAssertLessThan(again, 0.002, "a bar later the card is as it was")
+        let later = try XCTUnwrap(Self.render(credit, at: 0.4 + 1.5 * beat))
+        let moved = PreviewRenderer.difference(a, later)
+        if moved <= 0.001 { XCTFail("a beat and a half later the Hold My Liquor card moved only \(moved)") }
+        let fx = 2 * Double(fountain.x) - 1, fy = 1 - 2 * Double(fountain.y)
+        let glow = FramePatch.meanRGB(a, x: (fx - 0.04)...(fx + 0.04), y: (fy - 0.04)...(fy + 0.04))
+        XCTAssertGreaterThan(glow.x, 0.45, "the fountain is lit: \(glow)")
+        XCTAssertGreaterThan(glow.x, glow.y, "and warm: \(glow)")
+        XCTAssertGreaterThan(glow.y, glow.z, "and warm: \(glow)")
+
+        // It looks like no other card, song or place.
+        let mine = try XCTUnwrap(Self.render(credit, at: 1.0))
+        for c in CreditLibrary.all where c.id != credit.id {
+            let other = try XCTUnwrap(Self.render(c, at: 1.0), c.id)
+            let d = PreviewRenderer.difference(mine, other)
+            if d <= 0.02 { XCTFail("the Hold My Liquor card and \(c.id) differ by only \(d)") }
+        }
+        for place in SetLibrary.all where place.creditID == nil {
+            let other = try XCTUnwrap(Self.render(place: place, at: 1.0), place.id)
+            let d = PreviewRenderer.difference(mine, other)
+            if d <= 0.02 { XCTFail("the Hold My Liquor card and \(place.id)'s differ by only \(d)") }
+        }
+    }
+
+    /// Neon Night Drive is born from its place: its card (an elevated expressway at night in rain, light trails running
+    /// down the wet road between the towers, wordless neon glyphs and their reflections, a wiper's arc swept clear of the
+    /// beaded glass) breathes at the drive's own tempo, 120 (one breath every 60/120 s), whatever any song's; names the
+    /// set and its mood with no liner notes or Listen button; and one sign's glyph is the app's own icon (the easter egg).
+    /// Its signs blink up in turn, one on each beat of the bar, and keep off the title block; the picture repeats exactly
+    /// once a bar, and looks like no song card and no other place's card.
+    func testNeonNightDrivePlaceCard() throws {
+        let set = SetLibrary.neonNightDrive
+        let art = try XCTUnwrap(CardArt.place(for: "neon-night-drive"))
+        XCTAssertEqual(art, .neonNightDrive)
+        XCTAssertTrue(art.isPlace)
+        for c in CreditLibrary.all { XCTAssertNotEqual(CardArt.art(for: c.id), art, c.id) }
+        let beat = 60.0 / 120, bar = 4 * beat
+        XCTAssertEqual(CardArt.drivePulse, beat, accuracy: 1e-12)
+        XCTAssertEqual(art.placeBreath, beat, accuracy: 1e-12, "the drive's tempo, 120")
+        XCTAssertEqual(art.pulse(for: CreditLibrary.stay), beat, accuracy: 1e-12, "a place card follows no song")
+        XCTAssertEqual(CardArt.greatBarrierReef.placeBreath, 60.0 / 52, accuracy: 1e-12, "the reef keeps its own")
+        XCTAssertEqual(CardArt.zenRockGarden.placeBreath, 60.0 / 48, accuracy: 1e-12)
+
+        let card = InspiredByCard(place: set)
+        XCTAssertEqual(card.subject, .place(set))
+        XCTAssertEqual(card.art, .neonNightDrive)
+        XCTAssertEqual(card.pulse, beat, accuracy: 1e-12)
+        XCTAssertEqual(card.words.kicker, "BORN FROM A PLACE")
+        XCTAssertEqual(card.words.title, "Neon Night Drive")
+        XCTAssertEqual(card.words.subtitle, "Wired")
+        XCTAssertNil(card.words.listen, "no Listen button")
+        XCTAssertNil(card.words.linerNotes)
+        XCTAssertNil(card.words.line)
+        XCTAssertEqual(card.words.accessibility, "Neon Night Drive, born from a place. Wired.")
+
+        // The signs: wordless glyphs, one of them the app's icon; each blinks up on its beat, every beat has one.
+        let signs = CardArt.driveSigns
+        XCTAssertEqual(signs.filter { $0.glyph == .icon }.count, 1, "one sign is the app's icon")
+        XCTAssertEqual(Set(signs.map { $0.beat }), [0, 1, 2, 3])
+        for sign in signs {
+            XCTAssertEqual(CardArt.driveSignLight(beat: sign.beat, at: (Double(sign.beat) + 0.002) * beat, pulse: beat), 1, accuracy: 0.01)
+            XCTAssertEqual(CardArt.driveSignLight(beat: sign.beat, at: (Double(sign.beat + 4) + 0.002) * beat, pulse: beat), 1, accuracy: 0.01, "a bar later")
+            XCTAssertEqual(CardArt.driveSignLight(beat: sign.beat, at: (Double(sign.beat) + 1.5) * beat, pulse: beat), 0.75, accuracy: 1e-9)
+            let half: Double = sign.size / 2
+            let box = CGRect(x: 600 * (sign.x - 0.6 * half * 360 / 600 * 2), y: 360 * (sign.y - 1.8 * half),
+                             width: 600 * (2.4 * half * 360 / 600), height: 360 * 3.6 * half)
+            XCTAssertFalse(box.intersects(CGRect(x: 0, y: 244.8, width: 432, height: 115.2)), "\(sign.glyph) covers the title block")
+        }
+        // The icon glyph: the app's butterfly, its wings mirrored about its body.
+        let icon = CardArt.driveIconPath(at: CGPoint(x: 100, y: 100), span: 56).boundingRect
+        XCTAssertEqual(icon.midX, 100, accuracy: 0.5, "mirrored about its body")
+        XCTAssertGreaterThan(icon.width, 50)
+        XCTAssertGreaterThan(icon.height, 30)
+        // The wiper keeps an arc of the glass clear: the road ahead is swept, the top corners are not.
+        let size = CGSize(width: 600, height: 360)
+        XCTAssertTrue(CardArt.driveWiped(CGPoint(x: 360, y: 270), size))
+        XCTAssertTrue(CardArt.driveWiped(CGPoint(x: 360, y: 180), size), "the road's end")
+        XCTAssertFalse(CardArt.driveWiped(CGPoint(x: 10, y: 10), size))
+        XCTAssertFalse(CardArt.driveWiped(CGPoint(x: 590, y: 10), size))
+        // The road runs from the card's bottom edge to its end at the vanishing point.
+        let end = CardArt.driveRoadPoint(lane: 0.18, 1)
+        XCTAssertEqual(end.x, CardArt.driveVanishing.x, accuracy: 1e-9)
+        XCTAssertEqual(end.y, CardArt.driveVanishing.y, accuracy: 1e-9)
+        XCTAssertEqual(CardArt.driveRoadPoint(lane: 0.18, 0).y, 1, accuracy: 1e-9)
+
+        // The picture: it draws and moves, and repeats exactly once a bar.
+        let a = try XCTUnwrap(Self.render(place: set, at: 0.3))
+        let stats = PreviewRenderer.stats(a)
+        XCTAssertGreaterThan(stats.meanLuminance, 0.05)
+        XCTAssertGreaterThan(stats.variance, 0.001)
+        let barLater = try XCTUnwrap(Self.render(place: set, at: 0.3 + bar))
+        let again = PreviewRenderer.difference(a, barLater)
+        XCTAssertLessThan(again, 0.002, "a bar later the card is as it was")
+        let later = try XCTUnwrap(Self.render(place: set, at: 0.3 + 1.5 * beat))
+        let moved = PreviewRenderer.difference(a, later)
+        if moved <= 0.001 { XCTFail("a beat and a half later the drive card moved only \(moved)") }
+
+        // It looks like no song card and no other place's card.
+        let mine = try XCTUnwrap(Self.render(place: set, at: 1.0))
+        for c in CreditLibrary.all {
+            let other = try XCTUnwrap(Self.render(c, at: 1.0), c.id)
+            let d = PreviewRenderer.difference(mine, other)
+            if d <= 0.02 { XCTFail("the drive card and \(c.id) differ by only \(d)") }
+        }
+        for place in SetLibrary.all where place.creditID == nil && place.id != set.id {
+            let other = try XCTUnwrap(Self.render(place: place, at: 1.0), place.id)
+            let d = PreviewRenderer.difference(mine, other)
+            if d <= 0.02 { XCTFail("the drive card and \(place.id)'s differ by only \(d)") }
         }
     }
 }
