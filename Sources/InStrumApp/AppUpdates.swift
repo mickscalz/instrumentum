@@ -12,8 +12,8 @@ public protocol AppUpdating: AnyObject {
 
 @MainActor
 public enum AppUpdates {
-    /// How the executable makes its updater (set before the app starts).
-    public static var make: (@MainActor () -> AppUpdating)?
+    /// How the executable makes its updater (set once by `main.swift`'s top-level code, before the app starts).
+    nonisolated(unsafe) public static var make: (@MainActor () -> AppUpdating)?
     /// The running updater, once the app has started (nil in tests, previews and `swift run`).
     public private(set) static var updater: AppUpdating?
 
