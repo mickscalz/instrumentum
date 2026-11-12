@@ -8,10 +8,13 @@ struct WindowSpec: Equatable {
         case logWood, paintedSash, paperScreen
         /// The porthole's brass ring (with `Shape.round`): 12 bolts and a rubber gasket.
         case brass
+        /// A car's cabin round a windscreen (with `Shape.windscreen`): the dashboard, the A-pillars, the roof lining.
+        case carCabin
     }
     /// Panes in rows and columns, or one round pane inscribed in `rect` (a porthole: a circle when the rect is square
-    /// on screen, as `WindowSpec.porthole` makes it; its columns, rows and bar are ignored).
-    enum Shape: Equatable { case panes, round }
+    /// on screen, as `WindowSpec.porthole` makes it; its columns, rows and bar are ignored), or a car's windscreen
+    /// (`WindowSpec.windscreen`: its outline and wipers in `windscreen`; drawn by the `WindscreenLayer`).
+    enum Shape: Equatable { case panes, round, windscreen }
 
     var columns: Int
     var rows: Int
@@ -22,8 +25,10 @@ struct WindowSpec: Equatable {
     var material: Material
     /// The outer frame's width in NDC x (its height on screen matches it).
     var frameWidth: Float
-    /// `.panes` (the default) or `.round`, a porthole drawn in the brass ring whatever the material.
+    /// `.panes` (the default) or `.round`, a porthole drawn in the brass ring whatever the material, or `.windscreen`.
     var shape: Shape = .panes
+    /// A windscreen's outline and wipers (nil for every other window).
+    var windscreen: Windscreen? = nil
 
     /// Columns and rows as the frost field lays them out (it caps them at 12 × 8).
     var layout: (columns: Int, rows: Int) { (min(max(columns, 1), 12), min(max(rows, 1), 8)) }
@@ -92,6 +97,65 @@ extension WindowSpec {
     /// Whether a window point (0…1, y up) is on the glass: inside the circle for round glass, anywhere for panes.
     func onGlass(_ w: SIMD2<Float>) -> Bool {
         shape == .panes || simd_length(w - SIMD2<Float>(0.5, 0.5)) <= 0.5
+    }
+}
+
+/// A car's windscreen (Fire & Neon spec §9.1): seen from the passenger seat, between the dashboard, the A-pillars and the
+/// roof lining, a rear-view mirror at the car's centre, and two wiper blades sweeping up from their rest along the bottom.
+/// The blades' rate is the Core `Wipers`' (it follows the rain); the `WindscreenLayer` draws the rain on the glass, the
+/// blades and the cabin.
+extension WindowSpec {
+    struct Windscreen: Equatable {
+        /// The dashboard's line, y = dash + dashCurve·x², and the roof lining's, y = roof − roofCurve·x² (NDC).
+        var dash: Float
+        var dashCurve: Float
+        var roof: Float
+        var roofCurve: Float
+        /// The A-pillars' inner edges: x at the dashboard and x at the roof (NDC), left and right.
+        var leftPillar: SIMD2<Float>
+        var rightPillar: SIMD2<Float>
+        /// The rear-view mirror: centre (NDC) and half size (NDC).
+        var mirror: SIMD4<Float>
+        /// The blades: pivot (x in aspect units, y NDC; under the dashboard), the rubber's inner and outer radius (NDC y).
+        var blades: [SIMD4<Float>]
+        /// Where the blades rest (rad, from the pivot) and how far they sweep (rad; negative turns up and to the right).
+        var restAngle: Float
+        var sweep: Float
+
+        /// Whether a point (NDC) is on the glass: over the dashboard, under the roof, between the pillars.
+        func onGlass(_ p: SIMD2<Float>) -> Bool {
+            let dy = dash + dashCurve * p.x * p.x, ry = roof - roofCurve * p.x * p.x
+            guard p.y > dy, p.y < ry else { return false }
+            let f = (p.y - dy) / max(ry - dy, 1e-3)
+            let lx = leftPillar.x + (leftPillar.y - leftPillar.x) * f
+            let rx = rightPillar.x + (rightPillar.y - rightPillar.x) * f
+            return p.x > lx && p.x < rx
+        }
+
+        /// A blade's ends (NDC) at `angle` (0 parked … 1 the top of its sweep) on a screen of `aspect`.
+        func blade(_ i: Int, at angle: Float, aspect: Float) -> (inner: SIMD2<Float>, outer: SIMD2<Float>) {
+            let b = blades[min(max(i, 0), blades.count - 1)]
+            let a = restAngle + sweep * min(1, max(0, angle))
+            let dir = SIMD2<Float>(cos(a), sin(a))
+            let inner = SIMD2<Float>(b.x, b.y) + dir * b.z
+            let outer = SIMD2<Float>(b.x, b.y) + dir * b.w
+            let k = max(aspect, 0.1)
+            return (SIMD2(inner.x / k, inner.y), SIMD2(outer.x / k, outer.y))
+        }
+    }
+
+    /// The passenger's view of a windscreen on a screen of `aspect` (w/h): the dashboard low across the bottom (it holds
+    /// the keys' strip), the near pillar leaning in on the left, the far one a sliver on the right, the mirror right of
+    /// centre (the car's centreline), the blades resting along the bottom and sweeping to about upright.
+    static func windscreen(aspect: Float) -> WindowSpec {
+        let a: Float = aspect.isFinite && aspect > 0.1 ? min(aspect, 10) : 16.0 / 9
+        let shape = Windscreen(dash: -0.7, dashCurve: 0.06, roof: 0.93, roofCurve: 0.05,
+                               leftPillar: SIMD2(-0.99, -0.7), rightPillar: SIMD2(1.03, 0.88),
+                               mirror: SIMD4(0.22, 0.78, 0.15, 0.055),
+                               blades: [SIMD4(-0.31 * a, -0.86, 0.2, 1.0), SIMD4(0.45 * a, -0.86, 0.2, 1.08)],
+                               restAngle: Float.pi - 0.2, sweep: -1.5)
+        return WindowSpec(columns: 1, rows: 1, bar: 0, rect: SIMD4(-0.99, -0.7, 1.0, 0.93), material: .carCabin,
+                          frameWidth: 0.05, shape: .windscreen, windscreen: shape)
     }
 }
 
