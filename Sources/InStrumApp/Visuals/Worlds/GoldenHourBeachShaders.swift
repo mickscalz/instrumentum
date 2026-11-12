@@ -191,7 +191,8 @@ enum GoldenHourBeachShaders {
     }
 
     fragment ColorDepth beach_fragment(BeachOut in [[stage_in]], constant SkyU& u [[buffer(0)]], constant BeachU& b [[buffer(1)]],
-                                       constant OceanU& o [[buffer(2)]], texture2d<float> stars [[texture(0)]]) {
+                                       constant OceanU& o [[buffer(2)]], texture2d<float> stars [[texture(0)]],
+                                       texture2d<float> cell [[texture(9)]]) {
         ColorDepth out;
         float2 p = in.ndc;
         if (p.y < b.a.x) {   // under the keyboard
@@ -227,7 +228,7 @@ enum GoldenHourBeachShaders {
                 depth = 0.98;
             } else {
                 float mm;
-                col = skyRadiance(d, u, mm, stars);
+                col = skyRadiance(d, u, mm, stars, cell);
             }
         } else {
             float hcam = b.c.y;
@@ -273,7 +274,7 @@ enum GoldenHourBeachShaders {
                 white += 0.55 * exp(-(f - edge) / 0.35) * (0.5 + 0.5 * vnoise3(float3(s * 1.4, 3.0, 2.0 * sin(o.phases.y))));
                 white = saturate(white);
                 float3 nrm = oceanNormal(slope, fwd, rgt);
-                col = oceanShade(d, nrm, q, f, u, o, stars);
+                col = oceanShade(d, nrm, q, f, u, o, stars, cell);
                 col = mix(col, foamCol, white * (0.7 + 0.25 * foamGold));
                 // Spray glints on golden foam.
                 float spark = smoothstep(0.8, 0.95, vnoise3(float3(q * 6.0, 5.0 * sin(o.phases.y))));
@@ -301,7 +302,7 @@ enum GoldenHourBeachShaders {
                 float3 rd = reflect(d, n);
                 rd.z = max(rd.z, 0.002);
                 float mm;
-                float3 refl = skyRadiance(normalize(rd), u, mm, stars);
+                float3 refl = skyRadiance(normalize(rd), u, mm, stars, cell);
                 float fres = 0.25 + 0.6 * pow(1.0 - saturate(-d.z), 3.0);
                 float3 wetCol = mix(sandWet * (sky * 0.4 + 0.02), refl, fres);
                 float sdS = saturate(dot(rd, o.sun.xyz)), sdM = saturate(dot(rd, o.moon.xyz));

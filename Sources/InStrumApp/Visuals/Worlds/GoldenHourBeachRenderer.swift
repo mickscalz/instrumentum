@@ -179,6 +179,7 @@ final class GoldenHourBeachRenderer: ThemeRenderer {
     }
 
     func render(stack: RenderStack, commandBuffer cb: MTLCommandBuffer) {
+        sky.prepare(cb)   // the supercell's impostor, before the frame's passes
         guard let pass = stack.scenePass(clear: MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)),
               let e = cb.makeRenderCommandEncoder(descriptor: pass) else { return }
         sky.draw(e)

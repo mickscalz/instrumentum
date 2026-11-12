@@ -733,8 +733,39 @@ enum SkyShaders {
     constant float kCellAnvil = 9.5;
     constant float kCellTop = 11.4;
 
-    /// The supercell along `d`: its light (premultiplied) in rgb, and in a how much of the sky behind it shows through.
-    float4 supercellSky(float3 d, constant SkyU& u, float time) {
+    /// Where the supercell's lightning strikes (km in the storm's frame: along its bearing, to its right, up): a little
+    /// ahead of its middle; overhead in its Core it strikes where you look, ahead and low in the rain under the base, not
+    /// straight above you out of sight.
+    float3 supercellSpot(constant SkyU& u) {
+        float D = u.cellC.x;
+        float nearCore = 1.0 - smoothstep(3.0, 9.0, D);
+        return float3(max(D + 3.0 + (u.cellC.w - 0.5) * 8.0, nearCore * (7.0 + 4.0 * fract(u.cellC.w * 5.3))),
+                      (fract(u.cellC.w * 7.31) - 0.5) * mix(6.0, 10.0, saturate((D - 9.0) / 10.0)),
+                      mix(2.0 + 4.5 * fract(u.cellC.w * 3.17), 1.4 + 1.6 * fract(u.cellC.w * 3.17), nearCore));
+    }
+
+    /// The lightning's light on the storm along `d` this frame (Fire & Neon §7.2, through the sky layer's flash limiter):
+    /// a heart round the strike and a wider glow seen along this view, a little light all over; `cover` is how much storm
+    /// covers the sky here and `recept` how its cloud takes the light (its lumps bulging bright, the creases dark, its thin
+    /// edges glowing), both from `supercellSky`. Never a wash.
+    float3 supercellFlashLight(float3 d, constant SkyU& u, float cover, float recept) {
+        float glow = saturate(u.cellB.z);
+        if (glow <= 0.0 || cover <= 0.002) return float3(0.0);
+        float2 b = u.cellA.xy;
+        float mirror = u.aurora.w < 0.0 ? -1.0 : 1.0;
+        float3 dS = float3(dot(d.xy, b), dot(d.xy, float2(b.y, -b.x)) * mirror, d.z);
+        float3 spot = supercellSpot(u);
+        float sl = length(spot);
+        float sd = sl > 1e-3 ? dot(dS, spot / sl) : 1.0;
+        float heart = 0.6 * exp((sd - 1.0) / 0.012) + 0.3 * exp((sd - 1.0) / 0.07) + 0.12 * exp((sd - 1.0) / 0.35);
+        return float3(0.62, 0.66, 0.85) * (glow * (0.04 * cover + recept * heart));
+    }
+
+    /// The supercell along `d`: its light (premultiplied) in rgb, and in a how much of the sky behind it shows through;
+    /// `pa` is a pixel (radians), `fine` its detail (0 the sky's own, drawn every pixel; 1 the impostor's). How its cloud
+    /// takes the lightning's light comes back in `recept` (supercellFlashLight adds the light).
+    float4 supercellSky(float3 d, constant SkyU& u, float time, float pa, float fine, thread float& recept) {
+        recept = 0.0;
         float2 b = u.cellA.xy;
         float2 rgt = float2(b.y, -b.x);
         float mirror = u.aurora.w < 0.0 ? -1.0 : 1.0;
@@ -743,9 +774,10 @@ enum SkyShaders {
         float k = max(d.z, 0.0) / max(hl, 1e-4);              // km up per km out
         float3 dS = float3(hv * hl, d.z);                       // the view in the storm's frame
         float D = u.cellC.x, E = u.cellC.y, phase = u.cellA.z;
-        float turn = u.cellB.y * mirror, glow = saturate(u.cellB.z);
+        float turn = u.cellB.y * mirror;
+        const float glow = 0.0;                                  // (the lightning is added each frame, from `recept`)
         float mam = saturate(u.cellC.z);
-        float pa = max(u.weather.w, 2e-4);                      // a pixel (radians)
+        pa = max(pa, 2e-4);                                     // a pixel (radians)
         int oct = int(u.weather.z + 0.5);
         float sunAlt = u.sun.w;
         bool day = sunAlt > -6.0;
@@ -762,18 +794,10 @@ enum SkyShaders {
         float toward = saturate(dot(d, Lw));
         float wideBack = toward * toward;
         float back = wideBack * wideBack; back *= back;            // forward scattering toward a light behind it
-        // Lightning inside: a spot in the storm (u, v, height). Seen along this view it lights a heart round the strike
-        // and a wider glow, and a little light all over (never a wash).
-        // (A little ahead of its middle; overhead in its Core it strikes where you look, ahead and low in the rain under
-        // the base, not straight above you out of sight.)
-        float nearCore = 1.0 - smoothstep(3.0, 9.0, D);
-        float3 spot = float3(max(D + 3.0 + (u.cellC.w - 0.5) * 8.0, nearCore * (7.0 + 4.0 * fract(u.cellC.w * 5.3))),
-                             (fract(u.cellC.w * 7.31) - 0.5) * mix(6.0, 10.0, saturate((D - 9.0) / 10.0)),
-                             mix(2.0 + 4.5 * fract(u.cellC.w * 3.17), 1.4 + 1.6 * fract(u.cellC.w * 3.17), nearCore));
+        // Lightning inside: its spot (u, v, height) and its light are the frame's own (supercellFlashLight); here only
+        // how each part takes it, into `recept`.
+        float3 spot = supercellSpot(u);
         const float3 flashCol = float3(0.62, 0.66, 0.85);
-        float sl = length(spot);
-        float sd = sl > 1e-3 ? dot(dS, spot / sl) : 1.0;
-        float flashHere = glow * (0.04 + 0.5 * exp((sd - 1.0) / 0.015) + 0.22 * exp((sd - 1.0) / 0.09));
         float3 acc = float3(0);
         float T = 1.0;
         float baseHit = k > 1e-4 ? kCellBase / k : 1e4;
@@ -790,7 +814,8 @@ enum SkyShaders {
             float a = rainNow * (1.0 - exp(-min(baseHit, 12.0) / 1.7));
             float shafts = skyNoise2(float2(atan2(hv.y, hv.x) * 7.0, time * 0.04 + 3.0));
             float3 c = grey * (0.27 + 0.26 * (1.0 - saturate(k * 3.0))) * (0.85 + 0.3 * shafts)
-                     + Lc * (lightAmt * 0.3 * back) + flashCol * (0.55 * flashHere * (0.6 + 0.8 * shafts));
+                     + Lc * (lightAmt * 0.3 * back);
+            recept += T * a * 0.55 * (0.6 + 0.8 * shafts);
             acc += T * a * c; T *= 1.0 - a;
         }
 
@@ -821,8 +846,8 @@ enum SkyShaders {
                     float thinR = 1.0 - saturate(dens * span);
                     c += Lc * (lightAmt * (0.04 + 0.45 * back * thinR * thinR) * (0.6 + 0.6 * notch));
                     c = mix(c, haze * (0.9 + 0.5 * notch), 0.25 * notch * (1.0 - z / kCellBase));
-                    c += flashCol * (flashHere * (0.5 + 0.3 * hail));
                     c = mix(c, haze, 0.6 * (1.0 - exp(-rho / 80.0)));
+                    recept += T * a * (0.5 + 0.3 * hail);
                     acc += T * a * c; T *= 1.0 - a;
                 }
             }
@@ -848,8 +873,8 @@ enum SkyShaders {
                     float3 c = grey * (0.1 + 0.07 * n) + Lc * (lightAmt * 0.2 * ndl * (0.6 + 0.4 * n));
                     // Its rim, backlit, from afar only (near, its thin rim drew a bright hook across the view).
                     c += Lc * (lightAmt * 0.3 * back * (1.0 - smoothstep(0.0, 0.25, edge)) * smoothstep(8.0, 14.0, Dw));
-                    if (glow > 0.0) c += flashCol * (flashHere * 0.8 * (0.6 + 0.4 * n));
                     c = mix(c, haze, 1.0 - exp(-rho / 80.0));
+                    recept += T * a * 0.8 * (0.6 + 0.4 * n);
                     acc += T * a * c; T *= 1.0 - a;
                 }
             }
@@ -909,8 +934,8 @@ enum SkyShaders {
                 float2 Ld = Lu.xy / max(length(Lu.xy), 1e-3);
                 float2 qn = qc / max(rr, 1e-3);
                 c += Lc * (lightAmt * (0.05 * back + 0.55 * lowSun * saturate(dot(qn, Ld))) * smoothstep(3.0, 0.0, edge) * (0.5 + nb));
-                if (glow > 0.0) c += flashCol * (glow * (0.05 + 0.7 * nb * exp(-dot(P - spot.xy, P - spot.xy) / 30.0)));
                 c = mix(c, haze, 1.0 - exp(-baseHit / 80.0));
+                recept += T * a * (0.2 + 0.9 * nb);
                 acc += T * a * c; T *= 1.0 - a;
             }
         }
@@ -918,7 +943,7 @@ enum SkyShaders {
         // The storm's body, one sheet facing you at its front, and the anvil's underside over you: each found, then the
         // nearer laid first (the anvil's leading edge overhangs the body as it comes).
         float4 body = float4(0.0);
-        float bodyT = 1e9;
+        float bodyT = 1e9, bodyRec = 0.0, anvilRec = 0.0;
         float Df = D - 3.0;
         if (T > 0.01 && Df > 1.5 && fwd > 0.15) {
             float rho = Df / fwd;
@@ -1040,6 +1065,7 @@ enum SkyShaders {
                     c = mix(c, haze, 1.0 - exp(-rho / 90.0));
                     body = float4(c * a, a);
                     bodyT = rho;
+                    bodyRec = a * (0.62 + 0.38 * fold * saturate(N.z + 0.6)) * (0.7 + 0.6 * thinA) * (0.55 + 0.45 * en);
                 }
             }
         }
@@ -1120,16 +1146,17 @@ enum SkyShaders {
                 // Its edges, thin, glow against a light behind them (silver, then gold low down).
                 float edgeBand = 1.0 - smoothstep(0.0, 2.0, ed);
                 c += Lc * (lightAmt * (1.2 * back + 0.12 * wideBack) * edgeBand * (0.5 + 0.7 * fib));
-                if (glow > 0.0) c += flashCol * (glow * (0.03 + 0.45 * exp(-dot(P - spot.xy, P - spot.xy) / 110.0)));
                 c = mix(c, haze, 1.0 - exp(-rho / 110.0));
                 anvil = float4(c * a, a);
                 anvilT = rho;
+                anvilRec = a * 0.55 * (0.75 + 0.5 * bil) * (0.8 + 0.4 * dome);
             }
         }
         // Where the two meet they cross-fade over a km or so (a hard order drew a straight line where the tower's sheet
         // meets the anvil's ceiling).
         float wA = smoothstep(-1.2, 1.2, bodyT - anvilT);
         float3 rgb = mix(body.rgb + (1.0 - body.a) * anvil.rgb, anvil.rgb + (1.0 - anvil.a) * body.rgb, wA);
+        recept += T * mix(bodyRec + (1.0 - body.a) * anvilRec, anvilRec + (1.0 - anvil.a) * bodyRec, wA);
         acc += T * rgb; T *= (1.0 - body.a) * (1.0 - anvil.a);
 
         return float4(acc, T);
@@ -1339,14 +1366,10 @@ enum SkyShaders {
         return col * (1.0 + u.flash.x);
     }
 
-    /// The sky's light in direction `d`: skyRadianceBase, with the supercell weather (Fire & Neon §7.2) over it all as
-    /// it comes (over the clouds, the moon and the sun's disc, which it hides). The storm is drawn first, where little
-    /// else is live, and the sky behind it only where it shows through (under the storm's dark body none of it is drawn).
-    float3 skyRadiance(float3 d, constant SkyU& u, thread float& moonMask, texture2d<float> stars) {
-        // (A plain sky's program has none of the storm: amount folds to 0, and the base is all that is left.)
-        float amount = kSkyStorms && d.z > -0.01 ? saturate(u.cellA.w) : 0.0;
-        float4 storm = float4(0.0, 0.0, 0.0, 1.0);
-        if (kSkyStorms && amount > 0.001) storm = supercellSky(d, u, u.forward.w);
+    /// skyRadianceBase under the supercell's `storm` (its light premultiplied, and how much of the sky shows through) at
+    /// `amount`.
+    float3 skyRadianceOver(float3 d, constant SkyU& u, thread float& moonMask, texture2d<float> stars, float amount,
+                           float4 storm) {
         // The light under the core goes green (a grade of at most 12%).
         float3 grade = mix(float3(1.0), float3(1.0 - 0.9 * 0.12, 1.0 + 0.25 * 0.12, 1.0 - 0.6 * 0.12),
                            saturate(u.cellB.x / 0.12)) * amount;
@@ -1357,6 +1380,60 @@ enum SkyShaders {
         if (through > 0.002) col = skyRadianceBase(d, u, moonMask, stars);
         moonMask *= through;
         return col * (1.0 - amount) + grade * (storm.rgb + storm.a * col);
+    }
+
+    /// The sky's light in direction `d`: skyRadianceBase, with the supercell weather (Fire & Neon §7.2) over it all as
+    /// it comes (over the clouds, the moon and the sun's disc, which it hides). The storm is drawn first, where little
+    /// else is live, and the sky behind it only where it shows through (under the storm's dark body none of it is drawn).
+    float3 skyRadiance(float3 d, constant SkyU& u, thread float& moonMask, texture2d<float> stars) {
+        // (A plain sky's program has none of the storm: amount folds to 0, and the base is all that is left.)
+        float amount = kSkyStorms && d.z > -0.01 ? saturate(u.cellA.w) : 0.0;
+        float4 storm = float4(0.0, 0.0, 0.0, 1.0);
+        if (kSkyStorms && amount > 0.001) {
+            float recept;
+            storm = supercellSky(d, u, u.forward.w, u.weather.w, 0.0, recept);
+            storm.rgb += supercellFlashLight(d, u, 1.0 - storm.a, recept);
+        }
+        return skyRadianceOver(d, u, moonMask, stars, amount, storm);
+    }
+
+    // The supercell's impostor (Fire & Neon fix pass; SkyLayer.prepare draws it): a window in azimuth and altitude round
+    // the view, its centre's azimuth in eq1.w and its half-width in eq2.w, its bottom and top altitudes in flash.y and
+    // flash.z (radians), flash.w 1 when it is drawn. The upper half of its rows is the storm's light and how much sky
+    // shows through; the lower half how its cloud takes the lightning's light.
+    constexpr sampler cellImpostorSampler(filter::linear, address::clamp_to_edge);
+
+    /// The supercell along `d` from its impostor (as supercellSky gives it), and in `recept` how it takes the lightning.
+    float4 supercellImpostor(float3 d, constant SkyU& u, texture2d<float> cell, thread float& recept) {
+        recept = 0.0;
+        float hw = max(u.eq2.w, 1e-3), lo = u.flash.y, hi = max(u.flash.z, u.flash.y + 1e-3);
+        float da = atan2(d.x, d.y) - u.eq1.w;
+        da -= 6.2831853 * floor((da + 3.14159265) / 6.2831853);
+        float x = 0.5 + 0.5 * da / hw;
+        float y = (asin(clamp(d.z, -1.0, 1.0)) - lo) / (hi - lo);
+        if (x <= 0.0 || x >= 1.0 || y <= 0.0 || y >= 1.0) return float4(0.0, 0.0, 0.0, 1.0);
+        float H = float(cell.get_height()) * 0.5;
+        float yy = clamp(y * H, 0.5, H - 0.5) / (2.0 * H);
+        float4 s = cell.sample(cellImpostorSampler, float2(x, yy));
+        recept = cell.sample(cellImpostorSampler, float2(x, yy + 0.5)).r;
+        // (Its sides fade over the last 2%, past the view's own edge.)
+        float fade = smoothstep(0.0, 0.02, x) * smoothstep(1.0, 0.98, x);
+        recept *= fade;
+        return float4(s.rgb * fade, 1.0 - fade * (1.0 - s.a));
+    }
+
+    /// The sky's light in direction `d` with the supercell from its impostor (`cell`, fragment texture
+    /// SkyLayer.cellTextureIndex) when the sky's rows say it is drawn, else none: the worlds that draw it each frame read
+    /// this; skyRadiance without the texture draws the storm itself (the worlds that don't).
+    float3 skyRadiance(float3 d, constant SkyU& u, thread float& moonMask, texture2d<float> stars, texture2d<float> cell) {
+        float amount = kSkyStorms && d.z > -0.01 && u.flash.w > 0.5 ? saturate(u.cellA.w) : 0.0;
+        float4 storm = float4(0.0, 0.0, 0.0, 1.0);
+        if (kSkyStorms && amount > 0.001) {
+            float recept;
+            storm = supercellImpostor(d, u, cell, recept);
+            storm.rgb += supercellFlashLight(d, u, 1.0 - storm.a, recept);
+        }
+        return skyRadianceOver(d, u, moonMask, stars, amount, storm);
     }
 
     // ---------------------------------------------------------------- rime frost on silhouettes (spec §6.4)
@@ -1434,14 +1511,34 @@ enum SkyShaders {
     }
 
     fragment ColorDepth sky_dome_fragment(SkyOut in [[stage_in]], constant SkyU& u [[buffer(0)]],
-                                          texture2d<float> stars [[texture(0)]]) {
+                                          texture2d<float> stars [[texture(0)]], texture2d<float> cell [[texture(9)]]) {
         float3 d = normalize(u.forward.xyz + u.right.xyz * in.ndc.x * u.right.w + u.up.xyz * in.ndc.y * u.up.w);
         float moonMask = 0.0;
-        float3 col = d.z < 0.0 ? u.horizon.rgb * 0.6 : skyRadiance(d, u, moonMask, stars);
+        float3 col = d.z < 0.0 ? u.horizon.rgb * 0.6 : skyRadiance(d, u, moonMask, stars, cell);
         ColorDepth out;
         out.color = float4(col, 1.0);
         out.depth = float4(1.0, 0, 0, 1);
         return out;
+    }
+
+    /// The supercell's impostor (SkyLayer.prepare): rows job.x, job.x + job.y, … of job.z in each half, every column; the
+    /// storm along each texel's direction in the window the sky's rows carry, at the impostor's own detail.
+    kernel void sky_cell_impostor(texture2d<float, access::write> out [[texture(0)]], constant SkyU& u [[buffer(0)]],
+                                  constant uint4& job [[buffer(1)]], uint2 gid [[thread_position_in_grid]]) {
+        uint W = out.get_width(), H = job.z;
+        uint y = job.x + gid.y * job.y;
+        if (gid.x >= W || y >= H) return;
+        float hw = u.eq2.w, lo = u.flash.y, hi = u.flash.z;
+        float az = u.eq1.w + hw * ((float(gid.x) + 0.5) / float(W) * 2.0 - 1.0);
+        float el = lo + (hi - lo) * (float(y) + 0.5) / float(H);
+        float3 d = float3(sin(az) * cos(el), cos(az) * cos(el), sin(el));
+        // (A texel's own size, as the storm's edges are as sharp as one.)
+        float texel = max(2.0 * hw / float(W) * cos(max(el, 0.0)), (hi - lo) / float(H));
+        float recept = 0.0;
+        float4 s = float4(0.0, 0.0, 0.0, 1.0);
+        if (d.z > -0.03 && u.cellA.w > 0.0) s = supercellSky(d, u, u.forward.w, texel, 1.0, recept);
+        out.write(s, uint2(gid.x, y));
+        out.write(float4(recept, 0.0, 0.0, 1.0), uint2(gid.x, y + H));
     }
 
     // ---------------------------------------------------------------- weather
