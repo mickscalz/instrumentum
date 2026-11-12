@@ -27,9 +27,9 @@ final class VolcanoRimRenderer: ThemeRenderer {
     nonisolated static let uniformCount = 152
 
     // MARK: The view
-    nonisolated static let verticalFOV = 42.0
+    nonisolated static let verticalFOV = 46.0
     /// The horizon (the far rim's skyline) a little above the middle: the lake fills the lower half.
-    nonisolated static let horizonY: Float = 0.3
+    nonisolated static let horizonY: Float = 0.42
     /// The sparks, the bolts' segments.
     nonisolated static let sparkCapacity = VolcanoRimModel.emberCount + VolcanoRimModel.blobCount + VolcanoRimModel.bombCount
     nonisolated static let boltCapacity = VolcanoRimModel.strokeCount * 16
@@ -133,8 +133,8 @@ final class VolcanoRimRenderer: ThemeRenderer {
     /// compressed intensity (1 at 1150 K, e-fold every 115 K).
     nonisolated static func blackbody(_ kelvin: Float) -> SIMD3<Float> {
         let t = min(2200, max(450, kelvin.isFinite ? kelvin : 450))
-        let g = exp(0.835 - 4065 / t)
-        let b = exp(4.48 - 19200 / t)
+        let g = exp(0.38 - 1848 / t)
+        let b = exp(2.036 - 8727 / t)
         return SIMD3(1, g, b) * exp((t - 1150) / 115)
     }
 
@@ -142,7 +142,7 @@ final class VolcanoRimRenderer: ThemeRenderer {
     /// the lake's activity, the fountains, the column and the breach.
     nonisolated static func lakeLight(energy: Float, activity: Float, fountains: Float, eruption: Float, breach: Float) -> SIMD3<Float> {
         let e = unit(energy), a = unit(activity)
-        let level: Float = 0.05 + 0.04 * e + 0.025 * a + 0.02 * unit(fountains) + 0.5 * unit(eruption) + 0.06 * unit(breach)
+        let level: Float = 0.38 + 0.3 * e + 0.15 * a + 0.12 * unit(fountains) + 3.0 * unit(eruption) + 0.5 * unit(breach)
         let warm = blackbody(1150)
         return warm * level
     }
@@ -256,7 +256,7 @@ final class VolcanoRimRenderer: ThemeRenderer {
         volU[Self.rowGlow] = SIMD4(glow, 0.5 + 0.5 * Self.unit(frame.energy))
         volU[Self.rowPlay] = SIMD4(Self.unit(frame.energy), Self.unit(frame.tension), Self.unit(frame.drop), Self.unit(frame.beat))
         volU[Self.rowTemps] = SIMD4(1050 + 50 * activity, 830, 600, 0.3 + 0.7 * Self.unit(frame.energy))
-        let bend: Float = (frame.wind.x.isFinite ? frame.wind.x : 3) * 0.00045
+        let bend: Float = (frame.wind.x.isFinite ? frame.wind.x : 3) * 0.0002
         volU[Self.rowPlume] = SIMD4(0.35 + 0.65 * plumeDial, Self.unit(frame.billow), bend, rise)
         volU[Self.rowRiver] = SIMD4(Self.unit(frame.river), frame.riverFlow, Self.unit(frame.breach), frame.breachAge ?? -1)
         let moonUp = Self.smooth(-2, 10, Float(s.moon.altitude)) * Float(s.moonLit)

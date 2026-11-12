@@ -24,15 +24,15 @@ public enum VolcanoCrater {
     /// The lava lake: a disc on the crater floor.
     public static let lakeRadius: Float = 230
     /// The camera: this far back from the lake's centre, standing this high over the lake on the near rim.
-    public static let cameraBack: Float = 500
-    public static let rimHeight: Float = 103
+    public static let cameraBack: Float = 480
+    public static let rimHeight: Float = 170
     public static let eyeHeight: Float = 1.7
     public static var eye: SIMD3<Float> { SIMD3(0, -cameraBack, rimHeight + eyeHeight) }
     /// The walls are circles round this point (the lake's centre is ahead of it), so the camera stands at the near
     /// rim's edge and the far wall stands beyond the lake: the floor's edge (the cliff's foot), a bench, the rim's lip.
     public static let wallCentre = SIMD2<Float>(0, -100)
     public static let footRadius: Float = 410
-    public static let benchHeight: Float = 48
+    public static let benchHeight: Float = 80
     public static let benchRadius: Float = 440
     public static let topRadius: Float = 470
     /// The breach: a notch in the far wall, its middle this far round from straight ahead (radians, right positive,

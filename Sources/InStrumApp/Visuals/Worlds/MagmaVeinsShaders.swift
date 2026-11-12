@@ -52,7 +52,7 @@ enum MagmaVeinsShaders {
     float3 blackbody(float T) {
         float t = clamp(T, 450.0, 2200.0);
         float inv = 1.0 / t;
-        return float3(1.0, exp(0.835 - 4065.0 * inv), exp(4.48 - 19200.0 * inv)) * exp((t - 1150.0) * 0.0086957);
+        return float3(1.0, exp(0.38 - 1848.0 * inv), exp(2.036 - 8727.0 * inv)) * exp((t - 1150.0) * 0.0086957);
     }
     float lineLight(float d, float w, float f) {
         float we = sqrt(w * w + 0.5 * f * f);
