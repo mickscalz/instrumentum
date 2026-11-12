@@ -547,11 +547,13 @@ final class VolcanoRimTests: XCTestCase {
             XCTAssertTrue((1.2...2.0).contains(c.delay), "a crack \(c.delay) s late")
             XCTAssertTrue((-1...1).contains(c.pan))
         }
-        XCTAssertGreaterThan(f.ambience.lakeSurge, before.ambience.lakeSurge + 0.4, "the eruption surges the lake")
-        XCTAssertGreaterThan(f.ambience.lakeGlow, before.ambience.lakeGlow + 0.3, "and lights it")
         XCTAssertTrue(f.ambience.thunderQueue.isEmpty, "no storm thunder: the plume's cracks are its own")
         let next = run(&m, seconds: 1.0 / 60)
         XCTAssertTrue(next.ambience.events.filter { $0.source == .eruptionBoom }.isEmpty, "a boom is sent once")
+        // Its light is up within a quarter of a second, and held: the lake surges and glows with it.
+        let bright = run(&m, seconds: 0.4)
+        XCTAssertGreaterThan(bright.ambience.lakeSurge, before.ambience.lakeSurge + 0.4, "the eruption surges the lake")
+        XCTAssertGreaterThan(bright.ambience.lakeGlow, before.ambience.lakeGlow + 0.3, "and lights it")
     }
 
     /// The surprises' sounds (plan Task 10): a rockfall and a steam blast each send their one-shot once, from where on the

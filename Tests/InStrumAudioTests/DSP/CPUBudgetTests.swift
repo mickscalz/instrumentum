@@ -275,6 +275,7 @@ final class CPUBudgetTests: XCTestCase {
         var scene: [A.Action] = A.fireNeon.map { A.level($0, 0.6) }
         scene += Self.fireNeonEvents
         let seconds = bestOfThree { _ = A.render(seconds: 10, actions: scene) }
+        print("CPU: the Fire & Neon ambience used \(String(format: "%.2f", seconds * 10))% of real time")
         XCTAssertLessThan(seconds / 10, 0.08, "the Fire & Neon ambience used \(String(format: "%.1f", seconds * 10))% of real time")
     }
 
@@ -323,6 +324,7 @@ final class CPUBudgetTests: XCTestCase {
             _ = R.render(ISD_ENGINE_ORBIT_PAD, seconds: 10, events: pad)
             _ = AmbienceTests.render(seconds: 10, actions: ambience)
         }
+        print("CPU: Felt Glass + Orbit Pad + all 62 ambience sources used \(String(format: "%.2f", seconds * 10))% of real time")
         XCTAssertLessThan(seconds / 10, 0.125, "Felt Glass + Orbit Pad + ambience used \(String(format: "%.1f", seconds * 10))% of real time")
     }
 }
