@@ -1,6 +1,21 @@
 **Install:** download the **.dmg** below and open it, drag *In Strum Meants* onto *Applications* (choose **Replace** if asked), then right-click the app → **Open** → **Open** (first time only). The .zip is a fallback.
 
-**In-app updates: this is the last build you install by hand.** From now on In Strum Meants looks for a new build when it starts (at most once an hour), and any time you choose **In Strum Meants → Check for Updates…**. It shows what's new, **Install Update** replaces the app in place and reopens it on what's new, and your settings, presets and keeps stay exactly as they are.
+**An update button.** There's a small round-arrows button in the top bar, left of Keep. Click it any time to check for a new build. When one is out, it turns into an orange **Update** button. Click it to see what's new, then **Install Update**: the app replaces itself and reopens, and your settings, presets and keeps stay exactly as they are. It also checks by itself when the app starts and then hourly, and **In Strum Meants → Check for Updates…** does the same from the menu. If you're on build 81, this is the last build you'll need to install by hand.
+
+**Neon Night Drive, an early look** (Set 14's world, ahead of its set). Pick it in **Visuals → Theme**. You're in the passenger seat on an elevated city expressway at night, in the rain:
+- **The view:** taillights ahead and headlights coming the other way, all mirrored in the wet road. Towers stand on both sides with lit windows and wordless neon signs, and the wipers sweep at the rain's pace.
+- **Speed:** your playing's Energy and the instrument's tempo set it.
+- **The neon:** chords colour it, warm for major and cool for minor, and each note pulses a sign.
+- **Chrome Bass's arp:** it races a row of road studs towards you.
+- **Building up:** tension closes the towers in and brings a tunnel whose lights strobe gently.
+- **The Drop:** you burst out of the tunnel onto a bridge over the harbour, and every sign fires in a wave along the skyline.
+- **Light Trails** is its visual: long-exposure streaks along each lane, mirrored on the road.
+- **Now and then a surprise:** a train crossing an overpass, far lightning behind the towers, a sign that flickers and dies, or the rain stopping under a bridge.
+- **Try it with Replicant Brass** (Sound → Instrument). Its own sounds (wet tyres, wipers, the engine, passing cars), its set, card and credit, and Volcano Rim all come in the Fire & Neon update.
+
+<!-- older -->
+
+**In-app updates (build 81): the last build you install by hand.** From now on In Strum Meants looks for a new build when it starts (at most once an hour), and any time you choose **In Strum Meants → Check for Updates…**. It shows what's new, **Install Update** replaces the app in place and reopens it on what's new, and your settings, presets and keeps stay exactly as they are.
 
 **Storms, polished** (Sets 17 & 18):
 - **Supercell Sky:** the storm's tower now melts up into its anvil (no pale cap with a stepped edge on top), its cauliflower lumps are soft and round (no hard polygon creases), and the mammatus pouches under the anvil in the clearing are round pouches catching the low sun instead of a honeycomb. The base's rim is ragged cloud rather than a saucer's lip, the inflow bands are soft and dim (no thin orange thread across the base), and the double rainbow's colours now run into each other as a real bow's do. On Smooth the second tower of the flanking line is left out, so it draws faster.
@@ -9,8 +24,6 @@
 **Deep Water, polished:** bubble bursts are now heard through the submarine's hull (they were all but silent) and on the reef, and the reef's dusk crackle of snapping shrimp no longer peaks near full scale.
 
 **Your basses are in already:** **Magma Bass** (a growling, erupting bass on the vintage-synth core) and **Replicant Brass** (huge swelling brass with **Chrome Bass** under it, split at C3, with an arpeggiator) are in the instrument list now (Sound → Instrument). Their worlds, Volcano Rim and Neon Night Drive, are being built for the next updates.
-
-<!-- older -->
 
 **Sets 17 & 18 — Storms: Supercell Sky and Lightning Plains.** Two new sets at the end of the gallery, each a world, a visual, an instrument and a soundscape that belong together, and in both your playing is the weather. (Sets 13 to 16 are still to come; these two were built first, so they follow the reef.)
 

@@ -70,6 +70,7 @@ struct MainView: View {
             Divider().frame(height: 18)
             Text(statusText).font(.system(size: 14, weight: .medium)).lineLimit(1)
             Spacer()
+            UpdateButton()
             KeepButton(model: model)
             HoldPad(model: model)
             SleepMenu(model: model)
