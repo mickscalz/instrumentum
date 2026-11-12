@@ -277,14 +277,19 @@ public final class LivingSky {
     /// `hold` keeps the sun at a chosen altitude for worlds that hold the light; everything else keeps running.
     /// `aurora` and `meteors` are the world's aurora and meteor modes for this step (world parameters, so they never
     /// outlive the world); `storm` is what the world and the playing ask of the storm sky (Storms spec §6–§8).
+    /// `dim` is the sleep fade's (Small Wins spec §3), 0…1: after the hold it slides the sun toward the night's −14°,
+    /// never up, so deep night stays where it is.
     public func step(now: Date, dt rawDt: Double, hold: SkyHold = .follow, aurora mode: AuroraMode = .follow,
-                     meteors meteorMode: MeteorMode = .follow, storm inputs: StormInputs = StormInputs()) -> SkyState {
+                     meteors meteorMode: MeteorMode = .follow, storm inputs: StormInputs = StormInputs(),
+                     dim rawDim: Double = 0) -> SkyState {
         let dt = min(1, max(0, rawDt))
         let reading = clock.read(now: now, dt: dt, settings: settings)
         var s = SkyState()
         let t = reading.instant
         s.sun = Solar.direction(at: t, from: clock.location)
         if let altitude = hold.altitude { s.sun.altitude = altitude }
+        let dim = rawDim.isFinite ? min(1, max(0, rawDim)) : 0
+        if dim > 0 { s.sun.altitude += (min(s.sun.altitude, SceneDirector.nightAltitude) - s.sun.altitude) * dim }
         s.moonPhase = reading.moonPhase
         s.calendar = reading.calendar
         s.realMoon = !reading.virtualMoon

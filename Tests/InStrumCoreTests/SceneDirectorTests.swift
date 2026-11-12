@@ -206,7 +206,7 @@ final class SceneDirectorTests: XCTestCase {
 
     /// Small Wins' seams change nothing by default: the renderers step by the frame's own dt, the exposure is
     /// untouched, the report carries the sky and the key, and the ambience is the frame's own with the key on it (a
-    /// theme without a soundscape sends silence, with the key).
+    /// theme without a soundscape sends silence, with the key), its beds breathing (on by default, Task 8).
     func testDefaultControlsChangeNothing() throws {
         let cMajor: [UInt8] = [60, 62, 64, 65, 67, 69, 71, 72] + [55, 59, 62, 65] + [48, 52, 55, 60]
         func playing(_ id: String) -> SceneDirector {
@@ -234,6 +234,7 @@ final class SceneDirectorTests: XCTestCase {
             XCTAssertEqual(lake.report, SceneReport(holding: false, sky: lake.lastSky, key: key))
             var expected = try XCTUnwrap((frame as? AmbienceProviding)?.ambience)
             expected.key = key
+            AmbienceBreath(seed: 0xB4EA_7E).apply(to: &expected, at: t)
             XCTAssertEqual(lake.ambience(for: frame, at: t), expected)
         }
         XCTAssertGreaterThan(lake.ambience(for: lake.step(dt: 1.0 / 60, t: t, quality: .lite), at: t).level(.water), 0.5)

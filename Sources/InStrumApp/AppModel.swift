@@ -33,6 +33,8 @@ public final class AppModel: ObservableObject {
     @Published public private(set) var reactionName: String
     public private(set) var reaction: ReactionMap
     public let presets: PresetStore
+    /// Where kept takes go (`~/Music/In Strum Meants/Takes`; tests use their own folder).
+    var takeStore = TakeStore(directory: TakeStore.defaultDirectory)
     /// Called just before the instrument changes (e.g. to close the old plugin's window).
     public var willChangeInstrument: (@MainActor () -> Void)?
     /// True when the previous run ended without settling (offer Safe Mode before launching).
@@ -53,6 +55,8 @@ public final class AppModel: ObservableObject {
         var channel: Int?
         /// The last key pressed, pedal moved or click (system uptime); -∞ before any.
         var lastActivity = -Double.infinity
+        /// What the instrument heard over the last two hours (Keep that), in memory only.
+        var keeper = TakeKeeper()
     }
     nonisolated let live = OSAllocatedUnfairLock(uncheckedState: Live())
 
@@ -96,8 +100,15 @@ public final class AppModel: ObservableObject {
     var settings: AppSettings
     private var launched = false
     private var autosaveTimer: Timer?
+    /// The sleep timer (Small Wins spec §3): its fade, its 10 Hz ticker (running only while there is something to do)
+    /// and its clock (system uptime, as the playing's; tests set their own). Never saved.
+    var sleepFade = SleepFade()
+    var sleepTicker: Timer?
+    var sleepClock: () -> Double = { ProcessInfo.processInfo.systemUptime }
     private var watchdogTimer: Timer?
     private var terminateObserver: NSObjectProtocol?
+    /// The Mac's Reduce Motion, once the app follows it (`startWatchingReduceMotion`).
+    var reduceMotionWatcher: ReduceMotionWatching?
 
     public init(engine: InstrumentEngine, store: SettingsStore, launchGuard: LaunchGuard, presets: PresetStore) {
         self.presets = presets
@@ -118,7 +129,11 @@ public final class AppModel: ObservableObject {
         self.disabledMIDISources = Set(loaded.disabledMIDISources)
         outputDeviceUID = loaded.outputDeviceUID
         midiChannel = loaded.midiChannel
-        live.withLockUnchecked { $0.touch = loaded.touchCurve; $0.channel = loaded.midiChannel }
+        live.withLockUnchecked { l in
+            l.touch = loaded.touchCurve
+            l.channel = loaded.midiChannel
+            l.keeper.setRange(low: loaded.keyboardRange.low, high: loaded.keyboardRange.high)
+        }
         let closeness = loaded.ambience.closeness
         ambienceLive.withLockUnchecked { $0.closeness = closeness }
         activeSetID = loaded.activeSetID.flatMap { SetLibrary.set(id: $0) }?.id
@@ -207,15 +222,20 @@ public final class AppModel: ObservableObject {
         perform(raw, time: time)
     }
 
+    /// The take keeper hears what the instrument heard; the keep gesture keeps the take before it, on the main actor.
     private nonisolated func perform(_ raw: [UInt8], time: Double) {
         let bytes = live.withLockUnchecked { $0.touch }.transform(raw)
         engine.send(bytes)
-        live.withLockUnchecked { l in
+        let gesture: Double? = live.withLockUnchecked { l in
+            var started: Double?
             for message in l.parser.parse(bytes) {
                 if Self.isActivity(message) { l.lastActivity = time }
                 l.events += l.state.apply(message, at: time)
+                if let start = l.keeper.record(message, at: time) { started = start }
             }
+            return started
         }
+        if let start = gesture { Task { @MainActor [weak self] in self?.keepThat(at: start) } }
     }
 
     public func playFromScreen(note: UInt8, down: Bool) {
@@ -231,7 +251,11 @@ public final class AppModel: ObservableObject {
     public func panic() {
         engine.panic()
         ambienceLive.withLockUnchecked { $0.pendingThunder = nil; $0.pendingThunderQueue.removeAll(); $0.pendingEvents.removeAll() }   // nothing on its way
-        live.withLockUnchecked { l in l.events += l.state.reset() }
+        let now = ProcessInfo.processInfo.systemUptime
+        live.withLockUnchecked { l in
+            l.events += l.state.reset()
+            l.keeper.releaseAll(at: now)   // nothing held through a panic is still down in a take
+        }
     }
 
     /// Called by the renderer each frame.
@@ -871,6 +895,7 @@ public final class AppModel: ObservableObject {
     public func setKeyboardRange(_ range: KeyboardRange) {
         objectWillChange.send()
         settings.keyboardRange = range
+        live.withLockUnchecked { $0.keeper.setRange(low: range.low, high: range.high) }   // the keep gesture moves with it
         autosave()
     }
 
@@ -886,6 +911,7 @@ public final class AppModel: ObservableObject {
     public func setFollowReduceMotion(_ on: Bool) {
         objectWillChange.send()
         settings.followReduceMotion = on
+        updateReduceMotion()
         autosave()
     }
 

@@ -303,11 +303,19 @@ void isd_ambience_debug_start_kettle(ISDAmbience *ambience);
 void isd_ambience_debug_start_boat(ISDAmbience *ambience);
 /// Any thread. The key the player is in: root 0…11 (C = 0), major 1 or minor 0. The temple bell sounds its tonic
 /// (in A1–G♯2, in either mode) from its next strike on and never retunes a strike that is ringing; the sonar pings
-/// it (in A5–G♯6) from its next ping on and never retunes a ping, its tail or its return. A root outside 0…11 (−1:
-/// the key can't be sensed) keeps the last key; E major until one is set.
+/// it (in A5–G♯6) from its next ping on and never retunes a ping, its tail or its return; the chime rings the key's
+/// pentatonic from its next strike on. A root outside 0…11 (−1: the key can't be sensed) keeps the last key; E major
+/// until one is set (and the chime its own E♭ major pentatonic).
 void isd_ambience_set_key(ISDAmbience *ambience, int root, int major);
 /// Internal (tests): the temple bell strikes now.
 void isd_ambience_debug_strike_bell(ISDAmbience *ambience);
+/// Internal (tests): the chime strikes now (the Spaceship Lounge's soft bell). Each strike rings a tone of the player's
+/// key, its major or minor pentatonic in MIDI 75–87 (E♭5–E♭6), chosen as it strikes and never retuned while it rings;
+/// before a key is sensed (isd_ambience_set_key), the six it has always rung, E♭ major pentatonic.
+void isd_ambience_debug_strike_chime(ISDAmbience *ambience);
+/// Internal (tests): the struck fundamental (Hz) of the chime's newest ringing strike, as of the last render; 0 while
+/// none rings. Any thread.
+float isd_ambience_debug_chime_hz(const ISDAmbience *ambience);
 /// Internal (tests): the fundamental (Hz) of the temple bell's ringing strike, or of its next strike while it is
 /// silent. Any thread.
 float isd_ambience_debug_bell_hz(const ISDAmbience *ambience);

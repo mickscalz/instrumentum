@@ -37,6 +37,9 @@ public struct GalaxyWarp {
     public static let maxSpawnsPerStep = 40
     /// Warp speed reaches 90% of a rise in 0.6 s and falls 90% in 2.5 s.
     static let riseTau = 0.6 / log(10.0), fallTau = 2.5 / log(10.0)
+    /// The speed it aims at while the Mac asks for less motion (Small Wins spec §6): the streaks become a slow drift,
+    /// however hard you play.
+    public static let driftSpeed: Float = 0.1
 
     /// The streak direction for a note: a 240° arc from down-left (lowest) over the top to down-right (highest),
     /// like the keyboard read left to right.
@@ -76,7 +79,8 @@ public struct GalaxyWarp {
 
     public mutating func step(dt: Double, roles: RoleValues, inputs: InputFrame) -> WarpFrame {
         let d = max(0, dt)
-        let target = Float(0.1 + 0.9 * roles[.energy])
+        let drifting = inputs[.reduceMotion] > 0.5
+        let target = drifting ? Self.driftSpeed : Float(0.1 + 0.9 * roles[.energy])
         let tau = target > warpSpeed ? Self.riseTau : Self.fallTau
         warpSpeed += (target - warpSpeed) * Float(1 - exp(-d / tau))
 

@@ -25,6 +25,7 @@ final class AppContainer: ObservableObject {
                 Task { @MainActor in model.midiSourcesChanged(names: names, removed: removed) }
             })
         model.midi = midi   // hands over the keyboards switched off in Sound & MIDI
+        model.startWatchingReduceMotion()   // the Mac's Reduce Motion, followed from the first frame
         if let names = midi?.sourceNames, !names.isEmpty { model.midiSourcesChanged(names: names, removed: false) }
     }
 }

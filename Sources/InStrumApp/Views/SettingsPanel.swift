@@ -64,6 +64,12 @@ struct SettingsPanel: View {
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     Toggle("Gentle visuals (softer flashes and sparkle)",
                            isOn: Binding(get: { model.gentleVisuals }, set: { model.setGentleVisuals($0) }))
+                    Toggle("Follow the Mac's Reduce Motion",
+                           isOn: Binding(get: { model.followReduceMotion }, set: { model.setFollowReduceMotion($0) }))
+                    if model.reduceMotionActive {
+                        Text(Self.reduceMotionCaption)
+                            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 HStack {
                     Button { showAdvanced = true } label: { Label("Advanced…", systemImage: "slider.horizontal.3") }
@@ -79,6 +85,9 @@ struct SettingsPanel: View {
         .background(.ultraThinMaterial)
         .sheet(isPresented: $showAdvanced) { AdvancedView(model: model, isPresented: $showAdvanced) }
     }
+
+    /// Under "Follow the Mac's Reduce Motion", while it applies (Small Wins spec §6).
+    static let reduceMotionCaption = "The Mac's Reduce Motion is on, so the visuals move gently."
 
     @ViewBuilder
     private func section<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {

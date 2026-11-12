@@ -8,6 +8,13 @@ struct SkyControls: View {
 
     private var sky: SkySettings { model.skySettings }
     private var ambience: AmbienceSettings { model.ambienceSettings }
+    /// Breathing ambience (Small Wins spec §5): the app's own setting, so applying a set leaves it alone.
+    private var breath: AmbienceBreathSettings { model.breathSettings }
+
+    static let breathesTitle = "Ambience breathes"
+
+    /// "Breathing depth 100%".
+    static func depthTitle(_ depth: Double) -> String { "Breathing depth \(Int((depth * 100).rounded()))%" }
     /// The lounge is in space: no weather to choose.
     private var hasWeather: Bool { model.themeID != SpaceshipLoungeModel.id }
 
@@ -163,8 +170,33 @@ struct SkyControls: View {
                 labelled(ambience.closeness < 0.35 ? "Distant" : (ambience.closeness > 0.65 ? "All around you" : "Closeness")) {
                     Slider(value: Binding(get: { ambience.closeness }, set: { model.setAmbienceCloseness($0) }), in: 0...1)
                 }
+                breathing
             }
         }
+    }
+
+    /// "Ambience breathes", and its depth while it does.
+    @ViewBuilder
+    private var breathing: some View {
+        Toggle(Self.breathesTitle, isOn: Binding(get: { breath.enabled }, set: { setBreathing($0) }))
+            .help("Rain, wind and surf swell and recede on their own, in long, slow arcs")
+        if breath.enabled {
+            labelled(Self.depthTitle(breath.depth)) {
+                Slider(value: Binding(get: { breath.depth }, set: { setBreathDepth($0) }), in: AmbienceBreathSettings.depthRange)
+            }
+        }
+    }
+
+    private func setBreathing(_ on: Bool) {
+        var b = breath
+        b.enabled = on
+        model.setBreath(b)
+    }
+
+    private func setBreathDepth(_ depth: Double) {
+        var b = breath
+        b.depth = depth
+        model.setBreath(b)
     }
 
     @ViewBuilder

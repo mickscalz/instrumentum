@@ -127,8 +127,21 @@ struct SettingsPopover: View {
                 .labelsHidden()
                 .frame(width: 160)
             }
+            HStack {
+                Text("Keyboard layout")
+                Picker("Keyboard layout", selection: Binding(get: { model.keyboardRange }, set: { model.setKeyboardRange($0) })) {
+                    ForEach(KeyboardRange.allCases, id: \.self) { Text($0.displayName).tag($0) }
+                }
+                .labelsHidden()
+                .frame(width: 160)
+            }
+            Text(Self.keyboardLayoutCaption)
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
+
+    /// Under Keyboard layout (Small Wins spec §2): the keep gesture lives on the keyboard's top three black keys.
+    static let keyboardLayoutCaption = "Tap its top three black keys together, twice, to keep a take."
 
     private var uniqueSourceNames: [String] {
         var seen = Set<String>()
@@ -146,6 +159,20 @@ struct SettingsPopover: View {
             .pickerStyle(.segmented).labelsHidden()
             Text("Heavy keeps soft playing soft. Light makes loud notes easier.")
                 .font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Text("Hold the moment with")
+                Picker("Hold the moment with", selection: Binding(get: { model.holdPedal }, set: { model.setHoldPedal($0) })) {
+                    ForEach(HoldPedal.allCases, id: \.self) { Text($0.displayName).tag($0) }
+                }
+                .labelsHidden()
+                .frame(width: 160)
+            }
+            .padding(.top, 6)
+            Text(Self.holdCaption)
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
+
+    /// Under "Hold the moment with" (Small Wins spec §4).
+    static let holdCaption = "While it's down, the sky, the weather and the world stand still and your notes fill the moment. The hourglass and ⌘⇧H hold it too."
 }
