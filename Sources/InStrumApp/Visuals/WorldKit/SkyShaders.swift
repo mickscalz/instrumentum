@@ -990,8 +990,9 @@ enum SkyShaders {
                 float bs = max(0.5, 2.5 * px);
                 float2 gb;
                 float Hb = cloudBumps(float2(x - 0.2 * turn, z) / bs + warp, 0.0, float2(17.0), float2(3.0), 0.5, 0.3, 2.2, gb);
-                float2 gB = gb * (bs / 1.9);
-                float HB = Hb;
+                // (Drawn every pixel, the turrets are one octave of noise: a wobbling outline, not the sums.)
+                float2 gB = float2(0.0);
+                float HB = 0.25 + 1.1 * skyNoise2(float2(x, z) * 0.75 + 31.0);
                 if (fine > 0.5) HB = cloudBumps(float2(x - 0.1 * turn, z) / 1.9 + 0.6 * warp + 31.0, 0.0, float2(5.0), float2(9.0),
                                                 0.55, 0.4, 1.8, gB);
                 float lobe = smoothstep(0.08, 0.9, Hb) - 0.5;      // −0.5 … 0.5
@@ -1009,12 +1010,12 @@ enum SkyShaders {
                 float side = sqrt(max(1.0 - s * s, 0.0));
                 float zr = z * (1.0 + W0 * (1.0 - side) / Df) - kCellBase;
                 float swirl = asin(s) * 0.3183 * mirror;            // −0.5 … 0.5 across the face
-                float kb = zr * 1.05 + 0.55 * swirl + 0.16 * turn + 0.55 * (en - 0.5)
-                         + 0.35 * skyNoise2(float2(swirl * 3.0 + 0.3 * turn, zr * 0.45 + 9.0));
+                float kb = zr * 1.05 + 0.85 * swirl + 0.16 * turn + 0.55 * (en - 0.5)
+                         + 0.5 * skyNoise2(float2(swirl * 3.0 + 0.3 * turn, zr * 0.45 + 9.0));
                 float fb = fract(kb);
                 float stri = (1.0 - upper) * smoothstep(0.05, 0.45, hz) * smoothstep(0.15, 0.7, side + 0.3 * en)
                            * smoothstep(5.0, 11.0, Df)
-                           * (0.55 + 0.45 * smoothstep(0.25, 0.7, skyNoise2(float2(floor(kb) * 3.7 + 1.0, swirl * 4.0))));
+                           * (0.3 + 0.7 * smoothstep(0.25, 0.75, skyNoise2(float2(floor(kb) * 3.7 + 1.0, swirl * 5.0 + 0.2 * turn))));
                 // (Each band's foot is a lip standing out from the one under it: the skirt's outline steps.)
                 float lipOut = (1.0 - upper) * 0.42 * (1.0 - fb) * (1.0 - fb) * smoothstep(0.1, 0.5, hz);
                 float W = W0 + lipOut + 0.25 * (en - 0.5) + upper * (1.9 * turret + 0.3 * lobe);
@@ -1084,7 +1085,7 @@ enum SkyShaders {
                     float sunSide = saturate(0.7 * ndl + 0.3);
                     float3 warm = Lc * (lightAmt * sunSide * sqrt(sunSide) * occl * (0.5 + 0.6 * smoothstep(0.5, 6.0, hz)));
                     float3 c = (body3 * (1.0 - 0.3 * direct) + warm) * bandShade;
-                    c += Lc * (lightAmt * 0.1 * strLip * saturate(ndl + 0.5));
+                    c += Lc * (lightAmt * 0.07 * strLip * saturate(ndl + 0.5));
                     // Backlit: the low light comes through where it thins, a gold rim on every turret's outline and a
                     // softer glow a little inside it; the lips of the skirt's bands catch a thread of it too, and its body
                     // takes a faint warm translucence near the light, so the storm stands in the sun's light, not before it.

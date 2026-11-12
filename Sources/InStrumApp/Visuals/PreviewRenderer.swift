@@ -28,6 +28,8 @@ final class PreviewRenderer {
         // changes halfway through a comparison when it lands.
         StarTextureCache.shared.request(device: device)
         StarTextureCache.shared.awaitTexture()
+        // A still frame has no frames after it: the supercell's impostor is drawn whole when it needs a new one.
+        SkyLayer.cellAtOnce = true
     }
 
     /// Simulates the demo performance at 60 fps through the app's SceneDirector and captures

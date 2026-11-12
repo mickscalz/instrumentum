@@ -259,30 +259,42 @@ final class SkyLayer {
     }
 
     // ---------------------------------------------------------------- the supercell's impostor (Fire & Neon fix pass)
-    // The supercell weather changes over minutes, so it is drawn a few times a second into a texture the sky samples (at
-    // the world's own quality, for the cost of a lookup a pixel): a window in azimuth and altitude round the view, one
-    // eighth of its rows each frame (every eighth row, so no part goes stale for more than eight frames), all of it when
-    // the storm first shows, the view swings past the window or the clock jumps. Its upper half is the storm's light
-    // (premultiplied) and how much of the sky shows through; its lower half how its cloud takes the lightning's light,
-    // which the sky adds each frame round the strike (so a flash never waits for the rows). Allocated once, kept.
+    // The supercell weather changes over minutes, so it is drawn into a texture the sky samples (at the world's own
+    // quality, for the cost of a lookup a pixel): a window in azimuth and altitude round the view. No frame ever draws
+    // more than a sixteenth of it (every sixteenth row), so none spikes, even on a slow graphics chip: the window shown
+    // is refreshed a strip a frame (all of it every sixteen frames); a new window (the storm's first frame, or the view
+    // swung past the one shown) is filled a strip a frame into the other texture while the first is still shown, and
+    // swapped in when it is whole (the storm shows from then). Its upper half is the storm's light (premultiplied) and
+    // how much of the sky shows through; its lower half how its cloud takes the lightning's light, which the sky adds
+    // each frame round the strike (so a flash never waits for the rows). Two textures, allocated once and kept.
+    // Previews and tests (`cellAtOnce`) draw a new window whole at once, and again when the clock or the storm jumps.
 
     /// The fragment texture index the impostor is bound at (beside the stars at 0, clear of every world's own).
     nonisolated static let cellTextureIndex = 9
     /// Its size: columns, and rows in each half.
     nonisolated static let cellColumns = 1280, cellRows = 448
     /// How many frames one full redraw is shared over.
-    nonisolated static let cellStrips = 8
+    nonisolated static let cellStrips = 16
+    /// Previews and tests: a new window drawn whole in its first frame (a still frame has no frames after it).
+    static var cellAtOnce = false
     private var cellKernel: MTLComputePipelineState?
     private var cellKernelTried = false
-    private(set) var cellTexture: MTLTexture?
-    /// The window: its centre's azimuth, its half-width, its bottom and top altitudes (radians, east-north-up).
-    private(set) var cellWindow = SIMD4<Float>(0, 0, 0, 0)
+    private var cellTextures: [MTLTexture] = []
+    /// Each texture's window: its centre's azimuth, its half-width, its bottom and top altitudes (radians, east-north-up).
+    private var cellWindows = [SIMD4<Float>](repeating: .zero, count: 2)
+    private var cellFront = 0
+    private var cellFrontWhole = false
+    private var cellFilling = false
+    private var cellFillStrip = 0
     private var cellStrip = 0
-    private var cellWhole = true
     private var cellClock: Float = .nan
     private var cellPhase: Float = -1
-    /// Tests: how many times all of it was drawn, and how many single strips.
+    /// Tests: how many times a window was drawn whole in one frame, and how many single strips were drawn.
     private(set) var cellWholeDraws = 0, cellStripDraws = 0
+    /// The impostor the sky reads (nil until one is whole).
+    var cellTexture: MTLTexture? { cellFrontWhole && cellFront < cellTextures.count ? cellTextures[cellFront] : nil }
+    /// The window it shows.
+    var cellWindow: SIMD4<Float> { cellWindows[cellFront] }
 
     /// The window a view needs (its frame's edges in azimuth and altitude, with no margin), from the camera rows.
     nonisolated static func cellWindowNeeded(_ u: [SIMD4<Float>]) -> SIMD4<Float> {
@@ -290,15 +302,17 @@ final class SkyLayer {
         let tanH = u[0].w, tanV = u[1].w
         let centre = atan2(fwd.x, fwd.y)
         var half: Float = 0, top: Float = -1
-        for i in 0...8 {
-            let s = Float(i) / 4 - 1
-            for (x, y) in [(s, Float(1)), (s, Float(-1)), (Float(1), s), (Float(-1), s), (s, Float(0))] {
-                let d = simd_normalize(fwd + right * (x * tanH) + up * (y * tanV))
-                var da = atan2(d.x, d.y) - centre
-                da -= 2 * .pi * (da / (2 * .pi)).rounded()
-                if d.z > -0.05 { half = max(half, abs(da)) }
-                top = max(top, asin(min(1, max(-1, d.z))))
-            }
+        // (Round the frame's edges and across its middle, nine points each: no arrays, nothing allocated a frame.)
+        for i in 0..<45 {
+            let s = Float(i % 9) / 4 - 1
+            let side = i / 9
+            let x: Float = side == 2 ? 1 : (side == 3 ? -1 : s)
+            let y: Float = side == 0 ? 1 : (side == 1 ? -1 : (side == 4 ? 0 : s))
+            let d = simd_normalize(fwd + right * (x * tanH) + up * (y * tanV))
+            var da = atan2(d.x, d.y) - centre
+            da -= 2 * .pi * (da / (2 * .pi)).rounded()
+            if d.z > -0.05 { half = max(half, abs(da)) }
+            top = max(top, asin(min(1, max(-1, d.z))))
         }
         return SIMD4(centre, half, -0.05, top)
     }
@@ -326,59 +340,86 @@ final class SkyLayer {
         return cellKernel
     }
 
-    private func cellImpostor() -> MTLTexture? {
-        if let t = cellTexture { return t }
+    private func cellImpostors() -> Bool {
+        if cellTextures.count == 2 { return true }
         let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba16Float, width: Self.cellColumns,
                                                          height: 2 * Self.cellRows, mipmapped: false)
         d.usage = [.shaderRead, .shaderWrite]
         d.storageMode = .private
-        cellTexture = library.device.makeTexture(descriptor: d)
-        return cellTexture
+        guard let a = library.device.makeTexture(descriptor: d), let b = library.device.makeTexture(descriptor: d) else { return false }
+        cellTextures = [a, b]
+        return true
     }
 
-    /// Draws this frame's share of the supercell's impostor into `cb` (before the frame's own passes) and marks the sky's
-    /// rows to read it: the window in eq1.w, eq2.w and the flash row's y and z, its w 1. Every renderer that draws the sky
-    /// calls it first in `render`; without it (or with no supercell) the rows say no impostor, and the sky draws the
-    /// supercell itself (`skyRadiance` without the texture) or not at all (with it).
-    func prepare(_ cb: MTLCommandBuffer) {
-        u[9].w = 0; u[10].w = 0
-        u[Self.flashRow].y = 0; u[Self.flashRow].z = 0; u[Self.flashRow].w = 0
-        guard u[Self.cellARow].w > 0, storms else { cellWhole = true; return }
-        guard let kernel = cellPipeline(), let texture = cellImpostor() else { return }
-        let need = Self.cellWindowNeeded(u)
-        if !Self.cellWindow(cellWindow, covers: need) {
-            cellWindow = Self.cellWindowFor(need)
-            cellWhole = true
-        }
-        // The clock jumped (a preview, a seek) or the storm leapt a stage: all of it now.
-        let clock = u[2].w, phase = u[Self.cellARow].z
-        if !cellClock.isFinite || abs(clock - cellClock) > 0.5 || abs(phase - cellPhase) > 0.01 { cellWhole = true }
-        cellClock = clock; cellPhase = phase
-        u[9].w = cellWindow.x; u[10].w = cellWindow.y
-        u[Self.flashRow].y = cellWindow.z; u[Self.flashRow].z = cellWindow.w
+    /// Encodes rows `first`, `first + strips`, … of texture `which`, drawn in `window`.
+    private func encodeCell(_ cb: MTLCommandBuffer, kernel: MTLComputePipelineState, which: Int, first: Int, strips: Int,
+                            window: SIMD4<Float>) {
         guard let enc = cb.makeComputeCommandEncoder() else { return }
-        let strips = cellWhole ? 1 : Self.cellStrips
-        let first = cellWhole ? 0 : cellStrip
+        u[9].w = window.x; u[10].w = window.y
+        u[Self.flashRow].y = window.z; u[Self.flashRow].z = window.w
         var job = SIMD4<UInt32>(UInt32(first), UInt32(strips), UInt32(Self.cellRows), 0)
         enc.setComputePipelineState(kernel)
         u.withUnsafeBytes { enc.setBytes($0.baseAddress!, length: $0.count, index: 0) }
         enc.setBytes(&job, length: MemoryLayout<SIMD4<UInt32>>.size, index: 1)
-        enc.setTexture(texture, index: 0)
+        enc.setTexture(cellTextures[which], index: 0)
         let tw = max(1, kernel.threadExecutionWidth)
         let th = max(1, min(8, kernel.maxTotalThreadsPerThreadgroup / tw))
         let rows = (Self.cellRows - first + strips - 1) / strips
         enc.dispatchThreadgroups(MTLSize(width: (Self.cellColumns + tw - 1) / tw, height: (rows + th - 1) / th, depth: 1),
                                  threadsPerThreadgroup: MTLSize(width: tw, height: th, depth: 1))
         enc.endEncoding()
-        if cellWhole { cellWholeDraws += 1 } else { cellStripDraws += 1 }
-        cellStrip = cellWhole ? 0 : (cellStrip + 1) % Self.cellStrips
-        cellWhole = false
-        u[Self.flashRow].w = 1
+        if strips == 1 { cellWholeDraws += 1 } else { cellStripDraws += 1 }
     }
 
-    /// Waits (running the main run loop) until the shared star texture has arrived; for previews and tests.
-    @discardableResult
-    func awaitStars(timeout: TimeInterval = 5) -> Bool { StarTextureCache.shared.awaitTexture(timeout: timeout) }
+    /// Draws this frame's share of the supercell's impostor into `cb` (before the frame's own passes: one strip, never
+    /// more, outside previews) and marks the sky's rows to read it: the window shown in eq1.w, eq2.w and the flash row's
+    /// y and z, its w 1 once one is whole. Every renderer that draws the sky calls it first in `render`; without it (or
+    /// with no supercell) the rows say no impostor, and the sky draws the supercell itself (`skyRadiance` without the
+    /// texture) or not at all (with it).
+    func prepare(_ cb: MTLCommandBuffer) {
+        u[9].w = 0; u[10].w = 0
+        u[Self.flashRow].y = 0; u[Self.flashRow].z = 0; u[Self.flashRow].w = 0
+        guard u[Self.cellARow].w > 0, storms else { cellFrontWhole = false; cellFilling = false; return }
+        guard let kernel = cellPipeline(), cellImpostors() else { return }
+        let need = Self.cellWindowNeeded(u)
+        let clock = u[2].w, phase = u[Self.cellARow].z
+        // (Previews: the clock or the storm jumped between still frames, so the one shown is stale.)
+        let jumped = !cellClock.isFinite || abs(clock - cellClock) > 0.5 || abs(phase - cellPhase) > 0.01
+        cellClock = clock; cellPhase = phase
+        let back = 1 - cellFront
+        if !cellFilling && (!cellFrontWhole || !Self.cellWindow(cellWindows[cellFront], covers: need)) {
+            cellWindows[back] = Self.cellWindowFor(need)
+            cellFilling = true
+            cellFillStrip = 0
+        }
+        if cellFilling && Self.cellAtOnce {
+            encodeCell(cb, kernel: kernel, which: back, first: 0, strips: 1, window: cellWindows[back])
+            cellFillStrip = Self.cellStrips
+        } else if cellFilling {
+            encodeCell(cb, kernel: kernel, which: back, first: cellFillStrip, strips: Self.cellStrips, window: cellWindows[back])
+            cellFillStrip += 1
+        } else if Self.cellAtOnce && jumped {
+            encodeCell(cb, kernel: kernel, which: cellFront, first: 0, strips: 1, window: cellWindows[cellFront])
+        } else {
+            encodeCell(cb, kernel: kernel, which: cellFront, first: cellStrip, strips: Self.cellStrips, window: cellWindows[cellFront])
+            cellStrip = (cellStrip + 1) % Self.cellStrips
+        }
+        if cellFilling && cellFillStrip >= Self.cellStrips {
+            cellFront = back
+            cellFrontWhole = true
+            cellFilling = false
+            cellStrip = 0
+        }
+        guard cellFrontWhole else {
+            u[9].w = 0; u[10].w = 0
+            u[Self.flashRow].y = 0; u[Self.flashRow].z = 0
+            return
+        }
+        let w = cellWindows[cellFront]
+        u[9].w = w.x; u[10].w = w.y
+        u[Self.flashRow].y = w.z; u[Self.flashRow].z = w.w
+        u[Self.flashRow].w = 1
+    }
 
     /// The aurora's pole-ward azimuth (degrees): north (0°) in the northern hemisphere, south (180°) in the southern,
     /// wandering ±20° over tens of minutes.
