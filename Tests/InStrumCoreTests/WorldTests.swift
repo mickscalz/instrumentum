@@ -376,7 +376,7 @@ final class WorldTests: XCTestCase {
         XCTAssertEqual(f.sky.rain, 0)
         XCTAssertEqual(f.sky.cloudCover, 0)
         XCTAssertEqual(f.sky.starVisibility, 1)
-        XCTAssertEqual(f.ambience.level(.shipHum), 0.8, accuracy: 1e-9)
+        XCTAssertEqual(f.ambience.level(.shipHum), 0.8, accuracy: 1e-6)   // a Float sum since the hum rises with tension
         XCTAssertEqual(f.ambience.level(.airFlow), 0.5, accuracy: 1e-9)
         XCTAssertEqual(f.ambience.level(.chime), 0.25, accuracy: 1e-9)
         XCTAssertEqual(f.ambience.level(.hullTicks), 0.25, accuracy: 1e-9)

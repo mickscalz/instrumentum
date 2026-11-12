@@ -7,13 +7,19 @@ on:
 jobs:
   test:
     runs-on: macos-15-intel   # the app is Intel-only and Michael's Mac is Intel; GitHub's arm64 queue has dropped jobs since 12 Nov
+    # The three test targets run side by side, so a round takes as long as the slowest, not the sum (13 Nov).
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [InStrumCoreTests, InStrumAudioTests, InStrumAppTests]
+    name: test (${{ matrix.suite }})
     steps:
       - uses: actions/checkout@v5
       - name: Toolchain
         run: swift --version && sw_vers && uname -m
       - name: Test
         timeout-minutes: 90
-        run: swift test 2>&1 | tee test.log; exit ${PIPESTATUS[0]}
+        run: swift test --filter "^${{ matrix.suite }}\\." 2>&1 | tee test.log; exit ${PIPESTATUS[0]}
       - name: Report
         if: always()
         run: |

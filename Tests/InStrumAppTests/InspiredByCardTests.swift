@@ -1,11 +1,25 @@
 import XCTest
 import SwiftUI
+import Metal
 @testable import InStrumApp
 @testable import InStrumCore
 
 /// The living "Inspired by" cards.
 @MainActor
 final class InspiredByCardTests: XCTestCase {
+    /// SwiftUI draws the cards' Canvas filters (their blurs) with Metal. On a GPU that reports no architecture (GitHub's
+    /// Intel virtual machines, 13 Nov: "Target device architecture is nil") Metal's own loader aborts the whole test
+    /// process, taking every later test with it; there the card renders are skipped. A real Mac's GPU reports one.
+    nonisolated static var canRenderCards: Bool {
+        guard let device = MTLCreateSystemDefaultDevice() as? NSObject else { return false }
+        guard device.responds(to: NSSelectorFromString("architecture")) else { return true }
+        return device.value(forKey: "architecture") != nil
+    }
+
+    nonisolated override func setUpWithError() throws {
+        try XCTSkipUnless(Self.canRenderCards, "this GPU can't draw SwiftUI's Canvas filters (a virtual machine)")
+    }
+
     func testEveryCreditHasArt() {
         for c in CreditLibrary.all { XCTAssertNotNil(CardArt.art(for: c.id), c.id) }
         XCTAssertNil(CardArt.art(for: "not-a-credit"))
