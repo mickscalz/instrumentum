@@ -2,7 +2,8 @@ import Foundation
 
 /// What the weather adds to any outdoor world's soundscape: drips while things are wet after the rain, and a
 /// howling wind in a blizzard's gusts, and birdsong when a rainbow stands; and the hush of rime frost and sea smoke; a
-/// gust front's roar and the smell of rain on dust before it rains; virga's dry wind. And for the plains (Storms spec
+/// gust front's roar and the smell of rain on dust before it rains; virga's dry wind; ashfall's dry hiss, and a supercell's
+/// roar and hail (Fire & Neon spec §7). And for the plains (Storms spec
 /// §9.3): the windmill turning with the wind, and the cicadas' hush before a close strike (`CicadaHush`).
 public enum WeatherAmbience {
     public static func levels(_ sky: SkyState, base levels: inout [AmbienceSource: Double]) {
@@ -22,6 +23,31 @@ public enum WeatherAmbience {
         if let roar = gustRoar(sky), roar > 0 { levels[.wind] = max(levels[.wind] ?? 0, roar) }
         if let dry = virgaWind(sky), dry > 0 { levels[.wind] = max(levels[.wind] ?? 0, dry) }
         if let dust = rainOnDust(sky), dust > 0 { levels[.rainOnDust] = max(levels[.rainOnDust] ?? 0, dust) }
+        // Fire & Neon (spec §7): ashfall's faint dry hiss (ash settling on leaves, roofs and glass: the soft hiss of the
+        // rain-on-dust source, low); a supercell's roar on the wind and its hail on whatever is near.
+        if let hiss = ashHiss(sky), hiss > 0 { levels[.rainOnDust] = max(levels[.rainOnDust] ?? 0, hiss) }
+        if let roar = supercellRoar(sky), roar > 0 { levels[.wind] = max(levels[.wind] ?? 0, roar) }
+        if sky.hail.isFinite, sky.hail > 0.02 { levels[.hailOnTin] = max(levels[.hailOnTin] ?? 0, 0.8 * Double(sky.hail)) }
+    }
+
+    /// Ashfall's hiss (spec §7.1): 0.22 × the ash, faint and dry. Nil without ash.
+    public static func ashHiss(_ sky: SkyState) -> Double? {
+        guard sky.ash.isFinite, sky.ash > 0.02 else { return nil }
+        return 0.22 * Double(min(1, sky.ash))
+    }
+
+    /// A supercell's roar on the wind (spec §7.2), × its share of the sky: the inflow rising 0.25 → 0.5 through its
+    /// Approach, 0.85 in its Core, easing from 0.5 to 0.1 as it clears. Nil without one.
+    public static func supercellRoar(_ sky: SkyState) -> Double? {
+        guard let c = sky.supercellWeather, c.amount > 0 else { return nil }
+        let p = Double(min(1, max(0, c.stageProgress)))
+        let roar: Double
+        switch c.stage {
+        case .approach: roar = 0.25 + 0.25 * p
+        case .core: roar = 0.5 + 0.35 * min(1, 5 * p)
+        default: roar = 0.5 - 0.4 * p
+        }
+        return roar * Double(c.amount)
     }
 
     /// The gust front's roar on the wind source (spec §7.1), × its share of the sky: 0.2 through the Approach's inflow
@@ -107,7 +133,9 @@ public enum WeatherAmbience {
     public static func indoorsLift(_ sky: SkyState) -> Double {
         let rime = sky.rime.isFinite ? min(max(Double(sky.rime), 0), 1) : 0
         let steam = sky.steam.isFinite ? min(max(Double(sky.steam), 0), 1) : 0
-        return 0.15 * min(1, max(rime, steam) / 0.6)
+        let ash = sky.ash.isFinite ? min(max(Double(sky.ash), 0), 1) : 0
+        // Ash muffles the highs a little (spec §7.1: about 2 dB up top): 0.1 × the ash, through the same window.
+        return max(0.15 * min(1, max(rime, steam) / 0.6), 0.1 * ash)
     }
 }
 

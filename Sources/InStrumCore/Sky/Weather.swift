@@ -1,6 +1,6 @@
 import Foundation
 
-public enum WeatherKind: String, Codable, CaseIterable { case clear, lightCloud, overcast, mist, drizzle, rain, storm, snow, blizzard, afterRain, sunShower, fogBank, sleet, monsoon, hail, smokeHaze, iceFog, thunderheads, dustStorm, flurries, freezingDrizzle, squall, dryLightning, humid, diamondDust, rime, seaSmoke, gustFront, virga }
+public enum WeatherKind: String, Codable, CaseIterable { case clear, lightCloud, overcast, mist, drizzle, rain, storm, snow, blizzard, afterRain, sunShower, fogBank, sleet, monsoon, hail, smokeHaze, iceFog, thunderheads, dustStorm, flurries, freezingDrizzle, squall, dryLightning, humid, diamondDust, rime, seaSmoke, gustFront, virga, ashfall, supercell }
 
 /// Pick one yourself, or let the sky wander through beautiful weathers. (`.real` comes later.)
 public enum WeatherMode: String, Codable, CaseIterable { case pick, randomBeautiful }
@@ -19,13 +19,17 @@ public struct WeatherValues: Equatable {
     /// A gust front's outflow, the cold air out of a storm (`SkyState.outflow`), and virga's streaks of rain that never
     /// land (`SkyState.virga`), 0…1 (Storms spec §7). Every other weather has none.
     public var outflow: Float = 0, virga: Float = 0
+    /// Fire & Neon (spec §7): ashfall's fine grey ash, and a supercell's rotation (how fast its wall cloud turns), 0…1.
+    /// Every other weather has none.
+    public var ash: Float = 0, rotation: Float = 0
 
     static func mix(_ a: WeatherValues, _ b: WeatherValues, _ t: Float) -> WeatherValues {
         func m(_ x: Float, _ y: Float) -> Float { x + (y - x) * t }
         return WeatherValues(cloud: m(a.cloud, b.cloud), rain: m(a.rain, b.rain), snow: m(a.snow, b.snow), mist: m(a.mist, b.mist),
                              wind: m(a.wind, b.wind), halo: m(a.halo, b.halo), frost: m(a.frost, b.frost), gust: m(a.gust, b.gust),
                              fireflies: m(a.fireflies, b.fireflies), pillar: m(a.pillar, b.pillar), rime: m(a.rime, b.rime),
-                             steam: m(a.steam, b.steam), outflow: m(a.outflow, b.outflow), virga: m(a.virga, b.virga))
+                             steam: m(a.steam, b.steam), outflow: m(a.outflow, b.outflow), virga: m(a.virga, b.virga),
+                             ash: m(a.ash, b.ash), rotation: m(a.rotation, b.rotation))
     }
 }
 
@@ -63,6 +67,10 @@ public extension WeatherKind {
         // the 0.2 rain is its first big drops), and virga's (no rain at all).
         case .gustFront: return WeatherValues(cloud: 0.9, rain: 0.2, snow: 0, mist: 0.5, wind: 1, gust: 1, outflow: 1)
         case .virga: return WeatherValues(cloud: 0.7, rain: 0, snow: 0, mist: 0.6, wind: 0.4, gust: 0.3, virga: 1)
+        // Fire & Neon (spec §7): ashfall's quiet grey fall (with a brown-grey haze, the sun and moon reddened); a
+        // supercell's nominal values (staged over its Approach, Core and Clearing by `WorldWeather.supercell`).
+        case .ashfall: return WeatherValues(cloud: 0.55, rain: 0, snow: 0, mist: 0.35, wind: 0.25, ash: 1)
+        case .supercell: return WeatherValues(cloud: 0.85, rain: 0.6, snow: 0, mist: 0.15, wind: 0.6, gust: 0.8, rotation: 1)
         }
     }
 
@@ -76,17 +84,18 @@ public extension WeatherKind {
         }
     }
 
-    /// Drizzle, rain and storms: what "after the rain" follows (a gust front ends in rain; virga never lands).
-    var isWet: Bool { self == .drizzle || self == .rain || self == .storm || self == .sleet || self == .monsoon || self == .hail || self == .squall || self == .freezingDrizzle || self == .gustFront }
+    /// Drizzle, rain and storms: what "after the rain" follows (a gust front ends in rain, and a supercell clears after its
+    /// rain; virga never lands, and ash isn't rain).
+    var isWet: Bool { self == .drizzle || self == .rain || self == .storm || self == .sleet || self == .monsoon || self == .hail || self == .squall || self == .freezingDrizzle || self == .gustFront || self == .supercell }
 
-    /// Left out of random weather when "Calm random weather" is on.
-    var isRough: Bool { [.storm, .blizzard, .monsoon, .hail, .squall, .dustStorm, .dryLightning, .gustFront].contains(self) }
+    /// Left out of random weather when "Calm random weather" is on (a supercell is rough; ashfall is quiet).
+    var isRough: Bool { [.storm, .blizzard, .monsoon, .hail, .squall, .dustStorm, .dryLightning, .gustFront, .supercell].contains(self) }
 
-    /// Weathers that throw lightning.
+    /// Weathers that throw lightning (a supercell's is staged: only its Core flashes, `LivingSky` times it).
     var flashes: Bool { self == .storm || self == .squall || self == .monsoon || self == .dryLightning }
 
-    /// How often "random beautiful" picks it (overcast only when chosen; a gust front and virga only in the worlds whose
-    /// tables add them, `WorldWeather.randomExtras`).
+    /// How often "random beautiful" picks it (overcast only when chosen; a gust front, virga, ashfall and the supercell only
+    /// in the worlds whose tables add them, `WorldWeather.randomExtras`).
     var beautyWeight: Float {
         switch self {
         case .clear, .lightCloud: return 3
@@ -113,7 +122,7 @@ public extension WeatherKind {
         case .diamondDust: return 0.5
         case .rime: return 0.5
         case .seaSmoke: return 0.5
-        case .gustFront, .virga: return 0
+        case .gustFront, .virga, .ashfall, .supercell: return 0
         }
     }
 }
@@ -158,6 +167,7 @@ struct WeatherMachine {
         var r = rng
         spellLeft = Self.spell(&r, minutes: min(60, max(2, settings.spellMinutes)))
         rng = r
+        if mode == .randomBeautiful && first == .supercell { spellLeft = Self.supercellSpell(settings) }
         if mode == .randomBeautiful && first == .lightCloud {
             ice = iceRng.range(0.5, 1)
             iridescence = Self.rollIridescence(&iridRng)
@@ -183,7 +193,10 @@ struct WeatherMachine {
             mode = settings.weatherMode
             if mode == .pick { ice = WeatherKind.lightCloud.values.halo; iridescence = Self.pickedIridescence }
             spellLeft = Self.spell(&rng, minutes: sm)
-            if mode == .randomBeautiful { begin(Self.pick(excluding: transitioning ? next : current, calm: settings.calmRandom, excluded: settings.randomExcluded, extras: extras, &rng), seconds: rs) }
+            if mode == .randomBeautiful {
+                begin(Self.pick(excluding: transitioning ? next : current, calm: settings.calmRandom, excluded: settings.randomExcluded, extras: extras, &rng), seconds: rs)
+                if next == .supercell { spellLeft = Self.supercellSpell(settings) }
+            }
         }
         switch mode {
         case .pick:
@@ -195,6 +208,8 @@ struct WeatherMachine {
                 if current.isWet && afterRng.unit() < 0.6 { begin(.afterRain, seconds: rs) }
                 else { begin(Self.pick(excluding: current, also: current.isWet ? .afterRain : nil, calm: settings.calmRandom, excluded: settings.randomExcluded, extras: extras, &rng), seconds: rs) }
                 spellLeft += Self.spell(&rng, minutes: sm)
+                // A supercell plays its event once and moves on (Fire & Neon spec §7.2): its spell is the event's length.
+                if next == .supercell { spellLeft = Self.supercellSpell(settings) }
             }
         }
         if transitioning {
@@ -217,6 +232,9 @@ struct WeatherMachine {
     }
 
     private static func spell(_ rng: inout SeededRandom, minutes: Double) -> Double { (300 + 900 * Double(rng.unit())) * minutes / 12.5 }
+
+    /// A random supercell's spell: its event's length (the Advanced setting, 3–20 minutes).
+    static func supercellSpell(_ settings: SkySettings) -> Double { min(1200, max(180, settings.supercellSeconds)) }
 
     /// One light-cloud spell in two iridesces, 0.3–1 (both draws are always taken, so the stream keeps its step).
     private static func rollIridescence(_ rng: inout SeededRandom) -> Float {

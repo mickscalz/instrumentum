@@ -20,6 +20,8 @@ public enum WorldWeather {
         s.wetness = 0
         s.rainbow = 0                                           // it snows here; no rainbows
         s.fireflies = 0                                         // and no fireflies in the cold
+        s.supercellWeather = nil                                // a supercell is a blizzard here (its snow above)
+        s.hail = 0
         func chill(_ k: WeatherKind) -> WeatherKind {
             switch k {
             case .drizzle, .rain, .sunShower, .sleet, .hail, .freezingDrizzle: return .snow
@@ -33,7 +35,8 @@ public enum WorldWeather {
             case .storm: return .blizzard
             case .afterRain: return .lightCloud
             case .humid: return .clear
-            default: return k   // diamond dust, rime frost and sea smoke are at home in the cold
+            case .supercell: return .blizzard
+            default: return k   // diamond dust, rime frost, sea smoke and ashfall are at home in the cold
             }
         }
         s.weather = chill(s.weather)
@@ -277,6 +280,14 @@ public extension WorldWeather {
 
     // MARK: Random Beautiful's tables (spec §3, §7)
 
+    /// The volcano (Set 13's world, when it comes): Random Beautiful brings ashfall there and nowhere else (spec §7.1).
+    static let ashWorlds: Set<String> = ["volcano-rim"]
+    /// Where Random Beautiful may bring a supercell (spec §7.2): the worlds where storms already appear (the lake, the
+    /// beach, the coast road) and Neon Night Drive. (Supercell Sky's storm is its own; Lightning Plains' is a storm line.)
+    static let supercellWorlds: Set<String> = [MoonlitLakeModel.id, GoldenHourBeachModel.id, CoastRoadModel.id, NeonNightDriveModel.id]
+    static let ashfallWeight: Float = 0.5
+    static let supercellWeight: Float = 0.25
+
     /// Worlds where storms already appear (Fire & Neon spec §7.2's list): Random Beautiful may bring a gust front here.
     /// The ids after the three on this branch are the worlds still to come (Neon Night Drive, and Storms' own two), so
     /// their tables are ready when they are registered.
@@ -290,11 +301,14 @@ public extension WorldWeather {
     static let virgaWeight: Float = 0.5
 
     /// The weathers a world's Random Beautiful adds, with their weights (for `LivingSky.step`'s storm inputs): a gust
-    /// front only where storms appear, virga only in dry worlds; none anywhere else.
+    /// front only where storms appear, virga only in dry worlds, ashfall only at the volcano, a supercell only at the
+    /// lake, the beach, the coast road and the drive; none anywhere else.
     static func randomExtras(for worldID: String) -> [WeatherKind: Float] {
         var extras: [WeatherKind: Float] = [:]
         if stormWorlds.contains(worldID) { extras[.gustFront] = gustFrontWeight }
         if dryWorlds.contains(worldID) { extras[.virga] = virgaWeight }
+        if ashWorlds.contains(worldID) { extras[.ashfall] = ashfallWeight }
+        if supercellWorlds.contains(worldID) { extras[.supercell] = supercellWeight }
         return extras
     }
 }

@@ -90,8 +90,8 @@ final class NeonNightDriveTests: XCTestCase {
         XCTAssertEqual(p.choice("light.hold"), SkyHold.deepNight.rawValue, "deep night by default (spec §2)")
         XCTAssertEqual(p.number("rain"), 0.45, accuracy: 1e-9)
         XCTAssertEqual(p.number("neon"), 0.7, accuracy: 1e-9)
-        // Random Beautiful may bring a gust front here, as where storms already appear.
-        XCTAssertEqual(WorldWeather.randomExtras(for: NeonNightDriveModel.id), [.gustFront: 0.3])
+        // Random Beautiful may bring a gust front here, as where storms already appear, and a supercell (Fire & Neon §7.2).
+        XCTAssertEqual(WorldWeather.randomExtras(for: NeonNightDriveModel.id), [.gustFront: 0.3, .supercell: 0.25])
     }
 
     func testTheDirectorDrivesIt() throws {

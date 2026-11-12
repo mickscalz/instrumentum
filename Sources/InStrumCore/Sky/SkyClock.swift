@@ -3,8 +3,8 @@ import Foundation
 /// Quick (a whole day in minutes), real time (your Mac's clock at a city), or frozen at a chosen hour and moon.
 public enum TimeMode: String, Codable, CaseIterable { case quick, realTime, frozen }
 
-/// How often a Sky extras feature shows (Storms spec §6: anvil crawlers and sheet lightning; Fire & Neon's red sprites
-/// and satellites are meant to share it): not at all, as often as the real thing, or three times as often.
+/// How often a Sky extras feature shows (Storms spec §6: anvil crawlers and sheet lightning; Fire & Neon §6: red sprites,
+/// with their far storms, and satellites): not at all, as often as the real thing, or three times as often.
 public enum SkyExtraMode: String, Codable, CaseIterable {
     case off = "Off", natural = "Natural", often = "Often"
 
@@ -17,6 +17,7 @@ public enum SkyExtraMode: String, Codable, CaseIterable {
 
     /// The world parameter ids, which are also the settings' keys.
     public static let crawlersID = "crawlers.mode", sheetID = "sheet.mode"
+    public static let spritesID = "sprites.mode", satellitesID = "satellites.mode"
 }
 
 public struct SkySettings: Codable, Equatable {
@@ -79,6 +80,12 @@ public struct SkySettings: Codable, Equatable {
     /// Advanced: how long a gust front takes from the shelf cloud on the horizon to the rain (60…600 s; 180 by
     /// default): Approach for the first third, the Hit for the second, the Rain from two thirds on.
     public var gustFrontSeconds: Double = 180
+    /// Sky extras (Fire & Neon spec §6): red sprites (with the far storms they stand over) and satellite passes and
+    /// flares, Off / Natural / Often (Natural by default). A world may choose its own (`sprites.mode`, `satellites.mode`).
+    public var spritesMode: SkyExtraMode = .natural
+    public var satellitesMode: SkyExtraMode = .natural
+    /// Advanced: how long a Supercell takes from Approach to Clearing (180…1200 s; 480, 8 minutes, by default).
+    public var supercellSeconds: Double = 480
 
     public init() {}
 
@@ -93,16 +100,19 @@ public struct SkySettings: Codable, Equatable {
             constellationLines = 0.2; auroraScale = 0.7
             iridescence = 0.6; rimeSpeed = 0.7; meteorRate = 1.5
             crawlersMode = .natural; sheetMode = .natural; gustFrontSeconds = 300
+            spritesMode = .natural; satellitesMode = .natural; supercellSeconds = 600
         case .dramatic:
             windScale = 1.4; gustScale = 1.5; lightningFrequency = 2; cloudScale = 1.3; rainScale = 1.3; frostScale = 1.2; pickBlendSeconds = 6
             constellationLines = 0.5; auroraScale = 1.6
             iridescence = 1.4; rimeSpeed = 1.5; meteorRate = 4
             crawlersMode = .often; sheetMode = .often; gustFrontSeconds = 120
+            spritesMode = .often; satellitesMode = .often; supercellSeconds = 300
         case .dreamy:
             mistScale = 1.5; haloScale = 1.5; starScale = 1.4; moonSize = 1.6; windScale = 0.6; rainbowStrength = 1; pickBlendSeconds = 20
             constellationLines = 0.35; auroraScale = 1.0
             iridescence = 1.0; rimeSpeed = 1.0; meteorRate = 2.5
             crawlersMode = .natural; sheetMode = .often; gustFrontSeconds = 240
+            spritesMode = .natural; satellitesMode = .often; supercellSeconds = 480
         }
     }
 
@@ -118,10 +128,12 @@ public struct SkySettings: Codable, Equatable {
         constellationLines = d.constellationLines; auroraScale = d.auroraScale
         iridescence = d.iridescence; rimeSpeed = d.rimeSpeed; meteorRate = d.meteorRate
         crawlersMode = d.crawlersMode; sheetMode = d.sheetMode; gustFrontSeconds = d.gustFrontSeconds
+        spritesMode = d.spritesMode; satellitesMode = d.satellitesMode; supercellSeconds = d.supercellSeconds
     }
 
     enum CodingKeys: String, CodingKey { case timeMode, dayMinutes, frozenHour, frozenPhase, cityID, weatherMode, weather, pickBlendSeconds, randomBlendSeconds, spellMinutes, rainbowStrength, dryingMinutes, windScale, mistScale, haloScale, frostScale, rainScale, snowScale, gustScale, calmRandom, randomExcluded, lightningFrequency, cloudScale, starScale, moonSize, sunSize, earthshine, constellationLines, auroraScale, iridescence, rimeSpeed, meteorRate
-        case crawlersMode = "crawlers.mode", sheetMode = "sheet.mode", gustFrontSeconds }
+        case crawlersMode = "crawlers.mode", sheetMode = "sheet.mode", gustFrontSeconds
+        case spritesMode = "sprites.mode", satellitesMode = "satellites.mode", supercellSeconds }
 
     /// Each field falls back on its own, and numbers are clamped, so one bad value never loses the rest.
     public init(from decoder: Decoder) throws {
@@ -164,6 +176,11 @@ public struct SkySettings: Codable, Equatable {
         crawlersMode = (try? c.decodeIfPresent(SkyExtraMode.self, forKey: .crawlersMode)) ?? d.crawlersMode
         sheetMode = (try? c.decodeIfPresent(SkyExtraMode.self, forKey: .sheetMode)) ?? d.sheetMode
         gustFrontSeconds = min(600, max(60, (try? c.decodeIfPresent(Double.self, forKey: .gustFrontSeconds)) ?? d.gustFrontSeconds))
+        // Fire & Neon (Review focus 4): saves from before the red sprites, the satellites and the Supercell load them at
+        // Natural and 8 minutes; a mode from a later build or a typo falls back on its own.
+        spritesMode = (try? c.decodeIfPresent(SkyExtraMode.self, forKey: .spritesMode)) ?? d.spritesMode
+        satellitesMode = (try? c.decodeIfPresent(SkyExtraMode.self, forKey: .satellitesMode)) ?? d.satellitesMode
+        supercellSeconds = min(1200, max(180, (try? c.decodeIfPresent(Double.self, forKey: .supercellSeconds)) ?? d.supercellSeconds))
     }
 }
 

@@ -6,6 +6,19 @@ public protocol MoodAware { var mood: Mood { get set } }
 /// A model that wants the Living Sky each frame.
 public protocol SkyAware { mutating func setSky(_ s: SkyState) }
 
+/// A world's flags for the shared sky (Fire & Neon spec §6.2, §7.1): a city's skyglow hides the satellites fainter than
+/// `skyglowLimit` (a magnitude; nil: a dark sky), and an `emberSource` sends embers up through ashfall (Volcano Rim, when
+/// it comes). A world without them has neither.
+public protocol SkyWorldFlags {
+    static var skyglowLimit: Float? { get }
+    static var emberSource: Bool { get }
+}
+
+public extension SkyWorldFlags {
+    static var skyglowLimit: Float? { nil }
+    static var emberSource: Bool { false }
+}
+
 /// A model that wants the built-in instrument's pulse (spec §7.6): the director hands it `instrumentPulse` before every
 /// step, nil while the instrument has none. Any model may want it, a world or not.
 public protocol PulseAware { var pulse: InstrumentPulse? { get set } }
@@ -171,6 +184,9 @@ protocol AnyThemeBoxProtocol {
     mutating func setInstrument(pressure: Float, repeating: Bool)
     /// An instrument-aware model's forced morph; nil for every other model.
     var forcedMorph: Float? { get }
+    /// The world's sky flags (`SkyWorldFlags`): none for a model without them.
+    var skyglowLimit: Float? { get }
+    var emberSource: Bool { get }
 }
 
 struct ThemeBox<T: ThemeModel>: AnyThemeBoxProtocol {
@@ -212,6 +228,8 @@ struct ThemeBox<T: ThemeModel>: AnyThemeBoxProtocol {
         guard T.self is InstrumentAware.Type else { return nil }
         return (model as? InstrumentAware)?.forcedMorph
     }
+    var skyglowLimit: Float? { (T.self as? SkyWorldFlags.Type)?.skyglowLimit ?? nil }
+    var emberSource: Bool { (T.self as? SkyWorldFlags.Type)?.emberSource ?? false }
 }
 
 /// Ties playing, inputs, reactions, settings and the active theme together each frame.
@@ -374,12 +392,17 @@ public final class SceneDirector {
             // Storms (spec §6–§8): a world may choose its own anvil crawlers and sheet lightning (nil: the Sky extras
             // settings) and hold a supercell's stage (Supercell Sky's picker; nil: no supercell), and its Random Beautiful
             // adds a gust front where storms appear and virga in dry worlds. All are read every step, so they leave with
-            // the world. This step's big moment (Excitement stepped first) calls a crawler and a sheet flash (spec §6).
+            // the world. This step's big moment (Excitement stepped first) calls a crawler and a sheet flash (spec §6), a red
+            // sprite and a satellite's flare (Fire & Neon §6); the world may choose its own sprites and satellites, and
+            // its flags hide faint satellites in a city's skyglow and send embers up through ashfall.
             let storm = StormInputs(crawlers: SkyExtraMode(rawValue: parameters.choice(SkyExtraMode.crawlersID)),
                                     sheet: SkyExtraMode(rawValue: parameters.choice(SkyExtraMode.sheetID)),
                                     supercell: SupercellStage(rawValue: parameters.choice(SupercellStage.id)),
                                     moment: excitementFrame.moment,
-                                    randomExtras: WorldWeather.randomExtras(for: themeID))
+                                    randomExtras: WorldWeather.randomExtras(for: themeID),
+                                    sprites: SkyExtraMode(rawValue: parameters.choice(SkyExtraMode.spritesID)),
+                                    satellites: SkyExtraMode(rawValue: parameters.choice(SkyExtraMode.satellitesID)),
+                                    skyglowLimit: box.skyglowLimit, emberSource: box.emberSource)
             let s = sky.step(now: clock(), dt: dt, hold: hold, aurora: aurora, meteors: meteors, storm: storm)
             lastSky = s
             box.setSky(s)

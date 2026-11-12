@@ -938,3 +938,8 @@ extension NeonNightDriveModel {
         .temperature: [],
     ]
 }
+
+/// The city's skyglow (Fire & Neon spec §6.2): only satellites brighter than magnitude 2 show between the towers.
+extension NeonNightDriveModel: SkyWorldFlags {
+    public static let skyglowLimit: Float? = 2
+}

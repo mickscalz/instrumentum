@@ -237,7 +237,7 @@ extension LivingSkyTests {
     }
 
     func testNewWeatherValues() {
-        XCTAssertEqual(WeatherKind.allCases, [.clear, .lightCloud, .overcast, .mist, .drizzle, .rain, .storm, .snow, .blizzard, .afterRain, .sunShower, .fogBank, .sleet, .monsoon, .hail, .smokeHaze, .iceFog, .thunderheads, .dustStorm, .flurries, .freezingDrizzle, .squall, .dryLightning, .humid, .diamondDust, .rime, .seaSmoke, .gustFront, .virga])
+        XCTAssertEqual(WeatherKind.allCases, [.clear, .lightCloud, .overcast, .mist, .drizzle, .rain, .storm, .snow, .blizzard, .afterRain, .sunShower, .fogBank, .sleet, .monsoon, .hail, .smokeHaze, .iceFog, .thunderheads, .dustStorm, .flurries, .freezingDrizzle, .squall, .dryLightning, .humid, .diamondDust, .rime, .seaSmoke, .gustFront, .virga, .ashfall, .supercell])
         // cloud, rain, snow, mist, wind, halo, frost, gust (spec §6.1)
         let table: [WeatherKind: [Float]] = [
             .clear: [0, 0, 0, 0.1, 0.1, 0, 0.15, 0],
@@ -269,6 +269,8 @@ extension LivingSkyTests {
             .seaSmoke: [0.1, 0, 0, 0.35, 0.06, 0.3, 0.9, 0],
             .gustFront: [0.9, 0.2, 0, 0.5, 1, 0, 0, 1],
             .virga: [0.7, 0, 0, 0.6, 0.4, 0, 0, 0.3],
+            .ashfall: [0.55, 0, 0, 0.35, 0.25, 0, 0, 0],
+            .supercell: [0.85, 0.6, 0, 0.15, 0.6, 0, 0, 0.8],
         ]
         for k in WeatherKind.allCases {
             let v = k.values
@@ -1123,7 +1125,7 @@ extension LivingSkyTests {
     /// their flags (a gust front ends in rain and is rough; virga is neither), the two new fields only in their own kind,
     /// blending like the rest, and in no world's Random Beautiful unless its table adds them.
     func testStormWeatherValues() {
-        XCTAssertEqual(Array(WeatherKind.allCases.suffix(2)), [.gustFront, .virga], "appended at the end")
+        XCTAssertEqual(Array(WeatherKind.allCases[27...28]), [.gustFront, .virga], "appended at the end (Fire & Neon's two after)")
         XCTAssertEqual([WeatherKind.gustFront.rawValue, WeatherKind.virga.rawValue], ["gustFront", "virga"])
         let g = WeatherKind.gustFront.values
         // cloud, rain, snow, mist, wind, gust, outflow, virga

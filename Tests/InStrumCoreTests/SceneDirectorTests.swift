@@ -341,7 +341,7 @@ final class SceneDirectorTests: XCTestCase {
         XCTAssertEqual(lake.sky.sheetSky.spawned, 0, "the settings' Off")
         XCTAssertEqual(lake.lastSky?.supercell, 0)
         XCTAssertEqual(lake.parameters.choice(SkyExtraMode.crawlersID), "", "the lake has no parameter of its own")
-        XCTAssertEqual(lake.sky.randomExtras, [.gustFront: 0.3], "the lake's table: storms appear there, it isn't dry")
+        XCTAssertEqual(lake.sky.randomExtras, [.gustFront: 0.3, .supercell: 0.25], "the lake's table: storms appear there, it isn't dry")
 
         let probe = SceneDirector(entry: ThemeEntry.make(StormSkyProbe.self), state: ThemeState(),
                                   reaction: ReactionPresets.expressivePianist)
@@ -363,7 +363,7 @@ final class SceneDirectorTests: XCTestCase {
         for i in 361...660 { _ = probe.step(dt: 1, t: Double(i), quality: .high) }
         XCTAssertEqual(probe.lastSky?.supercell, 0)
         XCTAssertGreaterThan(probe.sky.crawlerSky.spawned, before)
-        XCTAssertEqual(probe.sky.randomExtras, [.gustFront: 0.3, .virga: 0.5])
+        XCTAssertEqual(probe.sky.randomExtras, [.gustFront: 0.3, .virga: 0.5, .supercell: 0.25])
     }
 
     /// Endless Rise's pulse (Storms spec §3): its Pulse's Tempo with the Pulse as the gate, while the Pulse is up, so the
