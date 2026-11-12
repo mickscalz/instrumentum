@@ -21,6 +21,9 @@ enum BedroomDawnShaders {
         float4 f;        // the floor patch's depth (window heights per floor depth), the window's bar count, unused…
         float4 birds[3]; // x (scene units), y (NDC), wing phase, flying 0/1 (x < -9: none)
         float4 bars[19]; // the Window Kit's bars: lo, hi (window coordinates), kind
+        float4 plane;    // Excitement: a paper plane gliding past: x (scene units), y (NDC), roll (radians), heading ±1 (x < -9: none)
+        float4 sillBird; // a bird on the outer sill: x (scene units), y (NDC: its feet), phase, ±1 perched / ±2 flying (x < -9: none)
+        float4 prism;    // the rainbow on the wall: centre (NDC x, y), strength 0…1, its tilt (radians)
     };
 
     constant float2 bedQuad[6] = { float2(0, 0), float2(1, 0), float2(0, 1), float2(1, 0), float2(1, 1), float2(0, 1) };
@@ -54,6 +57,13 @@ enum BedroomDawnShaders {
             if (v >= bar.x && v <= bar.y) return false;
         }
         return true;
+    }
+
+    // The spectrum a bevelled edge throws: red at 0 … violet at 1, a little softened.
+    float3 bedSpectrum(float t) {
+        float h = 0.78 * saturate(t);
+        float3 k = saturate(abs(fract(float3(h) + float3(0.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0) - 1.0);
+        return mix(k, float3(1.0), 0.12) * (1.0 - 0.35 * smoothstep(0.7, 1.0, t));
     }
 
     struct BedOut { float4 pos [[position]]; float2 ndc; };
@@ -93,6 +103,58 @@ enum BedroomDawnShaders {
         float glassBottom = c.rect.y;
         float3 warmLamp = float3(1.0, 0.72, 0.4);
         float3 windowWarm = float3(1.0, 0.74, 0.42);
+
+        // ---- a paper plane gliding past and a bird on the sill (surprises), nearest of all: against the low sun mostly
+        // in silhouette, rimmed with its light
+        if (c.plane.x > -9.0) {
+            float S = 0.045;
+            // Seen a little from below, its wings show more of themselves as it rolls.
+            float tilt = max(0.25, abs(sin(c.plane.z + 0.6)));
+            float2 q = float2((sx - c.plane.x) * c.plane.w, (sy - c.plane.y) / tilt) / S;
+            if (abs(q.x) < 0.7 && abs(q.y) < 0.4) {
+                // A dart: nose ahead, its two wings folded back from the crease, the far wing a little darker.
+                float span = 0.24 * (0.5 - q.x);
+                bool wing = q.x > -0.5 && q.x < 0.5 && abs(q.y) < span;
+                if (wing) {
+                    float far = q.y > 0.0 ? 0.78 : 1.0;
+                    float crease = 1.0 - 0.35 * exp(-q.y * q.y / 0.0006);
+                    float3 paper = float3(0.92, 0.9, 0.86) * (skyAmb * 0.9 + sunCol * 0.45 * (0.5 + 0.5 * tilt)) * far * crease;
+                    ColorDepth o; o.color = float4(paper, 1); o.depth = float4(0.25, 0, 0, 1); return o;
+                }
+            }
+        }
+        if (c.sillBird.x > -9.0) {
+            float S = 0.05;
+            float dir = c.sillBird.w < 0.0 ? -1.0 : 1.0;
+            bool flying = abs(c.sillBird.w) > 1.5;
+            float2 q = float2((sx - c.sillBird.x) * dir, sy - c.sillBird.y) / S;
+            if (abs(q.x) < 1.2 && q.y > -0.1 && q.y < 1.2) {
+                float bob = flying ? 0.0 : 0.04 * sin(c.sillBird.z);
+                float2 bq = (q - float2(0.0, 0.4)) / float2(0.44, 0.32);
+                float2 hq = (q - float2(0.32, 0.74 + bob)) / 0.21;
+                float body = length(bq), head = length(hq);
+                bool tail = q.x < -0.3 && q.x > -0.8 && abs(q.y - 0.36 - 0.25 * (q.x + 0.3)) < 0.06 + 0.12 * (-0.3 - q.x);
+                bool beak = q.x > 0.48 && q.x < 0.62 && abs(q.y - 0.72 - bob) < 0.035 * (0.62 - q.x) / 0.14;
+                bool legs = !flying && q.y < 0.12 && (abs(q.x + 0.06) < 0.02 || abs(q.x - 0.1) < 0.02);
+                bool wings = false;
+                if (flying) {
+                    float flap = sin(c.sillBird.z) * 0.6;
+                    wings = abs(q.y - 0.45 - abs(q.x) * flap) < 0.06 && abs(q.x) < 0.95;
+                }
+                float shape = min(body, head);
+                if (shape < 1.0 || tail || beak || legs || wings) {
+                    // A robin: olive-brown back, an orange-red breast, in the low sun's backlight with a bright rim.
+                    bool breast = q.x > -0.05 && q.y < 0.68 && q.y > 0.12 && shape < 1.0;
+                    float3 albedo = breast ? float3(0.75, 0.33, 0.12) : float3(0.3, 0.25, 0.17);
+                    if (beak || legs) albedo = float3(0.12, 0.1, 0.08);
+                    float rim = smoothstep(0.7, 1.0, shape) * (shape < 1.0 ? 1.0 : 0.0);
+                    float3 col = albedo * (skyAmb * 0.55 + sunCol * 0.12) + sunCol * (0.45 * rim);
+                    float2 eq = q - float2(0.38, 0.79 + bob);
+                    if (dot(eq, eq) < 0.0025) col = float3(0.01) + sunCol * 0.05;
+                    ColorDepth o; o.color = float4(col, 1); o.depth = float4(0.2, 0, 0, 1); return o;
+                }
+            }
+        }
 
         // ---- the big tree at the right, its canopy moving in the wind (nearest)
         float treeX = halfW * 0.78;
@@ -324,6 +386,19 @@ enum BedroomDawnShaders {
             col = albedo * (fromWindow + lampThrough + fairyGlow + ambient);
             if (sy < floorLine + 0.04) col = float3(0.9, 0.88, 0.84) * (fromWindow * 0.8 + ambient + fairyGlow) * (sy < floorLine + 0.006 ? 0.6 : 1.0);
             wallLight = 1.0;
+            // The rainbow (a surprise): the low sun split by the glass's bevelled edge, a short bright band of spectrum
+            // on the plaster.
+            if (c.prism.z > 0.001) {
+                float2 d = float2((p.x - c.prism.x) * aspect, p.y - c.prism.y);
+                float ca = cos(c.prism.w), sa = sin(c.prism.w);
+                float along = d.x * ca + d.y * sa, across = -d.x * sa + d.y * ca;
+                across -= 1.6 * along * along;
+                float band = (1.0 - smoothstep(0.045, 0.075, abs(along))) * (1.0 - smoothstep(0.016, 0.024, abs(across)));
+                if (band > 0.0) {
+                    float3 spec = bedSpectrum(across / 0.04 + 0.5);
+                    col += albedo * spec * (band * c.prism.z * 0.9);
+                }
+            }
         } else {
             // Floorboards, and the window's light on them: the panes with the bars' shadows and dappled leaves.
             float k = saturate((floorLine - sy) / max(floorLine - c.a.x, 1e-3));    // 0 at the wall … 1 near us

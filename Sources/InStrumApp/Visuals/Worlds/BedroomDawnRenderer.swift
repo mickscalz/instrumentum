@@ -7,6 +7,11 @@ import InStrumCore
 /// through a painted sash window (Galaxy Warp over the sky when chosen), weather and drops on the glass, the Window
 /// Kit's glass and sashes, the room with the window's light on the floor, light shafts through the panes, sheer
 /// curtains moving in the breeze and your notes' puffs, dust motes, fairy lights and soft peach keys.
+///
+/// Excitement (Fire & Neon spec §5.5): the sun breaking through floods the room (through the cloud, the shafts and the
+/// floor's patch brighter, the glow up), its light through the scene's `FlashLimiter` (a glow under gentle visuals); the
+/// light gathers with tension; Energy livens the motes. A bird on the sill and a paper plane are drawn outside, the
+/// rainbow (the sun split by the glass's bevelled edge) on the wall beside the window. Three uniform rows.
 @MainActor
 final class BedroomDawnRenderer: ThemeRenderer {
     /// Dust motes drawn (fewer on Smooth).
@@ -35,7 +40,10 @@ final class BedroomDawnRenderer: ThemeRenderer {
     private var showWarp = false
     private let scene: SkyPipeline
     private let room, shafts, curtain, sprites, keys: MTLRenderPipelineState
-    private var bedU = [SIMD4<Float>](repeating: .zero, count: 10 + 3 + 19)
+    /// BedU's rows: 10, the 3 birds, the 19 bars, then the paper plane, the bird on the sill and the rainbow.
+    nonisolated static let rowPlane = 32, rowSillBird = 33, rowPrism = 34
+    nonisolated static let uniformCount = 35
+    private var bedU = [SIMD4<Float>](repeating: .zero, count: BedroomDawnRenderer.uniformCount)
     private var keyInstances: [KeyInstance] = []
     private var spriteData: [SIMD4<Float>] = []
     private var curtainData: [SIMD4<Float>] = []
@@ -56,6 +64,18 @@ final class BedroomDawnRenderer: ThemeRenderer {
     private(set) var shaftOut: Float = 0
     private(set) var glintOut: Float = 0
     private(set) var glowOut: Float = 0
+    private var primed = false
+    private var floodGlow = ExcitementGlow()
+    /// Excitement as drawn (tests read them): the flood's light after the limiter and what it asked for, the direct sun
+    /// through the window, and which surprises are in view.
+    private(set) var floodOut: Float = 0
+    private(set) var floodRequest: Float = 0
+    private(set) var directOut: Float = 0
+    private(set) var surprisesDrawn = 0
+    var flashesInLastSecond: Int { limiter.recent }
+    var flashTotal: Int { limiter.total }
+    /// The shader's rows (tests read them).
+    var uniforms: [SIMD4<Float>] { bedU }
     /// Curtain vertices drawn this frame (two panels).
     private(set) var curtainVertexCount = 0
     /// Instance and vertex buffers made so far: a ring of three, grown only when too small.
@@ -200,11 +220,25 @@ final class BedroomDawnRenderer: ThemeRenderer {
         let ahead = min(max(ls.z * 3, 0), 1)
         // Direct sun comes through once the disk clears the rooftops (most striking just after sunrise).
         let disk = Float(Self.smooth(-1.5, 2.5, s.sun.altitude))
-        let direct = disk * ahead * (1 - 0.8 * s.cloudCover) * (1 - 0.5 * s.mist)
         limiter.gentle = gentle
         let exposure = MoodLook.exposure(frame.mood) * weather.exposureBoost * (1 + 0.12 * frame.glow * sparkleScale)
-        let limited = limiter.limit(exposure: exposure, sparkle: 1, dt: dt)
-        glowOut = frame.glow * limited.sparkle
+        // The flood's light rides on the exposure, through the limiter (primed on the room's own, so arriving is never a
+        // flash); under gentle visuals it is a glow. The sun breaks through the cloud and the mist as it comes.
+        if !primed {
+            primed = true
+            for _ in 0..<16 { _ = limiter.limit(exposure: exposure, sparkle: 1, dt: 1) }
+        }
+        let request = ExcitementGlow.unit(frame.flood)
+        let asked = ExcitementGlow.ask(request, gentle: gentle, scale: 0.22)
+        let limited = limiter.limit(exposure: exposure * (1 + asked), sparkle: 1, dt: dt)
+        let passed = ExcitementGlow.passed(limited: limited.exposure, base: exposure, asked: asked)
+        floodRequest = request
+        floodOut = floodGlow.update(request: request, passed: passed, gentle: gentle, dt: dt)
+        let through: Float = (1 - 0.8 * s.cloudCover * (1 - floodOut)) * (1 - 0.5 * s.mist * (1 - floodOut))
+        let direct = disk * ahead * through * (1 + 0.7 * floodOut)
+        directOut = direct
+        let gathered = 0.55 * ExcitementGlow.unit(frame.gather) * limited.sparkle
+        glowOut = max(frame.glow * limited.sparkle, gathered, floodOut)
         let setting = Float(p.number("light"))
         shaftOut = direct * setting * (0.45 + 0.55 * glowOut)
         let motesSetting = Float(p.number("motes"))
@@ -258,6 +292,8 @@ final class BedroomDawnRenderer: ThemeRenderer {
         }
         let bars = spec.bars()
         for i in 0..<19 { bedU[13 + i] = i < bars.count ? bars[i] : .zero }
+        updateSurprises(frame, spec: spec, aspect: aspect, horizon: horizonY, floor: floor, beam: v, direct: direct,
+                        setting: setting)
 
         // Curtains: each cloth point projected, with a normal from its neighbours and how folded it is.
         curtainData.removeAll(keepingCapacity: true)
@@ -300,8 +336,9 @@ final class BedroomDawnRenderer: ThemeRenderer {
             }
             // Dust shows in the beams against the dim room; over the bright glass it all but disappears.
             let overGlass = pos.x > spec.rect.x && pos.x < spec.rect.z && pos.y > spec.rect.y && pos.y < spec.rect.w
+            let stirred: Float = 1 + 0.6 * frame.energy
             let bright = motesSetting * (0.06 + 0.7 * lit * direct * (0.4 + 0.6 * glowOut)) * (overGlass ? 0.3 : 1)
-                * (1 + 2.5 * m.glint * limited.sparkle)
+                * (1 + 2.5 * m.glint * limited.sparkle) * stirred
             guard bright > 0.01 else { continue }
             let size: Float = 0.0035 + 0.004 * m.position.z
             spriteData.append(SIMD4(pos.x, pos.y, size, min(bright, 2)))
@@ -362,6 +399,52 @@ final class BedroomDawnRenderer: ThemeRenderer {
     }
 
     private var glassDevice: MTLDevice { curtainIndices.device }
+
+    /// The surprises' rows: the paper plane gliding past outside, the bird on the outer sill (flying in, hopping and
+    /// looking about, flying off), and the rainbow on the wall beside the window on the side the sun's light goes.
+    private func updateSurprises(_ frame: BedroomFrame, spec: WindowSpec, aspect: Float, horizon: Float, floor: Float,
+                                 beam: SIMD2<Float>, direct: Float, setting: Float) {
+        let glassW = spec.rect.z - spec.rect.x, glassH = spec.rect.w - spec.rect.y
+        let halfW = 0.5 * glassW * aspect
+        bedU[Self.rowPlane] = SIMD4(-10, 0, 0, 0)
+        bedU[Self.rowSillBird] = SIMD4(-10, 0, 0, 0)
+        bedU[Self.rowPrism] = .zero
+        surprisesDrawn = 0
+        for s in frame.surprises {
+            let age = s.age
+            let side: Float = s.unit(0) < 0.5 ? -1 : 1
+            switch s.index {
+            case 0:
+                // On the sill: in from the side over 0.6 s, a few hops and looks about, then off.
+                let arrive = 1 - ExcitementPlay.smooth(0, 0.6, age)
+                let leave = ExcitementPlay.smooth(s.duration - 1.2, s.duration, age)
+                let perch: Float = halfW * (s.unit(1) * 1.2 - 0.6)
+                let hop: Float = 0.03 * Float(Int(age * 0.8) % 3 - 1)
+                let x: Float = perch + hop + side * halfW * (0.6 * arrive + 0.8 * leave)
+                let y: Float = spec.rect.y + 0.004 + glassH * (0.25 * arrive + 0.45 * leave)
+                let flying: Float = arrive > 0.02 || leave > 0.02 ? 2 : 1
+                let phase: Float = flying > 1.5 ? age * 22 : age * 1.7 + 6.28 * s.unit(2)
+                bedU[Self.rowSillBird] = SIMD4(x, y, phase, flying * side)
+            case 1:
+                // A paper plane gliding across outside, sinking gently, rolling lazily.
+                let run: Float = s.progress
+                let x: Float = side * (halfW + 0.15) * (2 * run - 1)
+                let y: Float = horizon + glassH * (0.45 + 0.2 * s.unit(1) - 0.25 * run) + 0.01 * sin(age * 2.3)
+                let roll: Float = 0.35 * sin(age * 1.7 + 3 * s.unit(2))
+                bedU[Self.rowPlane] = SIMD4(x, y, roll, side)
+            default:
+                // The rainbow: on the wall beside the window, where the light leaves the frame's bevelled edge.
+                let env = ExcitementPlay.envelope(age: age, life: s.duration, rise: 2, fall: 3)
+                let fw = spec.frameWidth
+                let x: Float = beam.x < 0 ? spec.rect.x - fw - 0.1 : spec.rect.z + fw + 0.1
+                let y: Float = max(floor + 0.08, spec.rect.y + 0.2 * glassH)
+                let strength: Float = env * min(1, direct * 1.4) * (0.4 + 0.6 * setting)
+                bedU[Self.rowPrism] = SIMD4(x, y, strength, beam.x < 0 ? 0.5 : -0.5)
+            }
+            surprisesDrawn += 1
+        }
+        _ = aspect
+    }
 
     /// The panes in NDC (x0, y0, x1, y1), for tests.
     func glassPanesNDC() -> [SIMD4<Float>] {

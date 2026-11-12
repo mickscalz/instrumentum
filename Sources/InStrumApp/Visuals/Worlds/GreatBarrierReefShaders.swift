@@ -36,7 +36,7 @@ enum GreatBarrierReefShaders {
         float4 reef;        // polyps open 0…1, unused, glow gain, patches drawn
         float4 wave;        // the colour wave's fronts (frame x 0…1: left, right), their width, strength (limited)
         float4 waveColour;  // rgb, the school's flash (limited)
-        float4 spawn;       // the slick 0…1, the spawn's intensity, the light shafts' strength, unused
+        float4 spawn;       // the slick 0…1, the spawn's intensity, the light shafts' strength, a spawning burst's haze 0…1
         float4 cay;         // the cay's azimuth (radians), the view's azimuth (radians), the birds' visibility, unused
         float4 groups[7];   // per coral group: centre x, top, half-width (stage units), glow 0…1 (limited)
         float4 hues[7];     // per group: its fluorescence (linear rgb, fully saturated), kind (0 brain, 1 plate, 2 soft, 3 staghorn)
@@ -762,6 +762,15 @@ enum GreatBarrierReefShaders {
             glow += r.waveColour.rgb * (wave * 0.32 * (exp(-a * a) + exp(-b * b)) * lowness * glowGain);
         }
 
+        // A spawning burst's haze (a big moment): the water above the reef clouding pink with spawn, thickest over the
+        // corals, thinning toward the surface.
+        float haze = r.spawn.w;
+        if (haze > 0.001) {
+            float hy = (P.y - 0.5) / 0.35;
+            float cloud = exp(-hy * hy) * (0.75 + 0.25 * vnoise3(float3(P * 3.0, t * 0.05)));
+            col += float3(1.0, 0.55, 0.62) * (waterLight(D, L) * kWaterTint * 0.25 + float3(0.02, 0.015, 0.018)) * (haze * cloud);
+        }
+
         // The light shafts: soft bands slanting down from the surface along the refracted sun.
         float shafts = r.spawn.z;
         if (shafts > 0.001) {
@@ -793,18 +802,121 @@ enum GreatBarrierReefShaders {
     struct ReefDot { float4 a; float4 c; };
     struct ReefDotOut { float4 pos [[position]]; float2 uv; float4 c; float2 ndc; };
 
+    // ---------------------------------------------------------------- the visitors (surprises)
+    // Each in its own units (uv −1…1, facing +x, y up), a stroke's phase in turns; returns its cover (0…1) and through
+    // `pale` how much of it is its pale side, through `dark` its dark markings.
+
+    /// A blacktip reef shark side on: a slim body, the first dorsal and the pectoral fins swept back, the tall upper lobe
+    /// of the tail; its tail sweeping side to side, so the caudal fin narrows and widens. Black tips on the fins.
+    float reefShark(float2 p, float beat, float px, thread float& pale, thread float& dark) {
+        float x = p.x, y = p.y;
+        float e = (x - 0.12) / 0.8;
+        float half = 0.14 * sqrt(max(0.0, 1.0 - e * e));
+        float stock = (x < -0.5 && x > -0.8) ? 0.03 + 0.05 * (x + 0.8) / 0.3 : 0.0;
+        float body = 1.0 - smoothstep(-px, px, abs(y - 0.01 * x) - max(half, stock));
+        float k = 0.55 + 0.45 * abs(cos(beat * 6.2831853));
+        float2 d1 = p - float2(-0.04, 0.17);
+        float2 r1 = float2(d1.x * 0.88 + d1.y * 0.47, -d1.x * 0.47 + d1.y * 0.88);
+        float dorsal = (1.0 - smoothstep(0.9, 1.0, length(r1 / float2(0.07, 0.16)))) * step(0.08, y);
+        float2 d2 = p - float2(0.2, -0.15);
+        float2 r2 = float2(d2.x * 0.88 - d2.y * 0.47, d2.x * 0.47 + d2.y * 0.88);
+        float pect = (1.0 - smoothstep(0.9, 1.0, length(r2 / float2(0.15, 0.045)))) * step(y, -0.06);
+        float2 d3 = p - float2(-0.84, 0.13);
+        float2 r3 = float2(d3.x * 0.88 + d3.y * 0.47, -d3.x * 0.47 + d3.y * 0.88);
+        float upper = 1.0 - smoothstep(0.9, 1.0, length(r3 / float2(0.055 * k, 0.2)));
+        float2 d4 = p - float2(-0.8, -0.08);
+        float2 r4 = float2(d4.x * 0.83 - d4.y * 0.56, d4.x * 0.56 + d4.y * 0.83);
+        float lower = 1.0 - smoothstep(0.9, 1.0, length(r4 / float2(0.045 * k, 0.11)));
+        float cover = max(max(body, dorsal), max(pect, max(upper, lower)));
+        pale = body * (1.0 - smoothstep(-0.06, 0.0, y));
+        dark = max(dorsal * step(0.27, y), max(upper * step(0.25, y), lower * step(y, -0.15)));
+        return cover;
+    }
+
+    /// A manta from a little below as it glides: its broad wings spanning up and down the view (foreshortened as they
+    /// beat), the leading edge swept back, the cephalic fins in front, a thin tail behind. A pale belly, dark margins.
+    float reefManta(float2 p, float beat, float px, thread float& pale, thread float& dark) {
+        float flap = sin(beat * 6.2831853);
+        float span = 0.92 * (0.8 + 0.2 * cos(beat * 6.2831853));
+        float ax = abs(p.y) / max(span, 0.1);
+        float cover = 0.0;
+        if (ax < 1.0) {
+            float lead = 0.3 - 0.42 * ax * ax - 0.07 * flap * ax;
+            float trail = -0.22 + 0.24 * ax;
+            cover = (1.0 - smoothstep(lead - px, lead + px, p.x)) * smoothstep(trail - px, trail + px, p.x);
+        }
+        float2 h1 = (p - float2(0.36, 0.08)) / float2(0.08, 0.025);
+        float2 h2 = (p - float2(0.36, -0.08)) / float2(0.08, 0.025);
+        float horns = max(1.0 - smoothstep(0.8, 1.0, length(h1)), 1.0 - smoothstep(0.8, 1.0, length(h2)));
+        float tail = (p.x < -0.18 && p.x > -0.9) ? 1.0 - smoothstep(0.008, 0.016, abs(p.y + 0.02 * sin(p.x * 6.0 + beat))) : 0.0;
+        cover = max(cover, max(horns, tail));
+        pale = cover * (1.0 - smoothstep(0.7, 0.95, ax));
+        dark = max(cover * smoothstep(0.8, 0.98, ax), max(horns, tail));
+        return cover;
+    }
+
+    /// A green turtle side on: its domed shell with its scutes, a flat underside, the head forward, the long fore
+    /// flipper rowing, the hind flipper trailing.
+    float reefTurtle(float2 p, float beat, float px, thread float& pale, thread float& dark) {
+        float stroke = sin(beat * 6.2831853);
+        float2 sq = (p - float2(-0.05, -0.04)) / float2(0.5, 0.3);
+        float shell = (1.0 - smoothstep(1.0 - px * 3.0, 1.0 + px * 3.0, length(sq))) * smoothstep(-0.12, -0.09, p.y);
+        float head = 1.0 - smoothstep(0.85, 1.0, length((p - float2(0.53, 0.0)) / float2(0.12, 0.08)));
+        float fa = -2.2 + 0.75 * stroke;
+        float2 fd = float2(cos(fa), sin(fa));
+        float2 fv = p - float2(0.24, -0.06);
+        float along = dot(fv, fd), across = dot(fv, float2(-fd.y, fd.x));
+        float fw = 0.07 * (1.0 - saturate(along / 0.52)) + 0.015;
+        float fore = (along > 0.0 && along < 0.52) ? 1.0 - smoothstep(fw - px, fw + px, abs(across)) : 0.0;
+        float2 hv = p - float2(-0.5, -0.08);
+        float2 hr = float2(hv.x * 0.95 - hv.y * 0.3, hv.x * 0.3 + hv.y * 0.95);
+        float hind = 1.0 - smoothstep(0.85, 1.0, length(hr / float2(0.13, 0.04)));
+        float scutes = smoothstep(0.42, 0.5, abs(fract(sq.x * 2.4 + 0.3 * sq.y) - 0.5) + abs(fract(sq.y * 1.6) - 0.5) * 0.4);
+        pale = max(head, max(fore, hind)) * 0.6;
+        dark = shell * scutes * step(-0.03, p.y);
+        return max(max(shell, head), max(fore, hind));
+    }
+
+    /// A visitor's colour and cover (premultiplied): lit from above by the water's light (`light`), counter-shaded.
+    float4 reefVisitor(float2 uv, int shape, float beat, float4 c, float px) {
+        float pale = 0.0, dark = 0.0, cover;
+        float3 albedo;
+        float3 paleCol, darkCol;
+        if (shape == 0) {
+            cover = reefManta(uv, beat, px, pale, dark);
+            albedo = float3(0.16, 0.17, 0.2); paleCol = float3(0.78, 0.8, 0.82); darkCol = float3(0.05, 0.06, 0.07);
+        } else if (shape == 1) {
+            cover = reefTurtle(uv, beat, px, pale, dark);
+            albedo = float3(0.36, 0.3, 0.17); paleCol = float3(0.55, 0.52, 0.42); darkCol = float3(0.16, 0.12, 0.07);
+        } else {
+            cover = reefShark(uv, beat, px, pale, dark);
+            albedo = float3(0.42, 0.4, 0.34); paleCol = float3(0.82, 0.82, 0.78); darkCol = float3(0.04, 0.04, 0.045);
+        }
+        if (cover <= 0.001) return float4(0.0);
+        float3 col = mix(mix(albedo, paleCol, pale), darkCol, dark);
+        float top = 0.55 + 0.45 * saturate(0.5 + uv.y);
+        col *= c.rgb * (1.6 * top);
+        float a = cover * c.a;
+        return float4(col * a, a);
+    }
+
     vertex ReefDotOut reef_dot_vertex(uint vid [[vertex_id]], uint iid [[instance_id]], constant ReefDot* dots [[buffer(0)]],
                                       constant float4& kind [[buffer(1)]]) {
         float2 corners[6] = { float2(-1, -1), float2(1, -1), float2(-1, 1), float2(1, -1), float2(1, 1), float2(-1, 1) };
         ReefDot item = dots[iid];
         float2 c = corners[vid];
         float2 off;
+        float2 uvOut = c;
         if (kind.x < 0.5) {
             // Turned to its heading, mirrored when it swims left so its back stays up.
             float ca = cos(item.a.w), sa = sin(item.a.w);
             float flip = ca < 0.0 ? -1.0 : 1.0;
             float2 local = float2(c.x * item.a.z, c.y * item.a.z * 0.45 * flip);
             off = float2(local.x * ca - local.y * sa, local.x * sa + local.y * ca);
+        } else if (kind.x > 1.5) {
+            // A visitor: a square of its half-length, its own units facing the way it swims.
+            off = c * item.a.z;
+            uvOut = float2(c.x * (cos(item.a.w) < 0.0 ? -1.0 : 1.0), c.y);
         } else {
             off = c * item.a.z * 2.0;
         }
@@ -812,7 +924,7 @@ enum GreatBarrierReefShaders {
         ReefDotOut o;
         o.ndc = item.a.xy + off;
         o.pos = float4(o.ndc, 0, 1);
-        o.uv = c;
+        o.uv = uvOut;
         o.c = item.c;
         return o;
     }
@@ -820,6 +932,11 @@ enum GreatBarrierReefShaders {
     fragment float4 reef_dot_fragment(ReefDotOut in [[stage_in]], constant float4& kind [[buffer(0)]],
                                       constant ReefU& r [[buffer(1)]]) {
         if (in.ndc.y > reefMeniscus(in.ndc.x, r) - 0.003) discard_fragment();
+        if (kind.x > 1.5) {
+            float4 v = reefVisitor(in.uv, int(kind.z + 0.5), kind.w, in.c, 0.02);
+            if (v.a < 0.002) discard_fragment();
+            return v;
+        }
         float a;
         if (kind.x < 0.5) {
             // A small fish seen side-on: a slim body (its back darker than its belly) and a forked tail.

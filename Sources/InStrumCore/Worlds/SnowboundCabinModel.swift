@@ -23,15 +23,32 @@ public struct CabinFrame: AmbienceProviding {
     public var time: Double
     /// Galaxy Warp past the window, when it's the chosen visual (notes then streak instead of melting patches).
     public var warp: WarpFrame?
+    /// Excitement (Fire & Neon spec §5.5): the fire roaring up (0…1 × the moment's strength, before the flash limiter),
+    /// the snow whirling past the glass (0…1), the wind gathering with tension (0…1), the gust after a drop (0…1), the
+    /// drawn Energy, and the surprises playing (0 an owl on the sill, 1 the aurora's edge, 2 a star through a break in
+    /// the clouds).
+    public var roar: Float = 0
+    public var whirl: Float = 0
+    public var gather: Float = 0
+    public var gust: Float = 0
+    public var energy: Float = 0
+    public var surprises: [PlayingSurprise] = []
+    public var reduceMotion = false
 }
 
 /// Set 5's world: a log cabin's window on a snowy valley at night or day, frost on the glass, the fire behind you.
 /// Its visual, Frost Grow, lets the frost creep further while you hold notes, and each note melts a warm patch.
-public struct SnowboundCabinModel: ThemeModel, MoodAware, SkyAware {
+public struct SnowboundCabinModel: ThemeModel, MoodAware, SkyAware, ExcitementAware, SurpriseListing {
     public typealias Frame = CabinFrame
     public static let id = "snowbound-cabin"
     public static let displayName = "Snowbound Cabin Window"
     public static let visuals = ["Frost Grow", "Galaxy Warp"]
+    /// The surprises (spec §5.5): an owl on the sill, the aurora's edge, a star through a break in the clouds. The aurora
+    /// and the star need the dark: by day the owl comes instead.
+    public static let surpriseCount = 3
+    public static let surpriseSeconds: [Float] = [10, 18, 12]
+    /// The fire roars up (spec §5.5) for this long (a drop's, the gust's release, longer).
+    public static let momentSeconds: Float = 4.5, dropSeconds: Float = 5.5
 
     public var mood = Mood.neutral
     private var sky = SkyState()
@@ -41,12 +58,34 @@ public struct SnowboundCabinModel: ThemeModel, MoodAware, SkyAware {
     private var held: [UInt8: Float] = [:]
     private var keyGlow = [Float](repeating: 0, count: 88)
     private var time = 0.0
+    private var excite = ExcitementFrame()
+    private var play = ExcitementPlay()
 
     private static let layout = KeyboardLayout.keys()
 
     public init() {}
 
     public mutating func handle(_ e: PerformanceEvent) { pending.append(e) }
+
+    /// Excitement's frame for the next step; its moment and surprise are taken once.
+    public mutating func setExcitement(_ e: ExcitementFrame) { excite = e }
+
+    /// The surprise that plays for `index` under this sky: the aurora's edge and the star need the sun 10° down (the owl
+    /// comes by day instead).
+    static func available(_ index: Int, sky: SkyState) -> Int {
+        let dark = sky.sun.altitude.isFinite && sky.sun.altitude < -10
+        return index == 0 || dark ? index : 0
+    }
+
+    /// The fire's roar `age` seconds into a moment `life` long: up in 0.35 s, held, dying back over its last 3 s (0…1).
+    public static func roar(age: Float, life: Float) -> Float {
+        ExcitementPlay.envelope(age: age, life: life, rise: 0.35, fall: 3)
+    }
+
+    /// The snow whirling past the glass: the eddy rises in 0.6 s and blows itself out over 2.5 s (0…1).
+    public static func whirl(age: Float, life: Float) -> Float {
+        ExcitementPlay.envelope(age: age, life: min(life, 3.6), rise: 0.6, fall: 2.5)
+    }
 
     public mutating func setSky(_ s: SkyState) { sky = Self.coldSky(s) }
 
@@ -95,6 +134,39 @@ public struct SnowboundCabinModel: ThemeModel, MoodAware, SkyAware {
         frost.step(dt: dt, baseFrost: sky.frost * frost.frost, roles: roles)
         let warpFrame = warp.step(dt: dt, roles: roles, inputs: inputs)
 
+        // Excitement (spec §5.5): Energy brings the snow down thicker and flares the fire; a moment roars the fire up and
+        // whirls the snow past the glass; tension raises the wind, and a drop is the gust. The surprises that need the
+        // dark come only in the dark (the owl otherwise); the aurora's edge is the shared sky's own, called here.
+        var e = excite
+        excite.moment = nil
+        excite.surprise = nil
+        if let sp = e.surprise { e.surprise = WorldSurprise(index: Self.available(sp.index, sky: sky), seed: sp.seed) }
+        play.step(dt: dt, frame: e, momentSeconds: Self.momentSeconds, dropSeconds: Self.dropSeconds,
+                  surpriseSeconds: Self.surpriseSeconds)
+        let energy = play.energy
+        var roar: Float = 0, whirl: Float = 0, gust: Float = 0
+        if let m = play.moment {
+            roar = Self.roar(age: m.age, life: m.duration) * m.strength
+            whirl = Self.whirl(age: m.age, life: m.duration) * m.strength
+            if m.isDrop { gust = max(play.drop, whirl) }
+        }
+        var shown = sky
+        let snow = ExcitementPlay.unit(sky.snow)
+        shown.snow = min(1, snow + (1 - snow) * (0.3 * energy + 0.45 * whirl))
+        let windNow = ExcitementPlay.unit(sky.wind)
+        shown.wind = min(1, windNow + 0.45 * play.tension + 0.5 * whirl + 0.4 * gust)
+        shown.gust = min(1, ExcitementPlay.unit(sky.gust) + 0.35 * play.tension + 0.6 * max(whirl, gust))
+        if let a = play.surprise(1) {
+            // The aurora's edge: a band low over the far peaks, rising and fading (the shared sky draws it).
+            let edge = ExcitementPlay.envelope(age: a.age, life: a.duration, rise: 4, fall: 5)
+            shown.aurora = max(shown.aurora, 0.55 * edge)
+            if edge > 0.01, sky.aurora < 0.05 {
+                shown.auroraAltitude = 12
+                shown.auroraAlways = true
+                shown.auroraStorm = max(shown.auroraStorm, 0.25)
+            }
+        }
+
         // Keys glow ember amber while held, then fade.
         let fall = Float(pow(0.5, dt / (roles[.linger] > 0.5 ? 1.2 : 0.35)))
         for i in 0..<88 {
@@ -105,18 +177,31 @@ public struct SnowboundCabinModel: ThemeModel, MoodAware, SkyAware {
 
         let hour = sky.hourOfDay
         let farCabinLit = p.number("farCabin") > 0.02 && sky.sun.altitude < -4 && !(hour >= 1 && hour < 5)
+        // Energy flares the fire a little (as a chord does); its roar is the renderer's to light, through the flash
+        // limiter. The draught of a rising wind bows the flames.
+        let flare = max(frost.flare, 0.35 * energy)
+        let flicker = Self.flicker(time) * (1 - 0.15 * play.tension)
 
-        return CabinFrame(sky: sky, frostLevel: frost.level, patches: warping ? [] : frost.patches,
-                          flare: frost.flare, flareWarm: frost.flareWarm, flakeGlints: frost.flakeGlints,
-                          fireFlicker: Self.flicker(time), farCabinLit: farCabinLit, keys: keys,
-                          ambience: ambience(roles: roles, params: p), mood: mood, time: time,
-                          warp: warping ? warpFrame : nil)
+        var frame = CabinFrame(sky: shown, frostLevel: frost.level, patches: warping ? [] : frost.patches,
+                               flare: flare, flareWarm: frost.flareWarm, flakeGlints: frost.flakeGlints,
+                               fireFlicker: flicker, farCabinLit: farCabinLit, keys: keys,
+                               ambience: ambience(roles: roles, params: p, sky: shown, roar: roar), mood: mood, time: time,
+                               warp: warping ? warpFrame : nil)
+        frame.roar = roar
+        frame.whirl = whirl
+        frame.gather = play.tension
+        frame.gust = gust
+        frame.energy = energy
+        frame.surprises = play.surprises
+        frame.reduceMotion = play.reduceMotion
+        return frame
     }
 
-    /// The cabin's soundscape: the fire, the wind round the walls, snow ticking on the glass; all heard indoors.
-    private func ambience(roles: RoleValues, params p: ParameterSet) -> AmbienceScene {
+    /// The cabin's soundscape: the fire (roaring with a moment), the wind round the walls (rising with the tension), snow
+    /// ticking on the glass; all heard indoors.
+    private func ambience(roles: RoleValues, params p: ParameterSet, sky: SkyState, roar: Float) -> AmbienceScene {
         var levels: [AmbienceSource: Double] = [
-            .fire: 0.7 * p.number("fire"),
+            .fire: min(1, 0.7 * p.number("fire") * (1 + 0.6 * Double(roar))),
             .wind: min(1, 0.25 + Double(sky.gust)),
             .rainOnGlass: 0.4 * Double(sky.snow),
         ]

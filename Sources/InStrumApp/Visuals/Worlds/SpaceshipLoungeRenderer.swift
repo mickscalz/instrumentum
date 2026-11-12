@@ -5,6 +5,12 @@ import InStrumCore
 
 /// Draws the Spaceship Lounge: space through a big window (Earth turning below, the Moon, sun glare, deep
 /// stars), Galaxy Warp, the softly lit lounge and a console keyboard.
+///
+/// Excitement (Fire & Neon spec §5.5): the warp jump stretches the stars through Galaxy Warp's own speed (the model's), its
+/// arrival's soft blue-white light goes through the scene's `FlashLimiter` (a glow under gentle visuals), the drive's
+/// charge gathers at the vanishing point with tension, and the surprises (a comet with its dust and ion tails pointing
+/// away from the sun, a far ship's navigation lights and strobe, a pulsar's blink) are drawn in the space pass behind
+/// Earth and the Moon. Four uniform rows; nothing new is drawn while nothing plays.
 @MainActor
 final class SpaceshipLoungeRenderer: ThemeRenderer {
     /// Space has no weather.
@@ -13,12 +19,27 @@ final class SpaceshipLoungeRenderer: ThemeRenderer {
     private let device: MTLDevice
     let warp: WarpLayer
     private let space, frame, keys: MTLRenderPipelineState
-    private var u = [SIMD4<Float>](repeating: .zero, count: 14)
+    /// The shader's rows (MSL `LoungeU`): 14 for the view, then the drive, the comet, the far ship and the pulsar.
+    nonisolated static let rowDrive = 14, rowComet = 15, rowShip = 16, rowPulsar = 17
+    nonisolated static let uniformCount = 18
+    private var u = [SIMD4<Float>](repeating: .zero, count: SpaceshipLoungeRenderer.uniformCount)
     private var keyInstances: [KeyInstance] = []
     private var limiter = FlashLimiter()
     private(set) var post = PostSettings()
     /// Streak and field brightness after the flash limiter (gentle visuals halve it).
     private(set) var streakScale: Float = 1
+    private var primed = false
+    private var arrivalGlow = ExcitementGlow()
+    /// Excitement as drawn (tests read them): the arrival's light after the limiter, what it asked for, the warp's speed
+    /// this frame, and the surprises drawn.
+    private(set) var arrivalOut: Float = 0
+    private(set) var arrivalRequest: Float = 0
+    private(set) var warpSpeedDrawn: Float = 0
+    private(set) var surprisesDrawn = 0
+    var flashesInLastSecond: Int { limiter.recent }
+    var flashTotal: Int { limiter.total }
+    /// The shader's rows (tests read them).
+    var uniforms: [SIMD4<Float>] { u }
 
     private struct KeyInstance { var rect: SIMD4<Float>; var info: SIMD4<Float> }
 
@@ -129,9 +150,24 @@ final class SpaceshipLoungeRenderer: ThemeRenderer {
         // Galaxy Warp streams from just above Earth.
         warp.centre = SIMD2(0.05, min(top - 0.25, earthTop + 0.35))
         let mood = f.mood
+        // The arrival's light rides on the exposure, through the limiter (primed on the lounge's own exposure, so
+        // arriving is never a flash); under gentle visuals it is a glow.
+        let base = MoodLook.exposure(mood) * 1.15
         limiter.gentle = gentle
-        let limited = limiter.limit(exposure: MoodLook.exposure(mood) * 1.15, sparkle: 1, dt: dt)
+        if !primed {
+            primed = true
+            for _ in 0..<16 { _ = limiter.limit(exposure: base, sparkle: 1, dt: 1) }
+        }
+        let request = ExcitementGlow.unit(f.arrival)
+        let asked = ExcitementGlow.ask(request, gentle: gentle, scale: 0.22)
+        let limited = limiter.limit(exposure: base * (1 + asked), sparkle: 1, dt: dt)
+        let passed = ExcitementGlow.passed(limited: limited.exposure, base: base, asked: asked)
+        arrivalRequest = request
+        arrivalOut = arrivalGlow.update(request: request, passed: passed, gentle: gentle, dt: dt)
         streakScale = limited.sparkle
+        warpSpeedDrawn = f.warp.warpSpeed
+        updateExcitement(f, aspect: aspect, halfWidth: halfWidth, bottom: bottom, top: top, earthTop: earthTop,
+                         sun: sScreen, time: time)
         warp.update(f.warp, trails: Float(p.number("warp.trails")), nebula: Float(p.number("nebula")), intensity: streakScale,
                     quality: quality, size: size, dt: dt, time: time)
 
@@ -153,6 +189,51 @@ final class SpaceshipLoungeRenderer: ThemeRenderer {
             exposure: limited.exposure,
             warmth: MoodLook.warmthOffset(mood),
             time: time, quality: quality)
+    }
+
+    /// The drive's row (the vanishing point, its charge with tension and the jump, the arrival's light) and the
+    /// surprises' rows, each placed in the window from its seed (strength 0 when it isn't playing).
+    private func updateExcitement(_ f: LoungeFrame, aspect: Float, halfWidth: Float, bottom: Float, top: Float,
+                                  earthTop: Float, sun: SIMD2<Float>, time: Float) {
+        let vp = SIMD2<Float>(warp.centre.x * aspect, warp.centre.y)
+        let charge = ExcitementGlow.unit(f.charge) + 0.5 * ExcitementGlow.unit(f.jump)
+        u[Self.rowDrive] = SIMD4(vp.x, vp.y, min(1.2, charge), arrivalOut)
+        u[Self.rowComet] = .zero
+        u[Self.rowShip] = .zero
+        u[Self.rowPulsar] = .zero
+        surprisesDrawn = 0
+        let sky0 = max(bottom + 0.1, earthTop + 0.08), skyH = max(0.1, top - 0.08 - sky0)
+        for s in f.surprises {
+            let age = s.age, life = s.duration
+            let side: Float = s.unit(0) < 0.5 ? -1 : 1
+            switch s.index {
+            case 0:
+                // A comet drifting slowly across the upper window, its tails streaming away from the sun.
+                let env = ExcitementPlay.envelope(age: age, life: life, rise: 2.5, fall: 3)
+                let x = side * halfWidth * (0.55 - 0.6 * s.progress)
+                let y = sky0 + skyH * (0.45 + 0.4 * s.unit(1))
+                let away = atan2(-sun.y, -sun.x)
+                u[Self.rowComet] = SIMD4(x, y, away, 0.9 * env)
+            case 1:
+                // A far ship crossing: red and green navigation lights, a white strobe every 1.3 s.
+                let env = ExcitementPlay.envelope(age: age, life: life, rise: 1, fall: 1.5)
+                let x = side * halfWidth * (0.9 - 1.8 * s.progress)
+                let y = sky0 + skyH * (0.3 + 0.55 * s.unit(1)) + 0.02 * s.progress
+                let beat = (age + 0.4).truncatingRemainder(dividingBy: 1.3)
+                let strobe: Float = beat < 0.09 ? 1 : 0
+                u[Self.rowShip] = SIMD4(x, y, strobe, env)
+            default:
+                // A pulsar: one star among the rest blinking on a steady beat.
+                let env = ExcitementPlay.envelope(age: age, life: life, rise: 1.2, fall: 2)
+                let x = halfWidth * (s.unit(1) * 1.4 - 0.7)
+                let y = sky0 + skyH * (0.5 + 0.45 * s.unit(2))
+                let k = 0.5 + 0.5 * cos(2 * Float.pi * 1.4 * age)
+                let k2 = k * k, k4 = k2 * k2
+                u[Self.rowPulsar] = SIMD4(x, y, k4 * k2, env)
+            }
+            surprisesDrawn += 1
+        }
+        _ = time
     }
 
     func render(stack: RenderStack, commandBuffer cb: MTLCommandBuffer) {

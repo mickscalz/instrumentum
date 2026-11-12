@@ -30,6 +30,8 @@ public struct CurtainLight {
     /// The mood's scales.
     public var reactionScale: Float = 1
     public var lingerScale: Float = 1
+    /// How stirred the room's air is (Excitement's Energy, 0…1): the motes drift up to three times as fast.
+    public var stir: Float = 0
 
     public private(set) var glow: Float = 0
     public private(set) var tint = CurtainLight.neutralTint
@@ -152,14 +154,15 @@ public struct CurtainLight {
         puffs.removeAll { $0.age > Self.puffLife }
         let fade = exp(-step / Self.glintTau), twinkle = exp(-step / Self.twinkleTau)
         for i in fairy.indices { fairy[i] = night ? fairy[i] * twinkle : 0 }
+        let airy: Float = step * (1 + 2 * (stir.isFinite ? min(max(stir, 0), 1) : 0))
         for i in motes.indices {
             var m = motes[i]
             m.glint *= fade
             if m.glint < 0.002 { m.glint = 0 }
             let phase = Float(i) * 0.37
-            m.position.x += 0.004 * sin(time * 0.31 + phase) * step
-            m.position.y += (0.006 * sin(time * 0.23 + phase * 1.7) - 0.0015) * step
-            m.position.z += 0.003 * cos(time * 0.27 + phase * 0.6) * step
+            m.position.x += 0.004 * sin(time * 0.31 + phase) * airy
+            m.position.y += (0.006 * sin(time * 0.23 + phase * 1.7) - 0.0015) * airy
+            m.position.z += 0.003 * cos(time * 0.27 + phase * 0.6) * airy
             if m.position.y < 0.03 { m.position.y = 1.0 }
             if m.position.x < 0 { m.position.x += 1 } else if m.position.x > 1 { m.position.x -= 1 }
             m.position.z = min(max(m.position.z, 0.03), 0.65)

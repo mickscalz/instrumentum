@@ -15,6 +15,11 @@ import InStrumCore
 /// the colour wave, lightning) goes through a `FlashLimiter`; Gentle visuals halve them and calm the glitter and the
 /// lens's dips under the swell. The renderers step by the director's visual dt (held time holds the snow and the
 /// limiters); the particles' buffers are made once.
+///
+/// Excitement (Fire & Neon spec §5.5): a spawning burst is the spawn's own beads (the model's), the corals' flare through
+/// its own `FlashLimiter` (a glow under gentle visuals) and a pink haze in the water (`ReefU.spawn.w`); the visitors (a
+/// manta, a green turtle, a blacktip reef shark) are a third kind in the dots' pass, each one instance; tension's
+/// tightening and the drop's burst are the school's own (Coral Pulse's spread).
 @MainActor
 final class GreatBarrierReefRenderer: ThemeRenderer {
     /// Polyp patches sent to the GPU (fewer on Smooth), and the beads (the spawn's own cap: 300 on Smooth).
@@ -25,6 +30,8 @@ final class GreatBarrierReefRenderer: ThemeRenderer {
     /// The most fish and dots drawn: the school at 80, the chromis, every bead and every fleck of marine snow.
     nonisolated static let fishCapacity = CoralPulse.schoolSizes.upperBound + chromisCount
     nonisolated static let dotCapacity = CoralSpawning.capacity + MarineSnow.capacity
+    /// The visitors drawn at most at once (one each of the three surprises).
+    nonisolated static let visitorCapacity = 3
 
     /// The uniform block (MSL `ReefU`): 17 header rows, the 7 groups, their 7 hues, then the patches.
     nonisolated static let headerCount = 17
@@ -60,6 +67,20 @@ final class GreatBarrierReefRenderer: ThemeRenderer {
     private var keyInstances: [KeyInstance] = []
     private var fishInstances: [SIMD4<Float>] = []
     private var dotInstances: [SIMD4<Float>] = []
+    /// The visitors: two rows each (as the fish's), and each one's draw (2, aspect, its shape, its stroke's phase).
+    private var visitorInstances: [SIMD4<Float>] = []
+    private var visitorKinds: [SIMD4<Float>] = []
+    private var burstLimiter = FlashLimiter()
+    private var burstPrimed = false
+    private var burstGlow = ExcitementGlow()
+    /// Excitement as drawn (tests read them): the corals' flare after its limiter and what it asked for, the haze, the
+    /// visitors drawn.
+    private(set) var burstOut: Float = 0
+    private(set) var burstRequest: Float = 0
+    private(set) var hazeOut: Float = 0
+    var visitorCount: Int { visitorKinds.count }
+    var flashesInLastSecond: Int { max(limiter.recent, burstLimiter.recent) }
+    var flashTotal: Int { limiter.total + burstLimiter.total }
     /// The instance buffers: a ring of three, made once (fish and dots together).
     private var ring: [MTLBuffer] = []
     private var slot = 0
@@ -145,6 +166,8 @@ final class GreatBarrierReefRenderer: ThemeRenderer {
         bufferAllocations = buffers.count
         fishInstances.reserveCapacity(Self.fishCapacity * 2)
         dotInstances.reserveCapacity(Self.dotCapacity * 2)
+        visitorInstances.reserveCapacity(Self.visitorCapacity * 2)
+        visitorKinds.reserveCapacity(Self.visitorCapacity)
         keyInstances.reserveCapacity(88)
         sky.verticalFOV = Self.verticalFOV
     }
@@ -275,13 +298,28 @@ final class GreatBarrierReefRenderer: ThemeRenderer {
         // the colour wave.
         let W = Self.stageWidth(aspect: aspect, waterHeight: h)
         var ratio = [Float](repeating: 0, count: CoralPulse.groupCount)
+        // A spawning burst's flare: one limiter for the whole reef (primed at rest, so arriving is never a flash), its light
+        // added to every group's glow; under gentle visuals a glow.
+        burstLimiter.gentle = gentle
+        if !burstPrimed {
+            burstPrimed = true
+            for _ in 0..<16 { _ = burstLimiter.limit(exposure: 1, sparkle: 1, dt: 1) }
+        }
+        let burstAsk = Self.unit(frame.burst)
+        let askedBurst = ExcitementGlow.ask(burstAsk, gentle: gentle, scale: 0.6)
+        let burstLimited = burstLimiter.limit(exposure: 1 + askedBurst, sparkle: 1, dt: dt)
+        let burstPassed = ExcitementGlow.passed(limited: burstLimited.exposure, base: 1, asked: askedBurst)
+        burstRequest = burstAsk
+        burstOut = burstGlow.update(request: burstAsk, passed: burstPassed, gentle: gentle, dt: dt)
+        hazeOut = Self.unit(frame.burstHaze) * (gentle ? 0.6 : 1)
         for (g, group) in frame.corals.prefix(CoralPulse.groupCount).enumerated() {
             groupLimiters[g].gentle = gentle
             let raw = Self.unit(group.glow)
             let l = groupLimiters[g].limit(exposure: raw, sparkle: 1, dt: dt)
             coralGlowOut[g] = Self.unit(l.exposure * l.sparkle)
             ratio[g] = raw > 1e-4 ? min(1, coralGlowOut[g] / raw) : (gentle ? 0.5 : 1)
-            reefU[Self.groupBase + g] = SIMD4(group.x * W, group.top * Self.coralScale, Self.halfWidth(group.kind, stageWidth: W), coralGlowOut[g])
+            let shown = min(1, coralGlowOut[g] + 0.8 * burstOut)
+            reefU[Self.groupBase + g] = SIMD4(group.x * W, group.top * Self.coralScale, Self.halfWidth(group.kind, stageWidth: W), shown)
             reefU[Self.hueBase + g] = SIMD4(group.colour, Self.kindIndex(group.kind))
         }
         for i in Self.patchBase..<Self.uniformCount { reefU[i] = .zero }
@@ -326,7 +364,7 @@ final class GreatBarrierReefRenderer: ThemeRenderer {
         reefU[10] = SIMD4(horizonY, Self.eyeHeight, rough, octaves)
         reefU[11] = SIMD4(Self.unit(s.rain), Self.unit(s.cloudCover), storm, Self.unit(s.mist))
         reefU[12] = SIMD4(Self.unit(frame.polypsOpen), 0, sparkleScale, Float(patchCount))
-        reefU[15] = SIMD4(Self.unit(frame.spawn.slick), Self.unit(frame.spawn.intensity), shafts, 0)
+        reefU[15] = SIMD4(Self.unit(frame.spawn.slick), Self.unit(frame.spawn.intensity), shafts, hazeOut)
         reefU[16] = SIMD4(Float(Self.cayAzimuth * .pi / 180), az, birds, 0)
 
         // The light in the water where the fish swim (rgb, about a metre down) and on the sand's keys.
@@ -335,6 +373,7 @@ final class GreatBarrierReefRenderer: ThemeRenderer {
         let fishLight: SIMD3<Float> = fromAbove + waterGlow
         buildFish(frame, h: h, light: fishLight, sparkle: sparkleScale, t: t)
         buildDots(frame, h: h, light: fishLight, quality: quality, dt: dt, storm: storm, night: night)
+        buildVisitors(frame, h: h, light: fishLight)
 
         // Keys: wet sand along the bottom edge, turquoise where you play.
         keyInstances.removeAll(keepingCapacity: true)
@@ -418,6 +457,43 @@ final class GreatBarrierReefRenderer: ThemeRenderer {
         snowCount = dotInstances.count / 2 - beadCount
     }
 
+    /// The visitors (surprises), each crossing the water slowly: a manta gliding high, a green turtle stroking along, a
+    /// blacktip reef shark cruising low over the corals. Each is one instance (its place, half-length and heading; the
+    /// water's light on it) and one draw (its shape and its stroke's phase).
+    private func buildVisitors(_ frame: ReefFrame, h: Float, light: SIMD3<Float>) {
+        visitorInstances.removeAll(keepingCapacity: true)
+        visitorKinds.removeAll(keepingCapacity: true)
+        let scale = min(1.3, max(0.7, h / 0.66))
+        for s in frame.surprises.prefix(Self.visitorCapacity) {
+            let age = s.age
+            let env = ExcitementPlay.envelope(age: age, life: s.duration, rise: 1.5, fall: 2)
+            guard env > 0.002 else { continue }
+            let right = s.unit(0) < 0.5
+            let run: Float = s.progress
+            let x: Float = right ? -0.15 + 1.3 * run : 1.15 - 1.3 * run
+            let heading: Float = right ? 0 : .pi
+            let y: Float, half: Float, phase: Float
+            switch s.index {
+            case 0:
+                y = 0.66 + 0.14 * s.unit(1) + 0.02 * sin(age * 0.4)
+                half = 0.15 * scale
+                phase = age * 0.42
+            case 1:
+                y = 0.45 + 0.15 * s.unit(1) + 0.08 * run
+                half = 0.085 * scale
+                phase = age * 0.5
+            default:
+                y = 0.33 + 0.12 * s.unit(1) + 0.015 * sin(age * 0.6)
+                half = 0.16 * scale
+                phase = age * 0.75
+            }
+            let at = screenPoint(x: x, waterHeight: y)
+            visitorInstances.append(SIMD4(at.x, at.y, half, heading))
+            visitorInstances.append(SIMD4(light, 0.9 * env))
+            visitorKinds.append(SIMD4(2, aspect, Float(s.index), phase))
+        }
+    }
+
     /// The scissor rectangle (pixels, top-left origin) between two NDC heights of the target.
     private static func scissor(from y0: Float, to y1: Float, width: Int, height: Int) -> MTLScissorRect? {
         let lo = max(-1, min(1, y0)), hi = max(-1, min(1, y1))
@@ -459,16 +535,17 @@ final class GreatBarrierReefRenderer: ThemeRenderer {
             weather.draw(e)
         }
 
-        // The fish, the beads and the snow, in the water.
+        // The fish, the beads and the snow, in the water (and any visitors, after them).
         let fishBytes = fishInstances.count * MemoryLayout<SIMD4<Float>>.stride
         let dotBytes = dotInstances.count * MemoryLayout<SIMD4<Float>>.stride
-        if let rect = underRect, fishBytes + dotBytes > 0, !ring.isEmpty {
+        if let rect = underRect, fishBytes + dotBytes > 0 || !visitorKinds.isEmpty, !ring.isEmpty {
             slot = (slot + 1) % ring.count
             let buf = ring[slot]
             if fishBytes > 0 { fishInstances.withUnsafeBytes { buf.contents().copyMemory(from: $0.baseAddress!, byteCount: fishBytes) } }
             if dotBytes > 0 {
                 dotInstances.withUnsafeBytes { (buf.contents() + fishBytes).copyMemory(from: $0.baseAddress!, byteCount: dotBytes) }
             }
+
             e.setScissorRect(rect)
             e.setRenderPipelineState(dots)
             reefU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
@@ -486,6 +563,15 @@ final class GreatBarrierReefRenderer: ThemeRenderer {
                 e.setVertexBytes(&kind, length: MemoryLayout<SIMD4<Float>>.size, index: 1)
                 e.setFragmentBytes(&kind, length: MemoryLayout<SIMD4<Float>>.size, index: 0)
                 e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6, instanceCount: dotCount)
+            }
+            // Each visitor: its two rows straight into the vertex bytes (no buffer offset), and its own shape.
+            let row = MemoryLayout<SIMD4<Float>>.stride
+            for (i, k) in visitorKinds.enumerated() where 2 * i + 1 < visitorInstances.count {
+                var kind = k
+                visitorInstances.withUnsafeBytes { e.setVertexBytes($0.baseAddress! + 2 * row * i, length: 2 * row, index: 0) }
+                e.setVertexBytes(&kind, length: MemoryLayout<SIMD4<Float>>.size, index: 1)
+                e.setFragmentBytes(&kind, length: MemoryLayout<SIMD4<Float>>.size, index: 0)
+                e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6, instanceCount: 1)
             }
         }
 

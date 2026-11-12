@@ -321,6 +321,26 @@ public struct CoralSpawning {
         slick = slick < 1e-4 ? 0 : min(1, slick)
     }
 
+    /// A spawning burst (Excitement's big moment on the reef, Fire & Neon spec §5.5): every coral group lets go a puff of
+    /// bundles at once, any night or day, rising quicker than the calendar's at first and already catching the light.
+    /// Up to 60 + 160 × `strength` beads; with the water full, the oldest (highest) go into the slick to make room.
+    public mutating func burst(strength: Float, quality: QualityLevel) {
+        let s = strength.isFinite ? min(1, max(0, strength)) : 0.3
+        let cap = Self.cap(quality)
+        let count = min(cap, Int((60 + 160 * s).rounded()))
+        if beads.count + count > cap {
+            let out = beads.count + count - cap
+            gathered &+= out
+            beads.removeFirst(min(out, beads.count))
+        }
+        for _ in 0..<count {
+            var bead = newBead(partWay: false)
+            bead.speed = rng.range(0.035, 0.09)
+            Self.advance(&bead, by: 1.0 + rng.unit())
+            beads.append(bead)
+        }
+    }
+
     /// The real moon's last full moon, searched for again only once the sky's date leaves the month it began.
     private mutating func cachedFullMoon(_ date: Date) -> Date {
         if let f = fullMoon, date >= f.last, date < f.next { return f.last }

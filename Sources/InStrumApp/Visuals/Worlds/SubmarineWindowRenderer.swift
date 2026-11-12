@@ -12,11 +12,20 @@ import InStrumCore
 ///
 /// Every brightness of the living light goes through a `FlashLimiter` (the window's lit area, so a field of creatures
 /// blinking on the arp's grid can never strobe), and gentle visuals halve it.
+///
+/// Excitement (Fire & Neon spec §5.5): the whale passing is drawn in the sea pass (a humpback's silhouette, its long pale
+/// fins and belly catching the lamps, melting into the blue with distance); tension dims the lamps and the light from
+/// above; the far lights of Energy's traffic, an anglerfish's lure and a squid's cloud of light are sprites (the cloud's
+/// light counts with the living light's, through its limiter); a far sub's sonar is a contact echoing on the screen and
+/// its two lights crossing far off. Three uniform rows before the blips.
 @MainActor
 final class SubmarineWindowRenderer: ThemeRenderer {
-    /// SubU's float4 rows (the MSL struct's size / 16): 12 rows and the 24 sonar blips.
-    nonisolated static let uniformCount = 36
-    nonisolated static let blipBase = 12
+    /// SubU's float4 rows (the MSL struct's size / 16): 12 rows, the whale's two, the sonar contact, and the 24 blips.
+    nonisolated static let rowWhale = 12, rowWhaleB = 13, rowContact = 14
+    nonisolated static let uniformCount = 39
+    nonisolated static let blipBase = 15
+    /// The squid's cloud of light: this many motes.
+    nonisolated static let squidMotes = 36
     /// Sprites a frame at most (each 32 bytes, in a ring of three buffers made once): the marine snow (400 on Ultra),
     /// 48 creatures, 4 shoals of 12, 2 siphonophores of 20 bells, 6 bubble streams and the fish, with room to spare.
     nonisolated static let spriteCapacity = 1024
@@ -176,6 +185,13 @@ final class SubmarineWindowRenderer: ThemeRenderer {
     private(set) var creatureSprites: [(centre: SIMD2<Float>, radius: Float, glow: Float)] = []
     /// The lamps' light on the brightest-lit flecks of snow (tests).
     private(set) var snowLampPeak: Float = 0
+    /// Excitement as drawn (tests read them): the whale's presence, the lamps after the dark's dimming, and the
+    /// surprises' sprites drawn this frame.
+    private(set) var whalePresence: Float = 0
+    private(set) var lampsOut: Float = 0
+    private(set) var surpriseSprites = 0
+    var flashesInLastSecond: Int { max(limiter.recent, deepLimiter.recent) }
+    var flashTotal: Int { limiter.total + deepLimiter.total }
     /// The keys' rectangles in NDC (tests check they stay inside the frame).
     var keyRects: [SIMD4<Float>] { keyInstances.map(\.rect) }
 
@@ -266,9 +282,12 @@ final class SubmarineWindowRenderer: ThemeRenderer {
         let lightAz = byMoon ? (s.moon.azimuth.isFinite ? s.moon.azimuth : sunAz) : sunAz
         let rel = Float((lightAz - viewAz) * .pi / 180)
         let shaftStrength = 1.3 * max(sunShaft, moonShaft * 0.9)
-        let surface = frame.surfaceLight
+        // The dark gathering with tension: the light from above and the lamps dim (they come back as it releases).
+        let dark = min(1, max(0, frame.dark.isFinite ? frame.dark : 0))
+        let surface = frame.surfaceLight * (1 - 0.5 * dark)
         let glowSea = Self.seaGlow(surface: surface, metres: metres, nightGain: nightGain)
-        let lamps = min(1, max(0, frame.lamps))
+        let lamps = min(1, max(0, frame.lamps)) * (1 - 0.6 * dark)
+        lampsOut = lamps
 
         // Snell's window samples the Living Sky: its camera matches this view (its pixel angle above all).
         sky.viewAzimuth = viewAz
@@ -295,6 +314,8 @@ final class SubmarineWindowRenderer: ThemeRenderer {
         let visible = DeepLights.visible(frame.creatures, limit: Self.creatureBudget(quality))
         var level: Float = 0
         for c in visible { level += min(1, max(0, c.glow)) * Self.flashWeight(c, glassRadius: R) }
+        // A squid's cloud of light counts with the living light (a burst over a good part of the glass).
+        if let sq = frame.surprises.first(where: { $0.index == 1 }) { level += 0.6 * Self.squidLight(age: sq.age, life: sq.duration) }
         for sh in frame.shoals { level += min(1, max(0, sh.brightness)) * Float(sh.contour.count) * 0.002 }
         for sp in frame.siphonophores { level += min(1, max(0, sp.brightness)) * Float(sp.bells) * 0.003 }
         livingLevel = level
@@ -316,7 +337,7 @@ final class SubmarineWindowRenderer: ThemeRenderer {
         uniforms[0] = SIMD4(lay.centre.x, lay.centre.y, R, aspect)
         uniforms[1] = SIMD4(Float(viewAz * .pi / 180), pitch, tanR, time)
         uniforms[2] = SIMD4(metres, frame.surfaceWaves, frame.rainOnSurface, frame.milky)
-        uniforms[3] = SIMD4(surface, shaftStrength)
+        uniforms[3] = SIMD4(surface, shaftStrength * (1 - 0.4 * dark))
         let pixelAngle: Float = 2 * tanR / max(R, 0.05) / Float(max(1, size.height))
         uniforms[4] = SIMD4(-sin(rel) * 0.45, -1, pixelAngle, frame.snellVisible)
         let below: Float = metres < 70 ? 3 + 0.25 * metres : 0
@@ -334,6 +355,22 @@ final class SubmarineWindowRenderer: ThemeRenderer {
         for i in 0..<24 { uniforms[Self.blipBase + i] = .zero }
         for (i, b) in blips.enumerated() { uniforms[Self.blipBase + i] = SIMD4(b.angle, b.range, min(1, max(0, b.brightness)), 0) }
         uniforms[11] = SIMD4(Float(blips.count), min(1, level * glowOut), 0.012, Float(max(1, size.height)))
+        // The whale (in the sea pass) and the far sub's contact (on the sonar screen).
+        if let w = frame.whale, w.presence > 0.002 {
+            uniforms[Self.rowWhale] = SIMD4(w.centre.x, w.centre.y, max(0.05, w.halfLength), min(1, w.presence))
+            uniforms[Self.rowWhaleB] = SIMD4(w.heading < 0 ? -1 : 1, w.beat, min(1, max(0, w.distance)), 0)
+            whalePresence = w.presence
+        } else {
+            uniforms[Self.rowWhale] = .zero
+            uniforms[Self.rowWhaleB] = SIMD4(1, 0, 0, 0)
+            whalePresence = 0
+        }
+        uniforms[Self.rowContact] = .zero
+        if let c = frame.surprises.first(where: { $0.index == 2 }) {
+            let env = ExcitementPlay.envelope(age: c.age, life: c.duration, rise: 1, fall: 2)
+            let ping = (c.age / 2.4).truncatingRemainder(dividingBy: 1)
+            uniforms[Self.rowContact] = SIMD4(6.2831853 * c.unit(0), 0.78 + 0.15 * c.unit(1), env, ping)
+        }
 
         // The sprites: the far snow, the siphonophores behind, the creatures, the shoals, the fish, the near snow, the
         // bubbles at the glass.
@@ -449,6 +486,16 @@ final class SubmarineWindowRenderer: ThemeRenderer {
             }
         }
 
+        // Energy's traffic: far lanternfish lights drifting across the dark.
+        surpriseSprites = 0
+        for f in frame.passers {
+            let b: Float = min(1, max(0, f.z)) * gain * 0.7
+            guard b > 0.002 else { continue }
+            let flick: Float = 0.8 + 0.2 * sin(time * 5.1 + f.y * 40)
+            push(ndc(SIMD2(f.x, f.y)), 0.008 * unit, .photophore, SIMD3<Float>(0.45, 0.8, 1.0) * (b * flick))
+        }
+        surpriseSprites += addSurprises(frame, ndc: ndc, unit: unit, gain: gain, time: time, push: push)
+
         snow(near: true)
 
         bubbleCount = 0
@@ -498,6 +545,61 @@ final class SubmarineWindowRenderer: ThemeRenderer {
             exposure: limited.exposure,
             warmth: MoodLook.warmthOffset(mood) - 0.04 * (1 - cabinNight) + 0.03 * cabinNight,
             time: time, quality: quality)
+    }
+
+    /// A squid's cloud of light, `age` seconds into its `life`: bright at once, fading over its life (0…1).
+    nonisolated static func squidLight(age: Float, life: Float) -> Float {
+        guard age >= 0, age < life else { return 0 }
+        return min(1, age / 0.15) * exp(-age / 2) * (1 - smooth(life - 1, life, age))
+    }
+
+    /// The surprises' sprites: an anglerfish's lure bobbing in the dark (its jaws just lit by it), a squid's cloud of
+    /// light spreading and fading, and the far sub's two lights crossing far off. Returns how many were pushed.
+    private func addSurprises(_ frame: SubFrame, ndc: (SIMD2<Float>) -> SIMD2<Float>, unit: Float, gain: Float, time: Float,
+                              push: (SIMD2<Float>, Float, Kind, SIMD3<Float>, Float, Float) -> Void) -> Int {
+        var n = 0
+        for s in frame.surprises {
+            let age = s.age
+            switch s.index {
+            case 0:
+                let env = ExcitementPlay.envelope(age: age, life: s.duration, rise: 1.5, fall: 2)
+                let x: Float = 0.3 + 0.4 * s.unit(0) + 0.03 * sin(age * 0.7)
+                let y: Float = 0.35 + 0.25 * s.unit(1) + 0.02 * sin(age * 1.3 + 1)
+                let pulse: Float = 0.7 + 0.3 * sin(age * 1.9)
+                let lure = SIMD3<Float>(0.55, 0.85, 1.0) * (env * pulse * gain)
+                let side: Float = s.unit(2) < 0.5 ? -1 : 1
+                push(ndc(SIMD2(x - side * 0.05, y - 0.04)), 0.05 * unit, .fish, lure * 0.12, side, 0.5 * env)
+                push(ndc(SIMD2(x, y)), 0.035 * unit, .speck, lure * 0.5, 0, 0)
+                push(ndc(SIMD2(x, y)), 0.012 * unit, .photophore, lure * 1.4, 0, 0)
+                n += 3
+            case 1:
+                let light = Self.squidLight(age: age, life: s.duration)
+                guard light > 0.002 else { continue }
+                let cx: Float = 0.3 + 0.4 * s.unit(0), cy: Float = 0.35 + 0.3 * s.unit(1)
+                let spread: Float = 0.2 * (1 - exp(-age / 0.6)) + 0.01 * age
+                for k in 0..<Self.squidMotes {
+                    let fk = Float(k)
+                    let a = 6.2831853 * Self.hash(Int(s.seed % 10_000), k)
+                    let r = spread * (0.25 + 0.75 * Self.hash(Int(s.seed % 10_000), k + 50))
+                    let drift = SIMD2<Float>(0.02 * sin(time * 0.6 + fk), 0.015 * age)
+                    let at = SIMD2<Float>(cx + r * cos(a), cy + r * sin(a)) + drift
+                    let b: Float = light * gain * (0.4 + 0.6 * Self.hash(Int(s.seed % 10_000), k + 90))
+                    push(ndc(at), (0.006 + 0.006 * Self.hash(Int(s.seed % 10_000), k + 130)) * unit, .photophore,
+                         SIMD3<Float>(0.3, 0.9, 1.0) * b, 0, 0)
+                    n += 1
+                }
+            default:
+                let env = ExcitementPlay.envelope(age: age, life: s.duration, rise: 2, fall: 2)
+                let dir: Float = s.unit(2) < 0.5 ? -1 : 1
+                let x: Float = 0.5 + dir * (0.6 - 1.2 * s.progress)
+                let y: Float = 0.62 + 0.15 * s.unit(3)
+                let blink: Float = (age.truncatingRemainder(dividingBy: 2) < 0.12) ? 1 : 0.15
+                push(ndc(SIMD2(x, y)), 0.006 * unit, .photophore, SIMD3<Float>(1.0, 0.95, 0.85) * (0.5 * env), 0, 0)
+                push(ndc(SIMD2(x + 0.025 * dir, y - 0.004)), 0.005 * unit, .photophore, SIMD3<Float>(1.0, 0.3, 0.2) * (0.4 * env * blink), 0, 0)
+                n += 2
+            }
+        }
+        return n
     }
 
     func render(stack: RenderStack, commandBuffer cb: MTLCommandBuffer) {

@@ -17,7 +17,7 @@ enum ButterflyShaders {
         float4 look;       // iridescence, shimmer, trailGlow, keysShow
         float4 counts;     // pollenCount, petalCount, fireflyCount, exposureHint
         float4 keyGlow;    // rgb, finish index
-        float4 perf;       // shaftSteps, noiseOctaves (by quality)
+        float4 perf;       // shaftSteps, noiseOctaves (by quality), drops on the glass (count), rain on the glass 0…1
     };
 
     struct ColorDepth { float4 color [[color(0)]]; float4 depth [[color(1)]]; };
@@ -224,9 +224,53 @@ enum ButterflyShaders {
         return length(d / r) - 1.0;
     }
 
+    // A hummingbird (a surprise), side on in a square sprite (uv -1..1): heading a.x (±1), its wings' phase a.y. A slim
+    // iridescent green body, a ruby throat, a long fine bill, a forked tail, and its wings a translucent blur beating.
+    ColorDepth gardenHummingbird(SpriteOut in, constant SceneU& u) {
+        float2 p = float2(in.uv.x * (in.a.x < 0.0 ? -1.0 : 1.0), in.uv.y);
+        float2 bq = p - float2(0.02, -0.02);
+        float ca = cos(-0.35), sa = sin(-0.35);
+        bq = float2(bq.x * ca - bq.y * sa, bq.x * sa + bq.y * ca);
+        float body = length(bq / float2(0.36, 0.13));
+        float head = length((p - float2(0.36, 0.1)) / 0.12);
+        float2 bv = p - float2(0.44, 0.1);
+        float bill = (bv.x > 0.0 && bv.x < 0.42) ? 1.0 - smoothstep(0.012, 0.022, abs(bv.y + 0.05 * bv.x)) : 0.0;
+        float tx = -0.3 - p.x;
+        float tail = (tx > 0.0 && tx < 0.32) ? 1.0 - smoothstep(0.05 + 0.25 * tx, 0.08 + 0.25 * tx, abs(p.y + 0.12 + 0.35 * tx)) : 0.0;
+        float solid = max(max(1.0 - smoothstep(0.85, 1.0, body), 1.0 - smoothstep(0.85, 1.0, head)), max(bill, tail));
+        // The wings: a fan of blur above the back, brightest at the ends of each stroke.
+        float stroke = sin(in.a.y * 6.2831853);
+        float2 wq = p - float2(-0.02, 0.06);
+        float wr = length(wq);
+        float wa = atan2(wq.x, wq.y);
+        float fan = (1.0 - smoothstep(0.55, 0.7, wr)) * smoothstep(0.05, 0.15, wr) * (1.0 - smoothstep(0.9, 1.25, abs(wa - 0.25 * stroke)));
+        float wings = fan * (0.22 + 0.18 * abs(stroke));
+        float a = max(solid, wings);
+        float3 light = mix(u.skyMid.rgb, float3(1.0, 0.95, 0.85), 0.5) * (1.0 - u.skyTop.w * 0.6) + 0.05;
+        float3 green = float3(0.08, 0.5, 0.26) + 0.12 * (0.5 + 0.5 * cos(6.2831853 * (p.x * 0.8 + p.y + float3(0.0, 0.33, 0.67))));
+        float3 col = green;
+        float throat = 1.0 - smoothstep(0.8, 1.0, length((p - float2(0.3, -0.02)) / float2(0.1, 0.07)));
+        col = mix(col, float3(0.75, 0.05, 0.12), throat);
+        col = mix(col, float3(0.75, 0.75, 0.72), (1.0 - smoothstep(-0.1, -0.02, p.y)) * step(body, 1.0) * 0.6);
+        col = mix(col, float3(0.05, 0.04, 0.035), max(bill, tail * 0.7));
+        col = solid > 0.5 ? col * light * 1.3 : float3(0.85, 0.9, 0.95) * light;
+        float2 eq = p - float2(0.4, 0.13);
+        if (dot(eq, eq) < 0.0006) col = float3(0.02);
+        col = mix(col, u.skyHorizon.rgb * 0.9, in.z * u.sun.w * 0.5);
+        ColorDepth o;
+        o.color = float4(col, a * in.b.x);
+        o.depth = float4(in.z, 0, 0, 1);
+        return o;
+    }
+
     fragment ColorDepth butterfly_fragment(SpriteOut in [[stage_in]], constant SceneU& u [[buffer(0)]]) {
         float2 p = in.uv;                          // x 0..1 outward, y -1..1
         int style = int(in.a.z + 0.5);
+        if (style == 9) {
+            ColorDepth h = gardenHummingbird(in, u);
+            if (h.color.a < 0.03) { discard_fragment(); }
+            return h;
+        }
         float hue = in.a.x, glow = in.a.w, opacity = in.b.x, seed = in.b.w;
         // wing shape: forewing + hindwing
         float fore = ellipse(p, float2(0.52, 0.36), float2(0.5, 0.36), 0.55);
@@ -336,7 +380,7 @@ enum ButterflyShaders {
         float2 c[6] = { float2(-1, -1), float2(1, -1), float2(-1, 1), float2(1, -1), float2(1, 1), float2(-1, 1) };
         float i = float(iid);
         float t = u.a.z;
-        float pollenN = u.counts.x, petalN = u.counts.y;
+        float pollenN = u.counts.x, petalN = u.counts.y, fireN = u.counts.z;
         float3 p; float size; float4 col;
         float breeze = u.air.x;
         if (i < pollenN) {
@@ -354,13 +398,30 @@ enum ButterflyShaders {
             p = float3(fract(h.x + t * (0.01 + 0.05 * breeze) + 0.03 * sin(t * 1.3 + j)), 0.1 + 0.9 * fall, h.z);
             size = 0.007 * (1.3 - p.z);
             col = float4(1.0, 0.75, 0.82, 1.0) * u.air.z * 0.9;
-        } else {
+        } else if (i < pollenN + petalN + fireN) {
             float j = i - pollenN - petalN;
             float3 h = float3(hash11(j + 71.0), hash11(j + 83.0), hash11(j + 97.0));
             p = float3(fract(h.x + 0.03 * sin(t * 0.4 + j)), 0.05 + 0.3 * h.y + 0.04 * sin(t * 0.7 + j * 2.0), h.z);
             size = 0.004 * (1.3 - p.z);
             float blink = smoothstep(0.6, 1.0, sin(t * (0.8 + h.z) + j * 3.0));
             col = float4(0.75, 1.0, 0.35, 1.0) * u.air.w * blink * 5.0;
+        } else {
+            // Rain on the glasshouse's glass (a surprise): drops clinging, now and then running down in short slides,
+            // each catching the light as a small bright bead.
+            float j = i - pollenN - petalN - fireN;
+            float3 h = float3(hash11(j + 131.0), hash11(j + 151.0), hash11(j + 173.0));
+            float run = max(0.0, sin(t * (0.6 + 0.9 * h.z) + h.x * 40.0));
+            float y = fract(h.y - t * 0.012 * (0.4 + h.z) - 0.04 * run * run);
+            float on = smoothstep(0.0, 0.25, u.perf.w - h.z * 0.6);
+            float aspectD = u.a.x / u.a.y;
+            ParticleOut d;
+            float2 c2 = float2(h.x * 2.0 - 1.0, y * 2.0 - 1.0);
+            float sz = (0.0035 + 0.006 * h.z) * on;
+            d.pos = float4(c2 + float2(c[vid].x / aspectD, c[vid].y) * sz, 0, 1);
+            d.uv = c[vid];
+            float3 sheen = mix(u.skyMid.rgb, float3(1.0), 0.6) * (1.0 - u.skyTop.w * 0.6);
+            d.color = float4(sheen * 0.55 * u.perf.w, 1.0);
+            return d;
         }
         float aspect = u.a.x / u.a.y;
         float2 clip = toClip(p, u);

@@ -71,6 +71,27 @@ public struct SubFrame: AmbienceProviding {
     public var time: Double
     /// Galaxy Warp through the porthole, when it's the chosen visual (notes then streak instead of releasing creatures).
     public var warp: WarpFrame?
+    /// Excitement (Fire & Neon spec §5.5): the whale passing the porthole (the moment), the dark gathering with tension
+    /// (0…1: the lamps and the light from above dim), the far lights crossing with Energy (the creatures' traffic), the
+    /// drawn Energy, and the surprises playing (0 an anglerfish's lure, 1 a squid's cloud of light, 2 a far sub's sonar).
+    public var whale: SubWhale?
+    public var dark: Float = 0
+    public var passers: [SIMD4<Float>] = []
+    public var energy: Float = 0
+    public var surprises: [PlayingSurprise] = []
+    public var reduceMotion = false
+}
+
+/// A whale passing the porthole (the Submarine Window's big moment): where it is in the porthole's disc (radius 1, y up;
+/// its middle), its half-length (disc radii), which way it swims (±1), how much of it the gloom gives up (0…1), its
+/// flukes' beat (turns), and how far off it is (0 close … 1 far, melting into the blue).
+public struct SubWhale: Equatable {
+    public var centre: SIMD2<Float>
+    public var halfLength: Float
+    public var heading: Float
+    public var presence: Float
+    public var beat: Float
+    public var distance: Float
 }
 
 /// Set 11's world: inside a small research submarine at its big round viewport, the cabin in silhouette and soft light
@@ -78,7 +99,7 @@ public struct SubFrame: AmbienceProviding {
 /// outside the sea at the depth you choose, from the sunlit shallows under Snell's window down to the midnight zone. The
 /// sky is felt rather than seen: it drives the light, and its weather shows only in the shallows. Its visual, Deep
 /// Lights, releases a glowing creature for each note.
-public struct SubmarineWindowModel: ThemeModel, MoodAware, SkyAware, PulseAware {
+public struct SubmarineWindowModel: ThemeModel, MoodAware, SkyAware, PulseAware, ExcitementAware, SurpriseListing {
     public typealias Frame = SubFrame
     public static let id = "submarine-window"
     public static let displayName = "Submarine Window"
@@ -100,6 +121,13 @@ public struct SubmarineWindowModel: ThemeModel, MoodAware, SkyAware, PulseAware 
     static let moonlight = 0.03
     static let moonColour = SIMD3<Float>(0.75, 0.85, 1)
     static let starlight = SIMD3<Float>(0.002, 0.003, 0.005)
+    /// The surprises (spec §5.5): an anglerfish's lure, a squid's cloud of light, a far sub's sonar.
+    public static let surpriseCount = 3
+    public static let surpriseSeconds: [Float] = [10, 7, 12]
+    /// A whale passes the porthole (spec §5.5) over this long (a drop's, closer and slower, longer).
+    public static let momentSeconds: Float = 13, dropSeconds: Float = 16
+    /// The far lights crossing (Energy's traffic): at most this many at once.
+    public static let passerCap = 8
 
     public var mood = Mood.neutral
     /// The instrument's pulse (spec §7.6), handed over by the director before every step: Deep Lights blinks on it.
@@ -115,10 +143,34 @@ public struct SubmarineWindowModel: ThemeModel, MoodAware, SkyAware, PulseAware 
     var nextBlipID = 0
     private var lastVisual: String?
     private var time = 0.0
+    private var excite = ExcitementFrame()
+    private var play = ExcitementPlay()
+    /// Which way the next whale swims (they take turns), and the far lights crossing (x, y in the view, brightness, speed).
+    private var whaleHeading: Float = 1
+    private var passers: [SIMD4<Float>] = []
+    private var passerDebt: Float = 0
+    private var trafficRng = SeededRandom(seed: 0x5AB_7AFF)
 
     private static let layout = KeyboardLayout.keys()
 
-    public init() {}
+    public init() { passers.reserveCapacity(Self.passerCap) }
+
+    /// Excitement's frame for the next step; its moment and surprise are taken once.
+    public mutating func setExcitement(_ e: ExcitementFrame) { excite = e }
+
+    /// The whale `age` seconds into its pass of `life` seconds at `strength` (a drop's is closest): it emerges from the
+    /// gloom already across part of the glass, swims on across it, and fades back into the dark beyond the other side.
+    public static func whale(age: Float, life: Float, strength: Float, heading: Float, drop: Bool) -> SubWhale {
+        let s = min(1, max(0.15, strength.isFinite ? strength : 0.3))
+        let p = life > 0 ? min(1, max(0, age / life)) : 1
+        let near: Float = drop ? 1 : s
+        let half: Float = 0.62 + 0.38 * near
+        let x: Float = heading * (-0.55 + 2.2 * p)
+        let y: Float = -0.05 + 0.04 * sin(age * 0.35)
+        let presence = ExcitementPlay.envelope(age: age, life: life, rise: 0.7, fall: 1.6)
+        return SubWhale(centre: SIMD2(x, y), halfLength: half, heading: heading, presence: presence, beat: age * 0.33,
+                        distance: 1 - near)
+    }
 
     public mutating func handle(_ e: PerformanceEvent) { pending.append(e) }
 
@@ -288,6 +340,21 @@ public struct SubmarineWindowModel: ThemeModel, MoodAware, SkyAware, PulseAware 
         deep.step(dt: fdt, roles: roles)
         let warpFrame = warp.step(dt: fdt, roles: roles, inputs: inputs)
 
+        // Excitement (spec §5.5): Energy brings more far lights crossing and quickens the drift; a moment is a whale
+        // passing the porthole; tension gathers the dark (the lamps and the light from above dim); a drop is the whale
+        // closest of all. The surprises are drawn by the renderer from their seeds.
+        let e = excite
+        excite.moment = nil
+        excite.surprise = nil
+        play.step(dt: fdt, frame: e, momentSeconds: Self.momentSeconds, dropSeconds: Self.dropSeconds,
+                  surpriseSeconds: Self.surpriseSeconds)
+        if play.momentBegan != nil { whaleHeading = -whaleHeading }
+        var whale: SubWhale?
+        if let m = play.moment {
+            whale = Self.whale(age: m.age, life: m.duration, strength: m.strength, heading: whaleHeading, drop: m.isDrop)
+        }
+        stepTraffic(dt: Float(fdt), energy: play.energy)
+
         // Keys: backlit console buttons, glowing while held, then fading (longer when lingering).
         let fall = Float(pow(0.5, fdt / (roles[.linger] > 0.5 ? 1.2 : 0.35)))
         for i in 0..<88 {
@@ -303,7 +370,7 @@ public struct SubmarineWindowModel: ThemeModel, MoodAware, SkyAware, PulseAware 
         let surface = Self.surfaceLight(sky)
         let waves = Self.roughness(sky) * shallow
         snow.setQuality(quality)
-        snow.current = Self.current(mood: mood, waves: waves, time: time)
+        snow.current = Self.current(mood: mood, waves: waves, time: time) * (1 + 1.2 * play.energy)
         snow.step(dt: fdt)
 
         // Deep Lights shows nothing (and raises no bubbles) while Galaxy Warp plays.
@@ -312,19 +379,46 @@ public struct SubmarineWindowModel: ThemeModel, MoodAware, SkyAware, PulseAware 
         let siphonophores: [Siphonophore] = warping ? [] : deep.siphonophores
         let streams: [BubbleStream] = warping ? [] : deep.bubbleStreams
         let burst: Double? = warping ? nil : deep.burst
-        let scene = ambience(roles: roles, dial: dial, shallow: Double(shallow), burst: burst)
+        let song = Double(whale?.presence ?? 0)
+        let contact: Double = play.surprise(2) != nil ? 1 : 0
+        let scene = ambience(roles: roles, dial: dial, shallow: Double(shallow), burst: burst, song: song, contact: contact)
         let cabin = Self.clamp01(Float(p.number("cabin")))
         let screen = Self.clamp01(Float(p.number("sonar")))
         let lamps = Self.clamp01(Float(p.number("lamps")))
         let rain: Float = Self.clamp01(sky.rain) * shallow
         let milky: Float = Self.clamp01(sky.steam) * shallow
-        return SubFrame(sky: sky, depth: Float(dial), depthMetres: metres, surfaceLight: surface,
-                        lightFromAbove: Self.lightFromAbove(surface, metres: metres), snellVisible: shallow,
-                        surfaceWaves: waves, rainOnSurface: rain, milky: milky,
-                        creatures: creatures, shoals: shoals, siphonophores: siphonophores, bubbleStreams: streams,
-                        sonarBlips: blips, sonarSweep: Self.sweep(at: time), cabinNight: Self.cabinNight(sky),
-                        cabinLight: cabin, sonarScreen: screen, lamps: lamps, snow: snow, keys: keys,
-                        ambience: scene, mood: mood, time: time, warp: warping ? warpFrame : nil)
+        var frame = SubFrame(sky: sky, depth: Float(dial), depthMetres: metres, surfaceLight: surface,
+                             lightFromAbove: Self.lightFromAbove(surface, metres: metres), snellVisible: shallow,
+                             surfaceWaves: waves, rainOnSurface: rain, milky: milky,
+                             creatures: creatures, shoals: shoals, siphonophores: siphonophores, bubbleStreams: streams,
+                             sonarBlips: blips, sonarSweep: Self.sweep(at: time), cabinNight: Self.cabinNight(sky),
+                             cabinLight: cabin, sonarScreen: screen, lamps: lamps, snow: snow, keys: keys,
+                             ambience: scene, mood: mood, time: time, warp: warping ? warpFrame : nil)
+        frame.whale = whale
+        frame.dark = play.tension
+        frame.passers = passers
+        frame.energy = play.energy
+        frame.surprises = play.surprises
+        frame.reduceMotion = play.reduceMotion
+        return frame
+    }
+
+    /// The far lights crossing the porthole (Energy's traffic): a lanternfish or two far off, each a small light drifting
+    /// across the dark, more of them the harder you play (none when nobody is). A fixed pool.
+    private mutating func stepTraffic(dt: Float, energy: Float) {
+        for i in passers.indices {
+            passers[i].x += passers[i].w * dt
+            passers[i].z = max(0, passers[i].z - 0.02 * dt)
+        }
+        passers.removeAll { $0.x < -0.1 || $0.x > 1.1 || $0.z <= 0 }
+        passerDebt += (energy > 0.05 ? 0.1 + 0.9 * energy : 0) * dt
+        while passerDebt >= 1, passers.count < Self.passerCap {
+            passerDebt -= 1
+            let right = trafficRng.unit() < 0.5
+            let speed = trafficRng.range(0.05, 0.12) * (right ? 1 : -1)
+            passers.append(SIMD4(right ? -0.05 : 1.05, trafficRng.range(0.25, 0.8), trafficRng.range(0.25, 0.55), speed))
+        }
+        if passerDebt > 1 { passerDebt = 1 }
     }
 
     /// What the submarine hears (spec §5, §8.1): its machinery (the hum, the scrubbers' air, the hull's ticks); the hull
@@ -334,7 +428,8 @@ public struct SubmarineWindowModel: ThemeModel, MoodAware, SkyAware, PulseAware 
     /// and the rain's soft hiss on the surface above (`rainOnWater`, muffled by the hull). Then `WeatherAmbience`, as
     /// every world has it, though none of the air's sounds it may add reach the submarine; nor does thunder. Everything
     /// outside comes through the hull a little muffled (indoors 0.85).
-    private func ambience(roles: RoleValues, dial d: Double, shallow: Double, burst: Double?) -> AmbienceScene {
+    private func ambience(roles: RoleValues, dial d: Double, shallow: Double, burst: Double?, song: Double = 0,
+                          contact: Double = 0) -> AmbienceScene {
         let rain = Double(Self.clamp01(sky.rain))
         let rise = 1 - d
         let midDepth = 1 - abs(d - 0.5) * 2
@@ -343,8 +438,8 @@ public struct SubmarineWindowModel: ThemeModel, MoodAware, SkyAware, PulseAware 
             .airFlow: 0.3,
             .hullTicks: 0.15,
             .hullCreak: 0.25 + 0.35 * d,
-            .sonar: 0.5,
-            .whaleSong: 0.2 + 0.15 * midDepth,
+            .sonar: 0.5 + 0.25 * contact,
+            .whaleSong: min(1, 0.2 + 0.15 * midDepth + 0.45 * song),
             .bubbles: 0.5,   // a burst near −36 dBFS through the hull (at 0.15 it was −50: lost)
             .snappingShrimp: 0.3 * rise * rise * shallow,
             .rainOnWater: rain * rise * 0.5 * shallow,

@@ -6,11 +6,21 @@ import InStrumCore
 /// Draws Snowbound Cabin Window (spec §8.1, §7.4): the Living Sky and a snowy valley through a three-by-two log
 /// window (Galaxy Warp over the sky when chosen), snow outside, the Window Kit's frosted glass with the notes'
 /// warm patches, the frame, the fire-lit room with its sill, and ember-amber keys.
+///
+/// Excitement (Fire & Neon spec §5.5): the fire's roar lights the room through the scene's `FlashLimiter` (a glow under
+/// gentle visuals) and the snow whirls past the glass (the weather's snow and wind, the model's, and an eddy of near
+/// flakes in the sparks' pool); an owl on the sill and a star through a break in the clouds are drawn in the outside
+/// pass; the aurora's edge is the shared sky's. Four uniform rows, a fixed pool of 40 whirling flakes.
 @MainActor
 final class SnowboundCabinRenderer: ThemeRenderer {
     /// Warm patches sent to the glass (fewer on Smooth).
     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
     static let maxSparks = 36
+    /// The near flakes whirling past the glass in a moment (a fixed count, placed afresh each frame).
+    static let whirlFlakes = 40
+    /// CabinU's rows: 8, the 19 bars, then the owl (two rows), the star and the roar.
+    nonisolated static let rowOwl = 27, rowOwl2 = 28, rowStar = 29, rowRoar = 30
+    nonisolated static let uniformCount = 31
     static let fieldSeed: UInt64 = 0xCAB1
 
     /// The window: three panes by two in log wood, filling about 70% of the frame, never wider than about 1.8:1.
@@ -30,7 +40,7 @@ final class SnowboundCabinRenderer: ThemeRenderer {
     private var showWarp = false
     private let scene: SkyPipeline
     private let sparks, room, keys: MTLRenderPipelineState
-    private var cabinU = [SIMD4<Float>](repeating: .zero, count: 8 + 19)
+    private var cabinU = [SIMD4<Float>](repeating: .zero, count: SnowboundCabinRenderer.uniformCount)
     private var keyInstances: [KeyInstance] = []
     private var sparkInstances: [SIMD4<Float>] = []
     private var sparkList: [(x: Float, y: Float, age: Float, life: Float, size: Float)] = []
@@ -43,6 +53,20 @@ final class SnowboundCabinRenderer: ThemeRenderer {
     private(set) var glintOut: Float = 0
     /// Warm patches drawn this frame.
     private(set) var patchCount = 0
+    private var primed = false
+    private var roarGlow = ExcitementGlow()
+    private var whirlClock: Float = 0
+    /// Excitement as drawn (tests read them): the roar's light after the limiter and what it asked for, the whirling
+    /// flakes drawn, whether the owl and the star are in view.
+    private(set) var roarOut: Float = 0
+    private(set) var roarRequest: Float = 0
+    private(set) var whirlCount = 0
+    private(set) var owlShown = false
+    private(set) var starShown = false
+    var flashesInLastSecond: Int { limiter.recent }
+    var flashTotal: Int { limiter.total }
+    /// The shader's rows (tests read them).
+    var uniforms: [SIMD4<Float>] { cabinU }
     /// The glass in NDC (x0, y0, x1, y1).
     private(set) var windowRect = SIMD4<Float>(-0.7, -0.5, 0.7, 0.86)
     /// The keys' rectangles in NDC (tests check they stay inside the frame).
@@ -139,11 +163,22 @@ final class SnowboundCabinRenderer: ThemeRenderer {
         limiter.gentle = gentle
         let mood = frame.mood
         let exposure = MoodLook.exposure(mood) * (1 + 0.5 * night) * weather.exposureBoost
-        let limited = limiter.limit(exposure: exposure, sparkle: 1, dt: dt)
-        flareOut = min(1, frame.flare) * limited.sparkle
+        // The roar's light rides on the exposure, through the limiter (primed on the room's own exposure, so arriving is
+        // never a flash); under gentle visuals it is a glow.
+        if !primed {
+            primed = true
+            for _ in 0..<16 { _ = limiter.limit(exposure: exposure, sparkle: 1, dt: 1) }
+        }
+        let request = ExcitementGlow.unit(frame.roar)
+        let asked = ExcitementGlow.ask(request, gentle: gentle, scale: 0.2)
+        let limited = limiter.limit(exposure: exposure * (1 + asked), sparkle: 1, dt: dt)
+        let passed = ExcitementGlow.passed(limited: limited.exposure, base: exposure, asked: asked)
+        roarRequest = request
+        roarOut = roarGlow.update(request: request, passed: passed, gentle: gentle, dt: dt)
+        flareOut = max(min(1, frame.flare) * limited.sparkle, roarOut)
         glintOut = limited.sparkle * (0.6 + 0.4 * flareOut)
         let fireSetting = Float(p.number("fire"))
-        let fire = fireSetting * frame.fireFlicker
+        let fire = fireSetting * frame.fireFlicker * (1 + 0.6 * roarOut)
         let fireCol = Self.fireColour(flare: flareOut, warm: frame.flareWarm)
         let outside = (s.zenith + s.horizon) * 0.55 + SIMD3<Float>(repeating: 0.25 * sunUp)
 
@@ -168,6 +203,29 @@ final class SnowboundCabinRenderer: ThemeRenderer {
             }
         }
         sparkInstances.removeAll(keepingCapacity: true)
+        whirlCount = 0
+        whirlClock += fdt
+        if whirlClock > 3600 { whirlClock -= 3600 }
+        let whirl = ExcitementGlow.unit(frame.whirl) * (frame.reduceMotion ? 0.5 : 1)
+        if whirl > 0.01 {
+            // The eddy: near flakes streaming across the glass on the wind, looping as they go, lit by the fire and the sky.
+            let lit: Float = (0.35 + 0.65 * max(night, 0.3)) * limited.sparkle
+            let paneTop = spec.rect.w
+            for k in 0..<Self.whirlFlakes {
+                let fk = Float(k)
+                let h1 = Self.hash(fk * 1.37 + 0.11), h2 = Self.hash(fk * 2.71 + 0.53)
+                let h3 = Self.hash(fk * 3.19 + 0.97), h4 = Self.hash(fk * 4.43 + 0.29)
+                let run = (h2 + whirlClock * (0.35 + 0.45 * h3)).truncatingRemainder(dividingBy: 1)
+                let x = spec.rect.x - 0.05 + (glassW + 0.1) * run
+                let loop = 0.05 * sin(whirlClock * (2.5 + 2 * h1) + 6.28 * h4)
+                let y = horizonY + (paneTop - horizonY) * (0.08 + 0.85 * h4) + loop
+                let edges: Float = min(1, run * 8) * min(1, (1 - run) * 8)
+                let bright: Float = whirl * lit * (0.4 + 0.6 * h1) * edges
+                guard bright > 0.004 else { continue }
+                sparkInstances.append(SIMD4(x, y, 0.006 + 0.008 * h3, bright))
+                whirlCount += 1
+            }
+        }
         sparkList = sparkList.compactMap { sp in
             var sp = sp
             sp.age += fdt
@@ -197,6 +255,8 @@ final class SnowboundCabinRenderer: ThemeRenderer {
         let bars = spec.bars()
         cabinU[7] = SIMD4(Float(min(19, bars.count)), 0, 0, 0)
         for i in 0..<19 { cabinU[8 + i] = i < bars.count ? bars[i] : .zero }
+        updateSurprises(frame, spec: spec, horizonY: horizonY, size: size)
+        cabinU[Self.rowRoar] = SIMD4(roarOut, whirl, ExcitementGlow.unit(frame.gather), 0)
 
         // Keys: dark wood-black keys in the firelight, ember amber where you play.
         keyInstances.removeAll(keepingCapacity: true)
@@ -218,6 +278,51 @@ final class SnowboundCabinRenderer: ThemeRenderer {
             exposure: limited.exposure,
             warmth: MoodLook.warmthOffset(mood) + 0.06 * night,
             time: time, quality: quality)
+    }
+
+    /// A number in 0..<1 from `x` (the shader's own hash, for the whirling flakes' places).
+    nonisolated static func hash(_ x: Float) -> Float {
+        let v = sin(x * 127.1 + 311.7) * 43758.5453
+        return v - v.rounded(.down)
+    }
+
+    /// The owl's rows (on the drift at the foot of the glass: swooping in from above, perched, turning its head and
+    /// blinking, then dropping away) and the star's (high in the window's sky, the cloud parting round it).
+    private func updateSurprises(_ frame: CabinFrame, spec: WindowSpec, horizonY: Float, size: CGSize) {
+        let glassW = spec.rect.z - spec.rect.x, glassH = spec.rect.w - spec.rect.y
+        cabinU[Self.rowOwl] = .zero
+        cabinU[Self.rowOwl2] = .zero
+        cabinU[Self.rowStar] = SIMD4(0, 0, 0, 2 / Float(max(1, size.height)))
+        owlShown = false
+        starShown = false
+        for s in frame.surprises {
+            let age = s.age
+            switch s.index {
+            case 0:
+                let side: Float = s.unit(0) < 0.5 ? -1 : 1
+                let arrive = 1 - ExcitementPlay.smooth(0, 0.9, age)
+                let leave = ExcitementPlay.smooth(s.duration - 1.2, s.duration, age)
+                let perchX: Float = spec.rect.x + glassW * (0.22 + 0.56 * s.unit(1))
+                let x: Float = perchX + side * (0.25 * leave - 0.12 * arrive)
+                let perchY: Float = spec.rect.y + glassH * 0.028
+                let y: Float = perchY + glassH * (0.5 * arrive - 0.15 * leave)
+                let height = 0.16 * glassH
+                let turn = 0.8 * sin(age * 0.9 + 6.28 * s.unit(2)) * ExcitementPlay.smooth(1.4, 2.2, age)
+                func bump(_ at: Float) -> Float { max(0, 1 - abs(age - at) / 0.09) }
+                let blink = max(bump(3.1), bump(6.3))
+                cabinU[Self.rowOwl] = SIMD4(x, y, height, 1)
+                cabinU[Self.rowOwl2] = SIMD4(turn, blink, 0, 0)
+                owlShown = true
+            case 2:
+                let env = ExcitementPlay.envelope(age: age, life: s.duration, rise: 2, fall: 3)
+                let x = spec.rect.x + glassW * (0.25 + 0.5 * s.unit(1))
+                let y = horizonY + (spec.rect.w - horizonY) * (0.55 + 0.3 * s.unit(2))
+                cabinU[Self.rowStar] = SIMD4(x, y, env, 2 / Float(max(1, size.height)))
+                starShown = env > 0.01
+            default:
+                break   // the aurora's edge is the sky's
+            }
+        }
     }
 
     func render(stack: RenderStack, commandBuffer cb: MTLCommandBuffer) {

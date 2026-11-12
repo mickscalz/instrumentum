@@ -7,7 +7,9 @@ enum MidnightSteinwayShaders {
 
     // params: x = keyTop (NDC y), y = bloom, z = ambience, w = spotlight count
     // style: x = spotlight width, y = warmth (-1...1), z = lacquer sheen, w = haze
-    struct StageUniforms { float4 params; float4 style; float4 spots[64]; };
+    // moment (Excitement): x = the spotlight's bloom overhead (limited), y = tension's gathering, z = the dust motes'
+    // shimmer, w = the curtain stirring; clock: x = time (s), y = seconds the curtain has stirred
+    struct StageUniforms { float4 params; float4 style; float4 spots[64]; float4 moment; float4 clock; };
     struct ColorDepth { float4 color [[color(0)]]; float4 depth [[color(1)]]; };
     struct StageOut { float4 pos [[position]]; float2 p; };
 
@@ -40,6 +42,47 @@ enum MidnightSteinwayShaders {
             col += amber * bloom * 0.28 * exp(-h * 0.8);
             // faint reflection of the light on the lacquered fall-board
             col += amber * bloom * 0.15 * exp(-h * 18.0);
+        }
+        // The spotlight blooming overhead (a big moment): a wide soft cone down through the haze onto the piano, its
+        // pool on the lacquer just above the keys.
+        float bloomSpot = u.moment.x;
+        if (bloomSpot > 0.001) {
+            float hh = 1.15 - p.y;
+            float hw = (0.1 + 0.32 * hh) * (0.55 + 0.45 * bloomSpot);
+            float dx = p.x / hw;
+            float cone = exp(-dx * dx) * (0.35 + 0.65 * smoothstep(-0.2, 1.0, hh));
+            col += spot * cone * (bloomSpot * 0.22 * (0.6 + 1.2 * u.style.w));
+            if (h > 0.0) {
+                float2 pq = float2(p.x / (0.35 + 0.45 * bloomSpot), (h - 0.05) / 0.07);
+                col += spot * exp(-dot(pq, pq)) * (bloomSpot * 0.35);
+            }
+        }
+        // Dust motes drifting down through the light, glinting (a surprise).
+        float motes = u.moment.z;
+        if (motes > 0.001 && h > 0.0) {
+            float t = u.clock.x;
+            float2 g = p * float2(40.0, 24.0) + float2(0.0, t * 0.4);
+            float2 cell = floor(g), f = fract(g) - 0.5;
+            float hs = fract(sin(dot(cell, float2(127.1, 311.7))) * 43758.5453);
+            float2 off = float2(fract(hs * 13.7) - 0.5, fract(hs * 7.3) - 0.5) * 0.6;
+            float2 dd = f - off;
+            float tw = 0.5 + 0.5 * sin(t * (2.0 + 3.0 * hs) + hs * 40.0);
+            float beam = exp(-(p.x * p.x) / 0.25) * (0.4 + 0.6 * max(bloomSpot, ambience));
+            float mote = exp(-dot(dd, dd) * 900.0) * step(0.55, hs) * tw * tw;
+            col += float3(1.0, 0.9, 0.75) * (mote * motes * beam * 1.2);
+        }
+        // The stage curtains stirring at the sides (a surprise): their velvet folds catch a little of the light as they move.
+        float stir = u.moment.w;
+        if (stir > 0.001) {
+            float edge = max(smoothstep(0.72, 0.98, p.x), smoothstep(0.72, 0.98, -p.x));
+            if (edge > 0.0) {
+                float t = u.clock.x;
+                float wave = 1.6 * sin(p.y * 2.3 - u.clock.y * 1.3) * stir;
+                float folds = saturate(sin(abs(p.x) * 46.0 + wave + t * 0.2));
+                float f2 = folds * folds;
+                float sheenF = f2 * f2 * f2;
+                col += float3(0.35, 0.04, 0.05) * (sheenF * edge * stir * (0.18 + 0.3 * ambience) * (1.2 - 0.5 * abs(p.y)));
+            }
         }
         col += float3(1.0, 0.78, 0.5) * ambience * 0.05 * (1.2 - abs(p.y));
         col += float3(1.0, 0.8, 0.55) * u.style.w * 0.025 * (1.0 - abs(p.y - 0.2));
