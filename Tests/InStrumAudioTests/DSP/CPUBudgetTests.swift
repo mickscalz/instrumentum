@@ -330,6 +330,7 @@ final class CPUBudgetTests: XCTestCase {
         // Every source at once never happens in a world (each plays its own handful; `testWorldAmbienceBudget` guards
         // those). This is a ceiling against big regressions: identical code measured 10.8% and 13.2% on two CI runners
         // (12 Nov), so the limit leaves room for the runners' spread.
-        XCTAssertLessThan(seconds / 10, 0.15, "Felt Glass + Orbit Pad + ambience used \(String(format: "%.1f", seconds * 10))% of real time")
+        // 15.3% on GitHub's Intel runner (13 Nov), where CI now runs.
+        XCTAssertLessThan(seconds / 10, 0.20, "Felt Glass + Orbit Pad + ambience used \(String(format: "%.1f", seconds * 10))% of real time")
     }
 }
