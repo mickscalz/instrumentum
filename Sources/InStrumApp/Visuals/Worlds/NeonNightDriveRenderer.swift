@@ -26,9 +26,27 @@ final class NeonNightDriveRenderer: ThemeRenderer {
     nonisolated static let carBase = 48, carSlots = 12
     nonisolated static let palBase = 72, palRows = 6
     nonisolated static let rowMoon = 78, rowCabin = 79, rowPillars = 80
+    /// Each car's cone (`carCone`): the direction to its lights and the cosine past which a ray misses its glow.
+    nonisolated static let carConeBase = 81
     /// The Sky kit's `SkyU` rows for the moon: its direction and phase, then lit fraction, earthshine, radius.
     nonisolated static let skyMoonRow = 6
-    nonisolated static let uniformCount = 81
+    nonisolated static let uniformCount = 93
+
+    /// A car's cone for the shader (MSL `carCone`): the unit direction from the eye to the middle of its lights (the
+    /// road's frame: x right, y up, z ahead) and the cosine of the angle within which a ray passes nearer to it than its
+    /// glow reaches (19.6 m for an oncoming car's headlights, 13.6 for taillights and spray; its face is well inside
+    /// that): a ray with |cos| under it reads none of the car. An empty slot is never read (2); a car nearer than its
+    /// reach always is (−1).
+    nonisolated static func carCone(x: Float, ahead: Float, oncoming: Bool, eye: Float) -> SIMD4<Float> {
+        guard ahead > -1e4, x.isFinite, ahead.isFinite else { return SIMD4(0, 0, 0, 2) }
+        let c = SIMD3<Float>(x, 0.7 - eye, ahead)
+        let len = simd_length(c)
+        let reach: Float = oncoming ? 19.6 : 13.6
+        guard len > reach else { return SIMD4(0, 0, 0, -1) }
+        let n = c / len
+        let share = reach / len
+        return SIMD4(n.x, n.y, n.z, (1 - share * share).squareRoot())
+    }
 
     // MARK: The view
     /// The way the road runs (degrees from north): the sky's moon and clouds stand where they would.
@@ -283,10 +301,13 @@ final class NeonNightDriveRenderer: ThemeRenderer {
         for i in 0..<Self.carSlots {
             u[Self.carBase + i * 2] = SIMD4(0, -Self.farAway, 0, 0)
             u[Self.carBase + i * 2 + 1] = .zero
+            u[Self.carConeBase + i] = SIMD4(0, 0, 0, 2)
         }
         for (i, c) in frame.cars.prefix(Self.carSlots).enumerated() {
-            u[Self.carBase + i * 2] = SIMD4(DriveRoad.laneCentre(c.lane), c.ahead, c.oncoming ? 1 : 0, Self.unit(c.brake))
+            let x = DriveRoad.laneCentre(c.lane)
+            u[Self.carBase + i * 2] = SIMD4(x, c.ahead, c.oncoming ? 1 : 0, Self.unit(c.brake))
             u[Self.carBase + i * 2 + 1] = SIMD4(Float(c.seed % 1000) / 1000, c.lightBar ? 1 : 0, 0, 0)
+            u[Self.carConeBase + i] = Self.carCone(x: x, ahead: c.ahead, oncoming: c.oncoming, eye: DriveRoad.eyeHeight)
         }
         for i in 0..<Self.palRows { u[Self.palBase + i] = SIMD4(pal[i], 0) }
         // The moon, drawn by the drive itself as a dim glow behind the overcast (the Sky kit's disc is hidden in `render`):

@@ -42,6 +42,8 @@ enum NeonNightDriveShaders {
         float4 moon;        // the moon behind the overcast: its direction (east-north-up), how much shows 0…1
         float4 cabin;       // the windscreen's outline (NDC): the dashboard's line y, the roof's line y, 0, 0
         float4 pillars;     // the left pillar's inner edge x at the dashboard and at the roof, the right pillar's
+        float4 carCone[12]; // per car: the direction to its lights (the road's frame), and the cosine within which a ray
+                            // passes nearer than its glow reaches (|cos| under it: none of the car; empty 2, always −1)
     };
     struct DriveOut { float4 pos [[position]]; float2 ndc; };
 
@@ -922,16 +924,13 @@ enum NeonNightDriveShaders {
 
     /// A car's lights glowing in the rainy air: red taillights and the spray behind its wheels, or white headlights; each
     /// a point at least a pixel wide with a halo some tens of centimetres round it.
-    float3 carGlow(float3 d, float4 a, float tHit, float eye, float rain, float pa) {
+    float3 carGlow(float3 d, float4 a, float4 cone, float tHit, float eye, float rain, float pa) {
         if (a.y < -1e4 || a.y < 1.0) return float3(0);
         bool oncoming = a.z > 0.5;
-        // (Its lights and its spray all stand within 1.6 m of this point, and none adds a millionth of its light farther
-        // than 18 m from where the ray passes it (12 m for a taillight or the spray): a ray passing farther off reads
-        // none of them. Most cars, for most of the view.)
-        float3 c0 = float3(a.x, 0.7 - eye, a.y);
-        float3 perp = c0 - d * dot(d, c0);
-        float reach = oncoming ? 19.6 : 13.6;
-        if (dot(perp, perp) > reach * reach) return float3(0);
+        // (Its lights and its spray all stand within 1.6 m of the cone's axis point, and none adds a millionth of its
+        // light farther than 18 m from where the ray passes it (12 m for a taillight or the spray): a ray outside its
+        // cone (19.6 m, 13.6 m) reads none of them. Most cars, for most of the view.)
+        if (abs(dot(d, cone.xyz)) < cone.w) return float3(0);
         float3 glow = float3(0);
         for (int s = -1; s <= 1; s += 2) {
             float3 v = float3(a.x + float(s) * (oncoming ? 0.64 : 0.7), (oncoming ? 0.64 : 0.84) - eye, a.y);
@@ -1284,6 +1283,9 @@ enum NeonNightDriveShaders {
         for (int c = 0; c < 12; c++) {
             float4 a = u.cars[c * 2];
             if ((skip & 16u) != 0u) break;
+            // (A ray outside the car's cone passes more than 13.6 m from it: its face, 1.8 m round, can't be met.)
+            float4 cone = u.carCone[c];
+            if (abs(dot(d, cone.xyz)) < cone.w) continue;
             if (a.y < 1.0 || a.y > 700.0 || a.y < zMin || d.z <= 0.0) continue;
             float tc = a.y / d.z;
             if (tc >= tHit) continue;
@@ -1329,7 +1331,7 @@ enum NeonNightDriveShaders {
             float4 a = u.cars[c * 2];
             if ((skip & 64u) != 0u) break;
             if (a.y < zMin) continue;
-            col += carGlow(d, a, tHit, eye, rain, pa);
+            col += carGlow(d, a, u.carCone[c], tHit, eye, rain, pa);
         }
         ColorDepth out;
         out.color = float4(max(col, 0.0), 1.0);
