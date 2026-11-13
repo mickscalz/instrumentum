@@ -27,14 +27,23 @@ final class BioluminescentBayRenderer: ThemeRenderer {
     /// The lighthouse lamp on the far point: azimuth from the view's centre and altitude (degrees).
     nonisolated static let lighthouseAzimuth: Float = 8.6
     nonisolated static let lighthouseAltitude: Float = 1.75
-    /// The uniform block (MSL `BayU`): 12 header rows, then the patches, the wakes (two rows each) and the darts (two).
-    nonisolated static let headerCount = 12
-    nonisolated static let patchBase = 12
-    nonisolated static let wakeBase = 12 + GlowWake.cap
-    nonisolated static let wakeBBase = 12 + GlowWake.cap + GlowWake.wakeCap
-    nonisolated static let dartBase = 12 + GlowWake.cap + 2 * GlowWake.wakeCap
-    nonisolated static let dartBBase = 12 + GlowWake.cap + 2 * GlowWake.wakeCap + GlowWake.dartCap
-    nonisolated static let uniformCount = 12 + GlowWake.cap + 2 * GlowWake.wakeCap + 2 * GlowWake.dartCap
+    /// The uniform block (MSL `BayU`): 19 header rows (the 12 before Fire & Neon, then Excitement's six and the sand's
+    /// light), then the patches, the wakes (two rows each) and the darts (two).
+    nonisolated static let headerCount = 19
+    nonisolated static let patchBase = headerCount
+    nonisolated static let wakeBase = headerCount + GlowWake.cap
+    nonisolated static let wakeBBase = headerCount + GlowWake.cap + GlowWake.wakeCap
+    nonisolated static let dartBase = headerCount + GlowWake.cap + 2 * GlowWake.wakeCap
+    nonisolated static let dartBBase = headerCount + GlowWake.cap + 2 * GlowWake.wakeCap + GlowWake.dartCap
+    nonisolated static let uniformCount = headerCount + GlowWake.cap + 2 * GlowWake.wakeCap + 2 * GlowWake.dartCap
+    /// The wave of light sets off this far out (m: the bay's mouth) and runs in to just short of the waterline.
+    nonisolated static let mouthOut: Float = 260
+    /// The manta's span (m), and the sky's cover past which the sun and the moon are behind the cloud (their direct light
+    /// on the sand falls from 1 at `cloudClear` to `cloudFloor` at `cloudHeavy`).
+    nonisolated static let mantaSpan: Float = 4.6
+    /// The manta's shape is drawn this many times longer out from the shore than it is (as a higher eye would see it).
+    nonisolated static let mantaStretch: Float = 4
+    nonisolated static let cloudClear: Float = 0.3, cloudHeavy: Float = 0.75, cloudFloor: Float = 0.04
 
     typealias Camera = (right: SIMD3<Float>, up: SIMD3<Float>, forward: SIMD3<Float>, tanH: Float, tanV: Float)
 
@@ -45,11 +54,19 @@ final class BioluminescentBayRenderer: ThemeRenderer {
     private var showWarp = false
     private let bay: SkyPipeline
     private let keys: MTLRenderPipelineState
-    private var bayU = [SIMD4<Float>](repeating: .zero, count: 12 + GlowWake.cap + 2 * GlowWake.wakeCap + 2 * GlowWake.dartCap)
+    private var bayU = [SIMD4<Float>](repeating: .zero, count: BioluminescentBayRenderer.uniformCount)
     private var oceanU = [SIMD4<Float>](repeating: .zero, count: 7)   // the bay doesn't travel: travel stays 0
     private var keyInstances: [KeyInstance] = []
     private var aspect: Float = 16.0 / 9
     private var limiter = FlashLimiter()
+    private var primed = false
+    /// Under gentle visuals the exposure only ever eases up (never a flash).
+    private var gentleExposure = GentleExposure()
+    private var fireballGlow: Float = 0
+    /// The wave of light through its own limiter (primed at rest, so arriving is never a flash); a glow under gentle visuals.
+    private var waveLimiter = FlashLimiter()
+    private var wavePrimed = false
+    private var waveGlow = ExcitementGlow()
     private var lanternLevel: Float = 0
     private var lanternPrimed = false
     private var camera: Camera?
@@ -63,6 +80,22 @@ final class BioluminescentBayRenderer: ThemeRenderer {
     private(set) var lanternOut: Float = 0
     /// Glow Wake drawn this frame.
     private(set) var patchCount = 0, wakeCount = 0, dartCount = 0
+    /// Excitement as drawn (tests read them): the wave of light after its limiter and what it asked for, its arrival on
+    /// the shore, the glow gathered, the drop's sparkles, Energy's lift, the manta and the turtle, the bay's own meteors
+    /// shown, the exposure after the flash limiter; and the sun's and moon's direct light on the sand (1 under a clear sky).
+    private(set) var waveOut: Float = 0
+    private(set) var waveRequest: Float = 0
+    private(set) var shoreOut: Float = 0
+    private(set) var gatherOut: Float = 0
+    private(set) var sparkleOut: Float = 0
+    private(set) var energyOut: Float = 0
+    private(set) var mantaDrawn = false
+    private(set) var turtleDrawn = false
+    private(set) var worldMeteorsShown = 0
+    private(set) var exposureOut: Float = 1
+    private(set) var sandDirectOut: Float = 1
+    var flashesInLastSecond: Int { max(limiter.recent, waveLimiter.recent) }
+    var flashTotal: Int { limiter.total + waveLimiter.total }
     /// The horizon and the waterline in NDC y.
     private(set) var horizonY: Float = -0.2
     private(set) var waterlineY: Float = -0.6
@@ -174,8 +207,23 @@ final class BioluminescentBayRenderer: ThemeRenderer {
         let haze = min(1, 0.2 * MoodLook.hazeScale(mood) + s.mist)
         let exposure = MoodLook.exposure(mood) * (1 + 0.9 * night) * weather.exposureBoost
         let glowSetting = Float(min(1, max(0, p.number("glow"))))
-        let limited = limiter.limit(exposure: exposure, sparkle: min(1, max(0, frame.glowScale)) * glowSetting, dt: dt)
+        // A fireball's light on the bay rides on the exposure: under gentle visuals only ever a glow, eased in.
+        let request = Self.unit(frame.flashRequest)
+        if gentle {
+            fireballGlow += (min(0.12, 0.4 * request) - fireballGlow) * (dt == 0 ? 1 : 1 - exp(-fdt / 0.8))
+        } else {
+            fireballGlow = 0.9 * request
+        }
+        if !primed {
+            // The limiter starts from black: settle it on the scene's own exposure first, so arriving is never a flash.
+            primed = true
+            for _ in 0..<16 { _ = limiter.limit(exposure: exposure, sparkle: 1, dt: 1) }
+        }
+        let lifted = gentleExposure.step(exposure * (1 + fireballGlow), gentle: gentle, dt: dt)
+        let limited = limiter.limit(exposure: lifted, sparkle: min(1, max(0, frame.glowScale)) * glowSetting, dt: dt)
+        exposureOut = limited.exposure
         glowOut = limited.sparkle
+        worldMeteorsShown = min(frame.worldMeteors, SkyLayer.meteorSlots)
         // Glow Wake's brightness already carries the dark (and the rain): the setting and the sparkle scale go on top.
         let glowGain = glowSetting * sparkleScale
         lighthouseOut = min(1, max(0, frame.lighthouseFlash)) * Float(min(1, max(0, p.number("lighthouse")))) * sparkleScale
@@ -254,6 +302,14 @@ final class BioluminescentBayRenderer: ThemeRenderer {
         let lampDir = SIMD3<Float>(sin(a) * cos(lampAlt), cos(a) * cos(lampAlt), sin(lampAlt))
         bayU[11] = SIMD4(lampDir, 0)
 
+        fillExcitement(frame, gentle: gentle, sparkleScale: sparkleScale, tanH: tanH, dt: dt)
+        // Heavy cloud hides the sun and the moon: their direct light on the sand falls with it (a clear sky's is untouched),
+        // and the cloud's dark base takes some of the sky's light off it.
+        let cloud = Self.unit(s.cloudCover)
+        let hidden = Float(Self.smooth(Double(Self.cloudClear), Double(Self.cloudHeavy), Double(cloud)))
+        sandDirectOut = 1 - (1 - Self.cloudFloor) * hidden
+        bayU[18] = SIMD4(sandDirectOut, 1 - 0.45 * hidden, 0, 0)
+
         // The header: the keys, the eye, the night, the glow line and its 0.15 Hz wash, the lights, the weather.
         let washPhase = Float((frame.time * 0.15).truncatingRemainder(dividingBy: 1))
         bayU[0] = SIMD4(keyTop, aspect, Self.cameraHeight, night)
@@ -286,6 +342,83 @@ final class BioluminescentBayRenderer: ThemeRenderer {
             exposure: limited.exposure,
             warmth: MoodLook.warmthOffset(mood) + 0.06 * day - 0.06 * night,
             time: Float(frame.time.truncatingRemainder(dividingBy: 3600)), quality: quality)
+    }
+
+    // MARK: - Excitement (Fire & Neon spec §5.5)
+
+    nonisolated static func unit(_ v: Float) -> Float { v.isFinite ? min(1, max(0, v)) : 0 }
+
+    /// The wave's front (m out) for its run 0…1: even on screen (1 / distance runs linearly) from the mouth to just short
+    /// of the waterline.
+    nonisolated static func waveFrontOut(_ front: Float) -> Float {
+        let k = unit(front)
+        let near = waterline - 1.2
+        return 1 / ((1 - k) / mouthOut + k / near)
+    }
+
+    /// The wave of light through its limiter, the gathered glow, Energy and the sparkles, the manta and the turtle, into
+    /// the shader's rows (12…17). Everything glows only in the dark (× the frame's glowScale: the night, dulled by rain).
+    private func fillExcitement(_ frame: BayFrame, gentle: Bool, sparkleScale: Float, tanH: Float, dt: Double) {
+        let dark = Self.unit(frame.glowScale)
+        waveLimiter.gentle = gentle
+        if !wavePrimed {
+            wavePrimed = true
+            for _ in 0..<16 { _ = waveLimiter.limit(exposure: 1, sparkle: 1, dt: 1) }
+        }
+        let ask = Self.unit((frame.wave?.light ?? 0) * dark)
+        let asked = ExcitementGlow.ask(ask, gentle: gentle, scale: 0.6)
+        let limited = waveLimiter.limit(exposure: 1 + asked, sparkle: 1, dt: dt)
+        let passed = ExcitementGlow.passed(limited: limited.exposure, base: 1, asked: asked)
+        waveRequest = ask
+        waveOut = waveGlow.update(request: ask, passed: passed, gentle: gentle, dt: dt)
+        let share: Float = ask > 1e-4 ? min(1, waveOut / ask) : (gentle ? 0.6 : 1)
+        shoreOut = Self.unit((frame.wave?.shore ?? 0) * dark * share)
+        sparkleOut = Self.unit(frame.sparkle * dark * share) * sparkleScale
+        gatherOut = Self.unit(frame.gather * dark)
+        energyOut = Self.unit(frame.energy)
+        let front = Self.waveFrontOut(frame.wave?.front ?? 0)
+        bayU[12] = SIMD4(front, waveOut, shoreOut, sparkleOut)
+        let gain: Float = frame.wave?.drop == true ? 1.45 : 1
+        let twinkle = Float((frame.time * 0.7).truncatingRemainder(dividingBy: 1))
+        bayU[13] = SIMD4(gatherOut, energyOut * (gentle ? 0.6 : 1), gain, twinkle)
+
+        // The surprises: a manta gliding in under the surface toward the shore, a turtle surfacing for a breath.
+        bayU[14] = .zero; bayU[15] = .zero; bayU[16] = .zero; bayU[17] = .zero
+        mantaDrawn = false
+        turtleDrawn = false
+        for sp in frame.surprises {
+            switch sp.index {
+            case 0:
+                // In from the bay's middle on a long diagonal, from 15–18 m out to the shallows (its wings spread across the view),
+                // fading in and out of the deep.
+                let env = ExcitementPlay.envelope(age: sp.age, life: sp.duration, rise: 1.6, fall: 2.2)
+                guard env > 0.002 else { continue }
+                let way: Float = sp.unit(0) < 0.5 ? 1 : -1
+                let k = sp.progress
+                let out0: Float = 15 + 3 * sp.unit(1), out1: Float = 6.8
+                let out = out0 + (out1 - out0) * k
+                let across0 = -way * (0.5 + 1.5 * sp.unit(2)), across1 = way * (0.5 + 1.5 * sp.unit(3))
+                let across = across0 + (across1 - across0) * k
+                // Gliding in toward the shore three-quarters on (one wing nearer), turned the way it drifts.
+                let heading: Float = -.pi / 2 + 0.42 * way
+                bayU[14] = SIMD4(across, out, heading, env)
+                let beat = (sp.age / 3.4).truncatingRemainder(dividingBy: 1)
+                bayU[15] = SIMD4(Self.mantaSpan, beat, dark * sparkleScale * (gentle ? 1.2 : 1), Self.mantaStretch)
+                mantaDrawn = true
+            case 1:
+                // Up for a breath 9–14 m out, rings of glow spreading as it breaks the surface and as it dives.
+                let up = ExcitementPlay.smooth(0.4, 1.2, sp.age) * (1 - ExcitementPlay.smooth(6.0, 6.8, sp.age))
+                let out: Float = 9 + 5 * sp.unit(1)
+                let across: Float = (sp.unit(2) - 0.5) * out * tanH * 1.1
+                let fade = ExcitementPlay.envelope(age: sp.age, life: sp.duration, rise: 0.3, fall: 1.5)
+                let facing: Float = sp.unit(0) < 0.5 ? 1 : -1
+                bayU[16] = SIMD4(across, out, sp.age, dark * sparkleScale * fade)
+                bayU[17] = SIMD4(up, facing, fade, 0)
+                turtleDrawn = up > 0.01 || dark * fade > 0.01
+            default:
+                break   // the fireball is the shared sky's
+            }
+        }
     }
 
     func render(stack: RenderStack, commandBuffer cb: MTLCommandBuffer) {

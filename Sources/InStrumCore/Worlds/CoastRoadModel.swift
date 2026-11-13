@@ -47,6 +47,23 @@ public struct RoadFrame: AmbienceProviding {
     public var flashRequest: Float = 0
     public var energy: Float = 0
     public var tension: Float = 0
+    /// The day's big moment (the lighthouse is dark by day): the sun breaks out (0…1 × the moment's strength × the day,
+    /// 1 − the lighthouse's `lit`, before the renderer's flash limiter), and a path of glitter races across the sea from
+    /// the horizon to the shore (0 at the horizon … 1 at the cliff's foot). Dusk has a little of both moments; night the
+    /// lighthouse alone.
+    public var sunBreak: Float = 0
+    public var glitterRace: Float = 0
+    /// A flock of seabirds lifting past the window with the day's moment (nil while none flies).
+    public var flock: RoadFlock? = nil
+}
+
+/// Seabirds lifting off the cliff past the window (the day's big moment): seconds since they rose, how many, their seed
+/// (where each one is and how it flies) and how much of the day they belong to (1 − the lighthouse's `lit`).
+public struct RoadFlock: Equatable {
+    public var age: Float
+    public var count: Int
+    public var seed: UInt64
+    public var light: Float
 }
 
 /// An oncoming car's headlights washing over the verge (Fire & Neon spec §5.5).
@@ -107,6 +124,10 @@ public struct CoastRoadModel: ThemeModel, MoodAware, SkyAware, ExcitementAware, 
     public static let beamTurn: Float = 2 * .pi / 16, sweepTurn: Float = 0.75
     /// The traffic washes' pool.
     public static let washCount = 3
+    /// The day's moment plays this long (s); its glitter races to the shore in `raceSeconds` (setting off `raceDelay` s
+    /// in, as the sun breaks out) and its flock crosses the window in `flockSeconds`; at most `flockMost` birds.
+    public static let dayLife: Float = 7, raceDelay: Float = 0.35, raceSeconds: Float = 2.4, flockSeconds: Float = 5.5
+    public static let flockMost = 11
 
     /// The sway's periods (seconds): slow enough never to feel queasy.
     static let rollPeriod = 11.0, yawPeriod = 17.0
@@ -136,6 +157,9 @@ public struct CoastRoadModel: ThemeModel, MoodAware, SkyAware, ExcitementAware, 
     private var washPool = [CarWash](repeating: CarWash(x: -1, light: 0), count: CoastRoadModel.washCount)
     private var washDebt: Float = 0
     private var openAge: Float?
+    /// The day's moment: its age, strength and the flock's seed.
+    private var day: (age: Float, strength: Float, seed: UInt64)?
+    private var flockRng = SeededRandom(seed: 0xF10C_B1D5)
     private var surprises: [RoadSurprise?] = [nil, nil, nil]
     private var foxSeen: Double = 0
     private var trainFrom: Float = 0
@@ -228,6 +252,15 @@ public struct CoastRoadModel: ThemeModel, MoodAware, SkyAware, ExcitementAware, 
         frame.beamAngle = beam
         frame.beamLight = min(1, lit * (0.25 + 0.75 * swelling))
         frame.washes = lit > 0.05 ? washPool.filter { $0.light > 0.005 && $0.x > -0.2 } : []
+        if let dd = day {
+            let daylight = 1 - lit
+            frame.sunBreak = min(1, dd.strength * daylight * ExcitementStep.envelope(age: dd.age, life: Self.dayLife, rise: 0.8, fall: 3.2))
+            frame.glitterRace = Self.race(age: dd.age)
+            if daylight > 0.02, dd.age < Self.flockSeconds + 0.6 {
+                let count = min(Self.flockMost, 6 + Int((dd.strength * 5).rounded()))
+                frame.flock = RoadFlock(age: dd.age, count: count, seed: dd.seed, light: daylight)
+            }
+        }
         frame.headlights = gather * lit
         frame.open = openAge.map { ExcitementStep.envelope(age: $0, life: 16, rise: 1.2, fall: 6) } ?? 0
         frame.fox = fox()
@@ -239,6 +272,14 @@ public struct CoastRoadModel: ThemeModel, MoodAware, SkyAware, ExcitementAware, 
         frame.energy = x.energy
         frame.tension = x.tension
         return frame
+    }
+
+    /// The day's glitter race `age` seconds into its moment: 0 at the horizon … 1 at the cliff's foot, quick at first and
+    /// slowing as it nears (it runs evenly on screen; the renderer maps it to distance).
+    public static func race(age: Float) -> Float {
+        guard age.isFinite else { return 0 }
+        let k = min(1, max(0, (age - raceDelay) / raceSeconds))
+        return 1 - (1 - k) * (1 - k)
     }
 
     /// How far (radians) the nearer of the two beams is from facing you.
@@ -268,6 +309,16 @@ public struct CoastRoadModel: ThemeModel, MoodAware, SkyAware, ExcitementAware, 
                 sweep = (0, beam, by, strength)
             }
             if m.isDrop { openAge = 0 }
+            // By day the sun breaks out over the sea (dusk has a little of both): a moment while it plays only lifts it.
+            if let playing = day, playing.age < 3 {
+                day = (playing.age, max(playing.strength, strength), playing.seed)
+            } else {
+                day = (0, strength, flockRng.next())
+            }
+        }
+        if let dd = day {
+            let next = dd.age + fd
+            if next > Self.dayLife { day = nil } else { day = (next, dd.strength, dd.seed) }
         }
         if var s = sweep {
             s.age += fd

@@ -21,6 +21,14 @@ enum BioluminescentBayShaders {
         float4 lanternDir;    // east-north-up unit vector from the eye to the lantern, its pillar's angular radius (rad)
         float4 lighthouse;    // the lamp: azimuth from the view's centre (rad, right +), altitude (rad), tower half width (rad), unused
         float4 lighthouseDir; // east-north-up unit vector to the lamp, unused
+        // Fire & Neon §5.5 (Excitement):
+        float4 wave;          // the wave of light: its front (m out), light 0…1 (× the dark, after the limiter), its arrival on the shore 0…1, a drop's sparkles 0…1
+        float4 excite;        // the glow gathered under the surface 0…1 (× the dark), Energy 0…1, the wave's gain (a drop's brighter), the sparkles' twinkle phase 0…1
+        float4 manta;         // a manta gliding in: across (m), out (m), heading (rad, in the across–out plane), its cover 0…1
+        float4 mantaB;        // its span (m), its wingbeat's phase 0…1, the plankton lit along its edges 0…1 (× the dark), its stretch out from the shore
+        float4 turtle;        // a turtle surfacing: across (m), out (m), seconds since it came up, its rings' light 0…1 (× the dark)
+        float4 turtleB;       // how far it is up 0…1, which way it faces (±1), its cover 0…1, unused
+        float4 sand;          // the sun's and moon's direct light on the sand (falling with heavy cloud), the sky's light on it, unused, unused
         float4 patches[48];   // across (m), out (m), radius (m), brightness (× the dark)
         float4 wake[16];      // from across, from out, to across, to out (m)
         float4 wakeB[16];     // brightness (× the dark), half width (m), unused, unused
@@ -30,6 +38,7 @@ enum BioluminescentBayShaders {
     struct BayOut { float4 pos [[position]]; float2 ndc; };
 
     constant float3 kGlowCyan = float3(0.3, 1.0, 0.75);
+    constant float3 kWaveBlue = float3(0.18, 0.78, 1.0);   // the wave of light: the plankton's bluer flash
     constant float3 kLanternWarm = float3(1.0, 0.62, 0.28);
     constant float3 kLampWhite = float3(1.0, 0.93, 0.78);
     constant float kLeftTip = 0.2;     // the left headland's point: radians left of the view's centre
@@ -268,8 +277,9 @@ enum BioluminescentBayShaders {
     /// The glow line: plankton lighting along the waterline in stretches where the small waves break, flecked, with the
     /// running front of each wavelet's wash brightest as it breaks and a faint glow stirred into the shallows.
     float3 bayGlowLine(float s, float f, float edge, constant BayU& b, constant OceanU& o) {
-        float glow = b.b.x;
-        if (glow < 0.001) return float3(0);
+        float glow = b.b.x * (1.0 + 0.9 * b.excite.y);   // Energy lifts the plankton's glow
+        float shore = b.wave.z;                          // the wave of light arriving
+        if (glow < 0.001 && shore < 0.001) return float3(0);
         float2 wash = bayWash(b);
         float lit = wash.y;
         float n1 = vnoise3(float3(s * 0.45, 2.0 * sin(o.phases.y), 1.2 * cos(o.phases.x)));
@@ -283,7 +293,18 @@ enum BioluminescentBayShaders {
         float front = x < 0.0 ? exp(-(y * y) / 0.008) * lit * lit : 0.0;       // the wash's running front
         float sheet = (x < 0.0 && y > 0.0) ? 0.05 * lit : 0.0;                 // and the thin sheet behind it
         float spill = x < 0.0 ? exp(x / 0.5) * 0.06 : 0.0;                     // a soft light on the wet sand
-        return mix(kGlowCyan, float3(0.75, 1.0, 0.95), 0.3) * (glow * patchy * fleck * (lineGlow + stirred + front + sheet + spill) * 1.8);
+        float3 col = mix(kGlowCyan, float3(0.75, 1.0, 0.95), 0.3) * (glow * patchy * fleck * (lineGlow + stirred + front + sheet + spill) * 1.8);
+        if (shore > 0.001) {
+            // The wave of light reaching the shore: the waterline blazes and the wash runs up the sand lit, brightest at
+            // its running front.
+            float line = exp(-(x * x) / 0.05);
+            float sheetLit = (x < 0.0 && y > 0.0) ? 0.35 : 0.0;
+            float runFront = x < 0.0 ? exp(-(y * y) / 0.02) : 0.0;
+            float shallows = x > 0.0 ? exp(-x / 1.6) * 0.5 : 0.0;
+            float broken = 0.12 + 0.88 * smoothstep(0.3, 0.75, n1) * (0.55 + 0.6 * n2);
+            col += mix(kWaveBlue, kGlowCyan, 0.3) * (shore * broken * fleck * (1.4 * line + 0.6 * sheetLit + 1.2 * runFront + shallows) * 0.75);
+        }
+        return col;
     }
 
     /// Glow Wake on the water at q (across, out in metres): patches with white cores, wakes brightening toward the newest
@@ -333,6 +354,177 @@ enum BioluminescentBayShaders {
         float fleck = vnoise3(float3(q * 5.0, 2.0 * sin(o.phases.z) + 1.5 * cos(o.phases.y)));
         g *= mix(1.0, 0.55 + 0.9 * fleck, fleckK);
         return g * (gain * 1.6);
+    }
+
+    // ---------------------------------------------------------------- Excitement on the water (Fire & Neon §5.5)
+
+    /// Plankton firing in points here and there (Energy's), and a drop's sparkles: cells square on screen (out stretched
+    /// by the view's foreshortening, f / eye height), one point in some of them, twinkling on the wrapped phase.
+    float bayFlecks(float2 q, float f, float density, float phase, float eye) {
+        if (density < 0.001) return 0.0;
+        float across = 0.022 * f;
+        float2 cell = float2(across, across * max(f / eye, 1.0));
+        float2 g = q / cell;
+        float2 id = floor(g);
+        float3 h = hash33(float3(id, 7.0));
+        if (h.x > density) return 0.0;
+        float2 dd = g - (id + 0.25 + 0.5 * h.yz);
+        float tw = 0.5 + 0.5 * sin(6.2831853 * (phase + 3.0 * h.y));
+        return exp(-dot(dd, dd) / 0.012) * tw * tw * (0.6 + 0.8 * h.z);
+    }
+
+    /// The manta from above in its own units (x along its heading, y across it, the half-span 1): broad wings sweeping
+    /// back to their tips, the trailing edges hollow, the cephalic fins ahead and a thin tail behind; the wings rise and
+    /// fall slowly (`beat`, 0…1). Returns how far inside its outline the point is (< 0 outside), in those units.
+    float bayMantaMargin(float2 p, float beat) {
+        float spanK = 0.9 + 0.1 * cos(6.2831853 * beat);   // the tips lift and fall: seen from above, the span breathes
+        float ax = abs(p.y) / spanK;
+        // Continuous past the wingtips (the margin runs on outside them), so its glow has no edge there.
+        float axc = min(ax, 1.0);
+        float lead = 0.42 - 0.7 * axc * sqrt(axc);
+        float trail = -0.3 + 0.25 * sin(3.14159265 * sqrt(axc) * axc) - 0.04 * axc;
+        float m = min(min(lead - p.x, p.x - trail), (1.0 - ax) * spanK);
+        float2 h1 = (p - float2(0.46, 0.08)) / float2(0.08, 0.03), h2 = (p - float2(0.46, -0.08)) / float2(0.08, 0.03);
+        m = max(m, 0.03 * (1.0 - min(length(h1), length(h2))));
+        float tail = (p.x < -0.25 && p.x > -0.95) ? 0.012 - abs(p.y) : -1.0;
+        return max(m, tail);
+    }
+
+    /// What Excitement draws on the water at q (across, out; `f` out), seen along d through a surface of Fresnel `fres`:
+    /// `under` is the light below the surface already there (Glow Wake), which the manta's dark form covers. Energy's
+    /// flecks, the glow gathered under the surface, the wave of light and a drop's sparkles, the manta lit along its edges
+    /// with its wingtips' trails, and the turtle's rings.
+    float3 bayExcite(float3 d, float2 q, float f, float footprint, float fres, float3 under, constant BayU& b,
+                     constant OceanU& o) {
+        float night = b.a.w, eye = b.a.z;
+        float3 g = float3(0);          // Excitement's own light, under the surface or on it
+        float coverK = 1.0;            // the manta's dark form over what lies beneath it
+        // The glow gathering under the surface (tension): soft, deep, blurred by the water over it, mid-bay.
+        float gather = b.excite.x;
+        if (gather > 0.001) {
+            float region = smoothstep(7.0, 12.0, f) * (1.0 - smoothstep(40.0, 110.0, f));
+            float ang = q.x / max(f, 1.0);
+            float blobs = smoothstep(0.3, 0.8, vnoise3(float3(q.x * 0.09, f * 0.05, 1.3 * sin(o.phases.y) + 0.8 * cos(o.phases.x))));
+            float motes = vnoise3(float3(q.x * 0.35, f * 0.18, 2.0 + 1.1 * sin(o.phases.z)));
+            float breathe = 0.85 + 0.15 * sin(o.phases.x * 2.0);
+            float mottled = (0.06 + 0.94 * blobs) * (0.35 + 0.95 * smoothstep(0.3, 0.75, motes));
+            g += float3(0.03, 0.36, 0.55) * (gather * region * exp(-ang * ang / 0.3) * mottled * breathe * 0.75);
+        }
+        // The wave of light: a band running in from the mouth (its middle ahead, an arc), broken into patches of plankton,
+        // brightest along its crest, the water behind it still lit and fading.
+        float wl = b.wave.y;
+        float band = 0.0;
+        if (wl > 0.001) {
+            float ang = q.x / max(f, 1.0);
+            float F = b.wave.x * (1.0 + 0.22 * ang * ang);
+            float x = (f - F) / (0.14 * F + 0.4);             // < 0 not reached yet … > 0 passed
+            float crest = exp(-x * x * 3.5);
+            float behind = x > 0.0 ? 0.3 * exp(-x / 2.0) + 0.1 * exp(-x / 10.0) : 0.0;
+            band = crest + behind;
+            if (band > 0.002) {
+                // Patches of plankton (some water dark between them), the crest broken into lengths along the shore.
+                float n = vnoise3(float3(q.x * 0.22, f * 0.07, 2.0 * sin(o.phases.z) + 1.2 * cos(o.phases.w)));
+                float n2 = vnoise3(float3(q.x * 0.9, f * 0.25, 3.0 + 1.5 * sin(o.phases.x)));
+                float patchy = 0.1 + 1.3 * smoothstep(0.3, 0.75, n) * (0.5 + 0.7 * n2);
+                float lengths = 0.35 + 0.9 * smoothstep(0.25, 0.7, vnoise3(float3(q.x * 0.6, F * 0.02, 5.0)));
+                float fine = 1.0 - smoothstep(0.15, 0.6, footprint);
+                float fl = vnoise3(float3(q * float2(2.2, 1.1), 2.0 * sin(o.phases.y)));
+                float flecked = mix(1.0, 0.4 + 1.2 * fl, fine);
+                float3 c = mix(kWaveBlue, kGlowCyan, 0.3 + 0.35 * n) + float3(0.35, 0.4, 0.3) * (crest * crest * 0.25);
+                g += c * (wl * b.excite.z * (crest * lengths + behind) * patchy * flecked * 0.95);
+            }
+        }
+        // Energy's plankton firing in points over the near water, and a drop's sparkles scattering behind its wave.
+        float fleckDensity = 0.13 * b.excite.y * night * (1.0 - smoothstep(9.0, 30.0, f));
+        float sparkle = b.wave.w * saturate(band * 1.5);
+        float points = bayFlecks(q, f, fleckDensity + 0.55 * sparkle, b.excite.w, eye);
+        if (points > 0.001) g += mix(kGlowCyan, float3(0.85, 1.0, 1.0), 0.4) * (points * (0.5 * b.excite.y * night + 2.2 * sparkle));
+        // The manta gliding in under the surface: its dark form covers the light beneath it, the plankton lit along its
+        // wing edges (brighter on each downstroke) and in two trails from its wingtips.
+        float mc = b.manta.w;
+        if (mc > 0.001) {
+            float halfSpan = 0.5 * b.mantaB.x;
+            // Its shape is drawn stretched out from the shore (b.mantaB.w), as the eye a little higher up would see it:
+            // from 1.6 m up, a manta 10 m out is a sliver.
+            float2 dq = (q - b.manta.xy) * float2(1.0, 1.0 / max(b.mantaB.w, 1.0));
+            float2 fw = float2(cos(b.manta.z), sin(b.manta.z));
+            float2 p = float2(dot(dq, fw), dot(dq, float2(-fw.y, fw.x))) / halfSpan;
+            if (abs(p.x) < 6.0 && abs(p.y) < 2.2) {
+                float beat = b.mantaB.y;
+                float m = bayMantaMargin(p, beat);
+                float w = max(0.035, 0.8 * footprint / halfSpan);
+                float inside = smoothstep(-w, w, m);
+                coverK = 1.0 - 0.9 * inside * mc;
+                g *= coverK;
+                float stroke = 0.6 + 0.4 * saturate(sin(6.2831853 * beat) + 0.3);
+                float rim = exp(-(m * m) / (w * w)) * step(-0.5, m) * (p.x > -0.32 ? 1.0 : 0.3);   // its tail a fainter line
+                float spanK = 0.9 + 0.1 * cos(6.2831853 * beat);
+                float tipX = -0.3, behind = tipX - p.x;
+                float lat = abs(abs(p.y) - spanK * (0.95 + 0.03 * behind) - 0.04 * sin(behind * 5.0 - 6.2831853 * beat));
+                float broken = 0.4 + 0.8 * vnoise3(float3(p.x * 4.0, p.y * 3.0, 6.2831853 * beat * 0.3));
+                float trails = behind > 0.0 ? exp(-(lat * lat) / (w * w * 3.0)) * exp(-behind / 0.8) * broken : 0.0;
+                // The plankton it stirs round it, so its dark form shows against a faint glow.
+                float halo = m < 0.0 ? exp(m / 0.12) * 0.32 * (0.4 + 0.8 * broken) : 0.0;
+                // Its wingtips flaring as they lift toward the surface on each beat.
+                float2 tipD = float2(p.x + 0.3, abs(p.y) - spanK);
+                float lift = saturate(sin(6.2831853 * beat));
+                float sparks = exp(-dot(tipD, tipD) / 0.006) * (0.3 + 1.2 * lift);
+                float3 lit = mix(kGlowCyan, kWaveBlue, 0.4);
+                g += lit * (b.mantaB.z * mc * (1.3 * rim * stroke * (0.6 + 0.5 * broken) + 0.6 * trails + halo + sparks));
+            }
+        }
+        // The turtle's rings of glow, spreading from where it came up (and again as it dives).
+        float tl = b.turtle.w;
+        if (tl > 0.001) {
+            float2 dq = q - b.turtle.xy;
+            float r = length(dq);
+            if (r < 9.0) {
+                float age = b.turtle.z;
+                float rings = 0.0;
+                for (int k = 0; k < 3; k++) {
+                    float born = k == 0 ? 0.6 : (k == 1 ? 1.3 : 6.4);
+                    float a = age - born;
+                    if (a <= 0.0 || a > 5.0) continue;
+                    float rr = 0.7 + 0.7 * a;
+                    float wr = 0.07 + 0.05 * a + 0.5 * footprint;
+                    float x = (r - rr) / wr;
+                    rings += exp(-x * x) * exp(-a / 1.6) * (k == 2 ? 0.6 : 1.0);
+                }
+                float stir = exp(-r * r / 1.2) * b.turtleB.x * 0.35;   // the plankton stirred round its shell
+                float n = smoothstep(0.2, 0.8, vnoise3(float3(dq * 2.2, 2.0 * sin(o.phases.z))));
+                g += mix(kGlowCyan, kWaveBlue, 0.3) * (tl * (rings * (0.2 + 1.1 * n) * 1.1 + stir));
+            }
+        }
+        // Glow Wake as it was (emissive, unreflected), darkened only where the manta covers it.
+        return under * coverK + g * (1.0 - 0.35 * fres);
+    }
+
+    /// The turtle's dark shell and head breaking the surface, seen along the ray that meets the water `f` out at q: the
+    /// ray's height where it passes the turtle (the eye is `eye` m up). Its cover (0…1).
+    float bayTurtleAbove(float2 q, float f, float eye, constant BayU& b) {
+        float up = b.turtleB.x, cover = b.turtleB.z;
+        if (cover < 0.001 || up < 0.001) return 0.0;
+        float T = b.turtle.y;
+        if (f < T - 0.6 || f > T * 1.6) return 0.0;
+        float z = f > T ? eye * (1.0 - T / f) : 0.0;          // the ray's height over the water as it passes the turtle
+        float xc = f > T ? q.x * T / f : q.x;
+        float dx = xc - b.turtle.x;
+        float shellH = 0.16 * up * sqrt(saturate(1.0 - (dx / 0.6) * (dx / 0.6)));
+        float pxm = 0.0016 * T;
+        float shell = f > T ? saturate((shellH - z) / pxm + 0.5) * step(abs(dx), 0.6) : 0.0;
+        // Its footprint on the water (the ray meets the water at the shell itself).
+        float2 fp = (q - b.turtle.xy) / float2(0.6, 0.45);
+        float foot = (1.0 - smoothstep(0.85, 1.0, length(fp))) * step(0.5, up);
+        // Its head raised for a breath, on a neck from the shell's front.
+        float hx = xc - b.turtle.x - b.turtleB.y * 0.78;
+        float2 hd = float2(hx / 0.13, (z - 0.06 - 0.17 * up) / 0.085);
+        float head = f > T ? (1.0 - smoothstep(0.8, 1.0, length(hd))) : 0.0;
+        float2 na = float2(b.turtle.x + b.turtleB.y * 0.5, 0.03), nb = float2(b.turtle.x + b.turtleB.y * 0.74, 0.05 + 0.15 * up);
+        float2 npa = float2(xc, z) - na, nba = nb - na;
+        float nd = length(npa - nba * saturate(dot(npa, nba) / max(dot(nba, nba), 1e-6)));
+        float neck = f > T ? 1.0 - smoothstep(0.05 - pxm, 0.05 + pxm, nd) : 0.0;
+        head = max(head, neck * up);
+        return max(max(shell, foot), head) * cover;
     }
 
     // ---------------------------------------------------------------- water and sand
@@ -414,7 +606,14 @@ enum BioluminescentBayShaders {
             float sd = dot(rd0, b.lighthouseDir.xyz);
             col += kLampWhite * (flash * (exp(12000.0 * (sd - 1.0)) * 3.0 + exp(500.0 * (sd - 1.0)) * 0.12));
         }
-        col += bayGlowWake(q, footprint, b, o);
+        float3 under = bayGlowWake(q, footprint, b, o);
+        col += bayExcite(d, q, f, footprint, fres, under, b, o);
+        // The turtle breaking the surface: a dark shell and head (lit a little by the sky by day).
+        float turtle = bayTurtleAbove(q, f, b.a.z, b);
+        if (turtle > 0.001) {
+            float3 shellCol = mix(float3(0.003, 0.004, 0.004), float3(0.16, 0.13, 0.07) * (o.sunColor.rgb * o.sun.w * 0.6 + mix(zenith, horizon, 0.5) * 0.6), day);
+            col = mix(col, shellCol, turtle);
+        }
         return col;
     }
 
@@ -442,7 +641,9 @@ enum BioluminescentBayShaders {
         float3 sand = float3(0.93, 0.89, 0.81) * (0.86 + 0.06 * ripple + 0.08 * grain);
         float3 direct = o.sunColor.rgb * (saturate(o.sun.z * 3.0 + 0.15) * o.sun.w)
                       + o.moonColor.rgb * (saturate(o.moon.z * 3.0 + 0.15) * o.moon.w);
-        float3 light = mix(zenith, horizon, 0.7) * (0.55 + 0.6 * b.a.w) + direct * 0.7 + 0.003;   // white sand shows by starlight
+        // Under heavy cloud the sun and the moon are behind it: their direct light falls with it (b.sand), and the dark
+        // cloud base takes some of the sky's light off the sand, so it sits as dark as the scene.
+        float3 light = mix(zenith, horizon, 0.7) * ((0.55 + 0.6 * b.a.w) * b.sand.y) + direct * (0.7 * b.sand.x) + 0.003;   // white sand shows by starlight
         float3 col = sand * light;
         float wet = max(smoothstep(edge - 1.2, edge - 0.3, f), 0.6 * b.c.w);
         float front = edge - bayWash(b).x;

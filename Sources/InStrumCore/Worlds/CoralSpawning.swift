@@ -21,7 +21,7 @@ public struct SpawnBead: Equatable {
     public var position: SIMD2<Float>
     /// Linear RGB: one of the bundles' pink, orange or yellow (`CoralSpawning.colours`).
     public var colour: SIMD3<Float>
-    /// Its size, 1…2 px.
+    /// Its size, 1…2 px (a spawning burst's bundles, nearer and catching the light, 3…5).
     public var size: Float
     /// 0…1 now: it brightens over its first 1.5 s and fades into the slick over the last 6% of the water.
     public var brightness: Float
@@ -103,6 +103,8 @@ public struct CoralSpawning {
     /// Beads released and gone into the slick so far (tests).
     private(set) var released = 0
     private(set) var gathered = 0
+    /// A spawning burst's puffs still to come: seconds until each, and how many bundles (a fixed pool of three).
+    private var pulses: [(wait: Float, count: Int)] = []
 
     var nextID = 0
     private var rng: SeededRandom
@@ -114,6 +116,7 @@ public struct CoralSpawning {
     public init(seed: UInt64 = 0x5BA_C0A1) {
         rng = SeededRandom(seed: seed)
         beads.reserveCapacity(Self.capacity)
+        pulses.reserveCapacity(Self.burstPulses.count)
     }
 
     /// The spawn for the renderer.
@@ -284,6 +287,13 @@ public struct CoralSpawning {
         let fullRate = Self.fullRate * Double(cap) / Double(Self.capacity)
         let rate = fullRate * Double(intensity) * release
 
+        // A burst's later puffs, when they are due.
+        if !pulses.isEmpty {
+            for i in pulses.indices { pulses[i].wait -= fdt }
+            for p in pulses where p.wait <= 0 { puff(p.count, quality: quality) }
+            pulses.removeAll { $0.wait <= 0 }
+        }
+
         // The beads rise; those at the surface join the slick.
         for i in beads.indices { Self.advance(&beads[i], by: fdt) }
         let before = beads.count
@@ -321,13 +331,33 @@ public struct CoralSpawning {
         slick = slick < 1e-4 ? 0 : min(1, slick)
     }
 
-    /// A spawning burst (Excitement's big moment on the reef, Fire & Neon spec §5.5): every coral group lets go a puff of
-    /// bundles at once, any night or day, rising quicker than the calendar's at first and already catching the light.
-    /// Up to 60 + 160 × `strength` beads; with the water full, the oldest (highest) go into the slick to make room.
-    public mutating func burst(strength: Float, quality: QualityLevel) {
+    /// A burst's puffs: when each lets go (s after the first) and its share of the bundles.
+    public static let burstPulses: [(at: Float, share: Float)] = [(0, 0.42), (1.9, 0.22), (3.8, 0.19), (5.8, 0.17)]
+
+    /// How many bundles a burst of `strength` lets go in all: 180 + 360 × it (540 at full: two and a half times the
+    /// first burst's), before the water's cap.
+    public static func burstCount(strength: Float) -> Int {
         let s = strength.isFinite ? min(1, max(0, strength)) : 0.3
+        return Int((180 + 360 * s).rounded())
+    }
+
+    /// A spawning burst (Excitement's big moment on the reef, Fire & Neon spec §5.5): every coral group lets go its
+    /// bundles in puffs over six seconds (`burstPulses`, the first at once), any night or day, larger than the calendar's
+    /// (nearer, and catching the light), rising quicker at first. `burstCount` bundles in all; with the water full, the
+    /// oldest (highest) go into the slick to make room. A burst while one puffs starts its puffs again.
+    public mutating func burst(strength: Float, quality: QualityLevel) {
+        let total = Self.burstCount(strength: strength)
+        pulses.removeAll(keepingCapacity: true)
+        for (k, p) in Self.burstPulses.enumerated() {
+            let count = Int((Float(total) * p.share).rounded())
+            if k == 0 { puff(count, quality: quality) } else { pulses.append((p.at, count)) }
+        }
+    }
+
+    /// One puff of a burst: `count` bundles let go at once (the oldest beads go into the slick when the water is full).
+    private mutating func puff(_ wanted: Int, quality: QualityLevel) {
         let cap = Self.cap(quality)
-        let count = min(cap, Int((60 + 160 * s).rounded()))
+        let count = min(cap, max(0, wanted))
         if beads.count + count > cap {
             let out = beads.count + count - cap
             gathered &+= out
@@ -336,7 +366,8 @@ public struct CoralSpawning {
         for _ in 0..<count {
             var bead = newBead(partWay: false)
             bead.speed = rng.range(0.035, 0.09)
-            Self.advance(&bead, by: 1.0 + rng.unit())
+            bead.size = rng.range(3, 5)
+            Self.advance(&bead, by: 0.6 + rng.unit())
             beads.append(bead)
         }
     }

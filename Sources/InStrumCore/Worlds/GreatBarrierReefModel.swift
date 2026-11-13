@@ -43,6 +43,8 @@ public struct ReefFrame: AmbienceProviding {
     /// Energy, and the surprises playing (0 a manta, 1 a green turtle, 2 a blacktip reef shark's slow pass).
     public var burst: Float = 0
     public var burstHaze: Float = 0
+    /// How far the burst's haze has risen from the corals toward the surface (0…1, with its puffs).
+    public var burstRise: Float = 0
     public var gather: Float = 0
     public var energy: Float = 0
     public var surprises: [PlayingSurprise] = []
@@ -80,21 +82,36 @@ public struct GreatBarrierReefModel: ThemeModel, MoodAware, SkyAware, Excitement
     public static let whaleLevel = 0.3
     /// A burst of bubbles as the lens goes under: at most one every this many seconds.
     static let burstGap = 4.0
-    /// The surprises (spec §5.5): a manta, a turtle, a reef shark's slow pass.
+    /// The surprises (spec §5.5): a manta, a turtle, a reef shark's slow pass, each crossing the water in about 10 s.
     public static let surpriseCount = 3
-    public static let surpriseSeconds: [Float] = [16, 18, 14]
-    /// A spawning burst (spec §5.5): the flare and the haze play this long (a drop's, the school bursting, longer).
-    public static let momentSeconds: Float = 6, dropSeconds: Float = 7
+    public static let surpriseSeconds: [Float] = [11, 11.5, 10.5]
+    /// A spawning burst (spec §5.5): the corals let go in puffs over six seconds (`CoralSpawning.burstPulses`); the
+    /// flare and the haze play this long (a drop's, the school bursting, longer).
+    public static let momentSeconds: Float = 8, dropSeconds: Float = 9
 
-    /// The corals' flare in a burst `age` seconds in: up at once, dying away (0…1).
+    /// The corals' flare in a burst `age` seconds in: up at once with the first puff, dying away, and flaring again
+    /// (less) with each later one (0…1).
     public static func burstFlare(age: Float, life: Float) -> Float {
         guard age.isFinite, age >= 0, age < life else { return 0 }
-        return min(1, age / 0.12) * exp(-age / 1.2)
+        var flare: Float = 0
+        for (k, p) in CoralSpawning.burstPulses.enumerated() where age >= p.at {
+            let a = age - p.at
+            flare += (k == 0 ? 1 : 0.5) * min(1, a / 0.12) * exp(-a / 1.1)
+        }
+        return min(1, flare)
     }
 
-    /// The spawn's pink haze in the water `age` seconds into a burst: thickening over 0.6 s, thinning over the rest (0…1).
+    /// The spawn's pink haze in the water `age` seconds into a burst: thickening over 0.8 s, holding while the corals
+    /// let go, thinning over the last 3 s (0…1).
     public static func burstHaze(age: Float, life: Float) -> Float {
-        ExcitementPlay.envelope(age: age, life: life, rise: 0.6, fall: max(1, life - 1.5))
+        ExcitementPlay.envelope(age: age, life: life, rise: 0.8, fall: min(3, max(1, life - 1)))
+    }
+
+    /// How far the haze has risen toward the surface `age` seconds into a burst (0…1).
+    public static func burstRise(age: Float, life: Float) -> Float {
+        guard age.isFinite, life > 0 else { return 0 }
+        let k = min(1, max(0, age / life))
+        return 1 - (1 - k) * (1 - k)
     }
 
     public var mood = Mood.neutral
@@ -244,10 +261,11 @@ public struct GreatBarrierReefModel: ThemeModel, MoodAware, SkyAware, Excitement
         let setting = CoralSpawningSetting(rawValue: p.choice("spawning")) ?? .follow
         spawning.step(dt: fdt, sky: sky, setting: setting, held: hold != .follow, quality: quality)
         if let m = play.momentBegan { spawning.burst(strength: m.strength, quality: quality) }
-        var burst: Float = 0, haze: Float = 0
+        var burst: Float = 0, haze: Float = 0, rise: Float = 0
         if let m = play.moment {
             burst = Self.burstFlare(age: m.age, life: m.duration) * m.strength
             haze = Self.burstHaze(age: m.age, life: m.duration) * m.strength
+            rise = Self.burstRise(age: m.age, life: m.duration)
         }
         let corals = warping ? Self.restingCorals : pulse.groups
 
@@ -285,6 +303,7 @@ public struct GreatBarrierReefModel: ThemeModel, MoodAware, SkyAware, Excitement
                               warp: warping ? warpFrame : nil)
         frame.burst = burst
         frame.burstHaze = haze
+        frame.burstRise = rise
         frame.gather = play.tension
         frame.energy = play.energy
         frame.surprises = play.surprises

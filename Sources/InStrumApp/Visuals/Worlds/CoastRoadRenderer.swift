@@ -24,10 +24,16 @@ final class CoastRoadRenderer: ThemeRenderer {
     let warp: WarpLayer
     private var showWarp = false
     private let road: SkyPipeline
-    private let lights, frame, keys, posts, foxes: MTLRenderPipelineState
+    private let lights, frame, keys, posts, foxes, gulls: MTLRenderPipelineState
     private var roadU = [SIMD4<Float>](repeating: .zero, count: CoastRoadRenderer.uniformCount)
     /// Fire & Neon §5.5: the fox in the scrub, and the lantern's light on the scene through the flash limiter.
     private var foxInstances: [FoxInstance] = []
+    /// The day's moment: the flock lifting past the window (a fixed pool), and the sun breaking out through its own
+    /// limiter (primed at rest), a slow swell under gentle visuals.
+    private var birdInstances: [BirdInstance] = []
+    private var dayLimiter = FlashLimiter()
+    private var dayPrimed = false
+    private var dayGlow = ExcitementGlow()
     private var primed = false
     /// Under gentle visuals the exposure only ever eases up (never a flash).
     private var gentleExposure = GentleExposure()
@@ -62,14 +68,25 @@ final class CoastRoadRenderer: ThemeRenderer {
     private(set) var foxDrawn = false
     private(set) var trainOut: Float = 0
     private(set) var exposureOut: Float = 1
-    var flashesInLastSecond: Int { limiter.recent }
-    var flashTotal: Int { limiter.total }
-    /// The shader's rows: the six before Fire & Neon, then the lighthouse, the train and headlights, the washes.
-    nonisolated static let uniformCount = 11
+    /// The day's moment as drawn: the sun's break-out and its glitter race after the limiter (and what they asked for),
+    /// the race's front (m out), the birds drawn.
+    private(set) var dayOut: Float = 0
+    private(set) var dayRequest: Float = 0
+    private(set) var raceFront: Float = 0
+    private(set) var birdsDrawn = 0
+    var flashesInLastSecond: Int { max(limiter.recent, dayLimiter.recent) }
+    var flashTotal: Int { limiter.total + dayLimiter.total }
+    /// The shader's rows: the six before Fire & Neon, then the lighthouse, the train and headlights, the washes, the day's
+    /// moment.
+    nonisolated static let uniformCount = 12
+    /// The glitter race runs from this far out (m: the haze has the sea by then) to the cliff's foot.
+    nonisolated static let raceFar: Float = 6000, raceNear: Float = 150
 
     private struct KeyInstance { var rect: SIMD4<Float>; var info: SIMD4<Float> }
     /// The shader's FoxInstance.
     private struct FoxInstance { var p: SIMD4<Float>; var q: SIMD4<Float>; var tint: SIMD4<Float> }
+    /// The shader's BirdInstance.
+    private struct BirdInstance { var p: SIMD4<Float>; var c: SIMD4<Float> }
 
     init?(device: MTLDevice) {
         guard let s = SkyLayer(device: device), let w = WeatherLayer(device: device), let gw = WarpLayer(device: device),
@@ -101,8 +118,10 @@ final class CoastRoadRenderer: ThemeRenderer {
               let f = make("road_vertex", "road_frame_fragment", .premultiplied, writesDepth: false),
               let k = make("road_keys_vertex", "road_keys_fragment", .opaque),
               let pp = make("road_post_vertex", "road_post_fragment", .premultiplied, writesDepth: false),
-              let fx = make("road_fox_vertex", "road_fox_fragment", .premultiplied, writesDepth: false) else { return nil }
-        sky = s; weather = w; warp = gw; road = r; lights = l; frame = f; keys = k; posts = pp; foxes = fx
+              let fx = make("road_fox_vertex", "road_fox_fragment", .premultiplied, writesDepth: false),
+              let gb = make("road_bird_vertex", "road_bird_fragment", .premultiplied, writesDepth: false) else { return nil }
+        sky = s; weather = w; warp = gw; road = r; lights = l; frame = f; keys = k; posts = pp; foxes = fx; gulls = gb
+        birdInstances.reserveCapacity(CoastRoadModel.flockMost)
         sky.verticalFOV = 50
     }
 
@@ -181,7 +200,21 @@ final class CoastRoadRenderer: ThemeRenderer {
             primed = true
             for _ in 0..<16 { _ = limiter.limit(exposure: exposure, sparkle: 1, dt: 1) }
         }
-        let limited = limiter.limit(exposure: gentleExposure.step(exposure * (1 + lanternGlow), gentle: gentle, dt: dt), sparkle: 0.45 + 0.55 * frame.bloom, dt: dt)
+        // The day's moment: the sun breaking out through its own limiter (a slow swell under gentle visuals), lifting the
+        // scene a little and lighting the glitter race.
+        dayLimiter.gentle = gentle
+        if !dayPrimed {
+            dayPrimed = true
+            for _ in 0..<16 { _ = dayLimiter.limit(exposure: 1, sparkle: 1, dt: 1) }
+        }
+        let dayAsk = Self.unit(frame.sunBreak)
+        let dayAsked = ExcitementGlow.ask(dayAsk, gentle: gentle, scale: 0.45)
+        let dayLimited = dayLimiter.limit(exposure: 1 + dayAsked, sparkle: 1, dt: dt)
+        dayRequest = dayAsk
+        dayOut = dayGlow.update(request: dayAsk, passed: ExcitementGlow.passed(limited: dayLimited.exposure, base: 1, asked: dayAsked),
+                                gentle: gentle, dt: dt)
+        let limited = limiter.limit(exposure: gentleExposure.step(exposure * (1 + lanternGlow + 0.25 * dayOut), gentle: gentle, dt: dt),
+                                    sparkle: 0.45 + 0.55 * frame.bloom, dt: dt)
         exposureOut = limited.exposure
         lampOut = Float(p.number("lamps")) * Self.lampLight(sunAltitude: s.sun.altitude) * sparkleScale
         bloomOut = frame.bloom * sparkleScale
@@ -208,6 +241,7 @@ final class CoastRoadRenderer: ThemeRenderer {
         roadU[5] = SIMD4(s.wetness, roadLineY, 0, 0)
         beamMist = (beamMist + 0.35 * fdt).truncatingRemainder(dividingBy: 64)
         fillExcitement(frame, gentle: gentle, aspect: aspect, bottom: bottom)
+        fillDay(frame, gentle: gentle, aspect: aspect, bottom: bottom, top: top, time: time)
 
         // The sea passes by the distance travelled, wrapped to its tile (every swell component and noise repeats
         // over the tile, so there's no seam); the chord bloom tints and brightens the glitter path.
@@ -346,6 +380,50 @@ final class CoastRoadRenderer: ThemeRenderer {
         }
     }
 
+    /// The day's moment into the shader's row 11 (the glitter race and the sun's glare), and the flock lifting past the
+    /// window: each bird rising from the cliff below the glass and out over its top, drifting back as the car passes,
+    /// nearer ones bigger and quicker, beating then gliding.
+    private func fillDay(_ frame: RoadFrame, gentle: Bool, aspect: Float, bottom: Float, top: Float, time: Float) {
+        let k = min(1, max(0, frame.glitterRace.isFinite ? frame.glitterRace : 0))
+        raceFront = 1 / ((1 - k) / Self.raceFar + k / Self.raceNear)
+        let twinkle = (time * (gentle ? 0.35 : 0.9)).truncatingRemainder(dividingBy: 1)
+        roadU[11] = SIMD4(dayOut * (gentle ? 0.7 : 1), raceFront, dayOut * 0.8, twinkle)
+
+        birdInstances.removeAll(keepingCapacity: true)
+        birdsDrawn = 0
+        guard let flock = frame.flock, flock.light > 0.02 else { return }
+        let s = frame.sky
+        let lights = OceanLight.lights(s)
+        let skyLight: SIMD3<Float> = s.zenith * 0.45 + s.horizon * 0.35
+        let sunLight: SIMD3<Float> = lights.sunColor * (0.35 * lights.sun.w)
+        // Their undersides in shade against the bright sky: grey, a little lighter on the nearer ones.
+        let underside: SIMD3<Float> = (skyLight + sunLight) * 0.36
+        let half = 0.93 * aspect
+        for i in 0..<min(flock.count, CoastRoadModel.flockMost) {
+            var r = SeededRandom(seed: flock.seed ^ (UInt64(i + 1) &* 0x9E37_79B9_7F4A_7C15))
+            let delay = 0.9 * r.unit()
+            let near = r.unit()
+            let x0 = r.range(-0.55, 0.95)
+            let pace = 0.8 + 0.4 * r.unit()
+            let flapRate = r.range(2.2, 3.2)
+            let phase0 = r.range(0, 2 * .pi)
+            let t = (flock.age - delay) / (CoastRoadModel.flockSeconds * pace)
+            guard t > 0, t < 1 else { continue }
+            let size: Float = 0.05 + 0.12 * near
+            let rise = t * (0.7 + 0.3 * t)
+            let y = (bottom + 0.15 - size) + (top - bottom + 0.3 + 2 * size) * rise
+            let x = (x0 - (0.25 + 0.55 * near) * t) * half + 0.04 * sin(t * 5 + phase0)
+            // Beating as they climb, then a glide (wings held a little up).
+            let age = flock.age - delay
+            let beat: Float = t < 0.65 ? age * flapRate * 2 * .pi + phase0 : 0.6
+            let fade = min(1, t / 0.08) * min(1, (1 - t) / 0.08)
+            let cover = fade * min(1, flock.light * 1.5)
+            let shade: Float = 0.8 + 0.35 * near - 0.2 * r.unit()
+            birdInstances.append(BirdInstance(p: SIMD4(x, y, size, beat), c: SIMD4(underside * shade, cover)))
+        }
+        birdsDrawn = birdInstances.count
+    }
+
     func render(stack: RenderStack, commandBuffer cb: MTLCommandBuffer) {
         sky.prepare(cb)   // the supercell's impostor, before the frame's passes
         guard let pass = stack.scenePass(clear: MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)),
@@ -383,6 +461,13 @@ final class CoastRoadRenderer: ThemeRenderer {
             roadU.withUnsafeBytes { e.setVertexBytes($0.baseAddress!, length: $0.count, index: 1) }
             roadU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
             e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6, instanceCount: lightInstances.count / 2)
+        }
+
+        if !birdInstances.isEmpty {
+            e.setRenderPipelineState(gulls)
+            birdInstances.withUnsafeBytes { e.setVertexBytes($0.baseAddress!, length: $0.count, index: 0) }
+            roadU.withUnsafeBytes { e.setVertexBytes($0.baseAddress!, length: $0.count, index: 1) }
+            e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6, instanceCount: birdInstances.count)
         }
 
         // Rain and snow on the glass, then the car's frame over them (no weather inside the car).

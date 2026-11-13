@@ -19,6 +19,7 @@ enum CoastRoadShaders {
         float4 h;   // the far train: its head's bearing from the view's centre (rad), signed length (rad), light, headlights gathering
         float4 i;   // oncoming headlights on the verge: x (aspect units), light; x, light
         float4 j;   // x, light, unused, unused
+        float4 k;   // the day's moment: the glitter race's light 0…1 (after the limiter), its front (m out), the sun's glare 0…1, the glints' twinkle phase 0…1
     };
     struct RoadOut { float4 pos [[position]]; float2 ndc; };
 
@@ -158,6 +159,41 @@ enum CoastRoadShaders {
         return col * k;
     }
 
+    /// Fire & Neon §5.5, the day's big moment: the sun breaks out and a path of glitter races across the sea from the
+    /// horizon to the shore. The sun's glitter column (wide: the breeze's facets tilt every way) sparkling in points (cells
+    /// square on screen, out stretched by the view's foreshortening from 60 m up, so they never shimmer), lit from the
+    /// horizon down to the race's front, brightest along it, the water behind glittering on while the sun stays out.
+    float3 roadGlitterRace(float3 d, float3 nrm, float2 q, float f, constant RoadU& u, constant OceanU& o) {
+        float k = u.k.x;
+        if (k <= 0.001) return float3(0);
+        float3 L = o.sun.xyz;
+        if (L.z < -0.03) return float3(0);
+        float c = 1.0 - dot(reflect(d, nrm), L);      // about half the angle² from the sun's mirror
+        float column = exp(-c / 0.018);
+        if (column < 0.002) return float3(0);
+        float x = (f - u.k.y) / (0.18 * u.k.y + 25.0);   // < 0 not reached yet … > 0 reached
+        float crest = exp(-x * x * 2.5);
+        float lit = crest * 1.6 + (x > 0.0 ? 0.45 + 0.55 * exp(-x / 2.0) : 0.0);
+        if (lit < 0.002) return float3(0);
+        float across = 0.008 * f;
+        float2 cell = float2(across, across * max(f / kSeaBelow, 1.0));
+        float2 g = q / cell;
+        float2 id = floor(g);
+        float3 h = hash33(float3(id, 11.0));
+        float2 dd = g - (id + 0.25 + 0.5 * h.yz);
+        float tw = 0.5 + 0.5 * sin(6.2831853 * (u.k.w + 2.0 * h.x) + o.phases.y);
+        float pt = step(h.x, 0.2 + 0.6 * column) * exp(-dot(dd, dd) / 0.035) * tw * tw;
+        return o.sunColor.rgb * (k * lit * column * (0.2 + 3.5 * pt) * (0.4 + 0.6 * o.sun.w) * 2.2);
+    }
+
+    /// The sun breaking out: its glare in the sea air round it (after the limiter), a bright core fading into a wide veil.
+    float3 roadSunGlare(float3 d, constant RoadU& u, constant OceanU& o) {
+        float k = u.k.z;
+        if (k <= 0.001 || o.sun.z < -0.05) return float3(0);
+        float c = 1.0 - dot(d, o.sun.xyz);
+        return o.sunColor.rgb * (k * (1.5 * exp(-c / 0.0004) + 0.35 * exp(-c / 0.006) + 0.08 * exp(-c / 0.05)));
+    }
+
     /// Fire & Neon §5.5: a lit train along the far shore, its windows a dotted line at the headlands' foot.
     float3 farTrain(float azRel, float alt, constant RoadU& u) {
         if (u.h.z <= 0.0 || abs(u.h.y) < 1e-4) return float3(0);
@@ -272,6 +308,7 @@ enum CoastRoadShaders {
             float2 slope = oceanSlope(q, o, oceanFootprint(d, f, sky));
             float3 nrm = oceanNormal(slope, fwd, rgt);
             col = oceanShade(d, nrm, q, f, sky, o, stars, cell);
+            col += roadGlitterRace(d, nrm, q, f, u, o);
             // White water at the cliff base, surging with each break.
             float above = p.y - scrubY;
             float since = u.d.x, last = u.d.y, base = u.d.z;
@@ -283,7 +320,7 @@ enum CoastRoadShaders {
             col = mix(col, foamCol, saturate(white));
             col = mix(col, hazeCol, saturate(haze * 0.75 * (1.0 - exp(-f / 900.0))));
             // The beams in the air over the sea, as far as the water (a beam facing you lights the air all round).
-            extra = lighthouseLight(d, sky, u, haze, fog, t);
+            extra = lighthouseLight(d, sky, u, haze, fog, t) + roadSunGlare(d, u, o);
             depth = 0.6 + 0.4 * saturate(f / 3000.0);
             alpha = 1.0;
         } else {
@@ -302,7 +339,7 @@ enum CoastRoadShaders {
                 }
             }
             if (hl > 0.0) { alpha = 1.0; depth = 0.97; }
-            extra = lighthouseLight(d, sky, u, haze, fog, 1e9) * (hl > 0.0 ? 0.5 : 1.0);
+            extra = lighthouseLight(d, sky, u, haze, fog, 1e9) * (hl > 0.0 ? 0.5 : 1.0) + roadSunGlare(d, u, o);
             if (hl > 0.0) extra += farTrain(azRel, alt, u);
         }
         // Premultiplied from here: lamp posts over everything, fog over the view, lamp heads glowing on top.
@@ -467,6 +504,63 @@ enum CoastRoadShaders {
         if (cover < 0.002 && eyes < 0.002) discard_fragment();
         float3 glow = float3(0.7, 1.0, 0.45) * eyes * 3.0;
         return float4(in.tint.rgb * cover + glow, cover);
+    }
+
+    // ---------------------------------------------------------------- Fire & Neon §5.5: seabirds lifting past the window
+    // p: where the bird is (x, y, aspect units of the world's frame), its half-span (aspect units), its wingbeat's phase
+    // (radians); c: its underside's colour (rgb, lit), its cover. Rolled like the lights; premultiplied.
+    struct BirdInstance { float4 p; float4 c; };
+    struct BirdOut { float4 pos [[position]]; float2 uv; float4 c; float beat; };
+
+    vertex BirdOut road_bird_vertex(uint vid [[vertex_id]], uint iid [[instance_id]], constant BirdInstance* birds [[buffer(0)]],
+                                    constant RoadU& u [[buffer(1)]]) {
+        float2 c[6] = { float2(0, 0), float2(1, 0), float2(0, 1), float2(1, 0), float2(1, 1), float2(0, 1) };
+        BirdInstance bi = birds[iid];
+        float2 uv = mix(float2(-1.15, -0.75), float2(1.15, 0.75), c[vid]);
+        float2 q = bi.p.xy + uv * bi.p.z;
+        float aspect = u.a.y, ro = u.a.z, cr = cos(ro), sr = sin(ro);
+        float2 rq = float2(q.x * cr + q.y * sr, -q.x * sr + q.y * cr);
+        BirdOut o;
+        o.pos = float4(rq.x / aspect, rq.y, 0, 1);
+        o.uv = uv;
+        o.c = bi.c;
+        o.beat = bi.p.w;
+        return o;
+    }
+
+    /// A gull from a little below, in units of its half-span: a small body and head, and each wing a shoulder–wrist–tip
+    /// line, thick at the shoulder and fine at the tip, bending at the wrist as it beats. Returns its cover; `tips` the
+    /// dark wingtips' share, `rim` the sunlit upper edge's.
+    float roadGull(float2 p, float beat, float aa, thread float& tips, thread float& rim) {
+        float flap = sin(beat);
+        float2 s = float2(abs(p.x), p.y);
+        float2 shoulder = float2(0.07, 0.0);
+        float2 wrist = float2(0.45, 0.1 + 0.22 * flap);
+        float2 tip = float2(0.98, -0.02 + 0.45 * flap - 0.1 * cos(beat));
+        float2 a1 = foxSegment(s, shoulder, wrist), a2 = foxSegment(s, wrist, tip);
+        float inner = a1.x - mix(0.085, 0.05, a1.y);
+        float outer = a2.x - mix(0.05, 0.012, a2.y);
+        float wing = min(inner, outer);
+        float body = length((p - float2(0.0, -0.02)) / float2(0.075, 0.2)) - 1.0;
+        float head = length(p - float2(0.0, 0.17)) - 0.055;
+        float dist = min(wing * 1.0, min(body * 0.075, head));
+        float cover = 1.0 - smoothstep(-aa, aa, dist);
+        tips = (outer < inner && a2.y > 0.55) ? 1.0 : 0.0;
+        // The wing's upper (leading) edge catches the sun.
+        float2 dir = normalize(tip - wrist);
+        float above = (s - wrist).x * -dir.y + (s - wrist).y * dir.x;
+        rim = smoothstep(0.0, 0.03, above) * (outer < inner ? 1.0 : 0.5);
+        return cover;
+    }
+
+    fragment float4 road_bird_fragment(BirdOut in [[stage_in]]) {
+        float aa = max(fwidth(in.uv.x) * 1.2, 1e-3);
+        float tips = 0.0, rim = 0.0;
+        float cover = roadGull(in.uv, in.beat, aa, tips, rim) * in.c.a;
+        if (cover < 0.002) discard_fragment();
+        // Lighter along the wings' leading edges, shading toward their trailing edges and the dark tips.
+        float3 col = in.c.rgb * (1.0 - 0.8 * tips) * (0.7 + 0.9 * rim) * (0.85 + 0.25 * saturate(in.uv.y + 0.3));
+        return float4(col * cover, cover);
     }
 
     // The car around the window: door trim and headliner lit by the sky and the dashboard, a rubber seal

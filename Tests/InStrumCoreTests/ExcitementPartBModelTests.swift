@@ -308,6 +308,29 @@ final class ExcitementPartBModelTests: XCTestCase {
         XCTAssertGreaterThan(f.burstHaze, 0.5)
     }
 
+    /// The reef's burst (13 Nov): unmistakable, two and a half times the bundles of the first one, larger, let go in
+    /// puffs over six seconds; its haze rising with them and plain to see.
+    func testTheReefBurstComesInPuffs() {
+        var spawning = CoralSpawning()
+        let sky = SkyState()
+        spawning.burst(strength: 1, quality: .high)
+        let first = spawning.spawn.beads.count
+        XCTAssertGreaterThan(first, 150, "the first puff at once")
+        XCTAssertLessThan(first, CoralSpawning.burstCount(strength: 1) / 2)
+        XCTAssertTrue(spawning.spawn.beads.allSatisfy { $0.size >= 3 }, "larger bundles")
+        var counts: [Int] = []
+        for _ in 0..<(7 * 60) {
+            spawning.step(dt: Self.dt, sky: sky, setting: .off, held: false, quality: .high)
+            counts.append(spawning.spawn.beads.count)
+        }
+        XCTAssertGreaterThan(counts[2 * 60], first + 80, "a second puff")
+        XCTAssertGreaterThan(counts.last ?? 0, 450, "two and a half times the first burst's 220")
+        XCTAssertLessThanOrEqual(counts.max() ?? 999, CoralSpawning.cap(.high), "a fixed pool")
+        XCTAssertGreaterThan(GreatBarrierReefModel.burstHaze(age: 4, life: GreatBarrierReefModel.momentSeconds), 0.99)
+        XCTAssertGreaterThan(GreatBarrierReefModel.burstFlare(age: 1.95, life: 8), 0.3, "flaring again with the second puff")
+        XCTAssertEqual(GreatBarrierReefModel.surpriseSeconds.map { ($0 / 10).rounded() }, [1, 1, 1], "each visitor crosses in about 10 s")
+    }
+
     /// The same performance draws the same worlds (the previews' determinism).
     func testDeterministic() {
         func run() -> [Float] {

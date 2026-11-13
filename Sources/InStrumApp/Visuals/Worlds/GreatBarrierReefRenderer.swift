@@ -365,7 +365,7 @@ final class GreatBarrierReefRenderer: ThemeRenderer {
         reefU[11] = SIMD4(Self.unit(s.rain), Self.unit(s.cloudCover), storm, Self.unit(s.mist))
         reefU[12] = SIMD4(Self.unit(frame.polypsOpen), 0, sparkleScale, Float(patchCount))
         reefU[15] = SIMD4(Self.unit(frame.spawn.slick), Self.unit(frame.spawn.intensity), shafts, hazeOut)
-        reefU[16] = SIMD4(Float(Self.cayAzimuth * .pi / 180), az, birds, 0)
+        reefU[16] = SIMD4(Float(Self.cayAzimuth * .pi / 180), az, birds, Self.unit(frame.burstRise))
 
         // The light in the water where the fish swim (rgb, about a metre down) and on the sand's keys.
         let fromAbove: SIMD3<Float> = surfaceLight * Self.absorb(0.9) * 0.55
@@ -457,39 +457,42 @@ final class GreatBarrierReefRenderer: ThemeRenderer {
         snowCount = dotInstances.count / 2 - beadCount
     }
 
-    /// The visitors (surprises), each crossing the water slowly: a manta gliding high, a green turtle stroking along, a
-    /// blacktip reef shark cruising low over the corals. Each is one instance (its place, half-length and heading; the
-    /// water's light on it) and one draw (its shape and its stroke's phase).
+    /// The visitors (surprises), each crossing the whole water in about ten seconds, near the lens (large, and less of the
+    /// water's blue between: their own colours show): a manta gliding high, a green turtle stroking up toward the surface,
+    /// a blacktip reef shark cruising over the corals. Each is one instance (its place, half-length and heading; the
+    /// light on it) and one draw (its shape and its stroke's phase).
     private func buildVisitors(_ frame: ReefFrame, h: Float, light: SIMD3<Float>) {
         visitorInstances.removeAll(keepingCapacity: true)
         visitorKinds.removeAll(keepingCapacity: true)
         let scale = min(1.3, max(0.7, h / 0.66))
+        let grey: Float = (light.x + light.y + light.z) / 3
+        let near: SIMD3<Float> = light * 0.6 + SIMD3<Float>(repeating: grey * 0.45)
         for s in frame.surprises.prefix(Self.visitorCapacity) {
             let age = s.age
-            let env = ExcitementPlay.envelope(age: age, life: s.duration, rise: 1.5, fall: 2)
+            let env = ExcitementPlay.envelope(age: age, life: s.duration, rise: 0.8, fall: 1.0)
             guard env > 0.002 else { continue }
             let right = s.unit(0) < 0.5
             let run: Float = s.progress
-            let x: Float = right ? -0.15 + 1.3 * run : 1.15 - 1.3 * run
+            let x: Float = right ? -0.3 + 1.6 * run : 1.3 - 1.6 * run
             let heading: Float = right ? 0 : .pi
             let y: Float, half: Float, phase: Float
             switch s.index {
             case 0:
-                y = 0.66 + 0.14 * s.unit(1) + 0.02 * sin(age * 0.4)
-                half = 0.15 * scale
-                phase = age * 0.42
+                y = 0.66 + 0.1 * s.unit(1) + 0.02 * sin(age * 0.5)
+                half = 0.3 * scale
+                phase = age * 0.38
             case 1:
-                y = 0.45 + 0.15 * s.unit(1) + 0.08 * run
-                half = 0.11 * scale
-                phase = age * 0.5
+                y = 0.5 + 0.1 * s.unit(1) + 0.12 * run
+                half = 0.3 * scale
+                phase = age * 0.45
             default:
-                y = 0.33 + 0.12 * s.unit(1) + 0.015 * sin(age * 0.6)
-                half = 0.16 * scale
-                phase = age * 0.75
+                y = 0.47 + 0.08 * s.unit(1) + 0.015 * sin(age * 0.6)
+                half = 0.33 * scale
+                phase = age * 0.8
             }
             let at = screenPoint(x: x, waterHeight: y)
             visitorInstances.append(SIMD4(at.x, at.y, half, heading))
-            visitorInstances.append(SIMD4(light, 0.9 * env))
+            visitorInstances.append(SIMD4(near, 0.97 * env))
             visitorKinds.append(SIMD4(2, aspect, Float(s.index), phase))
         }
     }
