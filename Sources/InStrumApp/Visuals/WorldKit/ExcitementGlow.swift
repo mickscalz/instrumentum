@@ -38,3 +38,24 @@ struct ExcitementGlow {
         return shown
     }
 }
+
+/// Under gentle visuals a world's exposure never jumps (Fire & Neon spec §13): whatever lifts it (a moment's light, a
+/// fireball, a change of mood or weather) it rises toward its new level over 0.8 s, and falls at once. In 0.1 s it
+/// climbs at most 12% of the way, so only a lift of more than twice the exposure could count as a flash, and none does.
+/// Without gentle visuals it passes the exposure straight on (the flash limiter keeps that safe). Held time (dt 0) holds
+/// it where it is.
+struct GentleExposure {
+    private var value: Float?
+
+    mutating func step(_ target: Float, gentle: Bool, dt: Double) -> Float {
+        guard target.isFinite else { return value ?? 1 }
+        guard gentle, let v = value, target > v else {
+            value = target
+            return target
+        }
+        let fdt = Float(dt.isFinite ? min(max(dt, 0), 0.25) : 0)
+        let next = v + (target - v) * (1 - exp(-fdt / 0.8))
+        value = next
+        return next
+    }
+}

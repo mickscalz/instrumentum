@@ -72,7 +72,9 @@ final class SteinwayRenderer: ThemeRenderer {
         stage[0] = SIMD4(keyTop, limited.sparkle, f.scene.ambience * (1 - 0.4 * gather), Float(spots.count))
         stage[1] = SIMD4(f.spotWidth * (1 - 0.35 * gather), f.warmth, f.sheen, min(1, f.haze + 0.15 * gather))
         for (i, s) in spots.enumerated() { stage[2 + i] = SIMD4(s.x, s.intensity, 0, 0) }
-        let shimmer = ExcitementGlow.unit(f.motes) * limited.sparkle
+        // The motes' glints halve under gentle visuals (the limiter's sparkle here is the stage's bloom, which is all but
+        // nothing at rest: through it the motes never showed).
+        let shimmer = ExcitementGlow.unit(f.motes) * FlashLimiter.sparkleScale(gentle: gentle)
         stage[Self.rowMoment] = SIMD4(spotOut, gather, shimmer, ExcitementGlow.unit(f.curtain))
         stage[Self.rowClock] = SIMD4(Float(f.time.truncatingRemainder(dividingBy: 3600)), f.curtainAge, 0, 0)
         glowColor = SIMD4(Float(f.glowColor.r), Float(f.glowColor.g), Float(f.glowColor.b), 1)

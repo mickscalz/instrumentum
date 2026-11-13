@@ -26,11 +26,15 @@ final class GoldenHourBeachRenderer: ThemeRenderer {
     /// once) and the sprites (the gulls and the kite over the sky, the dolphins on the sea).
     private var sparkInstances: [SIMD4<Float>] = []
     private var skySprites: [BeachSprite] = []
+    /// The bursts' smoke (drawn over the sky before the stars, so they burn in front of it).
+    private var smokeSprites: [BeachSprite] = []
     private var seaSprites: [BeachSprite] = []
     private var ring: [MTLBuffer] = []
     private var slot = 0
     private var view = SIMD4<Float>(16.0 / 9, 2.0 / 720, 0, 0)
     private var primed = false
+    /// Under gentle visuals the exposure only ever eases up (never a flash).
+    private var gentleExposure = GentleExposure()
     private var burstGlow: Float = 0
     private var oceanU = [SIMD4<Float>](repeating: .zero, count: 7)   // the beach doesn't travel: travel stays 0
     private var keyInstances: [KeyInstance] = []
@@ -180,7 +184,7 @@ final class GoldenHourBeachRenderer: ThemeRenderer {
             primed = true
             for _ in 0..<16 { _ = limiter.limit(exposure: exposure, sparkle: 1, dt: 1) }
         }
-        let limited = limiter.limit(exposure: exposure * (1 + burstGlow), sparkle: Float(p.number("glitter")) * (0.25 + 0.75 * frame.glitter), dt: dt)
+        let limited = limiter.limit(exposure: gentleExposure.step(exposure * (1 + burstGlow), gentle: gentle, dt: dt), sparkle: Float(p.number("glitter")) * (0.25 + 0.75 * frame.glitter), dt: dt)
         exposureOut = limited.exposure
         glitterOut = limited.sparkle
 
@@ -285,12 +289,14 @@ final class GoldenHourBeachRenderer: ThemeRenderer {
     }
 
     /// Where a star is `t` s after the burst (metres in the beach's frame): out along `dir` against the air's drag, and
-    /// sinking under gravity toward its slow terminal fall.
+    /// sinking toward its terminal fall as the burst slows (a burning star falls at 15–25 m/s: a willow's heavy embers
+    /// fastest), so every burst droops into falling embers.
     nonisolated static func starPoint(_ sh: FireworkShell, dir: SIMD3<Float>, pace: Float, t: Float) -> SIMD3<Float> {
         let tt = max(0, t)
         let drag = max(0.2, sh.drag)
         let out = (1 - exp(-drag * tt)) / drag
-        let sag = 9.81 / drag * (tt - out)
+        let fall: Float = sh.kind == .willow ? 24 : 15
+        let sag = fall * (tt - out)
         return sh.burst + dir * (sh.speed * pace * out) - SIMD3<Float>(0, 0, sag)
     }
 
@@ -316,7 +322,12 @@ final class GoldenHourBeachRenderer: ThemeRenderer {
             return SIMD2(simd_dot(d, cam.right) / (z * cam.tanH), simd_dot(d, cam.up) / (z * cam.tanV))
         }
         let lightScale: Float = gentle ? 0.6 : 1
+        // Daylight fireworks are pale and smoky (their colour all but lost against the bright sky); toward dusk they glow.
+        let day = Float(Self.smooth(-3, 10, s.sun.altitude))
+        let glowScale: Float = 1 + 0.5 * (1 - day)
+        let pale = SIMD3<Float>(1.0, 0.95, 0.86)
         sparkInstances.removeAll(keepingCapacity: true)
+        smokeSprites.removeAll(keepingCapacity: true)
         func spark(_ a: SIMD2<Float>, _ b: SIMD2<Float>, colour: SIMD3<Float>, radius: Float) {
             guard sparkInstances.count + 2 <= Self.sparkCapacity * 2 else { return }
             guard max(abs(a.x), abs(b.x)) < 1.3, max(abs(a.y), abs(b.y)) < 1.3 else { return }
@@ -334,22 +345,24 @@ final class GoldenHourBeachRenderer: ThemeRenderer {
                     let x = min(1, max(0, a / rise))
                     return sh.launch + (sh.burst - sh.launch) * (1 - (1 - x) * (1 - x))
                 }
-                if let p0 = project(climb(sh.age - 0.14)), let p1 = project(climb(sh.age)) {
-                    spark(SIMD2(p0.x, p0.y), SIMD2(p1.x, p1.y), colour: SIMD3<Float>(1.0, 0.72, 0.38) * (1.4 * lightScale), radius: 1.1)
+                // The shell climbing on a faint trail of sparks (a long dim tail, a brighter head).
+                if let p0 = project(climb(sh.age - 0.2)), let p1 = project(climb(sh.age)) {
+                    spark(SIMD2(p0.x, p0.y), SIMD2(p1.x, p1.y), colour: SIMD3<Float>(1.0, 0.72, 0.38) * (0.35 * lightScale * glowScale), radius: 0.8)
                 }
                 continue
             }
             let t = sh.sinceBurst, u = min(1, t / max(sh.life, 1e-3))
             let trail: Float
             switch sh.kind {
-            case .peony: trail = 0.1
-            case .chrysanthemum: trail = 0.22
-            case .willow: trail = 0.45
+            case .peony: trail = 0.26
+            case .chrysanthemum: trail = 0.3
+            case .willow: trail = 0.6
             }
             let c0 = Self.fireworkColour(sh.hue), c1 = Self.fireworkColour(sh.hue2)
-            let colour = c0 + (c1 - c0) * u
-            let on = min(1, t / 0.06)
-            let base = 5 * sh.brightness * on * lightScale
+            let vivid = c0 + (c1 - c0) * u
+            let colour = vivid + (pale - vivid) * (0.6 * day)
+            let on = min(1, t / 0.12)
+            let base = 5 * sh.brightness * on * lightScale * glowScale
             for k in 0..<min(sh.stars, FireworkShell.mostStars) {
                 let st = Self.starDirection(k, of: sh.stars, seed: sh.seed)
                 let fade: Float
@@ -361,8 +374,27 @@ final class GoldenHourBeachRenderer: ThemeRenderer {
                 guard fade > 0.01 else { continue }
                 guard let p1 = project(Self.starPoint(sh, dir: st.dir, pace: st.pace, t: t)),
                       let p0 = project(Self.starPoint(sh, dir: st.dir, pace: st.pace, t: t - trail)) else { continue }
-                spark(SIMD2(p0.x, p0.y), SIMD2(p1.x, p1.y), colour: colour * (base * fade), radius: 1.0)
+                spark(SIMD2(p0.x, p0.y), SIMD2(p1.x, p1.y), colour: colour * (base * fade), radius: 1.2)
                 stars += 1
+            }
+            // Its smoke: a soft ball where it burst, growing and drifting downwind, pale grey in daylight (where it is
+            // most of what you see) and faint at dusk, lit from inside by the burst for a moment.
+            if let c = project(sh.burst + SIMD3<Float>(6 * t * (0.3 + s.wind), 0, 2 * t)) {
+                let spread = sh.speed * (1 - exp(-max(0.2, sh.drag) * t)) / max(0.2, sh.drag)
+                let radius = (0.35 + 0.45 * min(1, t / 1.5)) * spread + 10
+                let hx = radius / (c.z * cam.tanH), hy = radius / (c.z * cam.tanV)
+                let thick = (0.22 + 0.45 * day) * min(1, t / 0.4) * (1 - u * u) * lightScale
+                // Smoke is a neutral grey against the sky behind it (the sky's colour where the burst hangs, between the
+                // horizon's and the zenith's): by day clearly darker than the bright sky beside it, its top sunlit; at dusk
+                // dim.
+                let alt = min(1, max(0, (sh.burst.z - Self.cameraHeight) / max(1, sh.burst.y)) / 0.6)
+                let behind: SIMD3<Float> = s.horizon + (s.zenith - s.horizon) * alt
+                let grey = simd_dot(behind, SIMD3<Float>(0.3, 0.5, 0.2))
+                let skyLit = SIMD3<Float>(grey * 0.62, grey * 0.6, grey * 0.58)
+                let flashLit: SIMD3<Float> = vivid * (0.25 * sh.brightness * exp(-t / 0.5) * glowScale * lightScale)
+                let lit: SIMD3<Float> = skyLit + flashLit
+                smokeSprites.append(BeachSprite(rect: SIMD4(c.x - hx, c.y - hy, c.x + hx, c.y + hy), local: SIMD4(-1, -1, 1, 1),
+                                                info: SIMD4(3, t + Float(sh.seed % 97), thick, 1), tint: SIMD4(lit, 0)))
             }
             if rows < Self.fireworkRows {
                 let w = world(sh.burst)
@@ -446,6 +478,11 @@ final class GoldenHourBeachRenderer: ThemeRenderer {
 
         // The fireworks and the green flash over the sky, and the gulls and the kite: the headland and the palms then
         // draw over them where they stand in front.
+        if !smokeSprites.isEmpty {
+            e.setRenderPipelineState(sprites)
+            smokeSprites.withUnsafeBytes { e.setVertexBytes($0.baseAddress!, length: $0.count, index: 0) }
+            e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6, instanceCount: smokeSprites.count)
+        }
         if sparkCount > 0, !ring.isEmpty {
             slot = (slot + 1) % ring.count
             let buf = ring[slot]

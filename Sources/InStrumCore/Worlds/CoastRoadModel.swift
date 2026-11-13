@@ -100,8 +100,9 @@ public struct CoastRoadModel: ThemeModel, MoodAware, SkyAware, ExcitementAware, 
     /// A fox crossing, a far train, a shooting star (Fire & Neon spec §5.5).
     public static let surpriseCount = RoadSurprise.Kind.allCases.count
     /// The lighthouse on the far point, from the eye (metres: across to the right, out to sea, up): 20° to the right
-    /// of the view, about 5 km off, its lantern 80 m over the sea (the road is 60 m up).
-    public static let lighthouse = SIMD3<Float>(1750, 4800, 20)
+    /// of the view, about 5 km off, its lantern on the point's cliff 135 m over the sea (the road is 60 m up), so a beam
+    /// passing over you is high enough to cross the window.
+    public static let lighthouse = SIMD3<Float>(1750, 4800, 75)
     /// Its two beams turn once in 16 s; a big moment's sweep crosses toward you at 0.75 rad/s.
     public static let beamTurn: Float = 2 * .pi / 16, sweepTurn: Float = 0.75
     /// The traffic washes' pool.
@@ -255,14 +256,14 @@ public struct CoastRoadModel: ThemeModel, MoodAware, SkyAware, ExcitementAware, 
         meteors.prune(at: now)
         // A big moment: the lighthouse's beam sweeps round toward you, swelling. The drop: the road opens onto the sea.
         if let m = x.moment {
-            // Turn the nearer beam (they are half a turn apart) round to 1.1 rad short of facing you, quickly while it is
-            // still dim, then sweep it across you.
+            // Turn the nearer beam (they are half a turn apart) round to 0.6 rad short of facing you, quickly while it is
+            // still dim (it then lies across the sea in front of you, rising toward you), then sweep it across you.
             // Never two at once: a moment while a beam sweeps only swells it.
             let strength = ExcitementStep.strength(m)
             if let playing = sweep, playing.age < 4 {
                 sweep = (playing.age, playing.from, playing.by, max(playing.strength, strength))
             } else {
-                var by = (-1.1 - beam).truncatingRemainder(dividingBy: .pi)
+                var by = (-0.6 - beam).truncatingRemainder(dividingBy: .pi)
                 if by < 0 { by += .pi }
                 sweep = (0, beam, by, strength)
             }
@@ -270,8 +271,8 @@ public struct CoastRoadModel: ThemeModel, MoodAware, SkyAware, ExcitementAware, 
         }
         if var s = sweep {
             s.age += fd
-            if s.age < 0.6 {
-                let k = s.age / 0.6
+            if s.age < 0.45 {
+                let k = s.age / 0.45
                 beam = s.from + s.by * k * k * (3 - 2 * k)
                 turn = Self.sweepTurn
             } else {
@@ -335,7 +336,9 @@ public struct CoastRoadModel: ThemeModel, MoodAware, SkyAware, ExcitementAware, 
             trainWay = r.unit() < 0.5 ? -1 : 1
             trainFrom = -trainWay * r.range(0.25, 0.4)
         case .shootingStar:
-            // Low over the sea (the window shows the sky to about 15°): a quick one with a short train.
+            // Low over the sea (the window shows the sky to about 15°): a quick one with a short train. Its head a point as
+            // bright as the brightest stars (a brighter head only grows the sky's halo round it into a ball of light): its
+            // brightness is its long streak.
             let view = Self.viewAzimuth(sky)
             let rightward = r.unit() < 0.5
             let a = view + (rightward ? -1 : 1) * Double(r.range(14, 22))
@@ -343,7 +346,7 @@ public struct CoastRoadModel: ThemeModel, MoodAware, SkyAware, ExcitementAware, 
             let start = WorldMeteors.direction(azimuth: a, altitude: Double(r.range(11, 14)))
             let end = WorldMeteors.direction(azimuth: b, altitude: Double(r.range(3, 6)))
             meteors.add(WorldMeteors.meteor(from: start, to: end, born: now, duration: r.range(0.7, 1.0),
-                                            magnitude: gentle ? -1.5 : -3, speed: 62, flare: false))
+                                            magnitude: gentle ? -0.8 : -1.8, speed: 62, flare: false))
         }
         let record = RoadSurprise(kind: kind, age: 0, duration: RoadSurprise.duration(kind), seed: s.seed)
         if let free = surprises.firstIndex(where: { $0 == nil }) { surprises[free] = record }

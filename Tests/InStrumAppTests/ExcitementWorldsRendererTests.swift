@@ -243,7 +243,8 @@ final class ExcitementWorldsRendererTests: XCTestCase {
                 case .train: if r.trainOut > 0.3 { drew = true }
                 case .shootingStar:
                     let listed = f.surprises.contains { $0.kind == .shootingStar }
-                    if listed, f.sky.meteors.contains(where: { $0.magnitude <= -2.9 }) { drew = true }
+                    // As bright as the brightest stars (−1.8): its head a point, its brightness in its streak.
+                    if listed, f.sky.meteors.contains(where: { $0.magnitude <= -1.7 }) { drew = true }
                 }
             }
             XCTAssertTrue(drew, "\(kind)")
@@ -470,9 +471,9 @@ final class ExcitementPreviewTests: XCTestCase {
 
     func testWriteRoadExcitementPreviews() throws {
         let url = try folder()
-        try write(try T.road(2.5, big(T.Plan(moments: [90: T.chord(1)]))).image, "excite-road-beam-sweep", to: url)
-        try write(try T.road(3.55, big(T.Plan(moments: [90: T.chord(1)]))).image, "excite-road-beam-facing", to: url)
-        try write(try T.road(3.55, big(T.Plan(moments: [90: T.chord(1)])), sky: T.sky(hour: 22)).image, "excite-road-beam-night", to: url)
+        try write(try T.road(2.2, big(T.Plan(moments: [90: T.chord(1)]))).image, "excite-road-beam-sweep", to: url)
+        try write(try T.road(2.73, big(T.Plan(moments: [90: T.chord(1)]))).image, "excite-road-beam-facing", to: url)
+        try write(try T.road(2.73, big(T.Plan(moments: [90: T.chord(1)])), sky: T.sky(hour: 22)).image, "excite-road-beam-night", to: url)
         try write(try T.road(2.4, big(T.Plan(surprises: [10: WorldSurprise(index: 0, seed: 9)])), sky: T.sky(hour: 22)).image,
                   "excite-road-fox", to: url)
         try write(try T.road(10, big(T.Plan(surprises: [10: WorldSurprise(index: 1, seed: 9)]))).image, "excite-road-train", to: url)

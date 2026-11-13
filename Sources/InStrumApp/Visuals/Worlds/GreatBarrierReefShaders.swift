@@ -833,25 +833,29 @@ enum GreatBarrierReefShaders {
         return cover;
     }
 
-    /// A manta from a little below as it glides: its broad wings spanning up and down the view (foreshortened as they
-    /// beat), the leading edge swept back, the cephalic fins in front, a thin tail behind. A pale belly, dark margins.
+    /// A manta from a little below as it glides across: seen from beneath at a low angle its broad wings (into the view)
+    /// foreshorten to about the body's length, so it reads as a wide diamond: the head and cephalic fins in front, the
+    /// leading edges sweeping back to pointed, slightly swept tips, the trailing edges hollow, a thin tail behind; the
+    /// wings rise and fall slowly as it flies. A pale belly, dark margins.
     float reefManta(float2 p, float beat, float px, thread float& pale, thread float& dark) {
         float flap = sin(beat * 6.2831853);
-        float span = 0.92 * (0.8 + 0.2 * cos(beat * 6.2831853));
-        float ax = abs(p.y) / max(span, 0.1);
+        float span = 0.5 * (0.85 + 0.15 * cos(beat * 6.2831853));
+        float yy = p.y - 0.06 * flap * (abs(p.y) / span) * (abs(p.y) / span);
+        float ax = abs(yy) / span;
         float cover = 0.0;
         if (ax < 1.0) {
-            float lead = 0.3 - 0.42 * ax * ax - 0.07 * flap * ax;
-            float trail = -0.22 + 0.24 * ax;
+            float lead = 0.32 - 0.57 * ax * sqrt(ax);
+            float trail = -0.2 + 0.2 * sin(3.14159265 * ax) - 0.05 * ax;
             cover = (1.0 - smoothstep(lead - px, lead + px, p.x)) * smoothstep(trail - px, trail + px, p.x);
         }
-        float2 h1 = (p - float2(0.36, 0.08)) / float2(0.08, 0.025);
-        float2 h2 = (p - float2(0.36, -0.08)) / float2(0.08, 0.025);
-        float horns = max(1.0 - smoothstep(0.8, 1.0, length(h1)), 1.0 - smoothstep(0.8, 1.0, length(h2)));
-        float tail = (p.x < -0.18 && p.x > -0.9) ? 1.0 - smoothstep(0.008, 0.016, abs(p.y + 0.02 * sin(p.x * 6.0 + beat))) : 0.0;
+        float2 h1 = (p - float2(0.35, 0.065)) / float2(0.06, 0.022);
+        float2 h2 = (p - float2(0.35, -0.065)) / float2(0.06, 0.022);
+        float horns = max(1.0 - smoothstep(0.75, 1.0, length(h1)), 1.0 - smoothstep(0.75, 1.0, length(h2)));
+        float tail = (p.x < -0.15 && p.x > -0.75) ? 1.0 - smoothstep(0.006, 0.012, abs(p.y + 0.02 * sin(p.x * 6.0 + beat))) : 0.0;
         cover = max(cover, max(horns, tail));
-        pale = cover * (1.0 - smoothstep(0.7, 0.95, ax));
-        dark = max(cover * smoothstep(0.8, 0.98, ax), max(horns, tail));
+        float rim = smoothstep(0.65, 0.95, ax);
+        pale = cover * (1.0 - rim) * (1.0 - smoothstep(0.2, 0.32, p.x));
+        dark = max(cover * rim, max(horns, tail));
         return cover;
     }
 

@@ -29,7 +29,11 @@ final class CoastRoadRenderer: ThemeRenderer {
     /// Fire & Neon §5.5: the fox in the scrub, and the lantern's light on the scene through the flash limiter.
     private var foxInstances: [FoxInstance] = []
     private var primed = false
+    /// Under gentle visuals the exposure only ever eases up (never a flash).
+    private var gentleExposure = GentleExposure()
     private var lanternGlow: Float = 0
+    /// The mist drifting through the lighthouse's beams (noise cells, wrapped at 64 so it never jumps).
+    private var beamMist: Float = 0
     private var oceanU = [SIMD4<Float>](repeating: .zero, count: 7)
     private var lightInstances: [SIMD4<Float>] = []
     private var postInstances: [SIMD4<Float>] = []
@@ -177,7 +181,7 @@ final class CoastRoadRenderer: ThemeRenderer {
             primed = true
             for _ in 0..<16 { _ = limiter.limit(exposure: exposure, sparkle: 1, dt: 1) }
         }
-        let limited = limiter.limit(exposure: exposure * (1 + lanternGlow), sparkle: 0.45 + 0.55 * frame.bloom, dt: dt)
+        let limited = limiter.limit(exposure: gentleExposure.step(exposure * (1 + lanternGlow), gentle: gentle, dt: dt), sparkle: 0.45 + 0.55 * frame.bloom, dt: dt)
         exposureOut = limited.exposure
         lampOut = Float(p.number("lamps")) * Self.lampLight(sunAltitude: s.sun.altitude) * sparkleScale
         bloomOut = frame.bloom * sparkleScale
@@ -202,6 +206,7 @@ final class CoastRoadRenderer: ThemeRenderer {
         // Wet tarmac: how wet, and the road's far edge (where reflections hang from).
         let roadLineY = bottom + 0.06
         roadU[5] = SIMD4(s.wetness, roadLineY, 0, 0)
+        beamMist = (beamMist + 0.35 * fdt).truncatingRemainder(dividingBy: 64)
         fillExcitement(frame, gentle: gentle, aspect: aspect, bottom: bottom)
 
         // The sea passes by the distance travelled, wrapped to its tile (every swell component and noise repeats
@@ -303,7 +308,7 @@ final class CoastRoadRenderer: ThemeRenderer {
         let l = CoastRoadModel.lighthouse
         roadU[6] = SIMD4(l.x, l.y, l.z, beam)
         openOut = Self.unit(frame.open)
-        roadU[7] = SIMD4(frame.beamAngle.isFinite ? frame.beamAngle : 0, 0, flareOut, openOut)
+        roadU[7] = SIMD4(frame.beamAngle.isFinite ? frame.beamAngle : 0, beamMist, flareOut, openOut)
         headlightsOut = Self.unit(frame.headlights) * lightScale
         trainOut = 0
         if let t = frame.train, t.light > 0.001 {
