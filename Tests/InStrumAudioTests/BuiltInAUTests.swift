@@ -213,8 +213,10 @@ final class BuiltInAUTests: XCTestCase {
             heard.append(DSPTestKit.dBFS(Array(after[Int(1.2 * 48_000)...])))
         }
         let rolled = heard[0], panicked = heard[1], switched = heard[2]
-        XCTAssertGreaterThanOrEqual(rolled - panicked, 10, "panic: \(rolled) dBFS with the roll, \(panicked) without")
-        XCTAssertGreaterThanOrEqual(rolled - switched, 10, "switch: \(rolled) dBFS with the roll, \(switched) without")
+        // The roll stands about 10 dB over the beds; where it starts in a render block moves that a little (9.9 dB on a
+        // busy CI runner on 13 Nov, 10 or more on others), so 8 dB is the line: a roll that was not cleared gives 0.
+        XCTAssertGreaterThanOrEqual(rolled - panicked, 8, "panic: \(rolled) dBFS with the roll, \(panicked) without")
+        XCTAssertGreaterThanOrEqual(rolled - switched, 8, "switch: \(rolled) dBFS with the roll, \(switched) without")
         XCTAssertGreaterThan(panicked, -90, "the beds carry on")
     }
 
