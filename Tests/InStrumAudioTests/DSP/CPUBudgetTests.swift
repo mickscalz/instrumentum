@@ -5,6 +5,10 @@ import InStrumDSP
 final class CPUBudgetTests: XCTestCase {
     typealias R = SynthRender
 
+    /// The ceiling for a pair of worlds' ambience where the budget is "2.5% each": GitHub's Intel runner (the only
+    /// machine these run on since 13 Nov) measured 2.5–2.8% on scenes an Apple-silicon runner did in about 1.5%.
+    static let intelRunnerAmbience = 0.032
+
     private func bestOfThree(_ work: () -> Void) -> Double {
         var best = Double.infinity
         for _ in 0..<3 {
@@ -206,7 +210,7 @@ final class CPUBudgetTests: XCTestCase {
                                A.level(ISD_AMB_BOAT, 0.4), A.startBoat(at: 0), A.level(ISD_AMB_BREEZE, 0.4)]
         for (name, scene) in [("fjord", fjord), ("bay", bay)] {
             let seconds = bestOfThree { _ = A.render(seconds: 10, actions: scene) }
-            XCTAssertLessThan(seconds / 10, 0.025, "the \(name) ambience used \(String(format: "%.1f", seconds * 10))% of real time")
+            XCTAssertLessThan(seconds / 10, Self.intelRunnerAmbience, "the \(name) ambience used \(String(format: "%.1f", seconds * 10))% of real time")
         }
     }
 
@@ -242,7 +246,7 @@ final class CPUBudgetTests: XCTestCase {
                                 A.bubbles(0.5, at: 2), A.level(ISD_AMB_RAIN_WATER, 0.3), A.closeness(0.55)]
         for (name, scene) in [("submarine", submarine), ("reef", reef)] {
             let seconds = bestOfThree { _ = A.render(seconds: 10, actions: scene) }
-            XCTAssertLessThan(seconds / 10, 0.025, "the \(name) ambience used \(String(format: "%.1f", seconds * 10))% of real time")
+            XCTAssertLessThan(seconds / 10, Self.intelRunnerAmbience, "the \(name) ambience used \(String(format: "%.1f", seconds * 10))% of real time")
         }
     }
 
@@ -263,7 +267,7 @@ final class CPUBudgetTests: XCTestCase {
                                   A.level(ISD_AMB_BREEZE, 0.4), A.level(ISD_AMB_CRICKETS, 0.3), A.closeness(0.55)]
         for (name, scene) in [("supercell", supercell), ("plains", plains)] {
             let seconds = bestOfThree { _ = A.render(seconds: 10, actions: scene) }
-            XCTAssertLessThan(seconds / 10, 0.025, "the \(name) ambience used \(String(format: "%.1f", seconds * 10))% of real time")
+            XCTAssertLessThan(seconds / 10, Self.intelRunnerAmbience, "the \(name) ambience used \(String(format: "%.1f", seconds * 10))% of real time")
         }
     }
 
