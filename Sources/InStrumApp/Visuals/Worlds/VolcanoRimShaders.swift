@@ -515,70 +515,42 @@ enum VolcanoRimShaders {
         return blackbody(Tcore - 330.0 * max(d, 0.0) / we) * (w / we);
     }
 
-    /// A net of blocks `scale` m across at p: the distance (m) to the nearest block's edge, and in `id` that block's
-    /// own random number (0…1).
-    float blockNet(float2 p, float scale, thread float& id) {
-        float2 g = p / scale;
-        float2 gi = floor(g), gf = fract(g);
-        float f1 = 9.0;
-        float2 mr = float2(0), mg = float2(0);
-        for (int y = -1; y <= 1; y++) {
-            for (int x = -1; x <= 1; x++) {
-                float2 cell = float2(float(x), float(y));
-                float2 r = cell + hash22(gi + cell) * 0.85 - gf;
-                float dd = dot(r, r);
-                if (dd < f1) { f1 = dd; mr = r; mg = cell; }
-            }
-        }
-        float edge = 9.0;
-        for (int y = -1; y <= 1; y++) {
-            for (int x = -1; x <= 1; x++) {
-                float2 cell = mg + float2(float(x), float(y));
-                float2 r = cell + hash22(gi + cell) * 0.85 - gf;
-                float2 dr = r - mr;
-                if (dot(dr, dr) > 1e-5) edge = min(edge, dot(0.5 * (mr + r), normalize(dr)));
-            }
-        }
-        id = hash12(gi + mg + float2(0.37, 1.91));
-        return edge * scale;
+    /// The shore's crust founders here and there along it (stretches that drift slowly): there lava wells up through the
+    /// piled crust and the cracks stay open to the edge. 0…1 at a place round the shore (`arc`, metres along it).
+    float shoreFounder(float arc, constant VolcanoU& u) {
+        return smoothstep(0.62, 0.85, vn2(float2(arc * 0.035, u.a.y * 0.05 + 3.0)));
     }
 
-    /// The lake's shore, either side of its edge (`toEdge` m inside it; < 0 on the floor): crust piled against it and
-    /// broken into blocks, chilled spatter and rubble on the floor beside it; incandescent lava in the gaps between the
-    /// blocks, hotter toward the lake and here and there foundering into it; the blocks' lake-facing faces and lips lit by
-    /// its glow, which bleeds a few metres into the rock. Both sides read the same shore, so the edge itself is never a
-    /// line. Returns its colour and how much of it covers the surface there: all of it near the edge, fading away on each
-    /// side over a reach that wanders along the shore (a broad pile-up here, a narrow rim there).
-    float4 shoreRubble(float2 p, float toEdge, float foot, constant VolcanoU& u) {
-        float arc = atan2(p.y, p.x) * u.lake.x;
-        float wIn = 5.0 + 11.0 * vn2(float2(arc * 0.03, 2.0));
-        float wOut = 7.0 + 15.0 * vn2(float2(arc * 0.025, 5.0));
-        float wgt = toEdge >= 0.0 ? 1.0 - smoothstep(0.35 * wIn, wIn, toEdge) : 1.0 - smoothstep(0.25 * wOut, wOut, -toEdge);
-        if (wgt <= 0.0) return float4(0);
-        // Blocks a few metres across, smaller where the crust is piled and broken on the lake's side.
-        float scale = 2.6 + 1.8 * smoothstep(-2.0, -14.0, toEdge);
-        float id;
-        float gap = blockNet(p + float2(31.0, 17.0), scale, id);
-        // The gaps' lava: hot by the lake, dulling onto the floor; brighter where the crust founders (stretches of the
-        // shore that drift slowly), the lake's activity and Energy livening it.
-        float founder = smoothstep(0.55, 0.85, vn2(float2(arc * 0.05, u.a.y * 0.07 + 3.0)));
-        float lakeSide = smoothstep(-8.0, 5.0, toEdge);
-        float Tg = 930.0 + 230.0 * lakeSide + 130.0 * founder * lakeSide + 60.0 * (id - 0.5) + 40.0 * u.play.x + 30.0 * u.lake.w;
-        float gw = mix(0.1, 0.42, lakeSide) * (0.6 + 0.8 * founder) * (0.6 + 0.8 * vn2(p * 0.4 + 7.0));
-        float3 lava = crackGlow(gap, gw, foot, Tg);
-        // The blocks: dark chilled crust, tilted every way; the faces and lips turned to the lake lit by it, more near it;
-        // their own heat a dull red on the lake's side.
-        float tilt = id * 6.2831853;
-        float2 slope = float2(cos(tilt), sin(tilt)) * (0.25 + 0.5 * fract(id * 7.13));
+    /// The lumpy relief either side of the lake's edge (`toEdge` m inside it; < 0 on the floor), the same on both sides:
+    /// piled crust on the lake's margin, rubble and chilled spatter on the floor, its lumps' faces turned to the lake lit
+    /// by it and their backs in shade, the light bleeding a dozen metres into the rock and failing beyond. Returns the light
+    /// it adds (rgb) and what the surface's own light is multiplied by (its shading) in w.
+    float4 shoreRelief(float2 p, float toEdge, constant VolcanoU& u) {
+        float near = exp(-abs(toEdge) / 14.0);
+        if (near < 0.02) return float4(0.0, 0.0, 0.0, 1.0);
         float2 toLake = -p / max(length(p), 1e-3);
-        float lip = 1.0 - smoothstep(0.0, 0.45 * scale, gap);
-        float facing = saturate(0.3 + dot(slope, toLake) + 0.45 * lip);
-        float near = exp(-max(-toEdge, 0.0) / 8.0);
-        float3 rock = float3(0.045, 0.04, 0.037) * (0.65 + 0.7 * fract(id * 13.7));
-        float3 lit = u.glow.rgb * float3(1.0, 0.85, 0.72) * (1.3 * near * facing) + u.skyL.rgb;
-        float Tb = 650.0 + 170.0 * lakeSide + 60.0 * id + 50.0 * founder * lakeSide;
-        float3 c = rock * lit + blackbody(Tb) * 0.5 + lava;
-        return float4(c, wgt);
+        float l0 = vn2(p * 0.14 + float2(3.0, 1.0)) * 0.65 + vn2(p * 0.42 + float2(7.0, 5.0)) * 0.35;
+        float2 q = p + toLake * 1.6;
+        float l1 = vn2(q * 0.14 + float2(3.0, 1.0)) * 0.65 + vn2(q * 0.42 + float2(7.0, 5.0)) * 0.35;
+        float facing = saturate(0.45 + 3.0 * (l0 - l1) + 0.4 * (l0 - 0.5));
+        float onLake = smoothstep(-4.0, 4.0, toEdge);
+        float3 rock = float3(0.045, 0.04, 0.037) * (0.6 + 0.8 * l0);
+        float k = (5.5 - 3.5 * onLake) * near;
+        float3 lit = rock * u.glow.rgb * float3(1.0, 0.85, 0.72) * (k * (0.12 + 0.88 * facing * facing));
+        return float4(lit, 1.0 - near * (0.45 - 0.5 * facing));
+    }
+
+    /// How much of a point of the crater's floor plane is the lake (1) rather than the floor (0) near its edge (`toEdge` m
+    /// inside it): the two cross-fade over a reach that wanders along the shore (a few metres here, twenty there), across a
+    /// boundary fingered by the rock's lumps (tongues of crust out over the rock, islands of rock in the crust), so the
+    /// lake's crust and cracks give way to the rubble beside it with no line between them.
+    float shoreBlend(float2 p, float toEdge, float foot, constant VolcanoU& u) {
+        float arc = atan2(p.y, p.x) * u.lake.x;
+        float zone = 4.0 + 18.0 * vn2(float2(arc * 0.02, 6.0)) + foot;
+        // (The fingers reach 0.65 × the zone at most: farther from the edge it is all lake or all floor.)
+        if (abs(toEdge) > 1.2 * zone) return toEdge > 0.0 ? 1.0 : 0.0;
+        float finger = (vn2(p * 0.12 + float2(3.0, 1.0)) * 0.65 + vn2(p * 0.36 + float2(7.0, 5.0)) * 0.35 - 0.5) * 1.3 * zone;
+        return smoothstep(-0.5 * zone, 0.5 * zone, toEdge + finger);
     }
 
     /// The lake's own light at a point of its surface (crater metres), seen along d; J is the pixel's footprint (lake
@@ -601,6 +573,11 @@ enum VolcanoRimShaders {
         float heatA = A.w;
         float3 crack = float3(0);
         float3 spill = float3(0);
+        // Toward the shore the crust is older and piled: its cracks narrow and dull over the last 25 m, except where it
+        // founders and the lava wells up to the edge.
+        float toShore = edgeR - length(p);
+        float founder = shoreFounder(atan2(p.y, p.x) * u.lake.x, u);
+        float inner = mix(smoothstep(0.0, 25.0, toShore), 1.0, founder);
         for (int c = 0; c < 2; c++) {
             int j = c == 0 ? pl.i2 : pl.i3;
             float bd = c == 0 ? pl.border : pl.border2;
@@ -616,13 +593,13 @@ enum VolcanoRimShaders {
             float along = vn2(pl.q * 0.045 + pair * 31.0);
             float along2 = vn2(pl.q * 0.2 + pair * 7.0);
             float pinch = smoothstep(0.15, 0.6, along) * (0.4 + 1.2 * along2);
-            float width = u.lake.z * mix(0.22, 2.0, wide) * pinch * (0.7 + 0.6 * heat);
+            float width = u.lake.z * mix(0.22, 2.0, wide) * pinch * (0.7 + 0.6 * heat) * (0.4 + 0.6 * inner);
             // Torn lips: the crack's edge wanders on a short scale.
             float bdt = max(bd + (vn2(pl.q * 0.55 + pair * 13.0) - 0.5) * 0.9 * (0.4 + width), 0.0);
             bool twins = int(Ab.y) == j || int(Bjb.y) == pl.i1;
             float open = twins ? smoothstep(0.0, 1.0, min(Ab.x, Bjb.x)) : 1.0;
             float T = u.temps.x + 90.0 + 40.0 * pair + 230.0 * wide + 80.0 * heat + 40.0 * energy + 150.0 * note
-                    + 80.0 * u.play.w + 70.0 * (along2 - 0.5);
+                    + 80.0 * u.play.w + 70.0 * (along2 - 0.5) - 90.0 * (1.0 - inner);
             crack = max(crack, crackGlow(bdt, width, fnj, T) * open);
             spill = max(spill, blackbody(T - 150.0) * (exp(-bd / (1.0 + 2.0 * width)) * open * (0.3 + 0.7 * pinch)));
         }
@@ -687,11 +664,14 @@ enum VolcanoRimShaders {
                 col = mix(col, blackbody(Tp), pool);
             }
         }
-        // The shore: crust piled against it and broken into blocks, the lava in their gaps (the floor reads the same shore
-        // across the edge).
-        float toEdge = edgeR - length(p);
-        float4 shore = shoreRubble(p, toEdge, foot, u);
-        col = mix(col, shore.rgb, shore.a);
+        // The shore's relief: the piled crust's lumps lit by the lake's glow (the floor reads the same relief across the
+        // edge); where the crust founders, a little lava wells up between them.
+        float4 relief = shoreRelief(p, toShore, u);
+        col = col * relief.w + relief.rgb;
+        if (founder > 0.0 && toShore < 20.0) {
+            float seam = 1.0 - smoothstep(0.0, 0.06, abs(vn2(p * 0.3 + float2(11.0, 2.0)) - 0.5));
+            col += blackbody(1020.0 + 160.0 * founder + 60.0 * energy) * (0.5 * seam * founder * (1.0 - smoothstep(4.0, 20.0, toShore)));
+        }
         // The breach's new river leaves the lake here: the lake's own crust torn open toward it.
         if (u.river.z > 0.0) {
             float toMouth = length(p - u.riverA.xy);
@@ -753,13 +733,10 @@ enum VolcanoRimShaders {
             }
             col += blackbody(1060.0 + 120.0 * breach) * (exp(-max(rd.x - halfW, 0.0) / 8.0) * (0.05 + 0.1 * flow + 0.35 * breach) * 0.3);
         }
-        // The lake's shore: the rubble and chilled spatter beside it, the lava in the gaps glowing toward the lake (the same
-        // shore the lake's margin reads, so the edge between them is never a line); none 30 m off.
-        float shore = length(p) - edgeR;
-        if (shore < 30.0) {
-            float4 sr = shoreRubble(p, -shore, foot, u);
-            col = mix(col, sr.rgb, sr.a);
-        }
+        // The lake's shore: the rubble and chilled spatter beside it, its lumps lit by the lake's glow (the same relief the
+        // lake's margin reads, so the edge between them is never a line).
+        float4 relief = shoreRelief(p, edgeR - length(p), u);
+        col = col * relief.w + relief.rgb;
         return col;
     }
 
@@ -1185,7 +1162,8 @@ enum VolcanoRimShaders {
         float sp = clamp(u.tree.w, 0.3, 1.0);
         float Hmax = 130.0 + 100.0 * sp;
         float z = P.z - u.eye.w;
-        float zb = 0.45 * Hmax;
+        // Its foot lifts off the lake once the fountain has died.
+        float zb = 0.45 * Hmax + 45.0 * max(age - 6.0, 0.0);
         float topZ = zb + 30.0 + 90.0 * age;
         // (The lumps move its edges 0.35 × their sum across and 45–60 m × it up and down; their sum stays under 3.5: past
         // these bounds there is no ash whatever they do, and they are not read.)
@@ -1363,8 +1341,13 @@ enum VolcanoRimShaders {
             float tp = (u.eye.w - o.z) / min(Dc.z, -1e-6);
             float2 Jx = tp * (dx.xy - Dc.xy * (dx.z / Dc.z));
             float2 Jy = tp * (dy.xy - Dc.xy * (dy.z / Dc.z));
-            if (h.kind == 1) { if ((skip & 1u) == 0u) col = lakeSurface(h.p, d, Jx, Jy, u, oct, h.edge, plateMap); }
-            else if ((skip & 2u) == 0u) col = floorColour(h.p, d, max(length(Jx), length(Jy)), u, oct, h.edge);
+            // Near the shore the lake and the floor cross-fade (`shoreBlend`): both are read there.
+            float footM = max(length(Jx), length(Jy));
+            float m = shoreBlend(h.p.xy, h.edge - length(h.p.xy), footM, u);
+            float3 lakeC = float3(0.05), floorC = float3(0.05);
+            if (m > 0.001 && (skip & 1u) == 0u) lakeC = lakeSurface(h.p, d, Jx, Jy, u, oct, h.edge, plateMap);
+            if (m < 0.999 && (skip & 2u) == 0u) floorC = floorColour(h.p, d, footM, u, oct, h.edge);
+            col = mix(floorC, lakeC, m);
             depth = 0.6;
         } else if (h.kind >= 3) {
             if ((skip & 4u) == 0u) col = wallColour(h, d, u, oct, h.t * u.a.w);

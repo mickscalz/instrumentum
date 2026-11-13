@@ -525,13 +525,14 @@ enum SupercellSkyShaders {
         float l = dot(under, float3(0.2126, 0.7152, 0.0722));
         under = mix(under, l * float3(0.72, 1.2, 1.0), saturate(u.look.y * 8.0 * core));
         // A chord's pulse: a ring of light spreading out over the base from the wall cloud (seen near overhead; toward the
-        // horizon, foreshortened, a ring would draw a bright line along the base, so it fades there).
+        // horizon, foreshortened, it drew a pale band along the base at night, so it fades there: the wall cloud's own glow
+        // carries the pulse there).
         if (u.glowL.z > 0.0) {
             float dw = length(P.xy - u.wall.xy) - u.wall.z;
             float ringR = u.glowL.w * (Rb * 0.8);
             float ringD = (dw - ringR) / (0.7 + 1.1 * u.glowL.w);
             float fadeOut = 1.0 - 0.6 * u.glowL.w;                     // dimmer as it spreads
-            float ringLight = 0.16 * exp(-ringD * ringD) * graze + 0.12 * exp(-max(dw, 0.0) / 1.0) * (0.5 + 0.5 * graze);
+            float ringLight = (0.16 * exp(-ringD * ringD) + 0.12 * exp(-max(dw, 0.0) / 1.0)) * graze;
             under += float3(1.0, 0.8, 0.55) * (u.glowL.z * fadeOut * ringLight);
         }
         under += flash * (0.2 + 0.3 * graze);

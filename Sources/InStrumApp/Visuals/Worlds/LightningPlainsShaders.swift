@@ -435,7 +435,9 @@ enum LightningPlainsShaders {
         float front = p.storm.w;
         if (alt < -0.4 || alt > 1.02 * front) return 0.0;
         float down = 1.0 - saturate(alt / max(front, 1e-3));         // 0 at the base … 1 at the plain
-        float bend = p.shafts.y * front * (down + 0.9 * down * down);
+        // (Slanting at least a little downwind, the way the low-level wind takes it.)
+        float slant = p.shafts.y + (p.shafts.y >= 0.0 ? 0.12 : -0.12);
+        float bend = slant * front * (down + 0.9 * down * down);
         float v = 0.0;
         for (int i = 0; i < 5; i++) {
             float4 a = p.towerA[i];
@@ -448,10 +450,10 @@ enum LightningPlainsShaders {
             for (int k = 0; k < 3; k++) {
                 float3 h = hash33(float3(seed, float(k) * 7.31, 2.9));
                 float off = (h.x - 0.5) * 1.5 * a.y;
-                float wide = a.y * (0.22 + 0.3 * h.y) * (1.0 + 0.7 * down);
+                float wide = a.y * (0.14 + 0.22 * h.y) * (1.0 + 0.6 * down);
                 float x = (rel - off) / max(wide, 1e-3);
-                float core = exp(-x * x * 1.8);
-                float weight = w * (0.4 + 0.6 * h.z) * (k == 0 ? 1.0 : 0.85);
+                float core = exp(-x * x * 2.2);
+                float weight = w * (0.5 + 0.5 * h.z) * (k == 0 ? 1.0 : 0.85);
                 v = 1.0 - (1.0 - v) * (1.0 - weight * core);
             }
         }
@@ -471,7 +473,7 @@ enum LightningPlainsShaders {
             float2 dd = float2(pl_wrap(th - l.x), alt - l.y) / max(l.z * 1.6, 0.3);
             lit += p.lightC[i].rgb * (l.w * exp(-dot(dd, dd)));
         }
-        return v * p.shafts.x * (0.55 + 0.6 * drift) * (0.85 + 0.15 * streak) * hang * reach * feet;
+        return v * p.shafts.x * (0.6 + 0.6 * drift) * (0.85 + 0.15 * streak) * hang * reach * feet;
     }
 
     /// The far ridge's top (altitude, deg) at offset th: a mesa rising off the plain on the right, its flat top gently
@@ -588,11 +590,11 @@ enum LightningPlainsShaders {
         if (shaft > 0.001) {
             float3 front = pl_frontLight(u, p);
             float thick = saturate(shaft * 1.7);
-            float3 rain = p.ambient.rgb * 0.36 + front * 0.24 + p.glow.rgb * (0.3 * (1.0 - thick)) + p.flash.rgb * 0.3
+            float3 rain = p.ambient.rgb * 0.3 + front * 0.18 + p.glow.rgb * (0.28 * (1.0 - thick)) + p.flash.rgb * 0.3
                         + shaftLit * 0.35;
             float far = 1.0 - exp(-p.shake.w / 55.0);
-            rain = mix(rain, pl_air(d, alt, u), 0.5 * far);
-            shaft = min(0.88, 1.9 * shaft) * (1.0 - 0.25 * far);
+            rain = mix(rain, pl_air(d, alt, u), 0.3 * far);
+            shaft = min(0.9, 2.4 * shaft) * (1.0 - 0.2 * far);
             o = float4(rain * shaft, shaft) + o * (1.0 - shaft);
         }
         if (ridgeOver && p.ridge.w < p.shake.w) o *= 1.0 - pl_ridge(th, alt, p);

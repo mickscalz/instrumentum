@@ -35,14 +35,14 @@ final class VolcanoRimRenderer: ThemeRenderer {
     nonisolated static let sparkCapacity = VolcanoRimModel.emberCount
         + (VolcanoRimModel.blobCount + VolcanoRimModel.bombCount) * VolcanoRimRenderer.trailSegments
     nonisolated static let boltCapacity = VolcanoRimModel.strokeCount * 16
-    /// The eruption's clots (its fountain, at most 10 a launch, 50 launches a second over the 4.6 s a clot can fly and
+    /// The eruption's clots (its fountain, at most 14 a launch, 50 launches a second over the 4.6 s a clot can fly and
     /// splash), the bombs and their trails, the spits, their splashes and glows: soft volumes (`volcano_clot_*`).
-    nonisolated static let clotCapacity = 2600
+    nonisolated static let clotCapacity = 3600
     /// The eruption's clots fly this many times fast (the shader's `kPace`), are thrown in launches this often (s), at most
     /// this many a launch (half on Smooth).
     nonisolated static let fountainPace: Float = 3.6
     nonisolated static let clotEvery: Float = 1.0 / 50
-    nonisolated static let clotsPerLaunch = 10
+    nonisolated static let clotsPerLaunch = 14
     /// The plume's lightning: violet-white.
     nonisolated static let boltColour = SIMD3<Float>(0.82, 0.78, 1.0)
 
@@ -515,8 +515,39 @@ final class VolcanoRimRenderer: ThemeRenderer {
             clotInstances.append(SIMD4(half, kelvin, light * soft, packed))
         }
         let g = VolcanoRimModel.gravity
-        // The fountain.
+        // The fountain: up to 3,200 clots a frame, so its arithmetic is scalar (the projection's basis folded into the
+        // crater's frame once a frame), cheap even in a debug build's long test runs.
         if fountainAge >= 0 {
+            let c = v.cam
+            let alongX = SIMD3<Float>(v.right.x, v.right.y, 0), alongY = SIMD3<Float>(v.fwd.x, v.fwd.y, 0)
+            // e = rel.x * alongX + rel.y * alongY + rel.z * up: each screen axis's weights on the crater's x, y, z.
+            let dX = simd_dot(alongX, c.forward), dY = simd_dot(alongY, c.forward), dZ = c.forward.z
+            let xX = simd_dot(alongX, c.right) / c.tanH, xY = simd_dot(alongY, c.right) / c.tanH, xZ = c.right.z / c.tanH
+            let yX = simd_dot(alongX, c.up) / c.tanV, yY = simd_dot(alongY, c.up) / c.tanV, yZ = c.up.z / c.tanV
+            let ex = v.eye.x, ey = v.eye.y, ez = v.eye.z
+            let cap = Self.clotCapacity * 2
+            func put(_ px: Float, _ py: Float, _ pz: Float, _ vx: Float, _ vy: Float, _ vz: Float, radius: Float,
+                     kelvin: Float, light: Float, cover: Float, seed: Int) {
+                guard clotInstances.count < cap else { return }
+                let rx = px - ex, ry = py - ey, rz = pz - ez
+                let depth = rx * dX + ry * dY + rz * dZ
+                guard depth > 0.5 else { return }
+                let sx = (rx * xX + ry * xY + rz * xZ) / depth, sy = (rx * yX + ry * yY + rz * yZ) / depth
+                guard abs(sx) < 1.3, abs(sy) < 1.3 else { return }
+                var tx: Float = 0, ty: Float = 0
+                if vx != 0 || vy != 0 || vz != 0 {
+                    let qx = rx + vx, qy = ry + vy, qz = rz + vz
+                    let dq = qx * dX + qy * dY + qz * dZ
+                    if dq > 0.5 {
+                        tx = (qx * xX + qy * xY + qz * xZ) / dq - sx
+                        ty = (qx * yX + qy * yY + qz * yZ) / dq - sy
+                    }
+                }
+                let half = max(radius / (depth * tanV), 1.2 * pixel)
+                let packed = Float(seed & 63) + min(0.99, max(0, cover))
+                clotInstances.append(SIMD4(sx, sy, tx, ty))
+                clotInstances.append(SIMD4(half, kelvin, light * soft, packed))
+            }
             let age = fountainAge
             let sp = min(1, max(0.3, fountainStrength))
             let pace = Self.fountainPace
@@ -525,18 +556,20 @@ final class VolcanoRimRenderer: ThemeRenderer {
             let per = lite ? Self.clotsPerLaunch / 2 : Self.clotsPerLaunch
             let last = Int(min(age, Eruption.life) / every)
             let first = max(0, Int((age - 4.6) / every))
+            let blur: Float = 0.6 / 30 * pace
             if first <= last {
                 for k in first...last {
                     let s = Float(k) * every
                     let share = Self.ventShare(s)
                     guard share > 0.01 else { continue }
+                    let wk = w0max * share.squareRoot()
                     for m in 0..<per {
                         let r1 = Self.unitHash(k, m * 8), r2 = Self.unitHash(k, m * 8 + 1), r3 = Self.unitHash(k, m * 8 + 2)
                         let r4 = Self.unitHash(k, m * 8 + 3), r5 = Self.unitHash(k, m * 8 + 4), r6 = Self.unitHash(k, m * 8 + 5)
                         let launched = s + every * r6
                         guard launched <= age else { continue }
                         // Most climb near the top, some fall short; most are thrown nearly upright, a few flung wide.
-                        let w = w0max * share.squareRoot() * (1 - 0.6 * r1 * r1)
+                        let w = wk * (1 - 0.6 * r1 * r1)
                         let spread: Float = 0.05 + 0.22 * r5 * r5 * r5 + 0.12 * r1 * r1
                         let across = w * spread * (r2 - 0.5) * 2
                         let ahead = w * 0.6 * spread * (r3 - 0.5) * 2
@@ -544,25 +577,28 @@ final class VolcanoRimRenderer: ThemeRenderer {
                         let tau = (age - launched) * pace
                         let land = 2 * w / g
                         guard tau <= land + 1.6 else { continue }
-                        let puff = r6 > 0.88
-                        let r0: Float = puff ? 6 + 6 * r2 : 0.8 + 3.2 * r5 * r5
+                        // A sixth are puffs of glowing spray, big and faint, round which the clots fly; the clots
+                        // themselves mostly small, a few big.
+                        let puff = r6 > 0.83
+                        let r0: Float = puff ? 6 + 6 * r2 : 0.6 + 2.8 * r5 * r5
                         let seed = k * 7 + m
                         if tau > land {
                             // Back in the lake: a splash of fresh lava, spreading and dulling.
                             let t2 = (tau - land) / 1.6
-                            let at = SIMD3<Float>(x0 + across * land, y0 + ahead * land, lakeLevel + 0.8)
-                            add(at, .zero, radius: r0 * (1 + 2.2 * t2), kelvin: 1240 - 320 * t2,
-                                light: 0.3 * (1 - t2) * (1 - t2), cover: 0, seed: seed, blur: 0)
+                            put(x0 + across * land, y0 + ahead * land, lakeLevel + 0.8, 0, 0, 0, radius: r0 * (1 + 2.2 * t2),
+                                kelvin: 1240 - 320 * t2, light: 0.3 * (1 - t2) * (1 - t2), cover: 0, seed: seed)
                             continue
                         }
-                        let p = SIMD3<Float>(x0 + across * tau, y0 + ahead * tau, lakeLevel + w * tau - 0.5 * g * tau * tau)
-                        let vel = SIMD3<Float>(across, ahead, w - g * tau) * pace
+                        let rise = w - g * tau
                         let life = tau / max(land, 1e-3)
                         let cooled: Float = 520 * life * (1.1 - 0.1 * life) + 150 * (1 - r5) * life
                         let kelvin: Float = 1470 - cooled + 40 * (r6 - 0.5)
-                        let cover: Float = puff ? 0 : 0.9 * (1 - Self.smooth(880, 1060, kelvin))
-                        add(p, vel, radius: r0 * (0.75 + 0.07 * tau), kelvin: kelvin, light: puff ? 0.1 : 0.75, cover: cover,
-                            seed: seed, blur: 0.6 / 30)
+                        // Cooled, the bigger clots darken against the ash; and every clot dims as its skin cools.
+                        let cover: Float = puff ? 0 : 0.55 * Self.smooth(0.35, 0.8, r5) * (1 - Self.smooth(860, 1000, kelvin))
+                        let light: Float = (puff ? 0.14 : 0.62) * (1 - 0.45 * life)
+                        put(x0 + across * tau, y0 + ahead * tau, lakeLevel + w * tau - 0.5 * g * tau * tau,
+                            across * blur, ahead * blur, rise * blur, radius: r0 * (0.75 + 0.07 * tau), kelvin: kelvin,
+                            light: light, cover: cover, seed: seed)
                     }
                 }
             }
@@ -580,13 +616,16 @@ final class VolcanoRimRenderer: ThemeRenderer {
                     seed: i * 5 + 3, blur: 0)
                 continue
             }
+            // (Each piece of the trail is drawn along its own stretch of the arc, 0.09 s of it, so they join into one
+            // trail that widens and fades behind the bomb, never a row of dots.)
             for j in 0..<7 {
                 let t = Float(j) * 0.09
                 let at = b.position - b.velocity * t - SIMD3(0, 0, 0.5 * g * t * t)
+                let then = b.velocity + SIMD3(0, 0, g * t)
                 let k = Float(j) / 6
                 let lead: Float = j == 0 ? 1.2 : 0.5
-                let blur: Float = j == 0 ? 1.0 / 30 : 0
-                add(at, b.velocity, radius: b.size * (0.55 + 0.9 * k), kelvin: b.temperature - 260 * k,
+                let blur: Float = j == 0 ? 1.0 / 30 : 0.09
+                add(at, then, radius: b.size * (0.55 + 0.9 * k), kelvin: b.temperature - 260 * k,
                     light: lead * (1 - 0.8 * k), cover: 0, seed: i * 5 + j, blur: blur)
             }
         }
@@ -601,10 +640,11 @@ final class VolcanoRimRenderer: ThemeRenderer {
             for j in 0..<4 {
                 let t = Float(j) * 0.07
                 let at = b.position - b.velocity * t - SIMD3(0, 0, 0.5 * g * t * t)
+                let then = b.velocity + SIMD3(0, 0, g * t)
                 let k = Float(j) / 3
                 let lead: Float = j == 0 ? 1.0 : 0.45
-                let blur: Float = j == 0 ? 1.0 / 30 : 0
-                add(at, b.velocity, radius: b.size * (0.5 + 0.7 * k), kelvin: b.temperature - 220 * k,
+                let blur: Float = j == 0 ? 1.0 / 30 : 0.07
+                add(at, then, radius: b.size * (0.5 + 0.7 * k), kelvin: b.temperature - 220 * k,
                     light: lead * (1 - 0.75 * k), cover: 0, seed: i * 3 + j + 40, blur: blur)
             }
         }

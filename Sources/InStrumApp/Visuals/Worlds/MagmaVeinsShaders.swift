@@ -178,7 +178,9 @@ enum MagmaVeinsShaders {
                                    constant float4& view [[buffer(1)]]) {
         float2 c[6] = { float2(0, 0), float2(1, 0), float2(0, 1), float2(1, 0), float2(1, 1), float2(0, 1) };
         Seg s = segs[iid];
-        float pad = max(s.info.x, s.tail.x) * (2.2 + 6.0 * s.info.w) + 0.014;
+        // (Its banks reach 1.6 widths, its glow on the crust 3.3 (past that it is under 1/200 of its light); the channel
+        // meanders 0.008 off its line.)
+        float pad = max(s.info.x, s.tail.x) * (1.5 + 3.0 * s.info.w) + 0.01;
         float2 lo = min(s.seg.xy, s.seg.zw) - float2(pad / view.x, pad);
         float2 hi = max(s.seg.xy, s.seg.zw) + float2(pad / view.x, pad);
         SegOut o;
@@ -199,6 +201,9 @@ enum MagmaVeinsShaders {
         float s = clamp(dot(p - a, ab) / max(dot(ab, ab), 1e-10), 0.0, 1.0);
         float dist = length(p - (a + ab * s));
         float width = mix(in.info.x, in.tail.x, s);
+        // (Past its banks (the levees' pass) or its glow (the cores'), nothing of it is drawn: no more noise is read.)
+        float reachW = view.y < 0.5 ? 1.75 : 1.0 + 2.3 * in.info.w;
+        if (dist > reachW * 1.3 * max(width, view.w * 1.2) + 0.002) discard_fragment();
         float Tcore = mix(in.info.y, in.tail.y, s);
         // A channel of magma burst through the crust, lens-shaped along its length and swelling and pinching along it: its
         // banks torn, a hot core whose light varies along it (fresher here, rafts of skin there, drifting up the channel),
@@ -215,8 +220,10 @@ enum MagmaVeinsShaders {
         float raft = smoothstep(0.72, 0.9, vn2(flow * 13.0 + float2(5.0, 1.0)) * 0.8 + 0.25 * vn2(flow * 37.0));
         float crust = smoothstep(1060.0, 860.0, Tcore);
         float seam = 1.0 - smoothstep(0.0, 0.22, abs(vn2(flow * 26.0 + 3.0) - 0.5));
-        float T = Tcore - 140.0 * (1.0 - pulse) - 240.0 * raft * (1.0 - 0.5 * x) - 430.0 * smoothstep(0.35, 1.0, x)
-                - 300.0 * crust * (1.0 - seam);
+        // A thin thread of the hottest magma down its middle, cooling steeply to its crusted lips (a crack's profile, not
+        // a tube of one colour).
+        float T = Tcore + 110.0 * (1.0 - smoothstep(0.0, 0.35, x)) - 140.0 * (1.0 - pulse) - 240.0 * raft * (1.0 - 0.5 * x)
+                - 620.0 * smoothstep(0.15, 1.0, x) - 300.0 * crust * (1.0 - seam);
         float inChan = 1.0 - smoothstep(0.9, 1.05, x);
         // Two passes (view.y): first every channel's banks (so one stroke's bank never covers the next one's core at a
         // joint), then the molten cores and their glow over them (the brighter of theirs and what's there).
@@ -228,7 +235,7 @@ enum MagmaVeinsShaders {
             if (a2 < 0.003) discard_fragment();
             return float4(levee * a2, a2);
         }
-        float3 core = blackbody(T) * (0.4 * inChan);
+        float3 core = blackbody(T) * (0.45 * inChan);
         float3 glow = blackbody(Tcore - 330.0) * (0.2 * in.info.w * exp(-max(x - 0.9, 0.0) / 0.55) * (1.0 - inChan));
         float3 c = (core + glow) * in.info.z;
         float a2 = inChan * in.info.z;
