@@ -243,8 +243,8 @@ final class ExcitementWorldsRendererTests: XCTestCase {
                 case .train: if r.trainOut > 0.3 { drew = true }
                 case .shootingStar:
                     let listed = f.surprises.contains { $0.kind == .shootingStar }
-                    // As bright as the brightest stars (−2.2): its head a point, its brightness in its streak.
-                    if listed, f.sky.meteors.contains(where: { $0.magnitude <= -2.1 }) { drew = true }
+                    // As bright as the brightest stars (−1.8): its head a point, its brightness in its streak.
+                    if listed, f.sky.meteors.contains(where: { $0.magnitude <= -1.7 }) { drew = true }
                 }
             }
             XCTAssertTrue(drew, "\(kind)")

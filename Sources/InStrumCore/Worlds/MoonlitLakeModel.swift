@@ -267,7 +267,7 @@ public struct MoonlitLakeModel: ThemeModel, MoodAware, SkyAware, ExcitementAware
 
     /// 5–12 meteors from one radiant high in the view, the first ones at once and the rest over 2.4 s, all running away
     /// from it. Their heads stay points (about as bright as the brightest stars: a brighter head only grows the sky's halo
-    /// round it into a ball of light); their brightness is in their long, thin, tapering streaks and trains. At strength
+    /// round it into a ball of light); their brightness is in their long, thin, tapering streaks; only the fast bright ones leave a lingering train. At strength
     /// 0.6 and over the first two are the brightest and longest, each ending in a brief small flare (never under gentle
     /// visuals, where every one is a magnitude and a half fainter).
     private mutating func burst(strength s: Float, gentle: Bool, now: Double) {
@@ -288,10 +288,10 @@ public struct MoonlitLakeModel: ThemeModel, MoodAware, SkyAware, ExcitementAware
             let bright = !adding && k < 2 && s >= 0.6
             let length = rng.range(14, 28) * (0.8 + 0.4 * s) * (bright ? 1.3 : 1)
             let pace = rng.range(22, 36)
-            let magnitude: Float = bright ? -2.3 + 0.4 * Float(k) : -0.9 - 1.0 * s + rng.range(-0.6, 0.6)
+            let magnitude: Float = bright ? -1.9 + 0.4 * Float(k) : -0.5 - 0.9 * s + rng.range(-0.6, 0.6)
             let m = WorldMeteors.meteor(radiant: radiant, distance: rng.range(5, 22), angle: rng.range(-1.35, 1.35), length: length,
                                         born: now + offset, duration: length / pace, magnitude: magnitude + fainter,
-                                        speed: Double(rng.range(58, 70)), flare: bright && !gentle)
+                                        speed: Double(bright ? rng.range(60, 70) : rng.range(38, 54)), flare: bright && !gentle)
             meteors.add(m)
         }
     }

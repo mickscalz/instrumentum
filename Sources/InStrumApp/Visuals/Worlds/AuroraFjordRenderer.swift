@@ -18,6 +18,9 @@ final class AuroraFjordRenderer: ThemeRenderer {
     static let eyeHeight: Float = 2.7
     /// A tense chord's purple-fringe pulse flares the curtain through the sky's storm value (times the sparkle).
     static let tenseFlare: Float = 0.55
+    /// A satellite's flare drawn at most as bright as a magnitude −2.5 point (the sky's own scale): past that its bloom
+    /// grows into a ball in this lens. The flare itself (the frame's magnitude) still peaks at Venus's.
+    static let flareLightMost: Float = SatelliteSlot.light(magnitude: -2.5)
     static let maxVillageLights = 10
     /// The walls' feet either side of the jetty and their spread down the fjord (the shader's kWallFoot, kWallSpread).
     static let wallFoot: Float = 250, wallSpread: Float = 0.08
@@ -281,6 +284,7 @@ final class AuroraFjordRenderer: ThemeRenderer {
         // star's footprint, and its glow is the bloom's alone.
         for i in shown.satellites.indices where shown.satellites[i].flare > 0.001 {
             shown.satellites[i].magnitude = max(shown.satellites[i].magnitude, 2.5)
+            shown.satellites[i].light = min(shown.satellites[i].light, Self.flareLightMost)
         }
         sky.gentle = gentle
         sky.update(shown, quality: quality, size: size, time: skyTime)
@@ -306,7 +310,7 @@ final class AuroraFjordRenderer: ThemeRenderer {
         let topColour = SIMD3<Float>(0.95, 0.25, 0.4) + (SIMD3<Float>(0.55, 0.35, 1.0) - SIMD3<Float>(0.95, 0.25, 0.4)) * cool
         let aurora = min(max(s.aurora, 0), 1)
         let topWeight: Float = 0.4 * (shown.auroraStorm + 0.7 * warm + 0.5 * cool)
-        let auroraGain: Float = aurora * (1 + 0.6 * glowOut) * (1 + (0.45 * surge + 0.25 * gather) * sparkle) * 0.05
+        let auroraGain: Float = aurora * (1 + 0.3 * glowOut) * (1 + (0.2 * surge + 0.1 * gather) * sparkle) * 0.05
         let auroraLight: SIMD3<Float> = (green + topColour * topWeight) * auroraGain
         let mist = min(1, max(0, s.mist) * (0.6 + 0.4 * MoodLook.hazeScale(mood)))
         let swell = Float(min(max(p.number("swell"), 0), 1))

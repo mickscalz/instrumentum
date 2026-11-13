@@ -435,14 +435,15 @@ enum AuroraFjordShaders {
             float3 e1 = normalize(cross(Z, F)), e2 = cross(e1, Z);       // e2 points down the sky, ahead
             float ang = atan2(dot(d, e1), dot(d, e2));
             float from = acos(clamp(dot(d, Z), -1.0, 1.0));
-            float n = 0.65 * fjordNoise(float3(ang * 45.0, 2.0, tt), 256.0) + 0.35 * fjordNoise(float3(ang * 120.0, 5.0, 2.0 * tt), 256.0);
-            float rays = smoothstep(0.3, 0.85, n);
-            float reach = 0.25 + 0.45 * fjordNoise(float3(ang * 45.0, 9.0, 0.5 * tt), 256.0);
-            float profile = smoothstep(0.02, 0.1, from) * exp(-from / reach) * (1.0 - smoothstep(0.85, 1.2, from));
+            float n = 0.65 * fjordNoise(float3(ang * 20.0, 2.0, tt), 256.0) + 0.35 * fjordNoise(float3(ang * 52.0, 5.0, 2.0 * tt), 256.0);
+            float rays = 0.3 + 0.7 * smoothstep(0.25, 0.9, n);
+            float reach = 0.16 + 0.3 * fjordNoise(float3(ang * 18.0, 9.0, 0.5 * tt), 256.0);
+            float patches = 0.55 + 0.45 * fjordNoise(float3(ang * 18.0, from * 7.0, tt), 256.0);
+            float profile = smoothstep(0.03, 0.16, from) * exp(-from / reach) * patches * (1.0 - smoothstep(0.7, 1.0, from));
             float3 green = float3(0.25, 1.0, 0.45), violet = float3(0.75, 0.3, 0.9);
             float3 c = mix(green, violet, smoothstep(0.3, 0.08, from));
             float flicker = 0.85 + 0.15 * sin(tw * 1100.0 + ang * 9.0);
-            col += c * (0.22 * k * rays * profile * flicker * saturate(u.night.x + 0.3));
+            col += c * (0.17 * k * rays * profile * flicker * saturate(u.night.x + 0.3));
         }
         return float4(col * clear, 0.0);
     }
@@ -512,9 +513,9 @@ enum AuroraFjordShaders {
             if (body > 0.0) {
                 float tip = saturate((q.y - 0.3) / 1.6);
                 float saddle = exp(-((q.x + 0.75) * (q.x + 0.75)) / 0.12) * exp(-((q.y - 0.12) * (q.y - 0.12)) / 0.03);
-                bodyCol = float3(0.006, 0.007, 0.008) + light * (0.05 + 0.25 * edge + 0.12 * tip) + float3(0.05) * lum * saddle * 4.0;
+                bodyCol = float3(0.006, 0.007, 0.008) + light * (0.08 + 0.9 * edge + 0.35 * tip) + float3(0.05) * lum * saddle * 4.0;
                 float wl = exp(-q.y / 0.035);
-                bodyCol += light * (0.6 * wl);
+                bodyCol += light * (2.0 * wl);
             }
         } else {
             float ripple = 0.06 * sin(q.y * 9.0 + tw * 2400.0) + 0.03 * sin(q.y * 23.0 - tw * 3300.0);
@@ -539,7 +540,7 @@ enum AuroraFjordShaders {
             breath = saturate(max(column, head) * (0.25 + 0.95 * n) * strength * fade * 0.55);
             if (q.y < 0.0) breath *= 0.3 * (1.0 - smoothstep(0.3, 1.5, -q.y));
         }
-        float3 breathCol = mix(light, float3(0.85, 0.95, 1.0) * lum, 0.5) * 1.5;
+        float3 breathCol = mix(light, float3(0.85, 0.95, 1.0) * lum, 0.5) * 4.0;
         float a = breath + (body + refl) * (1.0 - breath);
         if (a < 0.002) discard_fragment();
         float3 col = breathCol * breath + bodyCol * (body * (1.0 - breath)) + float3(0.002, 0.003, 0.004) * (refl * (1.0 - breath));

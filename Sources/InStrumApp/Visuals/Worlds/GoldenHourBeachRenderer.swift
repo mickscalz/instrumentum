@@ -347,21 +347,21 @@ final class GoldenHourBeachRenderer: ThemeRenderer {
                 }
                 // The shell climbing on a faint trail of sparks (a long dim tail, a brighter head).
                 if let p0 = project(climb(sh.age - 0.35)), let p1 = project(climb(sh.age)) {
-                    spark(SIMD2(p0.x, p0.y), SIMD2(p1.x, p1.y), colour: SIMD3<Float>(1.0, 0.72, 0.38) * (0.9 * lightScale * glowScale), radius: 0.9)
+                    spark(SIMD2(p0.x, p0.y), SIMD2(p1.x, p1.y), colour: SIMD3<Float>(1.0, 0.72, 0.38) * (0.45 * lightScale * glowScale), radius: 0.8)
                 }
                 continue
             }
             let t = sh.sinceBurst, u = min(1, t / max(sh.life, 1e-3))
             let trail: Float
             switch sh.kind {
-            case .peony: trail = 0.16
+            case .peony: trail = 0.26
             case .chrysanthemum: trail = 0.3
             case .willow: trail = 0.6
             }
             let c0 = Self.fireworkColour(sh.hue), c1 = Self.fireworkColour(sh.hue2)
             let vivid = c0 + (c1 - c0) * u
             let colour = vivid + (pale - vivid) * (0.6 * day)
-            let on = min(1, t / 0.06)
+            let on = min(1, t / 0.12)
             let base = 5 * sh.brightness * on * lightScale * glowScale
             for k in 0..<min(sh.stars, FireworkShell.mostStars) {
                 let st = Self.starDirection(k, of: sh.stars, seed: sh.seed)
@@ -383,10 +383,13 @@ final class GoldenHourBeachRenderer: ThemeRenderer {
                 let spread = sh.speed * (1 - exp(-max(0.2, sh.drag) * t)) / max(0.2, sh.drag)
                 let radius = (0.35 + 0.45 * min(1, t / 1.5)) * spread + 10
                 let hx = radius / (c.z * cam.tanH), hy = radius / (c.z * cam.tanV)
-                let thick = (0.16 + 0.34 * day) * min(1, t / 0.4) * (1 - u * u) * lightScale
-                let skyLit: SIMD3<Float> = s.horizon * (0.55 + 0.4 * day)
+                let thick = (0.18 + 0.5 * day) * min(1, t / 0.4) * (1 - u * u) * lightScale
+                // Smoke is grey against the sky's colour: by day a little darker than the bright sky beside it, sunlit on
+                // top; at dusk dim.
+                let grey = simd_dot(s.horizon, SIMD3<Float>(0.3, 0.5, 0.2))
+                let skyLit: SIMD3<Float> = (s.horizon * 0.35 + SIMD3<Float>(repeating: grey * 0.65)) * (0.5 + 0.3 * day)
                 let sunAmount: Float = Float(sunLight) * day
-                let sunLit = SIMD3<Float>(0.3 * sunAmount, 0.28 * sunAmount, 0.25 * sunAmount)
+                let sunLit = SIMD3<Float>(0.15 * sunAmount, 0.14 * sunAmount, 0.12 * sunAmount)
                 let flashLit: SIMD3<Float> = vivid * (0.25 * sh.brightness * exp(-t / 0.5) * glowScale * lightScale)
                 let lit: SIMD3<Float> = skyLit + sunLit + flashLit
                 smokeSprites.append(BeachSprite(rect: SIMD4(c.x - hx, c.y - hy, c.x + hx, c.y + hy), local: SIMD4(-1, -1, 1, 1),

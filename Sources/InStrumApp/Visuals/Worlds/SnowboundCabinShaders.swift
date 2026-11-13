@@ -192,14 +192,14 @@ enum SnowboundCabinShaders {
         float3 col = plumage * albedo * (ambient * (0.45 + 0.55 * nz) + window * (nz * nz) * 1.3);
         // The sky's cold light along its crown and shoulders.
         float rim = (1.0 - nz) * (1.0 - nz) * upper;
-        col += ambient * float3(0.75, 0.85, 1.0) * (0.22 * rim);
+        col += ambient * float3(0.75, 0.85, 1.0) * (0.5 * rim);
         // The facial disc, its ruff, the eyes and the beak, turned with the head.
         float2 fc = float2(0.085 * turn, 0.775);
         float2 fd = (q - fc) / float2(0.19 * (1.0 - 0.3 * abs(turn)), 0.165);
         float fl = length(fd);
         float disc = 1.0 - smoothstep(0.82, 1.0, fl);
         float ruff = exp(-((fl - 1.0) * (fl - 1.0)) / 0.02);
-        float3 face = float3(1.0, 0.9, 0.78) * 0.2 * (0.85 + 0.3 * mottle) * (ambient * 0.8 + window * 1.4);
+        float3 face = float3(1.0, 0.9, 0.8) * 0.3 * (0.85 + 0.3 * mottle) * (ambient * 0.8 + window * 1.4);
         col = mix(col, face, disc * 0.85);
         col *= 1.0 - 0.45 * ruff;
         for (int e = -1; e <= 1; e += 2) {

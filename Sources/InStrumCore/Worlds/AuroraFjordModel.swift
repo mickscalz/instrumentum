@@ -355,7 +355,7 @@ public struct AuroraFjordModel: ThemeModel, MoodAware, SkyAware, ExcitementAware
             meteors.add(WorldMeteors.meteor(from: start, to: end, born: now, duration: r.range(2.6, 3.2),
                                             magnitude: gentle ? -6 : -8, speed: 26, flare: !gentle))
         case .orca:
-            orcaAt = SIMD3(r.range(0.3, 0.7), r.range(0.45, 0.75), r.unit() < 0.5 ? -1 : 1)
+            orcaAt = SIMD3(r.range(0.38, 0.62), r.range(0.45, 0.7), r.unit() < 0.5 ? -1 : 1)
         case .satelliteFlare:
             let way: Double = r.unit() < 0.5 ? -1 : 1
             let from = WorldMeteors.direction(azimuth: pole - way * 24, altitude: Double(r.range(18, 24)))

@@ -309,7 +309,7 @@ final class SnowboundCabinRenderer: ThemeRenderer {
                 let perchY: Float = spec.rect.y + glassH * 0.028
                 let y: Float = perchY + glassH * (0.06 * arrive + 0.05 * leave)
                 let shown = (1 - arrive) * (1 - leave)
-                let height = 0.16 * glassH
+                let height = 0.19 * glassH
                 let turn = 0.8 * sin(age * 0.9 + 6.28 * s.unit(2)) * ExcitementPlay.smooth(1.4, 2.2, age)
                 func bump(_ at: Float) -> Float { max(0, 1 - abs(age - at) / 0.09) }
                 let blink = max(bump(3.1), bump(6.3))

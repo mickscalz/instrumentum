@@ -75,7 +75,7 @@ enum CoastRoadShaders {
     }
 
     /// Fire & Neon §5.5: the lighthouse on the far point. Its two beams (half a turn apart) are narrow cones of light in
-    /// the sea air (about 0.6° each side, a Gaussian across), seen by the light the haze scatters toward you: brightest
+    /// the sea air (about 0.9° each side, a Gaussian across), seen by the light the haze scatters toward you: brightest
     /// near the lantern, where the cone is narrow and the light dense, fading along it as the haze takes the light, and
     /// far brighter as a beam swings toward you (sea haze scatters forward). Faint mist drifts through them. Where the
     /// view ray passes the beam's axis is found in closed form (clamped to the lantern's side and to `maxT`, where the
@@ -92,32 +92,41 @@ enum CoastRoadShaders {
         float3 B = float3(home.x * ca - home.y * sa, home.x * sa + home.y * ca, 0.0);
         float density = 0.3 + haze + 1.2 * fog;             // how much the air scatters
         float reach = 2600.0 / (1.0 + haze + 2.0 * fog);    // how far along a beam its light carries
-        float sum = 0.0;
+        float sum = 0.0, toward = 0.0;
+        float3 Ln = L / distL;
         for (int k = 0; k < 2; k++) {
             float3 b = k == 0 ? B : -B;
             float db = dot(d, b);
+            toward = max(toward, -dot(b, Ln));
             float sin2 = max(1.0 - db * db, 1e-6);
             float s = max((db * dot(d, L) - dot(b, L)) / sin2, 0.0);
             float t = clamp(dot(d, L + b * s), 0.0, maxT);
             s = max(dot(d * t - L, b), 0.0);
             float3 gap = d * t - L - b * s;
-            float width = 2.5 + 0.011 * s;
+            float width = 2.5 + 0.016 * s;
             float x2 = dot(gap, gap) / (width * width);
             if (x2 > 10.0) continue;
             // Henyey–Greenstein (g 0.72) for the angle between the beam's light and the way back to you.
             float hg = 1.518 + 1.44 * db;
             float phase = 0.4816 / (hg * sqrt(hg));
             float path = min(rsqrt(sin2), 4.0);
-            // Mist drifting through the light: two octaves, wrapped along the drift so it never jumps.
-            float3 Q = d * t;
-            float mist = 0.6 * vnoiseP(float3(Q.x * 0.012 + u.g.y, Q.y * 0.012, Q.z * 0.08), 64.0)
-                       + 0.4 * vnoiseP(float3(Q.x * 0.031 + 2.0 * u.g.y, Q.y * 0.031 + 5.0, Q.z * 0.2), 128.0);
+            // Mist drifting through the light, in the beam's own frame (along it, and across it in units of its width):
+            // two octaves, wrapped along the drift so it never jumps; looking down the beam the long path through it
+            // evens the mist out.
+            float3 g2 = gap / width;
+            float mist = 0.6 * vnoiseP(float3(s * 0.006 + u.g.y, g2.z * 1.2, g2.x * 1.2 + g2.y * 1.2), 64.0)
+                       + 0.4 * vnoiseP(float3(s * 0.017 + 2.0 * u.g.y, g2.z * 2.6 + 5.0, (g2.x + g2.y) * 2.6), 128.0);
+            mist = mix(mist, 0.5, saturate((path - 1.0) / 2.5));
             sum += exp(-x2) * phase * path * (40.0 / width) * exp(-s / reach) * (0.45 + 1.1 * mist);
         }
-        float v = sum * density * 0.2;
+        float v = sum * density * 0.3;
         float beams = v / (1.0 + 0.4 * v);
         float c = 1.0 - dot(d, L / distL);
-        float lantern = maxT < 1e8 ? 0.0 : exp(-c / 1.2e-6) * (0.8 + 30.0 * u.g.z) + exp(-c / 2e-5) * 0.04 * (1.0 + 12.0 * u.g.z);
+        // The lantern brightens as a beam swings round toward you (its light's spread), and blazes as one faces you.
+        float nearing = toward * toward;
+        nearing *= nearing;
+        float lantern = maxT < 1e8 ? 0.0 : exp(-c / 1.2e-6) * (0.8 + 3.0 * nearing + 30.0 * u.g.z)
+                                         + exp(-c / 2e-5) * 0.04 * (1.0 + 3.0 * nearing + 12.0 * u.g.z);
         return float3(1.0, 0.92, 0.75) * ((beams + lantern) * light);
     }
 
