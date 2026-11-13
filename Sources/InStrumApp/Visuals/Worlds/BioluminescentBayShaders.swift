@@ -464,9 +464,13 @@ enum BioluminescentBayShaders {
                 float broken = 0.4 + 0.8 * vnoise3(float3(p.x * 4.0, p.y * 3.0, 6.2831853 * beat * 0.3));
                 float trails = behind > 0.0 ? exp(-(lat * lat) / (w * w * 3.0)) * exp(-behind / 0.8) * broken : 0.0;
                 // The plankton it stirs round it, so its dark form shows against a faint glow.
-                float halo = m < 0.0 ? exp(m / 0.2) * 0.4 * (0.4 + 0.8 * broken) : 0.0;
+                float halo = m < 0.0 ? exp(m / 0.12) * 0.32 * (0.4 + 0.8 * broken) : 0.0;
+                // Its wingtips flaring as they lift toward the surface on each beat.
+                float2 tipD = float2(p.x + 0.3, abs(p.y) - spanK);
+                float lift = saturate(sin(6.2831853 * beat));
+                float sparks = exp(-dot(tipD, tipD) / 0.006) * (0.3 + 1.2 * lift);
                 float3 lit = mix(kGlowCyan, kWaveBlue, 0.4);
-                g += lit * (b.mantaB.z * mc * (1.3 * rim * stroke * (0.6 + 0.5 * broken) + 0.6 * trails + halo));
+                g += lit * (b.mantaB.z * mc * (1.3 * rim * stroke * (0.6 + 0.5 * broken) + 0.6 * trails + halo + sparks));
             }
         }
         // The turtle's rings of glow, spreading from where it came up (and again as it dives).
