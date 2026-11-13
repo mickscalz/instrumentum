@@ -558,10 +558,13 @@ enum VolcanoRimShaders {
         col += u.glow.rgb * float3(0.95, 0.9, 0.85) * (0.32 * sheen * u.plume.x);
         // Dim hairlines within the plate (some of them glowing: the skin's hotter seams).
         if (oct >= 3 && (skipL & 1024u) == 0u) {
-            float fine = fineCracks(local, 5.0 + 7.0 * (1.0 - A.w));
+            // (Where the skin's seams are cold there are none to see: the net isn't walked there.)
             float hot = smoothstep(0.35, 0.7, vn2(local * 0.12 + 3.0));
-            float fineT = Tc + 230.0 + 90.0 * u.temps.w + 80.0 * A.z;
-            col += crackGlow(fine, 0.05 + 0.05 * A.w, foot, fineT) * (hot * (0.3 + 0.5 * u.temps.w));
+            if (hot > 0.0) {
+                float fine = fineCracks(local, 5.0 + 7.0 * (1.0 - A.w));
+                float fineT = Tc + 230.0 + 90.0 * u.temps.w + 80.0 * A.z;
+                col += crackGlow(fine, 0.05 + 0.05 * A.w, foot, fineT) * (hot * (0.3 + 0.5 * u.temps.w));
+            }
         }
         col += crack;
         // The fountains' pools: fresh lava churning at their feet, crusting over between bursts.
