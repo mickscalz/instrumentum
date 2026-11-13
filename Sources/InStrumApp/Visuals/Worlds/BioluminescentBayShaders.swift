@@ -457,14 +457,14 @@ enum BioluminescentBayShaders {
                 coverK = 1.0 - 0.9 * inside * mc;
                 g *= coverK;
                 float stroke = 0.6 + 0.4 * saturate(sin(6.2831853 * beat) + 0.3);
-                float rim = exp(-(m * m) / (w * w)) * step(-0.5, m);
+                float rim = exp(-(m * m) / (w * w)) * step(-0.5, m) * (p.x > -0.32 ? 1.0 : 0.3);   // its tail a fainter line
                 float spanK = 0.9 + 0.1 * cos(6.2831853 * beat);
                 float tipX = -0.3, behind = tipX - p.x;
                 float lat = abs(abs(p.y) - spanK * (0.95 + 0.03 * behind) - 0.04 * sin(behind * 5.0 - 6.2831853 * beat));
                 float broken = 0.4 + 0.8 * vnoise3(float3(p.x * 4.0, p.y * 3.0, 6.2831853 * beat * 0.3));
                 float trails = behind > 0.0 ? exp(-(lat * lat) / (w * w * 3.0)) * exp(-behind / 0.8) * broken : 0.0;
                 // The plankton it stirs round it, so its dark form shows against a faint glow.
-                float halo = m < 0.0 ? exp(m / 0.14) * 0.22 * (0.5 + 0.7 * broken) : 0.0;
+                float halo = m < 0.0 ? exp(m / 0.2) * 0.4 * (0.4 + 0.8 * broken) : 0.0;
                 float3 lit = mix(kGlowCyan, kWaveBlue, 0.4);
                 g += lit * (b.mantaB.z * mc * (1.3 * rim * stroke * (0.6 + 0.5 * broken) + 0.6 * trails + halo));
             }

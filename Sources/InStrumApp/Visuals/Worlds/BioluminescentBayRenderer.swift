@@ -42,7 +42,7 @@ final class BioluminescentBayRenderer: ThemeRenderer {
     /// on the sand falls from 1 at `cloudClear` to `cloudFloor` at `cloudHeavy`).
     nonisolated static let mantaSpan: Float = 4.6
     /// The manta's shape is drawn this many times longer out from the shore than it is (as a higher eye would see it).
-    nonisolated static let mantaStretch: Float = 3
+    nonisolated static let mantaStretch: Float = 4
     nonisolated static let cloudClear: Float = 0.3, cloudHeavy: Float = 0.75, cloudFloor: Float = 0.04
 
     typealias Camera = (right: SIMD3<Float>, up: SIMD3<Float>, forward: SIMD3<Float>, tanH: Float, tanV: Float)
@@ -399,8 +399,8 @@ final class BioluminescentBayRenderer: ThemeRenderer {
                 let out = out0 + (out1 - out0) * k
                 let across0 = -way * (0.5 + 1.5 * sp.unit(2)), across1 = way * (0.5 + 1.5 * sp.unit(3))
                 let across = across0 + (across1 - across0) * k
-                // Facing the shore (its wings spread across the view), turned a little the way it drifts.
-                let heading: Float = -.pi / 2 + 0.12 * way
+                // Gliding in toward the shore three-quarters on (one wing nearer), turned the way it drifts.
+                let heading: Float = -.pi / 2 + 0.42 * way
                 bayU[14] = SIMD4(across, out, heading, env)
                 let beat = (sp.age / 3.4).truncatingRemainder(dividingBy: 1)
                 bayU[15] = SIMD4(Self.mantaSpan, beat, dark * sparkleScale * (gentle ? 1.2 : 1), Self.mantaStretch)
