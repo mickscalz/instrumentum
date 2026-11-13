@@ -526,18 +526,18 @@ enum VolcanoRimShaders {
     /// by it and their backs in shade, the light bleeding a dozen metres into the rock and failing beyond. Returns the light
     /// it adds (rgb) and what the surface's own light is multiplied by (its shading) in w.
     float4 shoreRelief(float2 p, float toEdge, constant VolcanoU& u) {
-        float near = exp(-abs(toEdge) / 14.0);
-        if (near < 0.02) return float4(0.0, 0.0, 0.0, 1.0);
+        float near = exp(-abs(toEdge) / 11.0);
+        if (near < 0.04) return float4(0.0, 0.0, 0.0, 1.0);
         float2 toLake = -p / max(length(p), 1e-3);
         float l0 = vn2(p * 0.14 + float2(3.0, 1.0)) * 0.65 + vn2(p * 0.42 + float2(7.0, 5.0)) * 0.35;
         float2 q = p + toLake * 1.6;
         float l1 = vn2(q * 0.14 + float2(3.0, 1.0)) * 0.65 + vn2(q * 0.42 + float2(7.0, 5.0)) * 0.35;
-        float facing = saturate(0.45 + 3.0 * (l0 - l1) + 0.4 * (l0 - 0.5));
+        float facing = saturate(0.45 + 3.6 * (l0 - l1) + 0.5 * (l0 - 0.5));
         float onLake = smoothstep(-4.0, 4.0, toEdge);
         float3 rock = float3(0.045, 0.04, 0.037) * (0.6 + 0.8 * l0);
         float k = (5.5 - 3.5 * onLake) * near;
         float3 lit = rock * u.glow.rgb * float3(1.0, 0.85, 0.72) * (k * (0.12 + 0.88 * facing * facing));
-        return float4(lit, 1.0 - near * (0.45 - 0.5 * facing));
+        return float4(lit, 1.0 - near * (0.55 - 0.6 * facing));
     }
 
     /// How much of a point of the crater's floor plane is the lake (1) rather than the floor (0) near its edge (`toEdge` m
@@ -545,9 +545,11 @@ enum VolcanoRimShaders {
     /// boundary fingered by the rock's lumps (tongues of crust out over the rock, islands of rock in the crust), so the
     /// lake's crust and cracks give way to the rubble beside it with no line between them.
     float shoreBlend(float2 p, float toEdge, float foot, constant VolcanoU& u) {
+        // (The zone is 17 m and a pixel at most and the fingers reach 0.65 of it: farther from the edge it is all lake or
+        // all floor whatever the noise, and none is read.)
+        if (abs(toEdge) > 1.2 * (17.0 + foot)) return toEdge > 0.0 ? 1.0 : 0.0;
         float arc = atan2(p.y, p.x) * u.lake.x;
-        float zone = 4.0 + 18.0 * vn2(float2(arc * 0.02, 6.0)) + foot;
-        // (The fingers reach 0.65 × the zone at most: farther from the edge it is all lake or all floor.)
+        float zone = 3.0 + 14.0 * vn2(float2(arc * 0.02, 6.0)) + foot;
         if (abs(toEdge) > 1.2 * zone) return toEdge > 0.0 ? 1.0 : 0.0;
         float finger = (vn2(p * 0.12 + float2(3.0, 1.0)) * 0.65 + vn2(p * 0.36 + float2(7.0, 5.0)) * 0.35 - 0.5) * 1.3 * zone;
         return smoothstep(-0.5 * zone, 0.5 * zone, toEdge + finger);
@@ -576,7 +578,8 @@ enum VolcanoRimShaders {
         // Toward the shore the crust is older and piled: its cracks narrow and dull over the last 25 m, except where it
         // founders and the lava wells up to the edge.
         float toShore = edgeR - length(p);
-        float founder = shoreFounder(atan2(p.y, p.x) * u.lake.x, u);
+        // (Over 25 m in the crust is whole whatever the shore does: its foundering isn't read there.)
+        float founder = toShore < 25.0 ? shoreFounder(atan2(p.y, p.x) * u.lake.x, u) : 0.0;
         float inner = mix(smoothstep(0.0, 25.0, toShore), 1.0, founder);
         for (int c = 0; c < 2; c++) {
             int j = c == 0 ? pl.i2 : pl.i3;

@@ -532,7 +532,7 @@ enum SupercellSkyShaders {
             float ringR = u.glowL.w * (Rb * 0.8);
             float ringD = (dw - ringR) / (0.7 + 1.1 * u.glowL.w);
             float fadeOut = 1.0 - 0.6 * u.glowL.w;                     // dimmer as it spreads
-            float ringLight = (0.16 * exp(-ringD * ringD) + 0.12 * exp(-max(dw, 0.0) / 1.0)) * graze;
+            float ringLight = (0.12 * exp(-ringD * ringD) + 0.08 * exp(-max(dw, 0.0) / 0.6)) * graze * (1.0 - 0.5 * u.amb.w);
             under += float3(1.0, 0.8, 0.55) * (u.glowL.z * fadeOut * ringLight);
         }
         under += flash * (0.2 + 0.3 * graze);

@@ -167,10 +167,12 @@ final class LookVSPPreviewTests: XCTestCase {
 
 /// The three worlds' GPU time at 1280×720 against untouched worlds, drawn round-robin frame by frame in one run (so the
 /// runner's drift falls on all alike): scene and finishing passes, the median of 16 after 3 to warm up. CI's GPUs are not
-/// the target Mac's, so this only reports (`FRAME TIME look` lines).
+/// the target Mac's, so this only reports (`FRAME TIME look` lines), in the looks job (PREVIEW_DIR set): it holds 22
+/// renderers at once, which the full test run, with everything else it holds, has no room for.
 @MainActor
 final class LookVSPFrameTimeTests: XCTestCase {
     func testFrameTimesAgainstUntouchedWorlds() throws {
+        guard ProcessInfo.processInfo.environment["PREVIEW_DIR"] != nil else { throw XCTSkip("PREVIEW_DIR not set") }
         guard let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue() else {
             throw XCTSkip("No Metal device")
         }

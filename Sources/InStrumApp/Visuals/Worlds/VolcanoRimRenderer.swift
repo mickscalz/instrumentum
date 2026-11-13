@@ -610,8 +610,8 @@ final class VolcanoRimRenderer: ThemeRenderer {
                 add(b.position + SIMD3(0, 0, 1.5), .zero, radius: b.size * (1.2 + 3 * x), kelvin: b.temperature + 60 - 250 * x,
                     light: 0.9 * (1 - x) * (1 - x), cover: 0, seed: i * 5 + 1, blur: 0)
                 let left = max(0, 1 - landed / 3)
-                add(b.position + SIMD3(0, 0, 3), .zero, radius: 16 + 10 * min(1, landed), kelvin: 1050,
-                    light: 0.07 * left * left, cover: 0, seed: i * 5 + 2, blur: 0)
+                add(b.position + SIMD3(0, 0, 3), .zero, radius: 9 + 6 * min(1, landed), kelvin: 1050,
+                    light: 0.06 * left * left, cover: 0, seed: i * 5 + 2, blur: 0)
                 add(b.position, .zero, radius: b.size * 0.8, kelvin: b.temperature, light: 0.8 * left, cover: 0,
                     seed: i * 5 + 3, blur: 0)
                 continue

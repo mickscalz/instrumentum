@@ -447,10 +447,13 @@ enum LightningPlainsShaders {
             // (Past the farthest any of its shafts reaches (its place, width and spread), none: not read.)
             float rel = th - a.x + bend;
             if (abs(rel) > 2.6 * a.y) continue;
+            // A broad veil of lighter rain under the whole tower, and heavier shafts within it.
+            float veil = rel / (1.1 * a.y * (1.0 + 0.4 * down));
+            v = 1.0 - (1.0 - v) * (1.0 - 0.45 * w * exp(-veil * veil * 1.5));
             for (int k = 0; k < 3; k++) {
                 float3 h = hash33(float3(seed, float(k) * 7.31, 2.9));
                 float off = (h.x - 0.5) * 1.5 * a.y;
-                float wide = a.y * (0.14 + 0.22 * h.y) * (1.0 + 0.6 * down);
+                float wide = a.y * (0.2 + 0.3 * h.y) * (1.0 + 0.6 * down);
                 float x = (rel - off) / max(wide, 1e-3);
                 float core = exp(-x * x * 2.2);
                 float weight = w * (0.5 + 0.5 * h.z) * (k == 0 ? 1.0 : 0.85);
@@ -473,7 +476,7 @@ enum LightningPlainsShaders {
             float2 dd = float2(pl_wrap(th - l.x), alt - l.y) / max(l.z * 1.6, 0.3);
             lit += p.lightC[i].rgb * (l.w * exp(-dot(dd, dd)));
         }
-        return v * p.shafts.x * (0.6 + 0.6 * drift) * (0.85 + 0.15 * streak) * hang * reach * feet;
+        return v * p.shafts.x * 1.5 * (0.6 + 0.6 * drift) * (0.85 + 0.15 * streak) * hang * reach * feet;
     }
 
     /// The far ridge's top (altitude, deg) at offset th: a mesa rising off the plain on the right, its flat top gently

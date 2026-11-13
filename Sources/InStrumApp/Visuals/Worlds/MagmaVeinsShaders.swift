@@ -141,9 +141,9 @@ enum MagmaVeinsShaders {
             float pinch = smoothstep(0.12, 0.55, along) * (0.5 + vn2(q * 30.0 + pair * 7.0));
             float w = (0.05 + 0.4 * wide) * pinch * (0.7 + 0.6 * heat) + split * (0.16 + 0.42 * along);
             float bdt = max(bdm + (vn2(q * 60.0 + pair * 13.0) - 0.5) * 0.5 * (0.3 + w), 0.0);
-            float T = u.c.x - 50.0 + 60.0 * pair + 220.0 * wide + 40.0 * energy + 130.0 * split + 60.0 * heat + 60.0 * (along - 0.5);
+            float T = u.c.x - 50.0 + 60.0 * pair + 220.0 * wide + 40.0 * energy + 90.0 * split + 60.0 * heat + 60.0 * (along - 0.5);
             col = max(col, crackGlow(bdt, w, pix * m, T));
-            spill = max(spill, blackbody(T - 180.0) * exp(-bdm / (0.35 + 0.8 * w)));
+            spill = max(spill, blackbody(T - 180.0) * exp(-bdm / (0.35 + 0.5 * w)));
         }
         // The plate: a dark grey skin with ropy wrinkles and glassy patches, lit by the cracks beside it and with a faint
         // sheen; young plates a little red with heat; dim hairlines in it, some glowing.

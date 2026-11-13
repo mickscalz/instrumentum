@@ -210,6 +210,27 @@ final class VolcanoRimRendererTests: XCTestCase {
         XCTAssertGreaterThan(erupting.renderer.fountainAge, 0)
     }
 
+    /// The look job (13 Nov): the eruption's fountain lives on in the renderer after the model lets the eruption go (its
+    /// last clots fall back into the lake, its ash rises away), then stops; the vent's share follows the eruption's life.
+    func testFountainOutlivesTheEruptionThenStops() throws {
+        XCTAssertEqual(VolcanoRimRenderer.ventShare(-1), 0)
+        XCTAssertEqual(VolcanoRimRenderer.ventShare(0), 0)
+        XCTAssertEqual(VolcanoRimRenderer.ventShare(1.5), 1, accuracy: 1e-6)
+        XCTAssertLessThan(VolcanoRimRenderer.ventShare(5), 0.6)
+        XCTAssertEqual(VolcanoRimRenderer.ventShare(Eruption.life + 0.1), 0)
+        var ages: [Float] = [], clots: [Int] = [], playing: [Bool] = []
+        _ = try Self.renderVolcano(at: 18, energy: 0.6, moments: [30: Self.chord(1)], width: 160, height: 90, capture: false,
+                                   each: { _, r, f in
+            ages.append(r.fountainAge)
+            clots.append(r.clotCount)
+            playing.append(f.eruption != nil)
+        })
+        let end = try XCTUnwrap(playing.lastIndex(of: true))
+        XCTAssertGreaterThan(ages[end + 30], ages[end], "its age runs on after the model's eruption")
+        XCTAssertGreaterThan(clots[end + 30], 0, "its last clots still in the air")
+        XCTAssertEqual(ages.last ?? 0, -1, "and then it stops")
+    }
+
     func testBreachChangesTheFrame() throws {
         let calm = try Self.renderVolcano(at: 9, energy: 0.4)
         let breach = try Self.renderVolcano(at: 9, energy: 0.4, moments: [60: Self.chord(1, drop: true)])
