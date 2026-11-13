@@ -408,6 +408,36 @@ final class FireNeonWeatherRendererTests: XCTestCase {
         XCTAssertLessThanOrEqual(gentleGlow.max() ?? 1, 1 + SkyLayer.gentleCellGlow + 1e-4)
     }
 
+    /// By night its cloud glows from within as it arrives (soft glows deep in it, most of the time, through the sky
+    /// layer's limiter), and under gentle visuals it is a slow swell, never above `gentleCellGlow`.
+    func testByNightItsCloudGlowsFromWithinUnderTheLimiter() throws {
+        guard let device = MTLCreateSystemDefaultDevice() else { throw XCTSkip("No Metal device") }
+        var s = SkySettings(); s.timeMode = .frozen; s.frozenHour = 23; s.frozenPhase = 0.1; s.cityID = "melbourne"
+        s.weatherMode = .pick; s.weather = .supercell; s.spritesMode = .off; s.satellitesMode = .off
+        let sky = LivingSky(settings: s, homeZone: TimeZone(identifier: "Australia/Melbourne")!)
+        sky.reset(settings: s)
+        let plainSky = try XCTUnwrap(SkyLayer(device: device)), gentleSky = try XCTUnwrap(SkyLayer(device: device))
+        gentleSky.gentle = true
+        let dt = 1.0 / 30
+        let start = Date(timeIntervalSince1970: 1_793_000_000)
+        var deep: [Float] = [], gentleGlow: [Float] = []
+        for i in 1...(200 * 30) {
+            let st = sky.step(now: start.addingTimeInterval(Double(i) * dt), dt: dt, meteors: .never)
+            let clock = Float(Double(i) * dt)
+            plainSky.update(st, quality: .lite, size: CGSize(width: 320, height: 180), time: clock)
+            gentleSky.update(st, quality: .lite, size: CGSize(width: 320, height: 180), time: clock)
+            guard i > 130 * 30 else { continue }   // late in its Approach and on into its Core
+            deep.append(plainSky.cellGlowOut); gentleGlow.append(gentleSky.cellGlowOut)
+        }
+        let litShare = Double(deep.filter { $0 > 0.05 }.count) / Double(max(1, deep.count))
+        XCTAssertGreaterThan(litShare, 0.5, "glowing most of the time")
+        XCTAssertLessThanOrEqual(gentleGlow.max() ?? 0, SkyLayer.gentleCellGlow + 1e-4, "gentle: a glow")
+        var gentleRise: Float = 0
+        for i in 3..<gentleGlow.count { gentleRise = max(gentleRise, gentleGlow[i] - (gentleGlow[(i - 3)...i].min() ?? 0)) }
+        XCTAssertLessThan(gentleRise, FlashLimiter.flashRise, "gentle: a swell, never a jump")
+        XCTAssertGreaterThan(Double(gentleGlow.filter { $0 > 0.02 }.count) / Double(max(1, gentleGlow.count)), 0.45, "and there")
+    }
+
     /// The dome draws the storm: its Approach stands on the horizon where the world looks (darker there than the clear
     /// golden sky), its Core darkens the whole sky, its Clearing leaves the low sky clear under the anvil; the generic
     /// cloud gives way to it; with nothing in its rows the sky is as it was.
@@ -484,9 +514,14 @@ extension WorldPreviewTests {
         for (t, image) in zip(liveTimes, liveImages) {
             try PreviewRenderer.writePNG(image, to: url.appendingPathComponent("beach-supercell-live-t\(Int(t)).png"))
         }
-        // And over the lake by night, as it arrives.
+        // And over the lake on a moonless night, as it arrives and passes over: glowing from within, never black (t153: a
+        // moment after t150, another instant of its glows).
         var liveLake = lakeNight; liveLake.weather = .supercell
-        let lakeImage = try XCTUnwrap(preview.render(themeID: MoonlitLakeModel.id, at: [150], quality: .high, sky: liveLake, mood: .serene).first)
-        try PreviewRenderer.writePNG(lakeImage, to: url.appendingPathComponent("lake-supercell-live-t150-night.png"))
+        let lakeTimes: [Double] = [100, 150, 153, 200, 250]
+        let lakeImages = preview.render(themeID: MoonlitLakeModel.id, at: lakeTimes, quality: .high, sky: liveLake, mood: .serene)
+        XCTAssertEqual(lakeImages.count, lakeTimes.count)
+        for (t, image) in zip(lakeTimes, lakeImages) {
+            try PreviewRenderer.writePNG(image, to: url.appendingPathComponent("lake-supercell-live-t\(Int(t))-night.png"))
+        }
     }
 }

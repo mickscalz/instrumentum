@@ -811,6 +811,10 @@ enum SkyShaders {
         int oct = int(u.weather.z + 0.5);
         float sunAlt = u.sun.w;
         bool day = sunAlt > -6.0;
+        // By night, as it arrives (within 20 km), a faint floor of light on it: the night sky's own glow low round it, so
+        // its shape is never lost in black between its glows. Nothing by day, nor while it is far off.
+        float nightF = sunAlt > -6.0 ? 0.0 : smoothstep(6.0, 10.0, -sunAlt) * (1.0 - smoothstep(10.0, 20.0, D));
+        float3 nightSky = u.horizon.rgb * (1.2 * nightF);
         float3 Lw = day ? u.sun.xyz : u.moon.xyz;
         float3 Lu = float3(dot(Lw.xy, b), dot(Lw.xy, rgt) * mirror, Lw.z);
         // The sun lights the cloud a little after it sets (the anvil stands 9.5 km up); the moon faintly.
@@ -848,7 +852,7 @@ enum SkyShaders {
             float streaks = fine > 0.5 ? skyFbm2(float2(azR * 13.0 + 3.0 * shafts, atan(k) * 2.0 + time * 0.04), 2) : 0.5;
             streaks = mix(0.5, streaks, smoothstep(0.6, 0.1, k));
             float3 c = grey * (0.27 + 0.26 * (1.0 - saturate(k * 3.0))) * (0.85 + 0.3 * shafts) * (1.06 - 0.14 * streaks)
-                     + Lc * (lightAmt * 0.3 * back);
+                     + Lc * (lightAmt * 0.3 * back) + nightSky * (0.45 + 0.3 * shafts);
             recept += T * a * 0.55 * (0.6 + 0.8 * shafts);
             acc += T * a * c; T *= 1.0 - a;
         }
@@ -868,7 +872,8 @@ enum SkyShaders {
                 float fs = skyFbm2(ws + 1.5 * float2(w1, skyNoise2(ws * 0.5 + 29.0)), 3);
                 float as = smoothstep(0.55, 0.72, fs) * zone * 0.85;
                 if (as > 0.002) {
-                    float3 c = grey * (0.11 + 0.08 * fs) + u.horizon.rgb * (0.04 + 0.12 * smoothstep(0.6, 0.85, fs));
+                    float3 c = grey * (0.11 + 0.08 * fs) + u.horizon.rgb * (0.04 + 0.12 * smoothstep(0.6, 0.85, fs))
+                             + nightSky * (0.3 + 0.3 * fs);
                     c = mix(c, haze, 1.0 - exp(-ts / 80.0));
                     recept += T * as * 0.4;
                     acc += T * as * c; T *= 1.0 - as;
@@ -914,6 +919,7 @@ enum SkyShaders {
                     float thinR = 1.0 - saturate(dens * span);
                     c += Lc * (lightAmt * (0.04 + 0.45 * back * thinR * thinR) * (0.6 + 0.6 * notch));
                     c = mix(c, haze * (0.9 + 0.5 * notch), 0.25 * notch * (1.0 - z / kCellBase));
+                    c += nightSky * (0.35 + 0.45 * notch + 0.15 * n);
                     c = mix(c, haze, 0.6 * (1.0 - exp(-rho / 80.0)));
                     recept += T * a * (0.5 + 0.3 * hail);
                     acc += T * a * c; T *= 1.0 - a;
@@ -947,7 +953,7 @@ enum SkyShaders {
                 if (a > 0.002) {
                     float ndl = saturate(dot(float3(-sqrt(1.0 - s * s), s, 0.0), Lu) * 0.7 + 0.3);
                     float3 c = (grey * (0.1 + 0.07 * n) + Lc * (lightAmt * 0.2 * ndl * (0.6 + 0.4 * n)))
-                             * mix(1.0, 0.75 + 0.5 * rag, nearW);
+                             * mix(1.0, 0.75 + 0.5 * rag, nearW) + nightSky * (0.2 + 0.25 * rag);
                     // Its rim, backlit, from afar only (near, its thin rim drew a bright hook across the view).
                     c += Lc * (lightAmt * 0.3 * back * (1.0 - smoothstep(0.0, 0.25, edge)) * smoothstep(8.0, 14.0, Dw));
                     c = mix(c, haze, 1.0 - exp(-rho / 80.0));
@@ -1026,6 +1032,7 @@ enum SkyShaders {
                 // layered: a second, fainter step a couple of km in), and the lumps hanging lowest in its underside.
                 float lip = 1.0 - smoothstep(0.0, 1.4, edge) + 0.45 * exp(-(edge - 2.4) * (edge - 2.4) / 0.35);
                 c += u.horizon.rgb * (closeB * (0.1 * lip * (0.4 + 1.2 * tb) + 0.07 * smoothstep(0.5, 0.85, tb)));
+                c += nightSky * (0.3 + 0.35 * saturate(lip) + 0.4 * tb + 0.2 * nb);
                 c = mix(c, haze, 1.0 - exp(-baseHit / 80.0));
                 recept += T * a * (0.2 + 0.9 * nb);
                 acc += T * a * c; T *= 1.0 - a;
@@ -1192,6 +1199,7 @@ enum SkyShaders {
                     // (the lumps' own slope), the lowest most.
                     float underL = close * (1.0 - 0.75 * smoothstep(0.0, 3.5, hz)) * (0.4 + 0.6 * turb);
                     c += u.horizon.rgb * (underL * (0.03 + 0.45 * saturate(-N.z)));
+                    c += nightSky * ((0.25 + 0.4 * saturate(-N.z) + 0.35 * turb) * (1.0 - 0.4 * smoothstep(1.0, 6.0, hz)));
                     // Backlit: the low light comes through where it thins, a gold rim on every turret's outline and a
                     // softer glow a little inside it; the lips of the skirt's bands catch a thread of it too, and its body
                     // takes a faint warm translucence near the light, so the storm stands in the sun's light, not before it.

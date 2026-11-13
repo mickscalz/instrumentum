@@ -217,6 +217,8 @@ public final class LivingSky {
     private var cellTurn = 0.0
     private var cellRng: SeededRandom
     private var cellFlicker: StormFlicker
+    /// Its soft glows deep in its cloud by night (on their own stream, so the day's sky is untouched).
+    private var cellGlow: CloudGlow
     /// The weathers the current world's Random Beautiful adds (the last step's storm inputs), for tests.
     var randomExtras: [WeatherKind: Float] { weather.extras }
 
@@ -237,6 +239,7 @@ public final class LivingSky {
         satelliteSky = Satellites(seed: seed &+ 0x5A7E_1175)
         cellRng = SeededRandom(seed: seed &+ 0xCE11_5C0F)
         cellFlicker = StormFlicker(seed: seed &+ 0xCE11_F11C)
+        cellGlow = CloudGlow(seed: seed &+ 0xCE11_610E)
         clock.place(cityID: settings.cityID, homeZone: homeZone)
         nextGust = Double(gustRng.range(3, 8))
     }
@@ -265,6 +268,7 @@ public final class LivingSky {
         satelliteSky = Satellites(seed: seed &+ 0x5A7E_1175)
         cellRng = SeededRandom(seed: seed &+ 0xCE11_5C0F)
         cellFlicker = StormFlicker(seed: seed &+ 0xCE11_F11C)
+        cellGlow = CloudGlow(seed: seed &+ 0xCE11_610E)
         gustOn = false
         gustElapsed = 0
         supercellOn = false
@@ -436,16 +440,29 @@ public final class LivingSky {
         }
         s.lightning = lightning
         lightning *= Float(exp(-dt / 0.12))
-        // Its in-cloud light: the distant flicker while it approaches or goes, and its own close flashes in its Core.
+        // Its in-cloud light: the distant flicker while it approaches or goes, and its own close flashes in its Core. By
+        // night, from late in its Approach through its Core, soft glows deep in its cloud one after another (a second or
+        // so each, in their own places), so its shape is seen most of the time; never by day (the day's sky is as it was).
         if var c = cellNow {
             let distant = c.stage != .core
             let gaps = c.stage == .approach ? 2.0...6.0 : 4.0...10.0
             let flicker = cellFlicker.step(dt: dt, gaps: gaps, active: distant) * (c.stage == .clearing ? 1 - c.stageProgress : 1)
-            c.glow = min(1, max(flicker * (distant ? 0.8 : 0), s.lightning * c.lightning))
-            c.spot = cellFlicker.spot
+            let strike = max(flicker * (distant ? 0.8 : 0), s.lightning * c.lightning)
+            let staged: Float
+            switch c.stage {
+            case .approach: staged = SkyPalette.smoothstep(0.45, 0.75, c.stageProgress)
+            case .core: staged = 1
+            case .clearing: staged = 1 - SkyPalette.smoothstep(0, 0.35, c.stageProgress)
+            case .cycle: staged = 0
+            }
+            let dark = 1 - SkyPalette.smoothstep(-10, -4, Float(s.sun.altitude))
+            let deep = cellGlow.step(dt: dt, active: staged * dark > 0.01) * staged * dark
+            c.glow = min(1, max(strike, deep))
+            c.spot = deep > strike ? cellGlow.spot : cellFlicker.spot
             cellNow = c
         } else {
             _ = cellFlicker.step(dt: dt, gaps: 2.0...6.0, active: false)
+            _ = cellGlow.step(dt: dt, active: false)
         }
         s.supercellWeather = cellNow
 
