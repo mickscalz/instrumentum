@@ -860,7 +860,8 @@ enum SkyShaders {
             float2 Ps = hv * ts;
             float es = (1.0 - length((Ps - float2(D + 1.5, -2.5)) / float2(5.6, 11.5))) * 5.6;   // km in from the base's rim
             float zone = smoothstep(-2.5, 0.0, es) * (1.0 - smoothstep(2.0, 5.0, es)) * (1.0 - smoothstep(12.0, 16.0, D)) * smoothstep(3.0, 6.0, D)
-                       * smoothstep(0.07, 0.14, k) * smoothstep(1.5, 3.5, ts);   // (far off, low down, it would be threads)
+                       * smoothstep(0.07, 0.14, k) * smoothstep(1.5, 3.5, ts)    // (far off, low down, it would be threads)
+                       * smoothstep(0.12, 0.25, T);                                // (and none behind heavy rain)
             if (zone > 0.0) {
                 float2 ws = Ps * 1.1 + float2(time * 0.02, time * 0.008);
                 float w1 = skyNoise2(ws * 0.5 + 13.0);
@@ -994,7 +995,9 @@ enum SkyShaders {
             // (Not where the rain in front hides it.)
             float closeB = 1.0 - smoothstep(6.0, 12.0, D - 4.0);
             float tb = 0.5;
-            if (closeB > 0.0 && fine > 0.5 && rr < 1.4 && T > 0.3) tb = skyFbm2(P * 0.8 + float2(time * 0.004, 0.0) + 7.0, 3);
+            if (closeB > 0.0 && fine > 0.5 && rr < 1.4 && T > 0.2) {
+                tb = mix(0.5, skyFbm2(P * 0.8 + float2(time * 0.004, 0.0) + 7.0, 3), smoothstep(0.2, 0.4, T));
+            }
             if (rr < 1.25 + pxb * 0.2 + 0.15 * closeB) {
                 float rag = cloudRagged(atan2(qc.y, qc.x), oct);
                 float edge = (1.0 - rr) * 5.6 + 1.1 * (rag - 0.3) + 1.4 * closeB * (tb - 0.5);
@@ -1034,8 +1037,8 @@ enum SkyShaders {
             float px = rho * pa;                                    // a pixel at the sheet (km)
             float xa = 1.0 - 0.22 * max(hz - 3.0, 0.0);             // the updraft's axis, leaning downshear as it rises
             // Arriving (its front 15 km off and nearer) the storm's front fills the view and is drawn as the shelf and
-            // the heavy underside passing over: soft turbulent cloud, its tiers soft and lit from below, its edges ragged
-            // and soft (the striated wall seen from afar drew a stack of terraces with a line round each).
+            // the heavy underside passing over: soft turbulent cloud, each puff lit on its underside from below, its edges
+            // ragged and soft (the striated wall seen from afar drew a stack of terraces with a line round each).
             float close = 1.0 - smoothstep(6.0, 15.0, Df);
             // A cheap bound first (the skirt and tower, the forward flank and the flanking line with their widest lumps),
             // so the sky beside the storm costs a few sums.
