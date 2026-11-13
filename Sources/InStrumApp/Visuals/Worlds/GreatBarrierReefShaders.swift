@@ -772,7 +772,9 @@ enum GreatBarrierReefShaders {
             float billow = vnoise3(float3(P.x * 2.2, P.y * 3.0 - 1.2 * rise, t * 0.06));
             float wisps = vnoise3(float3(P.x * 6.5, P.y * 8.0 - 3.0 * rise, 3.0 + t * 0.09));
             float cloud = exp(-hy * hy) * (0.45 + 0.75 * smoothstep(0.3, 0.8, billow)) * (0.8 + 0.4 * wisps);
-            float3 pink = float3(1.0, 0.58, 0.66) * (waterLight(D, L) * kWaterTint * 0.9 + L * 0.12 + float3(0.035, 0.026, 0.03));
+            // The bundles' own pink, lit by the water's light (its brightness: the spawn scatters what light there is).
+            float lit = dot(waterLight(D, L) * kWaterTint, float3(0.3, 0.5, 0.2)) * 1.3 + dot(L, float3(0.04)) + 0.03;
+            float3 pink = float3(1.0, 0.56, 0.66) * lit;
             col = mix(col, pink, saturate(haze * cloud * 0.62));
         }
 
