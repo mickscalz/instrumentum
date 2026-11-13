@@ -883,6 +883,69 @@ final class DemoRenderTests: XCTestCase {
         XCTAssertEqual(forkHeard, 14, accuracy: 1e-9)
     }
 
+    /// Every world's ambience demo, by name (`<world id>-ambience`).
+    nonisolated static let ambienceDemoNames = [
+        "moonlit-lake-ambience", "spaceship-lounge-ambience", "golden-hour-beach-ambience", "coast-road-ambience",
+        "snowbound-cabin-ambience", "bedroom-dawn-ambience", "aurora-fjord-ambience", "bioluminescent-bay-ambience",
+        "tea-house-snow-ambience", "zen-rock-garden-ambience", "submarine-window-ambience", "great-barrier-reef-ambience",
+        "supercell-sky-ambience", "lightning-plains-ambience", "volcano-rim-ambience", "neon-night-drive-ambience",
+    ]
+
+    /// How long each ambience demo runs (s): a minute, and Fire & Neon's two 24 s.
+    nonisolated static func ambienceDemoSeconds(_ name: String) -> Double {
+        name == "volcano-rim-ambience" || name == "neon-night-drive-ambience" ? 24 : 60
+    }
+
+    /// A world's ambience demo, `seconds` long from the start, mixed as its demo mixes it (`testWriteAmbienceDemos`, the
+    /// deep-water and storm demos, `testRenderVolcanoAmbience` and `testRenderDriveAmbience`); nothing for another name.
+    static func ambienceDemo(_ name: String, seconds: Double) -> (l: [Float], r: [Float]) {
+        var swell = OceanSwell(seed: 5)
+        var waves: [Wave] = []
+        for _ in 0..<Int(seconds * 60) { waves += swell.step(dt: 1.0 / 60) }
+        switch name {
+        case "moonlit-lake-ambience":
+            return renderAmbience([(ISD_AMB_WATER, 0.8), (ISD_AMB_CRICKETS, 0.7), (ISD_AMB_BREEZE, 0.4), (ISD_AMB_OWL, 0.3)],
+                                  seconds: seconds, nightCool: 0.3)
+        case "spaceship-lounge-ambience":
+            return renderAmbience([(ISD_AMB_SHIP_HUM, 0.8), (ISD_AMB_AIR_FLOW, 0.5), (ISD_AMB_CHIME, 0.3), (ISD_AMB_HULL_TICKS, 0.3)],
+                                  seconds: seconds)
+        case "golden-hour-beach-ambience":
+            return renderAmbience([(ISD_AMB_SURF, 0.9), (ISD_AMB_PALMS, 0.45), (ISD_AMB_BREEZE, 0.35), (ISD_AMB_CRICKETS, 0.25)],
+                                  seconds: seconds, nightCool: 0.1, waves: waves, surfDistance: 0.15)
+        case "coast-road-ambience":
+            return renderAmbience([(ISD_AMB_ROAD, 0.8), (ISD_AMB_ENGINE, 0.6), (ISD_AMB_WINDOW_WIND, 0.5), (ISD_AMB_SURF, 0.5),
+                                   (ISD_AMB_PASSING_CAR, 0.3)], seconds: seconds, waves: waves, speed: 0.5, surfDistance: 0.9)
+        case "snowbound-cabin-ambience":
+            return renderAmbience([(ISD_AMB_FIRE, 0.7), (ISD_AMB_WIND, 0.4), (ISD_AMB_RAIN_GLASS, 0.3)], seconds: seconds, indoors: 1,
+                                  snowOnGlass: 1)
+        case "bedroom-dawn-ambience":
+            return renderAmbience([(ISD_AMB_DAWN_CHORUS, 0.6), (ISD_AMB_KETTLE, 0.5), (ISD_AMB_STREET, 0.5), (ISD_AMB_BREEZE, 0.35),
+                                   (ISD_AMB_DRIPS, 0.4), (ISD_AMB_CLOCK, 0.15)], seconds: seconds, indoors: 1, snowOnGlass: 0, kettleAt: 2)
+        case "aurora-fjord-ambience":
+            return renderAmbience([(ISD_AMB_ICE_GROAN, 0.6), (ISD_AMB_WATERFALL, 0.35), (ISD_AMB_WATER, 0.5), (ISD_AMB_WIND, 0.3),
+                                   (ISD_AMB_LAPPING, 0.3)], seconds: seconds, indoors: 0)
+        case "bioluminescent-bay-ambience":
+            return renderAmbience([(ISD_AMB_LAPPING, 0.7), (ISD_AMB_WATER, 0.3), (ISD_AMB_CRICKETS, 0.5), (ISD_AMB_BOAT, 0.4),
+                                   (ISD_AMB_BREEZE, 0.3), (ISD_AMB_OWL, 0.15)], seconds: seconds, indoors: 0, boatAt: 2)
+        case "tea-house-snow-ambience":
+            return renderAmbience([(ISD_AMB_KETTLE, 0.35), (ISD_AMB_PAPER_SCREENS, 0.26), (ISD_AMB_TEMPLE_BELL, 0.5), (ISD_AMB_WIND, 0.3),
+                                   (ISD_AMB_RAIN_GLASS, 0.44)], seconds: seconds, indoors: 0.55, snowOnGlass: 0.8, kettleAt: 2, bellAt: 3)
+        case "zen-rock-garden-ambience":
+            return renderAmbience([(ISD_AMB_WATER_KNOCKER, 0.6), (ISD_AMB_WARBLER, 0.5), (ISD_AMB_BREEZE, 0.35), (ISD_AMB_DAWN_CHORUS, 0.3),
+                                   (ISD_AMB_TEMPLE_BELL, 0.3)], seconds: seconds, indoors: 0, snowOnGlass: 0, knockerAt: 2)
+        case "submarine-window-ambience", "great-barrier-reef-ambience":
+            return deepWaterAmbience(name, seconds: seconds)
+        case "supercell-sky-ambience", "lightning-plains-ambience":
+            let demo = stormAmbience(name, seconds: seconds)
+            return (l: demo.l, r: demo.r)
+        case "volcano-rim-ambience", "neon-night-drive-ambience":
+            let demo = fireNeonAmbience(name, seconds: seconds)
+            return (l: demo.l, r: demo.r)
+        default:
+            return (l: [], r: [])
+        }
+    }
+
     func testWriteAmbienceDemos() throws {
         guard let dir = ProcessInfo.processInfo.environment["DEMO_DIR"] else { throw XCTSkip("DEMO_DIR not set") }
         let url = URL(fileURLWithPath: dir, isDirectory: true)
