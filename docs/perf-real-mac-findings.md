@@ -80,11 +80,17 @@ dictionary, 88 key visuals, a few instance arrays).
   come from the caches, so the remaining cost is their own library and pipelines. Including them takes two lines in each
   file (drop `@MainActor`, move `: ThemeRenderer` to an extension) and a case in `WorldRenderers.make`.
 - The cabin's and the bedroom's frost fields (fixed seeds) grow once per process and are shared (`FrostFieldCache`):
-  every renderer used to grow its own on a background queue, seconds of a core each. With renderers now made quickly
-  (cached shaders) those growths piled up in the test run and slowed the bay's and the submarine's wall-clock budget
-  tests that ran next; in the app the warm-up makes each renderer once, so it grows each field once as before.
+  every renderer used to grow its own on a background queue, seconds of a core each. In one full CI run of this branch
+  the bay's and the submarine's wall-clock budget tests (`testBayBurstStaysInBudget`, `testSubBurstStaysInBudget`) ran
+  ~3 s slower than on main (the bay's 4.2 s against its 4 s limit) while every other test, and the frame-time sweeps,
+  matched main; they run right after the bedroom's and the cabin's tests, whose renderers (now made in milliseconds)
+  each started a growth. This is the suspected cause, not a proven one. In the app the warm-up makes each renderer once,
+  so each field still grows once.
 - Not changed: the Set switch's instrument load and settings writes (audio graph changes stay on the main actor);
-  `InstrumentSwitchTimingTests` (audio suite) prints what the Sound Core and the Audio Unit cost to make per engine.
+  `InstrumentSwitchTimingTests` (audio suite) measured making each engine's Sound Core and Audio Unit and allocating it
+  at 44.1 kHz on CI: under 0.2 ms for every engine, so the DSP side of a Set switch is not a hitch; what remains on the
+  main actor is AVAudioEngine's attach/connect while running and the settings writes (not measured on CI, which has no
+  audio device; the new report's Entry worst against Entry CPU will show it: a long entry gap with a short canvas time).
 
 ## 4. Moonlit Lake 32 ms / Bay 22 ms
 
@@ -120,8 +126,9 @@ it is the world model.
   branch are pixel-identical to main's (`previews` branch, build 6f77a73): max difference 0.
 - CPU sweep repeated (second run): the same medians within 0.1 ms; the bedroom's 21-41 ms slowest frame of the first run
   did not recur (6.5 ms), so it was the runner. Slowest frames everywhere else 1-7 ms.
-
-- Warm-up (WorldRenderersTests, CI): every world and every storm program made off the main thread in 7.3 s, then every
+- GPU frame times (`WorldFrameTimeSweepTests`, same run) match main's within the runners' spread (lake 10.07 against
+  10.35 ms, bay 14.53 against 14.95, lounge 6.12 against 6.45): the renderers draw the same work.
+- Warm-up (WorldRenderersTests, CI): every world and every storm program made off the main thread in 3.1-7.3 s, then every
   world entered with a frame at once and 0 builds on the draw path; Tea House Snow and Zen Rock Garden one main-thread
   build each, and never again.
 - World switch itself (`SceneDirector.switchTheme`, a new model) is 0.01-0.8 ms (Zen Rock Garden 3.5 ms once, its rake
