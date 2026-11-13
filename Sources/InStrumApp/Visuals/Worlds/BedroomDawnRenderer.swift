@@ -139,9 +139,9 @@ final class BedroomDawnRenderer {
         sky = s; weather = w; warp = gw; glass = g
         scene = sc; room = rm; shafts = sh; curtain = cu; sprites = sp; keys = k
         sky.verticalFOV = 50
-        // The frost grows once per process, off the main thread (every bedroom shares it).
-        FrostFieldCache.shared.field(seed: Self.fieldSeed, columns: 2, rows: 3, bar: 0.014) { [weak self] field in
-            self?.glass.setField(field)
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let field = FrostField(seed: Self.fieldSeed, columns: 2, rows: 3, bar: 0.014)
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
         }
     }
 

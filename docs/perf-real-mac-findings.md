@@ -79,13 +79,6 @@ dictionary, 88 key visuals, a few instance arrays).
   made on the main thread when first shown (counted in `ShaderWork.drawPathBuilds`); their sky, weather, warp and glass now
   come from the caches, so the remaining cost is their own library and pipelines. Including them takes two lines in each
   file (drop `@MainActor`, move `: ThemeRenderer` to an extension) and a case in `WorldRenderers.make`.
-- The cabin's and the bedroom's frost fields (fixed seeds) grow once per process and are shared (`FrostFieldCache`):
-  every renderer used to grow its own on a background queue, seconds of a core each. In one full CI run of this branch
-  the bay's and the submarine's wall-clock budget tests (`testBayBurstStaysInBudget`, `testSubBurstStaysInBudget`) ran
-  ~3 s slower than on main (the bay's 4.2 s against its 4 s limit) while every other test, and the frame-time sweeps,
-  matched main; they run right after the bedroom's and the cabin's tests, whose renderers (now made in milliseconds)
-  each started a growth. This is the suspected cause, not a proven one. In the app the warm-up makes each renderer once,
-  so each field still grows once.
 - Not changed: the Set switch's instrument load and settings writes (audio graph changes stay on the main actor);
   `InstrumentSwitchTimingTests` (audio suite) measured making each engine's Sound Core and Audio Unit and allocating it
   at 44.1 kHz on CI: under 0.2 ms for every engine, so the DSP side of a Set switch is not a hitch; what remains on the
@@ -133,6 +126,19 @@ it is the world model.
   build each, and never again.
 - World switch itself (`SceneDirector.switchTheme`, a new model) is 0.01-0.8 ms (Zen Rock Garden 3.5 ms once, its rake
   lines), and its first step 0.1-1.0 ms: not a hitch.
+
+- Open: in the one full App run that finished (run 43467777409), `testBayBurstStaysInBudget` (4.2 s against its 4 s limit,
+  8.2 s for the test against main's 5.2) and `testSubBurstStaysInBudget` (4.3 s against 1.6) ran ~3 s slower than on
+  main while every other test and both frame-time sweeps matched main. Not explained: their per-frame code and GPU work
+  are unchanged. A shared frost-field cache tried for it (the bedroom's and the cabin's tests, which run just before,
+  each start a seconds-long frost growth) was taken out again: with it, every CI job that ran those classes lost its
+  runner (below).
+- CI on 13 Nov: "The hosted runner lost communication with the server" ~55 min after the job started. This branch: 7 of
+  its 8 jobs that ran the bedroom/bay/cabin/lounge/submarine renderer tests did not finish (6 lost, 1 stopped by hand
+  after 58 min): 2 of 3 before the frost-field cache, 5 of 5 with it. look-volcano-sky-plains (none of this branch's
+  code): 3 of 5 App-suite runs lost the same way. The jobs that did not run those classes (both branches' other looks
+  jobs, all Core and Audio jobs) always finished. Those classes start about 10 min into a job. Which test stops an
+  Intel VM is not known; the frost cache made it worse, so it is out.
 
 ## 6. Stalls
 

@@ -147,24 +147,6 @@ final class WorldRenderersTests: XCTestCase {
         XCTAssertEqual(ShaderWork.drawPathBuilds, 1, "and the counter sees a build inside a frame")
     }
 
-    /// The cabin's and the bedroom's frost: grown once per process, however many renderers ask (each growth kept a core
-    /// busy for seconds); a renderer made after it has grown gets it at once.
-    func testTheWindowsFrostGrowsOncePerProcess() throws {
-        guard let device = MTLCreateSystemDefaultDevice() else { throw XCTSkip("No Metal device") }
-        let before = FrostFieldCache.shared.growths
-        let a = try XCTUnwrap(SnowboundCabinRenderer(device: device)), b = try XCTUnwrap(SnowboundCabinRenderer(device: device))
-        XCTAssertTrue(a.awaitField())
-        XCTAssertTrue(b.awaitField())
-        XCTAssertLessThanOrEqual(FrostFieldCache.shared.growths - before, 1, "one growth for both cabins")
-        let grown = FrostFieldCache.shared.growths
-        let c = try XCTUnwrap(SnowboundCabinRenderer(device: device))
-        XCTAssertTrue(c.awaitField(timeout: 2), "a third cabin has it at once")
-        let d = try XCTUnwrap(BedroomDawnRenderer(device: device)), e = try XCTUnwrap(BedroomDawnRenderer(device: device))
-        XCTAssertTrue(d.awaitField())
-        XCTAssertTrue(e.awaitField())
-        XCTAssertLessThanOrEqual(FrostFieldCache.shared.growths - grown, 1, "and one for the bedrooms")
-    }
-
     func testEveryThemeHasItsKind() {
         for world in ThemeRegistry.all {
             XCTAssertNotNil(WorldRenderers.kind(forTheme: world.id), world.id)

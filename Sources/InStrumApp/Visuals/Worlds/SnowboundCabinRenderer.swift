@@ -105,10 +105,10 @@ final class SnowboundCabinRenderer {
               let k = make("cabin_keys_vertex", "cabin_keys_fragment", .opaque) else { return nil }
         sky = s; weather = w; warp = gw; glass = g; scene = sc; sparks = sp; room = rm; keys = k
         sky.verticalFOV = 50
-        // The frost grows once per process, off the main thread (every cabin shares it); the glass draws a plain fallback
-        // until it's ready.
-        FrostFieldCache.shared.field(seed: Self.fieldSeed, columns: 3, rows: 2, bar: 0.018) { [weak self] field in
-            self?.glass.setField(field)
+        // The frost grows once, off the main thread; the glass draws a plain fallback until it's ready.
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let field = FrostField(seed: Self.fieldSeed, columns: 3, rows: 2, bar: 0.018)
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.glass.setField(field) } }
         }
     }
 
