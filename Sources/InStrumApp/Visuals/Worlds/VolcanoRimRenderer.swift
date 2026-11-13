@@ -35,6 +35,14 @@ final class VolcanoRimRenderer: ThemeRenderer {
     nonisolated static let sparkCapacity = VolcanoRimModel.emberCount
         + (VolcanoRimModel.blobCount + VolcanoRimModel.bombCount) * VolcanoRimRenderer.trailSegments
     nonisolated static let boltCapacity = VolcanoRimModel.strokeCount * 16
+    /// The eruption's clots (its fountain, at most 14 a launch, 50 launches a second over the 4.6 s a clot can fly and
+    /// splash), the bombs and their trails, the spits, their splashes and glows: soft volumes (`volcano_clot_*`).
+    nonisolated static let clotCapacity = 3600
+    /// The eruption's clots fly this many times fast (the shader's `kPace`), are thrown in launches this often (s), at most
+    /// this many a launch (half on Smooth).
+    nonisolated static let fountainPace: Float = 3.6
+    nonisolated static let clotEvery: Float = 1.0 / 50
+    nonisolated static let clotsPerLaunch = 14
     /// The plume's lightning: violet-white.
     nonisolated static let boltColour = SIMD3<Float>(0.82, 0.78, 1.0)
 
@@ -50,7 +58,7 @@ final class VolcanoRimRenderer: ThemeRenderer {
     /// rocks; the renderer's: 2048 the embers and the bolts, 4096 the weather, 8192 the basalt columns (the keys).
     var skipLayers: UInt32 = 0
     private let scene: SkyPipeline
-    private let sparks, bolts, columns: MTLRenderPipelineState
+    private let sparks, bolts, columns, clots: MTLRenderPipelineState
     /// The lake's plates' map (`volcano_plate_map`): for each texel of the warped lake plane the 12 crust seeds of least
     /// power there, which the lake reads instead of all 64. Made once; a sixteenth of its rows refreshed a frame (every
     /// 16th row), the whole map when it is new or the clock jumped (previews, a world come back to). Without its kernel
@@ -74,6 +82,7 @@ final class VolcanoRimRenderer: ThemeRenderer {
     private var volU = [SIMD4<Float>](repeating: .zero, count: VolcanoRimRenderer.uniformCount)
     private var sparkInstances: [SIMD4<Float>] = []
     private var boltInstances: [SIMD4<Float>] = []
+    private var clotInstances: [SIMD4<Float>] = []
     private var columnInstances: [SIMD4<Float>] = []
     private var ring: [MTLBuffer] = []
     private var slot = 0
@@ -90,6 +99,12 @@ final class VolcanoRimRenderer: ThemeRenderer {
     /// applied (NDC), the lake's light on the crater, where the lake's middle and the plume stand on screen.
     private(set) var sparkCount = 0
     private(set) var boltCount = 0
+    /// The soft volumes drawn: the fountain's clots, the bombs and spits with their trails, the splashes.
+    private(set) var clotCount = 0
+    /// The eruption's age as its fountain and its ash need it (s; −1 none): the model's while it plays, then counted on
+    /// here, so its last clots fall back and its ash rises away after the model has let it go.
+    private(set) var fountainAge: Float = -1
+    private var fountainStrength: Float = 1
     private(set) var exposureOut: Float = 1
     private(set) var flashShare: Float = 1
     private(set) var lightningLight: Float = 0
@@ -126,16 +141,17 @@ final class VolcanoRimRenderer: ThemeRenderer {
                 c.destinationRGBBlendFactor = blend == 2 ? .one : .oneMinusSourceAlpha
                 c.destinationAlphaBlendFactor = blend == 2 ? .one : .oneMinusSourceAlpha
             }
-            if blend == 2 { d.colorAttachments[1].writeMask = [] }
+            if blend >= 2 { d.colorAttachments[1].writeMask = [] }
             return try? device.makeRenderPipelineState(descriptor: d)
         }
-        // Blend 1: premultiplied over (with depth); 2: additive (no depth).
+        // Blend 1: premultiplied over (with depth); 2: additive (no depth); 3: premultiplied over (no depth).
         guard let sc = SkyPipeline(build: { make("volcano_vertex", "volcano_scene_fragment", blend: 0, storms: $0) }),
               let sp = make("volcano_spark_vertex", "volcano_spark_fragment", blend: 2),
               let bo = make("volcano_bolt_vertex", "volcano_bolt_fragment", blend: 2),
-              let co = make("volcano_column_vertex", "volcano_column_fragment", blend: 1) else { return nil }
+              let co = make("volcano_column_vertex", "volcano_column_fragment", blend: 1),
+              let cl = make("volcano_clot_vertex", "volcano_clot_fragment", blend: 3) else { return nil }
         let row = MemoryLayout<SIMD4<Float>>.stride
-        let bytes = (Self.sparkCapacity * 2 + Self.boltCapacity * 2) * row
+        let bytes = (Self.sparkCapacity * 2 + Self.boltCapacity * 2 + Self.clotCapacity * 2) * row
         var buffers: [MTLBuffer] = []
         for _ in 0..<3 {
             guard let buf = device.makeBuffer(length: bytes, options: .storageModeShared) else { return nil }
@@ -152,7 +168,7 @@ final class VolcanoRimRenderer: ThemeRenderer {
         pd.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
         guard let plumePipe = try? device.makeRenderPipelineState(descriptor: pd) else { return nil }
         sky = s; weather = w; warp = gw; veinsRenderer = mv
-        scene = sc; sparks = sp; bolts = bo; columns = co
+        scene = sc; sparks = sp; bolts = bo; columns = co; clots = cl
         plateMap = plates
         plumeHalf = plumePipe
         self.device = device
@@ -165,6 +181,7 @@ final class VolcanoRimRenderer: ThemeRenderer {
         bufferAllocations = buffers.count
         sparkInstances.reserveCapacity(Self.sparkCapacity * 2)
         boltInstances.reserveCapacity(Self.boltCapacity * 2)
+        clotInstances.reserveCapacity(Self.clotCapacity * 2)
         columnInstances.reserveCapacity(88 * 2)
         sky.verticalFOV = Self.verticalFOV
         sky.horizonY = Self.horizonY
@@ -186,6 +203,27 @@ final class VolcanoRimRenderer: ThemeRenderer {
         let g = exp(0.38 - 1848 / t)
         let b = exp(2.036 - 8727 / t)
         return SIMD3(1, g, b) * exp((t - 1150) / 115)
+    }
+
+    /// The eruption's vent: its share of the fountain's full height for clots thrown `s` seconds into it (the shader's
+    /// `ventShare`): up in 0.3 s, held to the end of the eruption's hold, falling over its last 3 s, none after.
+    nonisolated static func ventShare(_ s: Float) -> Float {
+        guard s.isFinite, s >= 0, s <= Eruption.life else { return 0 }
+        let up = smooth(0, 0.3, s)
+        let f = min(1, max(0, (s - Eruption.rise - Eruption.hold) / Eruption.fall))
+        return up * (1 - f * f)
+    }
+
+    /// A fixed random number (0…1) for a launch `a` and a draw `b` (an integer hash: the same clot every frame).
+    nonisolated static func unitHash(_ a: Int, _ b: Int) -> Float {
+        var h = UInt32(truncatingIfNeeded: a) &* 0x9E37_79B1
+        h = h ^ (UInt32(truncatingIfNeeded: b) &* 0x85EB_CA77)
+        h = h ^ (h >> 15)
+        h = h &* 0x2C1B_3C6D
+        h = h ^ (h >> 12)
+        h = h &* 0x297A_2D39
+        h = h ^ (h >> 15)
+        return Float(h >> 8) / 16_777_216
     }
 
     /// The lake's light on the crater (rgb, HDR): its crust and cracks together as one glowing disc, brighter with Energy,
@@ -292,6 +330,13 @@ final class VolcanoRimRenderer: ThemeRenderer {
         }
         lightningLight = strokeRaw * share
         // The eruption's light on the crater: through the limiter, and under gentle visuals eased in (a glow, not a jump).
+        if let e = frame.eruption {
+            fountainAge = e.age
+            fountainStrength = e.strength
+        } else if fountainAge >= 0 {
+            fountainAge += fdt
+            if fountainAge > Eruption.life + 8 { fountainAge = -1 }
+        }
         let eruptRaw = frame.eruption?.light ?? 0
         let eruptTarget = eruptRaw * (gentle ? 0.6 : max(0.35, share))
         let ease: Float = gentle ? 1 - exp(-fdt / 0.8) : 1 - exp(-fdt / 0.06)
@@ -349,6 +394,9 @@ final class VolcanoRimRenderer: ThemeRenderer {
             volU[Self.rowBolt] = SIMD4(0, 0, 0, gentle ? 1 : 0)
         }
         fillSurprises(frame, share: share)
+        // The eruption's ash rises on after it (its age and strength ride in two spare lanes of the surprises' rows).
+        volU[Self.rowSteam].w = fountainAge
+        volU[Self.rowTree].w = fountainStrength
         volU[Self.rowDims] = SIMD4(VolcanoCrater.footRadius, VolcanoCrater.benchHeight, VolcanoCrater.benchRadius,
                                    VolcanoCrater.topRadius)
         volU[Self.rowDims2] = SIMD4(VolcanoCrater.wallCentre.x, VolcanoCrater.wallCentre.y, VolcanoCrater.rimHeight,
@@ -374,6 +422,7 @@ final class VolcanoRimRenderer: ThemeRenderer {
         rimNDC = v.project(SIMD3(0, VolcanoCrater.wallCentre.y + VolcanoCrater.topRadius, VolcanoCrater.rimHeight))?.ndc ?? .zero
 
         buildSparks(frame, view: v, height: height, tanV: tanV, gentle: gentle)
+        buildClots(frame, view: v, height: height, tanV: tanV, gentle: gentle, lite: quality == .lite, lakeLevel: lakeLevel)
         buildBolts(frame, view: v, height: height, gentle: gentle, share: share)
         buildColumns(frame, show: keysShow, glow: glow, sky: skyLight, aspect: aspect)
 
@@ -438,34 +487,168 @@ final class VolcanoRimRenderer: ThemeRenderer {
             add(e.position, e.velocity, size: e.size, kelvin: e.temperatureNow, light: b * (e.near ? 0.9 : 1.6),
                 soft: e.near ? 1 : 0)
         }
-        // A long exposure's trails: each blob and bomb in flight streaks back along the arc it has flown (its past
-        // positions under gravity, a few segments, so the streak curves as it does in a photograph of fountaining),
-        // brightest at its head; landed, it glows where it lies and fades.
-        func trail(_ b: LavaParticle, size: Float, light: Float, seconds: Float) {
-            guard b.landed == nil else {
-                add(b.position, .zero, size: size, kelvin: b.temperature, light: light, soft: 0)
-                return
-            }
-            let g = VolcanoRimModel.gravity
-            func past(_ t: Float) -> SIMD3<Float> { b.position - b.velocity * t - SIMD3(0, 0, 0.5 * g * t * t) }
-            let n = Self.trailSegments
-            for i in 0..<n {
-                let t0 = seconds * Float(i) / Float(n), t1 = seconds * Float(i + 1) / Float(n)
-                let head = past(t0), tail = past(t1)
-                let k = Float(i) / Float(n)
-                add(tail, head - tail, size: size * (1 - 0.3 * k), kelvin: b.temperature, light: light * (1 - 0.65 * k),
-                    soft: 0, blur: 1)
-            }
-        }
-        for b in frame.blobs where b.alive {
-            let fade: Float = b.landed.map { max(0, 1 - $0 / 1.2) } ?? 1
-            trail(b, size: b.size * 0.6, light: 2.0 * fade, seconds: 0.5)
-        }
-        for b in frame.bombs where b.alive {
-            let fade: Float = b.landed.map { max(0, 1 - $0 / 3) } ?? 1
-            trail(b, size: b.size * 0.4, light: 1.7 * fade, seconds: 0.8)
-        }
         sparkCount = sparkInstances.count / 2
+    }
+
+    /// The eruption's fountain, its bombs and the spits as soft volumes (Volcano look job, 13 Nov), never sparkler dots:
+    /// clots of every size thrown up from the vent in launches (each launch's clots fixed by a hash of its number, so a
+    /// clot is the same every frame), on ballistic arcs played `fountainPace` times fast, growing as they fly, cooling
+    /// from 1470 K at the vent toward dark red as they fall, the cooled ones dark against what is behind them; a few big
+    /// faint puffs of glowing spray among them; each splashing back into the lake. A bomb is a bright clot trailing glowing
+    /// spatter and gas that widens and cools behind it along its arc; where it lands on the rim, a splash of fresh lava
+    /// and the glow it throws on the rock, fading. The strength sets the fountain's height and the number of bombs (the
+    /// model's); Smooth throws half the clots.
+    private func buildClots(_ frame: VolcanoFrame, view v: View, height: Float, tanV: Float, gentle: Bool, lite: Bool,
+                            lakeLevel: Float) {
+        clotInstances.removeAll(keepingCapacity: true)
+        let pixel: Float = 2 / height
+        let soft: Float = gentle ? 0.85 : 1
+        func add(_ p: SIMD3<Float>, _ vel: SIMD3<Float>, radius: Float, kelvin: Float, light: Float, cover: Float,
+                 seed: Int, blur: Float) {
+            guard light > 1e-3 || cover > 0.01, clotInstances.count < Self.clotCapacity * 2, let at = v.project(p) else { return }
+            guard abs(at.ndc.x) < 1.3, abs(at.ndc.y) < 1.3 else { return }
+            let half = max(radius / (at.depth * tanV), 1.2 * pixel)
+            var travel = SIMD2<Float>(0, 0)
+            if blur > 0, let next = v.project(p + vel * blur) { travel = next.ndc - at.ndc }
+            let packed = Float(seed & 63) + min(0.99, max(0, cover))
+            clotInstances.append(SIMD4(at.ndc.x, at.ndc.y, travel.x, travel.y))
+            clotInstances.append(SIMD4(half, kelvin, light * soft, packed))
+        }
+        let g = VolcanoRimModel.gravity
+        // The fountain: up to 3,200 clots a frame, so its arithmetic is scalar (the projection's basis folded into the
+        // crater's frame once a frame), cheap even in a debug build's long test runs.
+        if fountainAge >= 0 {
+            let c = v.cam
+            let alongX = SIMD3<Float>(v.right.x, v.right.y, 0), alongY = SIMD3<Float>(v.fwd.x, v.fwd.y, 0)
+            // e = rel.x * alongX + rel.y * alongY + rel.z * up: each screen axis's weights on the crater's x, y, z.
+            let dX = simd_dot(alongX, c.forward), dY = simd_dot(alongY, c.forward), dZ = c.forward.z
+            let xX = simd_dot(alongX, c.right) / c.tanH, xY = simd_dot(alongY, c.right) / c.tanH, xZ = c.right.z / c.tanH
+            let yX = simd_dot(alongX, c.up) / c.tanV, yY = simd_dot(alongY, c.up) / c.tanV, yZ = c.up.z / c.tanV
+            let ex = v.eye.x, ey = v.eye.y, ez = v.eye.z
+            let cap = Self.clotCapacity * 2
+            func put(_ px: Float, _ py: Float, _ pz: Float, _ vx: Float, _ vy: Float, _ vz: Float, radius: Float,
+                     kelvin: Float, light: Float, cover: Float, seed: Int) {
+                guard clotInstances.count < cap else { return }
+                let rx = px - ex, ry = py - ey, rz = pz - ez
+                let depth = rx * dX + ry * dY + rz * dZ
+                guard depth > 0.5 else { return }
+                let sx = (rx * xX + ry * xY + rz * xZ) / depth, sy = (rx * yX + ry * yY + rz * yZ) / depth
+                guard abs(sx) < 1.3, abs(sy) < 1.3 else { return }
+                var tx: Float = 0, ty: Float = 0
+                if vx != 0 || vy != 0 || vz != 0 {
+                    let qx = rx + vx, qy = ry + vy, qz = rz + vz
+                    let dq = qx * dX + qy * dY + qz * dZ
+                    if dq > 0.5 {
+                        tx = (qx * xX + qy * xY + qz * xZ) / dq - sx
+                        ty = (qx * yX + qy * yY + qz * yZ) / dq - sy
+                    }
+                }
+                let half = max(radius / (depth * tanV), 1.2 * pixel)
+                let packed = Float(seed & 63) + min(0.99, max(0, cover))
+                clotInstances.append(SIMD4(sx, sy, tx, ty))
+                clotInstances.append(SIMD4(half, kelvin, light * soft, packed))
+            }
+            let age = fountainAge
+            let sp = min(1, max(0.3, fountainStrength))
+            let pace = Self.fountainPace
+            let w0max = (2 * g * (130 + 100 * sp)).squareRoot()
+            let every = Self.clotEvery
+            let per = lite ? Self.clotsPerLaunch / 2 : Self.clotsPerLaunch
+            let last = Int(min(age, Eruption.life) / every)
+            let first = max(0, Int((age - 4.6) / every))
+            let blur: Float = 0.6 / 30 * pace
+            if first <= last {
+                for k in first...last {
+                    let s = Float(k) * every
+                    let share = Self.ventShare(s)
+                    guard share > 0.01 else { continue }
+                    let wk = w0max * share.squareRoot()
+                    for m in 0..<per {
+                        let r1 = Self.unitHash(k, m * 8), r2 = Self.unitHash(k, m * 8 + 1), r3 = Self.unitHash(k, m * 8 + 2)
+                        let r4 = Self.unitHash(k, m * 8 + 3), r5 = Self.unitHash(k, m * 8 + 4), r6 = Self.unitHash(k, m * 8 + 5)
+                        let launched = s + every * r6
+                        guard launched <= age else { continue }
+                        // Most climb near the top, some fall short; most are thrown nearly upright, a few flung wide.
+                        let w = wk * (1 - 0.6 * r1 * r1)
+                        let spread: Float = 0.05 + 0.22 * r5 * r5 * r5 + 0.12 * r1 * r1
+                        let across = w * spread * (r2 - 0.5) * 2
+                        let ahead = w * 0.6 * spread * (r3 - 0.5) * 2
+                        let x0 = (r4 - 0.5) * (16 + 8 * sp), y0 = (r3 - 0.5) * 10
+                        let tau = (age - launched) * pace
+                        let land = 2 * w / g
+                        guard tau <= land + 1.6 else { continue }
+                        // A sixth are puffs of glowing spray, big and faint, round which the clots fly; the clots
+                        // themselves mostly small, a few big.
+                        let puff = r6 > 0.83
+                        let r0: Float = puff ? 6 + 6 * r2 : 0.6 + 2.8 * r5 * r5
+                        let seed = k * 7 + m
+                        if tau > land {
+                            // Back in the lake: a splash of fresh lava, spreading and dulling.
+                            let t2 = (tau - land) / 1.6
+                            put(x0 + across * land, y0 + ahead * land, lakeLevel + 0.8, 0, 0, 0, radius: r0 * (1 + 2.2 * t2),
+                                kelvin: 1240 - 320 * t2, light: 0.3 * (1 - t2) * (1 - t2), cover: 0, seed: seed)
+                            continue
+                        }
+                        let rise = w - g * tau
+                        let life = tau / max(land, 1e-3)
+                        let cooled: Float = 520 * life * (1.1 - 0.1 * life) + 150 * (1 - r5) * life
+                        let kelvin: Float = 1470 - cooled + 40 * (r6 - 0.5)
+                        // Cooled, the bigger clots darken against the ash; and every clot dims as its skin cools.
+                        let cover: Float = puff ? 0 : 0.55 * Self.smooth(0.35, 0.8, r5) * (1 - Self.smooth(860, 1000, kelvin))
+                        let light: Float = (puff ? 0.14 : 0.62) * (1 - 0.45 * life)
+                        put(x0 + across * tau, y0 + ahead * tau, lakeLevel + w * tau - 0.5 * g * tau * tau,
+                            across * blur, ahead * blur, rise * blur, radius: r0 * (0.75 + 0.07 * tau), kelvin: kelvin,
+                            light: light, cover: cover, seed: seed)
+                    }
+                }
+            }
+        }
+        // The bombs: in flight a bright clot and its trail back along its arc; landed, a splash and the glow on the rock.
+        for (i, b) in frame.bombs.enumerated() where b.alive {
+            if let landed = b.landed {
+                let x = min(1, landed / 0.7)
+                add(b.position + SIMD3(0, 0, 1.5), .zero, radius: b.size * (1.2 + 3 * x), kelvin: b.temperature + 60 - 250 * x,
+                    light: 0.9 * (1 - x) * (1 - x), cover: 0, seed: i * 5 + 1, blur: 0)
+                let left = max(0, 1 - landed / 3)
+                add(b.position + SIMD3(0, 0, 3), .zero, radius: 9 + 6 * min(1, landed), kelvin: 1050,
+                    light: 0.06 * left * left, cover: 0, seed: i * 5 + 2, blur: 0)
+                add(b.position, .zero, radius: b.size * 0.8, kelvin: b.temperature, light: 0.8 * left, cover: 0,
+                    seed: i * 5 + 3, blur: 0)
+                continue
+            }
+            // (Each piece of the trail is drawn along its own stretch of the arc, 0.09 s of it, so they join into one
+            // trail that widens and fades behind the bomb, never a row of dots.)
+            for j in 0..<7 {
+                let t = Float(j) * 0.09
+                let at = b.position - b.velocity * t - SIMD3(0, 0, 0.5 * g * t * t)
+                let then = b.velocity + SIMD3(0, 0, g * t)
+                let k = Float(j) / 6
+                let lead: Float = j == 0 ? 1.2 : 0.5
+                let blur: Float = j == 0 ? 1.0 / 30 : 0.09
+                add(at, then, radius: b.size * (0.55 + 0.9 * k), kelvin: b.temperature - 260 * k,
+                    light: lead * (1 - 0.8 * k), cover: 0, seed: i * 5 + j, blur: blur)
+            }
+        }
+        // The spits: smaller clots with shorter trails; landed back in the lake, a small splash.
+        for (i, b) in frame.blobs.enumerated() where b.alive {
+            if let landed = b.landed {
+                let x = min(1, landed / 1.2)
+                add(b.position + SIMD3(0, 0, 0.5), .zero, radius: b.size * (1 + 2 * x), kelvin: b.temperature - 200 * x,
+                    light: 0.6 * (1 - x) * (1 - x), cover: 0, seed: i * 3 + 40, blur: 0)
+                continue
+            }
+            for j in 0..<4 {
+                let t = Float(j) * 0.07
+                let at = b.position - b.velocity * t - SIMD3(0, 0, 0.5 * g * t * t)
+                let then = b.velocity + SIMD3(0, 0, g * t)
+                let k = Float(j) / 3
+                let lead: Float = j == 0 ? 1.0 : 0.45
+                let blur: Float = j == 0 ? 1.0 / 30 : 0.07
+                add(at, then, radius: b.size * (0.5 + 0.7 * k), kelvin: b.temperature - 220 * k,
+                    light: lead * (1 - 0.75 * k), cover: 0, seed: i * 3 + j + 40, blur: blur)
+            }
+        }
+        clotCount = clotInstances.count / 2
     }
 
     /// The plume's lightning: each stroke's channel and branches projected, through the limiter; none under gentle
@@ -614,26 +797,39 @@ final class VolcanoRimRenderer: ThemeRenderer {
         let row = MemoryLayout<SIMD4<Float>>.stride
         let sparkBytes = sparkInstances.count * row
         let boltBytes = boltInstances.count * row
-        if sparkBytes + boltBytes > 0, !ring.isEmpty, skipLayers & 2048 == 0 {
+        let clotBytes = skipLayers & 32 == 0 ? clotInstances.count * row : 0
+        if sparkBytes + boltBytes + clotBytes > 0, !ring.isEmpty {
             slot = (slot + 1) % ring.count
             let buf = ring[slot]
             if sparkBytes > 0 { sparkInstances.withUnsafeBytes { buf.contents().copyMemory(from: $0.baseAddress!, byteCount: sparkBytes) } }
             if boltBytes > 0 {
                 boltInstances.withUnsafeBytes { (buf.contents() + sparkBytes).copyMemory(from: $0.baseAddress!, byteCount: boltBytes) }
             }
+            if clotBytes > 0 {
+                clotInstances.withUnsafeBytes {
+                    (buf.contents() + sparkBytes + boltBytes).copyMemory(from: $0.baseAddress!, byteCount: clotBytes)
+                }
+            }
             var vw = view
-            if sparkCount > 0 {
+            let embers = skipLayers & 2048 == 0
+            if sparkCount > 0, embers {
                 e.setRenderPipelineState(sparks)
                 e.setVertexBuffer(buf, offset: 0, index: 0)
                 e.setVertexBytes(&vw, length: MemoryLayout<SIMD4<Float>>.size, index: 1)
                 e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6, instanceCount: sparkCount)
             }
-            if boltCount > 0 {
+            if boltCount > 0, embers {
                 e.setRenderPipelineState(bolts)
                 e.setVertexBuffer(buf, offset: sparkBytes, index: 0)
                 e.setVertexBytes(&vw, length: MemoryLayout<SIMD4<Float>>.size, index: 1)
                 e.setFragmentBytes(&vw, length: MemoryLayout<SIMD4<Float>>.size, index: 0)
                 e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6, instanceCount: boltCount)
+            }
+            if clotBytes > 0 {
+                e.setRenderPipelineState(clots)
+                e.setVertexBuffer(buf, offset: sparkBytes + boltBytes, index: 0)
+                e.setVertexBytes(&vw, length: MemoryLayout<SIMD4<Float>>.size, index: 1)
+                e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6, instanceCount: clotBytes / (2 * row))
             }
         }
         if skipLayers & 4096 == 0 { weather.draw(e) }

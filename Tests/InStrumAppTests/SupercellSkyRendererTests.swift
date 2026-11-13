@@ -34,6 +34,7 @@ final class SupercellSkyRendererTests: XCTestCase {
     /// `tension` throughout, a big `moments[i]` on frame `i`, `notes(i)` struck on frame `i`. `edit` changes each frame
     /// before the renderer sees it; `each` sees every frame after the renderer's update.
     static func renderCell(at seconds: Double, stage: SupercellStage = .core, hold: SkyHold = .goldenHour,
+                           skyHour: Double = 18.5,
                            values: [String: ParamValue] = [:], quality: QualityLevel = .high, gentle: Bool = false,
                            reduceMotion: Bool = false, energy: Float = 0.4, tension: Float = 0.3,
                            moments: [Int: BigMoment] = [:], notes: ((Int) -> [UInt8])? = nil,
@@ -53,7 +54,7 @@ final class SupercellSkyRendererTests: XCTestCase {
         let start = Date(timeIntervalSince1970: 1_793_000_000)
         var elapsed = 0.0
         d.clock = { start.addingTimeInterval(elapsed) }
-        d.sky.reset(settings: sky())
+        d.sky.reset(settings: sky(hour: skyHour))
         d.mood = .stormTense
         var model = SupercellSkyModel()
         model.mood = .stormTense

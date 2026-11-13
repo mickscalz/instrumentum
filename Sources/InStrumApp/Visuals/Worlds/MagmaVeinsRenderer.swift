@@ -13,8 +13,9 @@ import InStrumCore
 final class MagmaVeinsRenderer: ThemeRenderer {
     nonisolated static let uniformCount = 27
     nonisolated static let plateBase = 3
-    /// The strokes at most: every vein's channel (16, its path smoothed), two braids (6 each) and a joining channel (4).
-    nonisolated static let segmentCapacity = MagmaVeins.capacity * (16 + 12 + 4)
+    /// The strokes at most: every vein's channel (16, its path smoothed), two braids (6 each), a joining channel (4) and
+    /// its distributaries (three of 3).
+    nonisolated static let segmentCapacity = MagmaVeins.capacity * (16 + 12 + 4 + 9)
     /// Each stroke's rows: its ends, its start's width and temperature (with its light and halo), its end's.
     nonisolated static let rowsPerSegment = 3
     /// Metres of lake a view height spans.
@@ -204,7 +205,8 @@ final class MagmaVeinsRenderer: ThemeRenderer {
             let steps = Float(path.count - 1)
             // A channel of magma opening through the crust: wider the harder the note, widening as it grows, a lens over
             // the length it has reached; hottest near its source, cooler toward its tip, a hot pulse along it.
-            let widest = pixel * (7.0 + 12.0 * v.strength) * (0.6 + 0.4 * reach)
+            let own = Float((v.seed >> 20) % 101) / 100
+            let widest = pixel * (7.0 + 12.0 * v.strength) * (0.6 + 0.4 * reach) * (0.75 + 0.5 * own)
             let phase = Float(v.seed % 997) / 997 * 6.2832
             func width(_ s: Float) -> Float { widest * Self.lens(s / max(reach, 0.12)) }
             func kelvin(_ s: Float) -> Float { v.temperature + 70 - 190 * s + 45 * sin(phase + 9 * s) }
@@ -247,6 +249,35 @@ final class MagmaVeinsRenderer: ThemeRenderer {
                     }
                     prev = q
                     prevS = s
+                }
+            }
+            // Distributaries: two or three channels forking off its upper half and fanning out (the model's), each
+            // leaving at the main channel's width and tapering to a point, cooler toward its tip, grown as far as the
+            // vein has reached past its fork.
+            for line in v.branches() {
+                guard let start = line.first, line.count > 1 else { continue }
+                var fork = 0
+                var nearest = Float.greatestFiniteMagnitude
+                for (j, q) in entry.path.enumerated() {
+                    let gap = simd_length_squared(q - start)
+                    if gap < nearest { nearest = gap; fork = j }
+                }
+                let offset = path[fork] - entry.path[fork]
+                let sFork = Float(fork) / steps
+                guard reach > sFork + 0.02 else { continue }
+                let grown = min(1, (reach - sFork) / max(1 - sFork, 0.1))
+                let w0 = width(sFork) * 0.6
+                let k0 = kelvin(sFork) - 30
+                let n = Float(line.count - 1)
+                for j in 0..<(line.count - 1) {
+                    let f0 = Float(j) / n
+                    guard f0 < grown else { break }
+                    let f1 = min(Float(j + 1) / n, grown)
+                    let a = line[j] + offset
+                    let b = line[j] + (line[j + 1] - line[j]) * ((f1 - f0) * n) + offset
+                    add(ndc(v, a), ndc(v, b), width: (w0 * (1 - 0.8 * f0), w0 * (1 - 0.8 * f1)),
+                        kelvin: (k0 - 180 * f0, k0 - 180 * f1), light: soft, halo: 0.5)
+                    drawn = true
                 }
             }
             if drawn { veinsDrawn += 1 }
