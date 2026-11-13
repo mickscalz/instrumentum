@@ -15,8 +15,7 @@ extension DriveFrame: SkyBearing {}
 /// the wipers, the cabin with the keys' strip). The renderer turns the frame into the shader's rows. Every flash (the
 /// Drop's neon wave, far lightning, the tunnel's lights strobing) goes through one `FlashLimiter`; gentle visuals turn the
 /// wave and the lightning into glows and stop the strobe. Nothing is allocated a frame.
-@MainActor
-final class NeonNightDriveRenderer: ThemeRenderer {
+final class NeonNightDriveRenderer {
     // MARK: The shader's rows (MSL `DriveU`)
     nonisolated static let rowA = 0, rowAxes = 1, rowMove = 2, rowNeon = 3, rowWave = 4, rowPlay = 5, rowRoute = 6
     nonisolated static let rowRoute2 = 7, rowRain = 8, rowAmb = 9, rowHaze = 10, rowGlow = 11, rowFlash = 12, rowOver = 13
@@ -148,7 +147,7 @@ final class NeonNightDriveRenderer: ThemeRenderer {
         guard let s = SkyLayer(device: device), let w = WeatherLayer(device: device), let gw = WarpLayer(device: device),
               let tl = LightTrailsLayer(device: device), let sc = WindscreenLayer(device: device),
               let rc = ViewCopy(device: device),
-              let lib = try? device.makeLibrary(source: NeonNightDriveShaders.source, options: nil) else { return nil }
+              let lib = ShaderCache.library(device, source: NeonNightDriveShaders.source) else { return nil }
         let scenePipe = SkyPipeline(program: { program in
             let sd = MTLRenderPipelineDescriptor()
             sd.vertexFunction = lib.skyFunction("drive_vertex", program: program)
@@ -542,3 +541,7 @@ final class NeonNightDriveRenderer: ThemeRenderer {
         }
     }
 }
+
+/// Made on any thread (the warm-up makes the worlds' renderers off the main thread, real-Mac performance 14 Nov), drawn on
+/// the main thread: the class itself is not tied to the main actor, only its conformance is.
+extension NeonNightDriveRenderer: ThemeRenderer {}

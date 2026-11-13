@@ -16,8 +16,7 @@ extension VolcanoFrame: SkyBearing {}
 /// eruption's light, a fireball) goes through one `FlashLimiter`; under gentle visuals the scene never brightens past a
 /// glow and the strokes are glows inside the plume, not channels. The camera shakes only as the model says (never under
 /// Reduce Motion, never on Smooth). The instance buffers (a ring of three) are made once.
-@MainActor
-final class VolcanoRimRenderer: ThemeRenderer {
+final class VolcanoRimRenderer {
     // MARK: The shader's rows (MSL `VolcanoU`)
     nonisolated static let rowA = 0, rowCam = 1, rowAxes = 2, rowEye = 3, rowLake = 4, rowGlow = 5, rowPlay = 6, rowTemps = 7
     nonisolated static let rowPlume = 8, rowRiver = 9, rowSkyL = 10, rowFountA = 11, rowFountB = 12, rowErupt = 13, rowBolt = 14
@@ -111,7 +110,7 @@ final class VolcanoRimRenderer: ThemeRenderer {
     init?(device: MTLDevice) {
         guard let s = SkyLayer(device: device), let w = WeatherLayer(device: device), let gw = WarpLayer(device: device),
               let mv = MagmaVeinsRenderer(device: device),
-              let lib = try? device.makeLibrary(source: VolcanoRimShaders.source, options: nil) else { return nil }
+              let lib = ShaderCache.library(device, source: VolcanoRimShaders.source) else { return nil }
         func make(_ v: String, _ f: String, blend: Int, storms: Bool = false) -> MTLRenderPipelineState? {
             let d = MTLRenderPipelineDescriptor()
             d.vertexFunction = lib.skyFunction(v, storms: storms)
@@ -649,3 +648,7 @@ final class VolcanoRimRenderer: ThemeRenderer {
         e.endEncoding()
     }
 }
+
+/// Made on any thread (the warm-up makes the worlds' renderers off the main thread, real-Mac performance 14 Nov), drawn on
+/// the main thread: the class itself is not tied to the main actor, only its conformance is.
+extension VolcanoRimRenderer: ThemeRenderer {}

@@ -7,8 +7,7 @@ import InStrumCore
 /// headlands and an aurora over the bay's mouth), two headlands with palms and mangroves, the lighthouse on the far
 /// point, a moored boat with its lantern, the still bay mirroring it all, the glow line along the waterline, Glow Wake's
 /// patches, wakes, darts and pool on the water, weather on the water, near palms and a dark glass keyboard on the sand.
-@MainActor
-final class BioluminescentBayRenderer: ThemeRenderer {
+final class BioluminescentBayRenderer {
     /// Glow Wake sent to the GPU (fewer on Smooth): patches, wakes and darts.
     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : GlowWake.cap }
     static func wakeBudget(_ q: QualityLevel) -> Int { q == .lite ? 8 : GlowWake.wakeCap }
@@ -112,7 +111,7 @@ final class BioluminescentBayRenderer: ThemeRenderer {
 
     init?(device: MTLDevice) {
         guard let s = SkyLayer(device: device), let w = WeatherLayer(device: device), let gw = WarpLayer(device: device),
-              let lib = try? device.makeLibrary(source: BioluminescentBayShaders.source, options: nil) else { return nil }
+              let lib = ShaderCache.library(device, source: BioluminescentBayShaders.source) else { return nil }
         func make(_ v: String, _ f: String, storms: Bool = false) -> MTLRenderPipelineState? {
             let d = MTLRenderPipelineDescriptor()
             d.vertexFunction = lib.skyFunction(v, storms: storms)
@@ -446,3 +445,7 @@ final class BioluminescentBayRenderer: ThemeRenderer {
         e.endEncoding()
     }
 }
+
+/// Made on any thread (the warm-up makes the worlds' renderers off the main thread, real-Mac performance 14 Nov), drawn on
+/// the main thread: the class itself is not tied to the main actor, only its conformance is.
+extension BioluminescentBayRenderer: ThemeRenderer {}

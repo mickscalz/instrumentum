@@ -25,8 +25,8 @@ protocol ThemeRenderer: AnyObject {
     var post: PostSettings { get }
 }
 
-/// HDR scene targets (colour + depth) and the shared finishing passes.
-@MainActor
+/// HDR scene targets (colour + depth) and the shared finishing passes. Its library and pipelines are compiled once per
+/// process and shared by every stack (the app's, the previews', the tests').
 final class RenderStack {
     static let sceneFormat: MTLPixelFormat = .rgba16Float
     static let depthFormat: MTLPixelFormat = .r16Float
@@ -42,8 +42,22 @@ final class RenderStack {
 
     private let bright, down, up, dof, composite: MTLRenderPipelineState
 
+    /// The finishing passes' pipelines, for an output format.
+    private struct Pipelines {
+        let bright, down, up, dof, composite: MTLRenderPipelineState
+    }
+
     init?(device: MTLDevice, pixelFormat: MTLPixelFormat) {
-        guard let lib = try? device.makeLibrary(source: PostShaders.source, options: nil),
+        guard let made = ShaderCache.shared.memo("RenderStack.\(pixelFormat.rawValue)", device: device, { () -> Pipelines? in
+            RenderStack.makePipelines(device, pixelFormat)
+        }) else { return nil }
+        self.device = device
+        self.outputFormat = pixelFormat
+        bright = made.bright; down = made.down; up = made.up; dof = made.dof; composite = made.composite
+    }
+
+    private static func makePipelines(_ device: MTLDevice, _ pixelFormat: MTLPixelFormat) -> Pipelines? {
+        guard let lib = ShaderCache.library(device, source: PostShaders.source),
               let vertex = lib.makeFunction(name: "fullscreen_vertex") else { return nil }
         func make(_ fragment: String, _ format: MTLPixelFormat, additive: Bool = false) -> MTLRenderPipelineState? {
             let d = MTLRenderPipelineDescriptor()
@@ -60,9 +74,7 @@ final class RenderStack {
         guard let b = make("bright_pass", Self.sceneFormat), let dn = make("downsample", Self.sceneFormat),
               let u = make("upsample", Self.sceneFormat, additive: true), let df = make("dof_gather", Self.sceneFormat),
               let c = make("composite", pixelFormat) else { return nil }
-        self.device = device
-        self.outputFormat = pixelFormat
-        bright = b; down = dn; up = u; dof = df; composite = c
+        return Pipelines(bright: b, down: dn, up: u, dof: df, composite: c)
     }
 
     /// Reallocates targets for a new drawable size. Zero sizes are ignored.

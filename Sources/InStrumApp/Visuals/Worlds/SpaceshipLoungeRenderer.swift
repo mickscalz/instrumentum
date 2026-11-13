@@ -11,8 +11,7 @@ import InStrumCore
 /// charge gathers at the vanishing point with tension, and the surprises (a comet with its dust and ion tails pointing
 /// away from the sun, a far ship's navigation lights and strobe, a pulsar's blink) are drawn in the space pass behind
 /// Earth and the Moon. Four uniform rows; nothing new is drawn while nothing plays.
-@MainActor
-final class SpaceshipLoungeRenderer: ThemeRenderer {
+final class SpaceshipLoungeRenderer {
     /// Space has no weather.
     static let weatherSurface = WeatherSurface.none
 
@@ -45,7 +44,7 @@ final class SpaceshipLoungeRenderer: ThemeRenderer {
 
     init?(device: MTLDevice) {
         guard let w = WarpLayer(device: device),
-              let lib = try? device.makeLibrary(source: SpaceshipLoungeShaders.source, options: nil) else { return nil }
+              let lib = ShaderCache.library(device, source: SpaceshipLoungeShaders.source) else { return nil }
         func make(_ v: String, _ f: String, blend: Bool) -> MTLRenderPipelineState? {
             let d = MTLRenderPipelineDescriptor()
             d.vertexFunction = lib.skyFunction(v)
@@ -257,3 +256,7 @@ final class SpaceshipLoungeRenderer: ThemeRenderer {
         e.endEncoding()
     }
 }
+
+/// Made on any thread (the warm-up makes the worlds' renderers off the main thread, real-Mac performance 14 Nov), drawn on
+/// the main thread: the class itself is not tied to the main actor, only its conformance is.
+extension SpaceshipLoungeRenderer: ThemeRenderer {}

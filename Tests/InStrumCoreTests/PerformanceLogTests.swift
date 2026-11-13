@@ -244,7 +244,8 @@ final class PerformanceLogTests: XCTestCase {
         return log
     }
 
-    /// The sample report, line by line.
+    /// The sample report, line by line: the first table as it always was, then the second (real-Mac performance). The
+    /// sample's frames carry no CPU time and no entries, so every frame is steady and those columns read as dashes.
     static let sampleReport: [String] = [
         "In Strum Meants performance report",
         "Build 1.2 (345)",
@@ -252,7 +253,12 @@ final class PerformanceLogTests: XCTestCase {
         "World          Quality  Pixels     Min  Typical  95%    Worst   GPU typ  GPU worst  Scale  Net  Stalls",
         "supercell-sky  Smooth   1280x800   12   17 ms    24 ms  61 ms   14 ms    55 ms      100%   -    0",
         "volcano-rim    High     1600x1000  3    33 ms    41 ms  120 ms  30 ms    110 ms     50%    yes  2 (longest 3.2 s)",
-    ]
+        "",
+        "Steady frames (from 3 s after entering a world), CPU, entries and stalls:",
+        "World          Quality  Entries  Typical  95%    99%    Worst   Over 33/50/100  CPU typ  CPU worst  Step typ  Entry worst  Entry CPU  Stalls act/bg/hid",
+        "supercell-sky  Smooth   0        17 ms    24 ms  24 ms  61 ms   72/72/0         -        -          -         -            -          0/0/0",
+        "volcano-rim    High     0        33 ms    41 ms  41 ms  120 ms  336/56/56       -        -          -         -            -          2/0/0",
+    ] + PerformanceLog.legend
 
     func testTheSampleReportIsExactlyThis() {
         let log = sampleLog()
@@ -275,8 +281,10 @@ final class PerformanceLogTests: XCTestCase {
         var lines = report.components(separatedBy: "\n")
         let last = lines.removeLast()
         XCTAssertEqual(last, "", "nothing after the last newline")
-        // the header, a blank line, the title line, one line for each of the two rows
-        XCTAssertEqual(lines.count, Self.sampleHeader.count + 1 + 1 + log.rows.count)
+        // the header, a blank line, the title line, one line for each of the two rows; then a blank line, the second
+        // table's heading, its title line, a line for each row, and the legend
+        XCTAssertEqual(lines.count, Self.sampleHeader.count + 1 + 1 + log.rows.count + 1 + 1 + 1 + log.rows.count
+                                    + PerformanceLog.legend.count)
         XCTAssertEqual(Array(lines[0..<Self.sampleHeader.count]), Self.sampleHeader)
         XCTAssertEqual(lines[Self.sampleHeader.count], "")
         XCTAssertTrue(lines[Self.sampleHeader.count + 1].hasPrefix("World "))
@@ -337,7 +345,9 @@ final class PerformanceLogTests: XCTestCase {
         put(&log, 0.016, world: "a", quality: .lite, gpu: 0.01)
         put(&log, 0.016, world: "b", quality: .high, gpu: 0.01)
         let slots = log.storedHistogramSlots
-        XCTAssertEqual(slots, 2 * 2 * PerformanceLog.bucketCount, "two keys, a frame and a GPU histogram of 201 buckets each")
+        XCTAssertEqual(slots, 2 * 5 * PerformanceLog.bucketCount,
+                       "two keys; a frame, a GPU, a steady frame, a CPU and a step histogram of 201 buckets each")
+        XCTAssertEqual(PerformanceLog.histogramsPerKey, 5)
         XCTAssertEqual(PerformanceLog.bucketCount, 201)
         for i in 0..<100_000 {
             // every kind of frame: fast, slow, past 200 ms, a stall, with and without a GPU time

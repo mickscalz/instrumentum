@@ -5,8 +5,7 @@ import InStrumCore
 
 /// Draws Moonlit Lake: the Living Sky, ridges and pines, the lake reflecting it all through Lake Ripples,
 /// fireflies, weather on the water and a glassy keyboard.
-@MainActor
-final class MoonlitLakeRenderer: ThemeRenderer {
+final class MoonlitLakeRenderer {
     /// Ripple wave packets sent to the GPU (fewer on Smooth).
     static func rippleBudget(_ q: QualityLevel) -> Int { q == .lite ? 32 : LakeRipples.cap }
 
@@ -50,7 +49,7 @@ final class MoonlitLakeRenderer: ThemeRenderer {
 
     init?(device: MTLDevice) {
         guard let s = SkyLayer(device: device), let w = WeatherLayer(device: device), let gw = WarpLayer(device: device),
-              let lib = try? device.makeLibrary(source: MoonlitLakeShaders.source, options: nil) else { return nil }
+              let lib = ShaderCache.library(device, source: MoonlitLakeShaders.source) else { return nil }
         func make(_ v: String, _ f: String, additive: Bool, program: SkyProgram = .plain) -> MTLRenderPipelineState? {
             let d = MTLRenderPipelineDescriptor()
             d.vertexFunction = lib.skyFunction(v, program: program)
@@ -319,3 +318,7 @@ final class MoonlitLakeRenderer: ThemeRenderer {
         e.endEncoding()
     }
 }
+
+/// Made on any thread (the warm-up makes the worlds' renderers off the main thread, real-Mac performance 14 Nov), drawn on
+/// the main thread: the class itself is not tied to the main actor, only its conformance is.
+extension MoonlitLakeRenderer: ThemeRenderer {}

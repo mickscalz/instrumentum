@@ -50,6 +50,30 @@ final class PerformanceReportTests: XCTestCase {
         if user.count >= 4 { XCTAssertFalse(all.contains(user), "no user name") }
     }
 
+    /// Real-Mac performance (14 Nov): the shaders' warm-up, after the running time, so the lines above read as before.
+    func testTheShadersLineComesLastAndSaysHowFarTheWarmUpGot() {
+        let saved = (ShaderWork.warmStarted, ShaderWork.warmFinished, ShaderWork.worldsReady, ShaderWork.worldsToWarm)
+        defer {
+            (ShaderWork.warmStarted, ShaderWork.warmFinished, ShaderWork.worldsReady, ShaderWork.worldsToWarm) = saved
+        }
+        ShaderWork.resetCounts()
+        ShaderWork.warmStarted = nil
+        XCTAssertEqual(ShaderWork.reportLine(), "Shaders: no warm-up; 0 built while drawing")
+        ShaderWork.warmStarted = 100
+        ShaderWork.warmFinished = nil
+        ShaderWork.worldsReady = 9
+        ShaderWork.worldsToWarm = 16
+        XCTAssertEqual(ShaderWork.reportLine(), "Shaders: 9 of 16 worlds made in the background so far; 0 built while drawing")
+        ShaderWork.worldsReady = 16
+        ShaderWork.warmFinished = 114.4
+        let line = ShaderWork.reportLine()
+        XCTAssertEqual(line, "Shaders: 16 of 16 worlds made in the background, all made 14 s after launch; 0 built while drawing")
+        let lines = PerformanceReport.header(quality: .lite, gentleVisuals: false, runningSeconds: 754, extra: [line])
+        XCTAssertEqual(lines[lines.count - 2], "Running for 12 min")
+        XCTAssertEqual(lines[lines.count - 1], line)
+        XCTAssertTrue(lines.joined().unicodeScalars.allSatisfy { $0.value >= 0x20 && $0.value <= 0x7E }, "ASCII only")
+    }
+
     func testTheMacLineNamesTheModelTheProcessorAndTheMemory() {
         let line = PerformanceReport.macLine()
         XCTAssertTrue(line.hasPrefix("Mac: "), line)

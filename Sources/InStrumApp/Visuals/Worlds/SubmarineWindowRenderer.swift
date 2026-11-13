@@ -18,8 +18,7 @@ import InStrumCore
 /// above; the far lights of Energy's traffic, an anglerfish's lure and a squid's cloud of light are sprites (the cloud's
 /// light counts with the living light's, through its limiter); a far sub's sonar is a contact echoing on the screen and
 /// its two lights crossing far off. Three uniform rows before the blips.
-@MainActor
-final class SubmarineWindowRenderer: ThemeRenderer {
+final class SubmarineWindowRenderer {
     /// SubU's float4 rows (the MSL struct's size / 16): 12 rows, the whale's two, the sonar contact, and the 24 blips.
     nonisolated static let rowWhale = 12, rowWhaleB = 13, rowContact = 14
     nonisolated static let uniformCount = 39
@@ -197,7 +196,7 @@ final class SubmarineWindowRenderer: ThemeRenderer {
 
     init?(device: MTLDevice) {
         guard let s = SkyLayer(device: device), let gw = WarpLayer(device: device), let g = WindowGlassLayer(device: device),
-              let lib = try? device.makeLibrary(source: SubmarineWindowShaders.source, options: nil) else { return nil }
+              let lib = ShaderCache.library(device, source: SubmarineWindowShaders.source) else { return nil }
         enum Blend { case opaque, premultiplied }
         func make(_ v: String, _ f: String, _ blend: Blend, writesDepth: Bool = true, storms: Bool = false) -> MTLRenderPipelineState? {
             let d = MTLRenderPipelineDescriptor()
@@ -652,3 +651,7 @@ final class SubmarineWindowRenderer: ThemeRenderer {
         e.endEncoding()
     }
 }
+
+/// Made on any thread (the warm-up makes the worlds' renderers off the main thread, real-Mac performance 14 Nov), drawn on
+/// the main thread: the class itself is not tied to the main actor, only its conformance is.
+extension SubmarineWindowRenderer: ThemeRenderer {}

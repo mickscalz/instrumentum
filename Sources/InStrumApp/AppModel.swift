@@ -984,7 +984,8 @@ public final class AppModel: ObservableObject {
     /// then a table of how each world ran) on the clipboard as plain text, for pasting into a chat.
     public func copyPerformanceReport() {
         let header = PerformanceReport.header(quality: quality, gentleVisuals: gentleVisuals,
-                                              runningSeconds: ProcessInfo.processInfo.systemUptime - performanceStart)
+                                              runningSeconds: ProcessInfo.processInfo.systemUptime - performanceStart,
+                                              extra: [ShaderWork.reportLine()])
         let board = NSPasteboard.general
         board.clearContents()
         board.setString(performanceLog.report(header: header), forType: .string)

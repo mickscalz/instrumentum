@@ -3,8 +3,7 @@ import simd
 import InStrumCore
 
 /// A half-resolution copy of the view with a mip chain (the Window Kit's, for glass and wet surfaces to blur and bend):
-/// made once at its size and kept, remade only when the view's size changes; never one a frame.
-@MainActor
+/// made once at its size and kept, remade only when the view's size changes; never one a frame. Made on any thread.
 final class ViewCopy {
     static let levels = 6
     private let device: MTLDevice
@@ -14,7 +13,7 @@ final class ViewCopy {
     private(set) var allocations = 0
 
     init?(device: MTLDevice) {
-        guard let lib = try? device.makeLibrary(source: WindscreenShaders.source, options: nil) else { return nil }
+        guard let lib = ShaderCache.library(device, source: WindscreenShaders.source) else { return nil }
         let d = MTLRenderPipelineDescriptor()
         d.vertexFunction = lib.makeFunction(name: "screen_vertex")
         d.fragmentFunction = lib.makeFunction(name: "screen_copy_fragment")
@@ -66,7 +65,6 @@ final class ViewCopy {
 ///
 /// The drops gather where a blade last passed at the rain's rate (none land while the car is sheltered: under a bridge, in
 /// a tunnel), and evaporate slowly in the dry. Nothing is allocated a frame.
-@MainActor
 final class WindscreenLayer {
     // MARK: The shader's rows (MSL `ScreenU`)
     nonisolated static let rowA = 0, rowDash = 1, rowPillars = 2, rowMirror = 3, rowBladeA = 4, rowBladeB = 5
@@ -96,7 +94,7 @@ final class WindscreenLayer {
     var dropDensity: Float { u[Self.rowWiper2].w }
 
     init?(device: MTLDevice) {
-        guard let c = ViewCopy(device: device), let lib = try? device.makeLibrary(source: WindscreenShaders.source, options: nil) else {
+        guard let c = ViewCopy(device: device), let lib = ShaderCache.library(device, source: WindscreenShaders.source) else {
             return nil
         }
         func make(_ f: String) -> MTLRenderPipelineState? {

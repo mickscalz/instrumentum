@@ -81,8 +81,8 @@ enum WarpShaders {
 }
 
 /// Galaxy Warp's drawing, shared by every world with a sky: a field of warp stars that streams faster with
-/// playing intensity, the note streaks from the model, and the nebula glow. Additive, drawn after the sky.
-@MainActor
+/// playing intensity, the note streaks from the model, and the nebula glow. Additive, drawn after the sky. Made on any
+/// thread (the warm-up makes the worlds off the main thread), then used on one.
 final class WarpLayer {
     /// Background warp stars (the whole field moves at warp speed).
     static func fieldCount(_ q: QualityLevel) -> Int { q == .lite ? 150 : (q == .high ? 300 : 500) }
@@ -104,8 +104,13 @@ final class WarpLayer {
     private var nebulaU = [SIMD4<Float>](repeating: .zero, count: 4)
     private var showNebula = false
 
-    init?(device: MTLDevice) {
-        guard let lib = try? device.makeLibrary(source: WarpShaders.source, options: nil) else { return nil }
+    /// The warp's two pipelines, the same in every world: made once and shared.
+    private struct Pipelines {
+        let streak, nebula: MTLRenderPipelineState
+    }
+
+    private static func makePipelines(_ device: MTLDevice) -> Pipelines? {
+        guard let lib = ShaderCache.library(device, source: WarpShaders.source) else { return nil }
         func make(_ v: String, _ f: String) -> MTLRenderPipelineState? {
             let d = MTLRenderPipelineDescriptor()
             d.vertexFunction = lib.skyFunction(v)
@@ -121,8 +126,15 @@ final class WarpLayer {
         }
         guard let s = make("warp_streak_vertex", "warp_streak_fragment"),
               let n = make("warp_nebula_vertex", "warp_nebula_fragment") else { return nil }
+        return Pipelines(streak: s, nebula: n)
+    }
+
+    init?(device: MTLDevice) {
+        guard let made = ShaderCache.shared.memo("WarpLayer", device: device, { () -> Pipelines? in
+            WarpLayer.makePipelines(device)
+        }) else { return nil }
         self.device = device
-        streakPipeline = s; nebulaPipeline = n
+        streakPipeline = made.streak; nebulaPipeline = made.nebula
         var rng = SeededRandom(seed: 0x57A2)
         field = (0..<Self.fieldCount(.ultra)).map { _ in
             FieldStar(angle: rng.range(0, 2 * .pi), offset: rng.unit(), rate: rng.range(0.6, 1.4),

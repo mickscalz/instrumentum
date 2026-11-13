@@ -8,8 +8,7 @@ import InStrumCore
 /// Excitement (Fire & Neon spec §5.5): the swarm is the model's butterflies; its bloom of light rides on the exposure
 /// through the `FlashLimiter` (a glow under gentle visuals) and on the sun's rays; the hummingbird is one more sprite
 /// (style 9), and rain on the glasshouse's glass is a fourth kind of the stateless particles (drops clinging and sliding).
-@MainActor
-final class ButterflyRenderer: ThemeRenderer {
+final class ButterflyRenderer {
     struct Sprite { var pos: SIMD4<Float>; var a: SIMD4<Float>; var b: SIMD4<Float> }
     struct KeyInstance { var rect: SIMD4<Float>; var info: SIMD4<Float> }
 
@@ -63,7 +62,7 @@ final class ButterflyRenderer: ThemeRenderer {
     var flashTotal: Int { limiter.total }
 
     init?(device: MTLDevice) {
-        guard let lib = try? device.makeLibrary(source: ButterflyShaders.source, options: nil) else { return nil }
+        guard let lib = ShaderCache.library(device, source: ButterflyShaders.source) else { return nil }
         enum Blend { case none, alpha, add }
         func make(_ v: String, _ f: String, _ blend: Blend, writeDepth: Bool) -> MTLRenderPipelineState? {
             let d = MTLRenderPipelineDescriptor()
@@ -290,3 +289,7 @@ final class ButterflyRenderer: ThemeRenderer {
         e.endEncoding()
     }
 }
+
+/// Made on any thread (the warm-up makes the worlds' renderers off the main thread, real-Mac performance 14 Nov), drawn on
+/// the main thread: the class itself is not tied to the main actor, only its conformance is.
+extension ButterflyRenderer: ThemeRenderer {}

@@ -7,27 +7,43 @@ import InStrumCore
 enum WeatherSurface { case water(horizonY: Float), ground(horizonY: Float), glass, none }
 
 /// The real-star texture (`StarTexture`, 2048 × 1024 RGBA8), built once per process on a background queue and
-/// uploaded on the main actor; every SkyLayer shares it. Until it arrives the sky draws its procedural stars.
-@MainActor
-final class StarTextureCache {
+/// uploaded on the main thread; every SkyLayer shares it. Until it arrives the sky draws its procedural stars. Any thread
+/// (a world's sky may be made off the main thread, by the warm-up).
+final class StarTextureCache: @unchecked Sendable {
     static let shared = StarTextureCache()
-    /// The uploaded texture (nil until the build lands, or while `withheld`).
-    var texture: MTLTexture? { withheld ? nil : built }
-    /// Tests: draw every sky as if the texture had not arrived yet (the procedural fallback).
-    var withheld = false
+    private let lock = NSLock()
+    private var isWithheld = false
     private var built: MTLTexture?
-    /// How many times the image has been built (one per process).
-    private(set) var builds = 0
+    private var buildCount = 0
     private var device: MTLDevice?
+
+    /// The uploaded texture (nil until the build lands, or while `withheld`).
+    var texture: MTLTexture? {
+        lock.lock()
+        defer { lock.unlock() }
+        return isWithheld ? nil : built
+    }
+    /// Tests: draw every sky as if the texture had not arrived yet (the procedural fallback).
+    var withheld: Bool {
+        get { lock.lock(); defer { lock.unlock() }; return isWithheld }
+        set { lock.lock(); isWithheld = newValue; lock.unlock() }
+    }
+    /// How many times the image has been built (one per process).
+    var builds: Int { lock.lock(); defer { lock.unlock() }; return buildCount }
 
     /// Starts the build the first time any sky asks (later calls do nothing).
     func request(device: MTLDevice) {
-        guard self.device == nil else { return }
+        lock.lock()
+        guard self.device == nil else {
+            lock.unlock()
+            return
+        }
         self.device = device
-        builds += 1
+        buildCount += 1
+        lock.unlock()
         DispatchQueue.global(qos: .utility).async {
             let bytes = StarTexture.build()
-            DispatchQueue.main.async { MainActor.assumeIsolated { StarTextureCache.shared.upload(bytes) } }
+            DispatchQueue.main.async { StarTextureCache.shared.upload(bytes) }
         }
     }
 
@@ -35,13 +51,25 @@ final class StarTextureCache {
     @discardableResult
     func awaitTexture(timeout: TimeInterval = 5) -> Bool {
         let end = Date().addingTimeInterval(timeout)
-        while built == nil, Date() < end { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+        while !arrived, Date() < end { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+        return arrived
+    }
+
+    private var arrived: Bool {
+        lock.lock()
+        defer { lock.unlock() }
         return built != nil
     }
 
     private func upload(_ bytes: [UInt8]) {
-        guard let device, built == nil else { return }
-        built = Self.makeTexture(device: device, bytes: bytes)
+        lock.lock()
+        let device = self.device, done = built != nil
+        lock.unlock()
+        guard let device, !done else { return }
+        let texture = Self.makeTexture(device: device, bytes: bytes)
+        lock.lock()
+        built = texture
+        lock.unlock()
     }
 
     /// An RGBA8 2048 × 1024 texture from `StarTexture.build(lines:)`'s bytes (nil if the size is wrong).
@@ -59,8 +87,8 @@ final class StarTextureCache {
 }
 
 /// Draws the Living Sky dome into a world's scene pass (writes depth 1.0, behind everything).
-/// The camera looks at a chosen azimuth with the horizon at `horizonY` (NDC).
-@MainActor
+/// The camera looks at a chosen azimuth with the horizon at `horizonY` (NDC). Made on any thread (the warm-up makes the
+/// worlds off the main thread), then used on one.
 final class SkyLayer {
     /// Face the equator by default, where the sun and moon cross the sky.
     nonisolated static func defaultViewAzimuth(latitude: Double) -> Double { latitude < 0 ? 0 : 180 }
@@ -236,14 +264,17 @@ final class SkyLayer {
     }
 
     init?(device: MTLDevice) {
-        guard let lib = try? device.makeLibrary(source: SkyShaders.source, options: nil),
+        // The dome's library and its programs are the same in every world: compiled and made once, shared by every sky.
+        guard let lib = ShaderCache.library(device, source: SkyShaders.source),
               let p = SkyPipeline(program: { program in
-                  let d = MTLRenderPipelineDescriptor()
-                  d.vertexFunction = lib.skyFunction("sky_dome_vertex", program: program)
-                  d.fragmentFunction = lib.skyFunction("sky_dome_fragment", program: program)
-                  d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
-                  d.colorAttachments[1].pixelFormat = RenderStack.depthFormat
-                  return try? device.makeRenderPipelineState(descriptor: d)
+                  ShaderCache.shared.memo("SkyLayer.dome.\(program)", device: device) { () -> MTLRenderPipelineState? in
+                      let d = MTLRenderPipelineDescriptor()
+                      d.vertexFunction = lib.skyFunction("sky_dome_vertex", program: program)
+                      d.fragmentFunction = lib.skyFunction("sky_dome_fragment", program: program)
+                      d.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
+                      d.colorAttachments[1].pixelFormat = RenderStack.depthFormat
+                      return try? device.makeRenderPipelineState(descriptor: d)
+                  }
               }) else { return nil }
         let pd = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 1, height: 1, mipmapped: false)
         pd.usage = [.shaderRead]
@@ -338,13 +369,40 @@ final class SkyLayer {
         return SIMD4(need.x, min(.pi, need.y + 10 * deg), -3 * deg, min(.pi / 2, max(20 * deg, need.w + 6 * deg)))
     }
 
+    /// The impostor's kernel: one for every sky (they share the dome's library), made the first time a supercell shows,
+    /// or by the warm-up. In the app, a frame that finds it missing asks for it on `ShaderWork.queue` and draws the
+    /// supercell in the sky itself meanwhile (as a sky without the impostor always does).
     private func cellPipeline() -> MTLComputePipelineState? {
         if let k = cellKernel { return k }
         guard !cellKernelTried else { return nil }
+        let device = library.device
+        let known = ShaderCache.shared.peek(Self.cellKernelKey, device: device, as: MTLComputePipelineState.self)
+        if known.known {
+            cellKernelTried = true
+            cellKernel = known.value
+            return cellKernel
+        }
+        if ShaderWork.defersDrawPathBuilds {
+            let lib = library
+            ShaderCache.shared.request(Self.cellKernelKey, device: device) { Self.makeCellKernel(lib) }
+            return nil
+        }
         cellKernelTried = true
-        guard let f = library.skyFunction("sky_cell_impostor", storms: true) else { return nil }
-        cellKernel = try? library.device.makeComputePipelineState(function: f)
+        cellKernel = ShaderCache.shared.memo(Self.cellKernelKey, device: device) { Self.makeCellKernel(library) }
         return cellKernel
+    }
+
+    private static let cellKernelKey = "SkyLayer.cellKernel"
+
+    private static func makeCellKernel(_ library: MTLLibrary) -> MTLComputePipelineState? {
+        guard let f = library.skyFunction("sky_cell_impostor", storms: true) else { return nil }
+        return try? library.device.makeComputePipelineState(function: f)
+    }
+
+    /// The warm-up: makes the impostor's kernel now (on `ShaderWork.queue`), unless it is made.
+    static func warmCellKernel(device: MTLDevice) {
+        guard let lib = ShaderCache.library(device, source: SkyShaders.source) else { return }
+        _ = ShaderCache.shared.memo(cellKernelKey, device: device) { makeCellKernel(lib) }
     }
 
     private func cellImpostor() -> MTLTexture? {
@@ -595,7 +653,6 @@ final class SkyLayer {
 
 /// Rain streaks or snow flakes (instanced), splash rings on water, drops on glass, blowing-snow streamers, a humid
 /// night's fireflies, diamond dust's crystals, and lightning exposure requests that go through the flash limiter.
-@MainActor
 final class WeatherLayer {
     static func baseCount(_ q: QualityLevel) -> Int { q == .lite ? 400 : (q == .high ? 1200 : 2500) }
     static func streamerCap(_ q: QualityLevel) -> Int { q == .lite ? 60 : 150 }
@@ -696,8 +753,20 @@ final class WeatherLayer {
     private(set) var steamTint = SIMD4<Float>(0, 0, 0, 0)
     private(set) var steamGlow = SIMD4<Float>(0, 0, 0, 1)
 
+    /// The weather's two pipelines, the same in every world: made once and shared.
+    private struct Pipelines {
+        let particle, ring: MTLRenderPipelineState
+    }
+
     init?(device: MTLDevice) {
-        guard let lib = try? device.makeLibrary(source: SkyShaders.source, options: nil) else { return nil }
+        guard let made = ShaderCache.shared.memo("WeatherLayer", device: device, { () -> Pipelines? in
+            WeatherLayer.makePipelines(device)
+        }) else { return nil }
+        particlePipeline = made.particle; ringPipeline = made.ring
+    }
+
+    private static func makePipelines(_ device: MTLDevice) -> Pipelines? {
+        guard let lib = ShaderCache.library(device, source: SkyShaders.source) else { return nil }
         func make(_ v: String, _ f: String) -> MTLRenderPipelineState? {
             let d = MTLRenderPipelineDescriptor()
             d.vertexFunction = lib.skyFunction(v)
@@ -713,7 +782,7 @@ final class WeatherLayer {
             return try? device.makeRenderPipelineState(descriptor: d)
         }
         guard let p = make("weather_vertex", "weather_fragment"), let r = make("ring_vertex", "ring_fragment") else { return nil }
-        particlePipeline = p; ringPipeline = r
+        return Pipelines(particle: p, ring: r)
     }
 
     func update(_ s: SkyState, quality: QualityLevel, size: CGSize, dt: Double, surface: WeatherSurface) {

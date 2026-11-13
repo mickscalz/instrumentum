@@ -16,8 +16,7 @@ extension PlainsFrame: SkyBearing {}
 /// Every strike's light, the crawlers over 0.25 and the drop's sheet-lit sky go through one `FlashLimiter`; Gentle
 /// visuals halve them and draw the strikes as soft glows, keep the camera still and cap the windmill's turning. The
 /// instance buffers (a ring of three) are made once.
-@MainActor
-final class LightningPlainsRenderer: ThemeRenderer {
+final class LightningPlainsRenderer {
     /// The view: its vertical field (degrees), the horizon's place (NDC y: the sky is 86% of the frame), the eye's height.
     nonisolated static let verticalFOV = 62.0
     nonisolated static let horizonY: Float = -0.72
@@ -118,7 +117,7 @@ final class LightningPlainsRenderer: ThemeRenderer {
 
     init?(device: MTLDevice) {
         guard let s = SkyLayer(device: device), let w = WeatherLayer(device: device), let gw = WarpLayer(device: device),
-              let lib = try? device.makeLibrary(source: LightningPlainsShaders.source, options: nil) else { return nil }
+              let lib = ShaderCache.library(device, source: LightningPlainsShaders.source) else { return nil }
         func make(_ v: String, _ f: String, blend: Int, storms: Bool = false) -> MTLRenderPipelineState? {
             let d = MTLRenderPipelineDescriptor()
             d.vertexFunction = lib.skyFunction(v, storms: storms)
@@ -722,3 +721,7 @@ final class LightningPlainsRenderer: ThemeRenderer {
         e.endEncoding()
     }
 }
+
+/// Made on any thread (the warm-up makes the worlds' renderers off the main thread, real-Mac performance 14 Nov), drawn on
+/// the main thread: the class itself is not tied to the main actor, only its conformance is.
+extension LightningPlainsRenderer: ThemeRenderer {}
