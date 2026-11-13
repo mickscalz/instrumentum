@@ -317,7 +317,7 @@ final class ExcitementPartBModelTests: XCTestCase {
         let first = spawning.spawn.beads.count
         XCTAssertGreaterThan(first, 150, "the first puff at once")
         XCTAssertLessThan(first, CoralSpawning.burstCount(strength: 1) / 2)
-        XCTAssertTrue(spawning.spawn.beads.allSatisfy { $0.size >= 2.4 }, "larger bundles")
+        XCTAssertTrue(spawning.spawn.beads.allSatisfy { $0.size >= 3 }, "larger bundles")
         var counts: [Int] = []
         for _ in 0..<(7 * 60) {
             spawning.step(dt: Self.dt, sky: sky, setting: .off, held: false, quality: .high)

@@ -396,7 +396,8 @@ final class CoastRoadRenderer: ThemeRenderer {
         let lights = OceanLight.lights(s)
         let skyLight: SIMD3<Float> = s.zenith * 0.45 + s.horizon * 0.35
         let sunLight: SIMD3<Float> = lights.sunColor * (0.35 * lights.sun.w)
-        let underside: SIMD3<Float> = (skyLight + sunLight) * 0.55
+        // Their undersides in shade against the bright sky: grey, a little lighter on the nearer ones.
+        let underside: SIMD3<Float> = (skyLight + sunLight) * 0.36
         let half = 0.93 * aspect
         for i in 0..<min(flock.count, CoastRoadModel.flockMost) {
             var r = SeededRandom(seed: flock.seed ^ (UInt64(i + 1) &* 0x9E37_79B9_7F4A_7C15))
@@ -417,7 +418,8 @@ final class CoastRoadRenderer: ThemeRenderer {
             let beat: Float = t < 0.65 ? age * flapRate * 2 * .pi + phase0 : 0.6
             let fade = min(1, t / 0.08) * min(1, (1 - t) / 0.08)
             let cover = fade * min(1, flock.light * 1.5)
-            birdInstances.append(BirdInstance(p: SIMD4(x, y, size, beat), c: SIMD4(underside * (0.85 + 0.3 * near), cover)))
+            let shade: Float = 0.8 + 0.35 * near - 0.2 * r.unit()
+            birdInstances.append(BirdInstance(p: SIMD4(x, y, size, beat), c: SIMD4(underside * shade, cover)))
         }
         birdsDrawn = birdInstances.count
     }

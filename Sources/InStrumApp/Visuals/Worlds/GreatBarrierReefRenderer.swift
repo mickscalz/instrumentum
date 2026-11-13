@@ -483,7 +483,7 @@ final class GreatBarrierReefRenderer: ThemeRenderer {
                 phase = age * 0.38
             case 1:
                 y = 0.5 + 0.1 * s.unit(1) + 0.12 * run
-                half = 0.23 * scale
+                half = 0.3 * scale
                 phase = age * 0.45
             default:
                 y = 0.47 + 0.08 * s.unit(1) + 0.015 * sin(age * 0.6)

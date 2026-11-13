@@ -558,7 +558,8 @@ enum CoastRoadShaders {
         float tips = 0.0, rim = 0.0;
         float cover = roadGull(in.uv, in.beat, aa, tips, rim) * in.c.a;
         if (cover < 0.002) discard_fragment();
-        float3 col = in.c.rgb * (1.0 - 0.75 * tips) * (0.85 + 0.6 * rim);
+        // Lighter along the wings' leading edges, shading toward their trailing edges and the dark tips.
+        float3 col = in.c.rgb * (1.0 - 0.8 * tips) * (0.7 + 0.9 * rim) * (0.85 + 0.25 * saturate(in.uv.y + 0.3));
         return float4(col * cover, cover);
     }
 

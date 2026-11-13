@@ -773,9 +773,9 @@ enum GreatBarrierReefShaders {
             float wisps = vnoise3(float3(P.x * 6.5, P.y * 8.0 - 3.0 * rise, 3.0 + t * 0.09));
             float cloud = exp(-hy * hy) * (0.45 + 0.75 * smoothstep(0.3, 0.8, billow)) * (0.8 + 0.4 * wisps);
             // The bundles' own pink, lit by the water's light (its brightness: the spawn scatters what light there is).
-            float lit = dot(waterLight(D, L) * kWaterTint, float3(0.3, 0.5, 0.2)) * 1.3 + dot(L, float3(0.04)) + 0.03;
-            float3 pink = float3(1.0, 0.56, 0.66) * lit;
-            col = mix(col, pink, saturate(haze * cloud * 0.62));
+            float lit = dot(waterLight(D, L) * kWaterTint, float3(0.3, 0.5, 0.2)) * 1.25 + dot(L, float3(0.04)) + 0.03;
+            float3 pink = float3(1.0, 0.45, 0.6) * lit;
+            col = mix(col, pink, saturate(haze * cloud * 0.85));
         }
 
         // The light shafts: soft bands slanting down from the surface along the refracted sun.
@@ -884,13 +884,15 @@ enum GreatBarrierReefShaders {
         float horns = max(1.0 - smoothstep(0.75, 1.0, length(h1)), 1.0 - smoothstep(0.75, 1.0, length(h2)));
         float tail = (p.x < -0.15 && p.x > -0.75) ? 1.0 - smoothstep(0.006, 0.012, abs(p.y + 0.02 * sin(p.x * 6.0 + beat))) : 0.0;
         cover = max(cover, max(horns, tail));
-        float rim = smoothstep(0.62, 0.92, ax);
-        pale = cover * (1.0 - rim) * (1.0 - smoothstep(0.24, 0.34, p.x));
-        // The gill slits, five each side behind the head, and the mouth's dark line across the front.
-        float slits = step(0.07, p.x) * step(p.x, 0.2) * step(0.05, abs(yy)) * step(abs(yy), 0.14)
-                    * step(abs(fract((p.x - 0.07) / 0.026) - 0.5), 0.13);
+        // A reef manta from a little above: its back near black, the two white shoulder patches sweeping back from behind
+        // its head along the wings' leading edges, a pale edge where a wingtip lifts and shows the belly.
+        float inLead = ax < 1.0 ? (0.42 - 0.7 * ax * sqrt(ax)) - p.x : -1.0;
+        float shoulder = smoothstep(0.1, 0.16, ax) * (1.0 - smoothstep(0.5, 0.62, ax))
+                       * smoothstep(0.04, 0.08, inLead) * (1.0 - smoothstep(0.17, 0.24, inLead));
+        float tipLift = smoothstep(0.82, 0.98, ax) * saturate(0.5 + 0.5 * flap * sign(yy));
+        pale = cover * max(shoulder, 0.6 * tipLift);
         float mouth = (1.0 - smoothstep(0.006, 0.012, abs(p.x - 0.315))) * step(abs(yy), 0.07);
-        dark = max(cover * rim, max(max(horns, tail), max(slits * 0.8, mouth)));
+        dark = max(max(horns, tail), mouth) * 0.6;
         return cover;
     }
 
@@ -905,8 +907,9 @@ enum GreatBarrierReefShaders {
         float2 fd = float2(cos(fa), sin(fa));
         float2 fv = p - float2(0.24, -0.06);
         float along = dot(fv, fd), across = dot(fv, float2(-fd.y, fd.x));
-        float fw = 0.07 * (1.0 - saturate(along / 0.52)) + 0.015;
-        float fore = (along > 0.0 && along < 0.52) ? 1.0 - smoothstep(fw - px, fw + px, abs(across)) : 0.0;
+        float ft = saturate(along / 0.56);
+        float fw = 0.016 + 0.085 * sin(3.14159265 * min(1.0, ft * 1.1)) * (1.0 - 0.35 * ft);   // a long paddle, broad mid-way
+        float fore = (along > 0.0 && along < 0.56) ? 1.0 - smoothstep(fw - px, fw + px, abs(across)) : 0.0;
         float2 hv = p - float2(-0.5, -0.08);
         float2 hr = float2(hv.x * 0.95 - hv.y * 0.3, hv.x * 0.3 + hv.y * 0.95);
         float hind = 1.0 - smoothstep(0.85, 1.0, length(hr / float2(0.13, 0.04)));
@@ -932,7 +935,7 @@ enum GreatBarrierReefShaders {
         float3 paleCol, darkCol;
         if (shape == 0) {
             cover = reefManta(uv, beat, px, pale, dark);
-            albedo = float3(0.12, 0.13, 0.15); paleCol = float3(0.9, 0.91, 0.92); darkCol = float3(0.03, 0.035, 0.04);
+            albedo = float3(0.06, 0.065, 0.075); paleCol = float3(0.88, 0.9, 0.9); darkCol = float3(0.02, 0.022, 0.026);
         } else if (shape == 1) {
             cover = reefTurtle(uv, beat, px, pale, dark);
             albedo = float3(0.42, 0.33, 0.16); paleCol = float3(0.78, 0.7, 0.45); darkCol = float3(0.1, 0.07, 0.035);

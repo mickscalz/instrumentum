@@ -21,7 +21,7 @@ public struct SpawnBead: Equatable {
     public var position: SIMD2<Float>
     /// Linear RGB: one of the bundles' pink, orange or yellow (`CoralSpawning.colours`).
     public var colour: SIMD3<Float>
-    /// Its size, 1…2 px (a spawning burst's bundles, nearer and catching the light, 2.4…4).
+    /// Its size, 1…2 px (a spawning burst's bundles, nearer and catching the light, 3…5).
     public var size: Float
     /// 0…1 now: it brightens over its first 1.5 s and fades into the slick over the last 6% of the water.
     public var brightness: Float
@@ -332,7 +332,7 @@ public struct CoralSpawning {
     }
 
     /// A burst's puffs: when each lets go (s after the first) and its share of the bundles.
-    public static let burstPulses: [(at: Float, share: Float)] = [(0, 0.34), (1.9, 0.24), (3.8, 0.22), (5.8, 0.2)]
+    public static let burstPulses: [(at: Float, share: Float)] = [(0, 0.42), (1.9, 0.22), (3.8, 0.19), (5.8, 0.17)]
 
     /// How many bundles a burst of `strength` lets go in all: 180 + 360 × it (540 at full: two and a half times the
     /// first burst's), before the water's cap.
@@ -366,7 +366,7 @@ public struct CoralSpawning {
         for _ in 0..<count {
             var bead = newBead(partWay: false)
             bead.speed = rng.range(0.035, 0.09)
-            bead.size = rng.range(2.4, 4)
+            bead.size = rng.range(3, 5)
             Self.advance(&bead, by: 0.6 + rng.unit())
             beads.append(bead)
         }

@@ -203,6 +203,16 @@ final class ExcitementBayPreviewTests: XCTestCase {
         try write(try B.bay(1.7, big(T.Plan(surprises: [10: WorldSurprise(index: 2, seed: 11)]))).image, "excite-bay-surprise-fireball", to: url)
     }
 
+    /// The reef's spawning burst four seconds in (its third puff), beside the PartB set's frame 0.6 s in.
+    func testWriteReefBurstLatePreview() throws {
+        let url = try folder()
+        let preview = try XCTUnwrap(PreviewRenderer(width: 1280, height: 720))
+        let rig = try PartBRig(.reef, width: 1280, height: 720)
+        rig.run(120, PartBRig.excitement(energy: 0.6))
+        rig.run(240, PartBRig.excitement(energy: 0.6, moment: PartBRig.chord(1)))
+        try write(rig.capture(preview), "excite-reef-moment-4s", to: url)
+    }
+
     func testWriteRoadDayExcitementPreviews() throws {
         let url = try folder()
         let day = T.sky(hour: 18.6), dusk = T.sky(hour: 19.45)
