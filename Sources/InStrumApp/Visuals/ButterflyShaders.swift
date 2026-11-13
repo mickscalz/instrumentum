@@ -94,7 +94,35 @@ enum ButterflyShaders {
         return float2(back, canopy);
     }
 
-    fragment ColorDepth sky_fragment(SkyOut in [[stage_in]], constant SceneU& u [[buffer(0)]]) {
+    /// How much of the sun's light reaches a point through the leaves: a march toward the sun through the foliage masks
+    /// (cheap noise unless Ultra), `steps` long.
+    float shaftLight(float2 uv, constant SceneU& u, float t, int steps, int oct) {
+        float2 sp = float2(u.sun.x, u.sun.y);
+        int marchOct = steps >= 28 ? oct : 2;
+        float2 stepv = (sp - uv) / float(steps);
+        float2 p = uv;
+        float decay = 1.0, total = 0.0;
+        float lit = 0.0;
+        for (int i = 0; i < steps; i++) {
+            p += stepv;
+            float2 m = foliageMask(p, u, t, marchOct);
+            lit += (1.0 - max(m.x, m.y)) * decay;
+            total += decay;
+            decay *= 0.95;
+        }
+        return lit / max(total, 1e-3) * 1.1;
+    }
+
+    /// High and Ultra: the march drawn at half resolution (the shafts are soft, tens of pixels across), which the sky
+    /// reads back filtered; a quarter of its noise a frame.
+    fragment float4 shaft_fragment(SkyOut in [[stage_in]], constant SceneU& u [[buffer(0)]]) {
+        int steps = int(u.perf.x);
+        if (steps <= 0 || u.sun.z <= 0.01) return float4(0);
+        return float4(shaftLight(in.uv, u, u.a.z, steps, int(u.perf.y)), 0, 0, 1);
+    }
+
+    fragment ColorDepth sky_fragment(SkyOut in [[stage_in]], constant SceneU& u [[buffer(0)]],
+                                     texture2d<float> shaftTex [[texture(0)]]) {
         float2 uv = in.uv;
         float t = u.a.z;
         float aspect = u.a.x / u.a.y;
@@ -127,20 +155,9 @@ enum ButterflyShaders {
         if (u.sun.z > 0.01) {
             float lit;
             if (steps > 0) {
-                // March toward the sun through the leaves (cheap noise unless Ultra).
-                int marchOct = steps >= 28 ? oct : 2;
-                float2 stepv = (sp - uv) / float(steps);
-                float2 p = uv;
-                float decay = 1.0, total = 0.0;
-                lit = 0.0;
-                for (int i = 0; i < steps; i++) {
-                    p += stepv;
-                    float2 m = foliageMask(p, u, t, marchOct);
-                    lit += (1.0 - max(m.x, m.y)) * decay;
-                    total += decay;
-                    decay *= 0.95;
-                }
-                lit = lit / max(total, 1e-3) * 1.1;
+                // The march toward the sun through the leaves, drawn at half resolution (`shaft_fragment`).
+                constexpr sampler ls(filter::linear, address::clamp_to_edge);
+                lit = shaftTex.sample(ls, float2(uv.x, 1.0 - uv.y)).r;
             } else {
                 lit = 0.9 * (1.0 - max(fm.x, fm.y));   // Smooth: no march
             }
