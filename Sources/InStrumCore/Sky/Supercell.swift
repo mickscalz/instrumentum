@@ -93,6 +93,46 @@ struct StormFlicker {
     }
 }
 
+/// Lightning hidden deep in a storm's cloud by night: soft glows inside it, one after another, each in its own place (a
+/// seed for where, 0…1), swelling over half a second to a second and fading over one to two and a half, a moment to a
+/// second apart (one begins about every three seconds), so the cloud's shape is seen most of the time. Never a jump the
+/// flash limiter counts: the steepest rise is `steepestRise` a tenth of a second (the limiter counts
+/// `FlashLimiter.flashRise`).
+struct CloudGlow {
+    private var rng: SeededRandom
+    private var time = 0.0
+    private var start = 0.0
+    private var rise = 0.6, fall = 1.2, amplitude = 0.0
+    private var next = 0.3
+    private(set) var spot: Float = 0.5
+
+    /// The highest glow and the shortest swell: at most 0.5 rising over at least 0.55 s, a sine squared, whose steepest
+    /// slope is 0.5 · π / (2 · 0.55) ≈ 1.43 a second, 0.143 a tenth of a second.
+    static let highest = 0.5, shortestRise = 0.55
+    static let steepestRise = Float(highest * Double.pi / (2 * shortestRise) * FlashLimiter.window)
+
+    init(seed: UInt64) { rng = SeededRandom(seed: seed &* 0x5851_F42D_4C95_7F2D &+ 0xC10D_610) }
+
+    /// Advances `dt` seconds; returns the glow now (0…`highest`). While not `active` nothing new begins (one already
+    /// glowing fades out as it would).
+    mutating func step(dt: Double, active: Bool) -> Float {
+        time += dt
+        if !active { next = max(next, time + 0.3) }
+        while active && time >= next {
+            start = next
+            rise = Self.shortestRise + 0.5 * AnvilCrawlers.unit(&rng)
+            fall = 1.0 + 1.3 * AnvilCrawlers.unit(&rng)
+            amplitude = 0.2 + (Self.highest - 0.2) * AnvilCrawlers.unit(&rng)
+            spot = Float(AnvilCrawlers.unit(&rng))
+            next = start + rise + fall + 0.1 + 0.8 * AnvilCrawlers.unit(&rng)
+        }
+        let x = time - start
+        guard x >= 0, x < rise + fall else { return 0 }
+        let w = x < rise ? sin(0.5 * Double.pi * x / rise) : cos(0.5 * Double.pi * (x - rise) / fall)
+        return Float(amplitude * w * w)
+    }
+}
+
 public extension WorldWeather {
     /// The supercell event's stages at `phase` (0…1, clamped): pure, so the sky, the renderers and the tests read one
     /// schedule. Distances in km along its bearing; the stages run on into each other with no jump.

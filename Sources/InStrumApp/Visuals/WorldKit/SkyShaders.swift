@@ -811,6 +811,10 @@ enum SkyShaders {
         int oct = int(u.weather.z + 0.5);
         float sunAlt = u.sun.w;
         bool day = sunAlt > -6.0;
+        // By night, as it arrives (within 22 km), a faint floor of light on it: the night sky's own glow low round it, so
+        // its shape is never lost in black between its glows. Nothing by day, nor while it is far off.
+        float nightF = sunAlt > -6.0 ? 0.0 : smoothstep(6.0, 10.0, -sunAlt) * (1.0 - smoothstep(12.0, 22.0, D));
+        float3 nightSky = u.horizon.rgb * (1.2 * nightF);
         float3 Lw = day ? u.sun.xyz : u.moon.xyz;
         float3 Lu = float3(dot(Lw.xy, b), dot(Lw.xy, rgt) * mirror, Lw.z);
         // The sun lights the cloud a little after it sets (the anvil stands 9.5 km up); the moon faintly.
@@ -848,9 +852,33 @@ enum SkyShaders {
             float streaks = fine > 0.5 ? skyFbm2(float2(azR * 13.0 + 3.0 * shafts, atan(k) * 2.0 + time * 0.04), 2) : 0.5;
             streaks = mix(0.5, streaks, smoothstep(0.6, 0.1, k));
             float3 c = grey * (0.27 + 0.26 * (1.0 - saturate(k * 3.0))) * (0.85 + 0.3 * shafts) * (1.06 - 0.14 * streaks)
-                     + Lc * (lightAmt * 0.3 * back);
+                     + Lc * (lightAmt * 0.3 * back) + nightSky * (0.45 + 0.3 * shafts);
             recept += T * a * 0.55 * (0.6 + 0.8 * shafts);
             acc += T * a * c; T *= 1.0 - a;
+        }
+
+        // Scud: ragged low fragments torn off the base's front, 0.7 km up, racing in under it as it arrives (the
+        // impostor's detail): dark against the bright low sky, greyer against the base, lit a little from beneath.
+        if (T > 0.12 && fine > 0.5 && k > 0.07 && D < 16.0 && D > 3.0) {
+            float ts = 0.7 / k;
+            float2 Ps = hv * ts;
+            float es = (1.0 - length((Ps - float2(D + 1.5, -2.5)) / float2(5.6, 11.5))) * 5.6;   // km in from the base's rim
+            float zone = smoothstep(-2.5, 0.0, es) * (1.0 - smoothstep(2.0, 5.0, es)) * (1.0 - smoothstep(12.0, 16.0, D)) * smoothstep(3.0, 6.0, D)
+                       * smoothstep(0.07, 0.14, k) * smoothstep(1.5, 3.5, ts)    // (far off, low down, it would be threads)
+                       * smoothstep(0.12, 0.25, T);                                // (and none behind heavy rain)
+            if (zone > 0.0) {
+                float2 ws = Ps * 1.1 + float2(time * 0.02, time * 0.008);
+                float w1 = skyNoise2(ws * 0.5 + 13.0);
+                float fs = skyFbm2(ws + 1.5 * float2(w1, skyNoise2(ws * 0.5 + 29.0)), 3);
+                float as = smoothstep(0.55, 0.72, fs) * zone * 0.85;
+                if (as > 0.002) {
+                    float3 c = grey * (0.11 + 0.08 * fs) + u.horizon.rgb * (0.04 + 0.12 * smoothstep(0.6, 0.85, fs))
+                             + nightSky * (0.3 + 0.3 * fs);
+                    c = mix(c, haze, 1.0 - exp(-ts / 80.0));
+                    recept += T * as * 0.4;
+                    acc += T * as * c; T *= 1.0 - as;
+                }
+            }
         }
 
         // What falls under the storm, on a sheet just in front of its middle, from the ground to the base: the forward
@@ -862,17 +890,28 @@ enum SkyShaders {
             float rho = Dr / fwd;
             float x = rho * hv.y, z = rho * k;
             if (z < kCellBase + 0.3 && x > -20.0 && x < 20.0) {
-                float n = skyNoise2(float2(x * 1.3 + z * 0.4, z * 0.12 - time * 0.03));
-                float n2 = skyNoise2(float2(x * 0.35 + 4.0, 1.7));
+                // (Near, its curtains slant with the wind as they fall, their edges wandering as they come down, in
+                // shafts: soft, never a straight vertical edge. Far off, they stand as they were.)
+                float nearR = 1.0 - smoothstep(10.0, 17.0, Dr);
+                float xs = x + 0.35 * (kCellBase - z) * mirror * nearR;
+                float n = skyNoise2(float2(xs * 1.3 + z * (0.4 + 0.4 * nearR), z * (0.12 + 0.38 * nearR) - time * 0.03));
+                float n2 = skyNoise2(float2(xs * 0.35 + 4.0, 1.7 + 0.5 * z * nearR));
                 // (Only under the base and the forward flank's cloud: beyond them, under the flanking line's higher
                 // bases and past the rain shield's end, the air is clear.)
-                float span = smoothstep(-13.5, -9.0, x + 2.5 * n2) * (1.0 - smoothstep(6.5, 10.5, x + 2.5 * n2));
-                float rain = 1.0 - smoothstep(-1.6, 0.9, x + 0.8 * n);
-                float rear = smoothstep(4.0, 5.6, x + 0.8 * n);
+                float span = smoothstep(-13.5, -9.0, xs + 2.5 * n2) * (1.0 - smoothstep(6.5, 10.5, xs + 2.5 * n2));
+                float wn = xs + (0.8 + 0.6 * nearR) * n;
+                float rain = 1.0 - smoothstep(-1.6 - 0.8 * nearR, 0.9 + 0.7 * nearR, wn);
+                float rear = smoothstep(4.0 - 0.6 * nearR, 5.6 + 0.8 * nearR, wn);
                 float notch = saturate(1.0 - rain - rear);
                 float under = 1.0 - smoothstep(kCellBase - 0.3, kCellBase + 0.15, z);
-                float dens = rain * (0.88 + 0.12 * n) + rear * (0.74 + 0.2 * n) * (1.0 - 0.35 * smoothstep(9.0, 15.0, x))
-                           + notch * 0.58;
+                // Shafts: the rain heavier and lighter across it, each shaft a few hundred metres to a km wide.
+                float shaft = 1.0;
+                if (nearR > 0.0) {
+                    float2 qs = float2(xs * 0.6 + 11.0, z * 0.3 + 0.3 * n);
+                    shaft = 1.0 + nearR * (0.28 * (fine > 0.5 ? skyFbm2(qs, 2) : skyNoise2(qs)) - 0.16);
+                }
+                float dens = (rain * (0.88 + 0.12 * n) + rear * (0.74 + 0.2 * n) * (1.0 - 0.35 * smoothstep(9.0, 15.0, x))) * shaft
+                           + notch * (0.58 - 0.08 * nearR);
                 float a = saturate(dens * span * under) * smoothstep(2.5, 6.0, Dr);
                 if (a > 0.002) {
                     float hail = rain * exp(-(x + 4.5) * (x + 4.5) / 2.5);
@@ -880,6 +919,7 @@ enum SkyShaders {
                     float thinR = 1.0 - saturate(dens * span);
                     c += Lc * (lightAmt * (0.04 + 0.45 * back * thinR * thinR) * (0.6 + 0.6 * notch));
                     c = mix(c, haze * (0.9 + 0.5 * notch), 0.25 * notch * (1.0 - z / kCellBase));
+                    c += nightSky * (0.35 + 0.45 * notch + 0.15 * n);
                     c = mix(c, haze, 0.6 * (1.0 - exp(-rho / 80.0)));
                     recept += T * a * (0.5 + 0.3 * hail);
                     acc += T * a * c; T *= 1.0 - a;
@@ -898,13 +938,22 @@ enum SkyShaders {
                 float s = clamp(x / 2.1, -1.0, 1.0);
                 float n = skyNoise2(float2((s * 1.4 + turn) * 2.2, z * 3.0));
                 float tags = skyNoise2(float2(x * 3.1 + turn, 7.0));
+                // Near (within 10 km), torn and soft: ragged at its foot and sides over a couple of hundred metres,
+                // mottled (the impostor's detail), never a cut-out hanging from the base.
+                float nearW = 1.0 - smoothstep(6.0, 10.0, Dw);
+                float rag = 0.5;
+                if (nearW > 0.0 && fine > 0.5) rag = skyFbm2(float2(x * 2.4 + turn, z * 3.5 - time * 0.02), 3);
                 float foot = kCellBase - 0.85 + 0.55 * s * s + 0.16 * (n - 0.5) + 0.12 * (tags - 0.5);
                 float edge = min(2.05 - 0.45 * saturate((kCellBase - z) / 0.8) + 0.25 * (n - 0.5) - abs(x),
-                                 3.0 * (z - foot));
-                float a = smoothstep(-max(px, 0.03), max(px, 0.03) + 0.06, edge) * smoothstep(2.5, 6.0, Dw);
+                                 3.0 * (z - foot)) + nearW * 0.5 * (rag - 0.5);
+                float sw = max(px, 0.03) + 0.2 * nearW;
+                // (Its top melts into the base it hangs from: the base nearer than it there, a hard top drew a line.)
+                float a = smoothstep(-sw, sw + 0.06, edge) * smoothstep(2.5, 6.0, Dw)
+                        * (1.0 - smoothstep(kCellBase - 0.2, kCellBase + 0.1, z));
                 if (a > 0.002) {
                     float ndl = saturate(dot(float3(-sqrt(1.0 - s * s), s, 0.0), Lu) * 0.7 + 0.3);
-                    float3 c = grey * (0.1 + 0.07 * n) + Lc * (lightAmt * 0.2 * ndl * (0.6 + 0.4 * n));
+                    float3 c = (grey * (0.1 + 0.07 * n) + Lc * (lightAmt * 0.2 * ndl * (0.6 + 0.4 * n)))
+                             * mix(1.0, 0.75 + 0.5 * rag, nearW) + nightSky * (0.2 + 0.25 * rag);
                     // Its rim, backlit, from afar only (near, its thin rim drew a bright hook across the view).
                     c += Lc * (lightAmt * 0.3 * back * (1.0 - smoothstep(0.0, 0.25, edge)) * smoothstep(8.0, 14.0, Dw));
                     c = mix(c, haze, 1.0 - exp(-rho / 80.0));
@@ -917,7 +966,7 @@ enum SkyShaders {
         // The inflow bands: low bands of cloud 0.8 km up streaming in from the right toward the wall cloud, each a log
         // spiral round it, converging in perspective (Supercell Sky's bands); they fade as they lie edge-on at the
         // horizon, and are gone once the storm is overhead.
-        if (T > 0.01 && k > 0.02 && D > 5.0) {
+        if (T > 0.01 && k > 0.02 && D > 14.0) {
             float t = 0.8 / k;
             float2 q = hv * t - float2(D - 0.5, 2.5);
             float r = length(q);
@@ -934,7 +983,8 @@ enum SkyShaders {
                     float profile;
                     float dens = cloudInflow(off, width, streak, profile) * smoothstep(2.2, 4.5, r)
                                * (1.0 - smoothstep(9.0, 15.0, r)) * smoothstep(0.03, 0.1, k) * smoothstep(5.0, 9.0, D) * 0.4
-                               * smoothstep(4.0, 9.0, t);   // (near and high overhead they would smear across the view)
+                               * smoothstep(4.0, 9.0, t)    // (near and high overhead they would smear across the view)
+                               * smoothstep(14.0, 20.0, D); // (and once it is near, seen edge-on they would be threads)
                     if (dens > 0.002) {
                         float3 c = grey * (0.2 + 0.12 * streak) + Lc * (lightAmt * (0.08 + 0.5 * back) * (0.6 + 0.4 * streak));
                         c = mix(c, haze, 1.0 - exp(-t / 80.0));
@@ -953,10 +1003,19 @@ enum SkyShaders {
             float rr = length(qc);
             float pxb = baseHit * pa / max(k, 0.03) * 0.5;          // a pixel across its rim, seen edge-on (km)
             float a = 0.0;
-            if (rr < 1.25 + pxb * 0.2) {
+            // Overhead and arriving (its front within 12 km), its underside turbulent: three octaves from a km down,
+            // drifting with the inflow (the impostor's detail).
+            // (Not where the rain in front hides it.)
+            float closeB = 1.0 - smoothstep(6.0, 12.0, D - 4.0);
+            float tb = 0.5;
+            if (closeB > 0.0 && fine > 0.5 && rr < 1.4 && T > 0.2) {
+                tb = mix(0.5, skyFbm2(P * 0.8 + float2(time * 0.004, 0.0) + 7.0, 3), smoothstep(0.2, 0.4, T));
+            }
+            if (rr < 1.25 + pxb * 0.2 + 0.15 * closeB) {
                 float rag = cloudRagged(atan2(qc.y, qc.x), oct);
-                float edge = (1.0 - rr) * 5.6 + 1.1 * (rag - 0.3);
-                a = smoothstep(-max(pxb, 0.15), max(pxb, 0.15) + 0.3, edge);
+                float edge = (1.0 - rr) * 5.6 + 1.1 * (rag - 0.3) + 1.4 * closeB * (tb - 0.5);
+                float sb = max(pxb, 0.15) + 0.35 * closeB;
+                a = smoothstep(-sb, sb + 0.3, edge);
             }
             if (a > 0.002) {
                 float edge = (1.0 - rr) * 5.6;
@@ -964,10 +1023,16 @@ enum SkyShaders {
                 float2 qf = (P - float2(D - 0.5, -6.5)) * float2(1.0, 1.1);
                 float near = 1.0 - smoothstep(4.0, 9.0, baseHit);
                 float scud = near > 0.0 ? skyNoise2(P * 1.3 + float2(time * 0.015, time * 0.006)) : 0.5;
-                float3 c = grey * (0.1 + 0.06 * nb + 0.08 * near * (scud - 0.5)) * (1.0 - 0.3 * exp(-dot(qf, qf) / 45.0));
+                float3 c = grey * (0.1 + 0.06 * nb + 0.08 * near * (scud - 0.5)) * (1.0 - 0.3 * exp(-dot(qf, qf) / 45.0))
+                         * mix(1.0, 0.65 + 0.7 * tb, closeB);
                 float2 Ld = Lu.xy / max(length(Lu.xy), 1e-3);
                 float2 qn = qc / max(rr, 1e-3);
                 c += Lc * (lightAmt * (0.05 * back + 0.55 * lowSun * saturate(dot(qn, Ld))) * smoothstep(3.0, 0.0, edge) * (0.5 + nb));
+                // Arriving, lit from beneath by the bright sky low round it: its leading edge most (the shelf's lip,
+                // layered: a second, fainter step a couple of km in), and the lumps hanging lowest in its underside.
+                float lip = 1.0 - smoothstep(0.0, 1.4, edge) + 0.45 * exp(-(edge - 2.4) * (edge - 2.4) / 0.35);
+                c += u.horizon.rgb * (closeB * (0.1 * lip * (0.4 + 1.2 * tb) + 0.07 * smoothstep(0.5, 0.85, tb)));
+                c += nightSky * (0.3 + 0.35 * saturate(lip) + 0.4 * tb + 0.2 * nb);
                 c = mix(c, haze, 1.0 - exp(-baseHit / 80.0));
                 recept += T * a * (0.2 + 0.9 * nb);
                 acc += T * a * c; T *= 1.0 - a;
@@ -985,11 +1050,16 @@ enum SkyShaders {
             float hz = z - kCellBase;
             float px = rho * pa;                                    // a pixel at the sheet (km)
             float xa = 1.0 - 0.22 * max(hz - 3.0, 0.0);             // the updraft's axis, leaning downshear as it rises
+            // Arriving (its front 15 km off and nearer) the storm's front fills the view and is drawn as the shelf and
+            // the heavy underside passing over: soft turbulent cloud, each puff lit on its underside from below, its edges
+            // ragged and soft (the striated wall seen from afar drew a stack of terraces with a line round each).
+            float close = 1.0 - smoothstep(6.0, 15.0, Df);
             // A cheap bound first (the skirt and tower, the forward flank and the flanking line with their widest lumps),
             // so the sky beside the storm costs a few sums.
             float bound = max(max(9.0 - abs(x - xa), min(min(x - xa + 15.0, xa + 1.0 - x), 9.0 - z)),
                               min(min(x - 3.0, 19.5 - x), 9.5 - z));
-            if (hz > -0.3 && z < kCellTop + 1.6 && bound > -0.1) {
+            // (Close, the impostor's veil reaches a km and a half past the outline.)
+            if (hz > -0.3 && z < kCellTop + 1.6 && bound > -0.1 - 1.8 * close * fine) {
                 float2 p = float2(x, z) * 0.8 + 7.0;
                 float e1 = skyNoise2(p);
                 float en = 0.6667 * e1 + 0.3333 * skyNoise2(p * 2.03 + float2(17.1, 9.2));
@@ -1007,6 +1077,11 @@ enum SkyShaders {
                                                 0.55, 0.4, 1.8, gB);
                 float lobe = smoothstep(0.08, 0.9, Hb) - 0.5;      // −0.5 … 0.5
                 float turret = smoothstep(0.1, 1.15, HB) - 0.5;
+                // Close, its turbulence: three octaves from a km to 250 m, drifting, warped by the big noise.
+                float turb = 0.5;
+                if (close > 0.02 && fine > 0.5) {
+                    turb = skyFbm2(float2(x - 0.15 * turn, z) * 1.1 + 1.4 * float2(en, e1) + float2(time * 0.006, 0.0), 3);
+                }
                 // The updraft: the striated skirt flaring over the base (smooth, laminar), the cauliflower tower above it
                 // rising in turrets, widening as it goes up into the anvil.
                 float upper = smoothstep(2.0, 3.8, hz);
@@ -1016,7 +1091,8 @@ enum SkyShaders {
                 float s = clamp((x - xa) / W0, -1.0, 1.0);
                 // Striations: rings round the turning updraft. Seen from below, a ring's sides stand farther off than its
                 // front, so each band bows down toward the sides; a helix, it climbs across the face as it turns; its
-                // spacing wanders round it and up it, and each band is strongest where it faces you.
+                // spacing wanders round it and up it, and each band is strongest where it faces you. (Close they are gone:
+                // seen from under it, a whole skirt of them drew a stack of terraces with a line round each.)
                 float side = sqrt(max(1.0 - s * s, 0.0));
                 float zr = z * (1.0 + W0 * (1.0 - side) / Df) - kCellBase;
                 float swirl = asin(s) * 0.3183 * mirror;            // −0.5 … 0.5 across the face
@@ -1024,15 +1100,16 @@ enum SkyShaders {
                          + 0.5 * skyNoise2(float2(swirl * 3.0 + 0.3 * turn, zr * 0.45 + 9.0));
                 float fb = fract(kb);
                 float stri = (1.0 - upper) * smoothstep(0.05, 0.45, hz) * smoothstep(0.15, 0.7, side + 0.3 * en)
-                           * smoothstep(2.0, 4.0, Df)
+                           * smoothstep(2.0, 4.0, Df) * (1.0 - close)
                            * (0.3 + 0.7 * smoothstep(0.25, 0.75, skyNoise2(float2(floor(kb) * 3.7 + 1.0, swirl * 5.0 + 0.2 * turn))));
                 // (Each band's foot is a lip standing out from the one under it: the skirt's outline steps.)
-                float lipOut = (1.0 - upper) * 0.42 * (1.0 - fb) * (1.0 - fb) * smoothstep(0.1, 0.5, hz);
+                float lipOut = (1.0 - upper) * 0.42 * (1.0 - fb) * (1.0 - fb) * smoothstep(0.1, 0.5, hz) * (1.0 - close);
                 float W = W0 + lipOut + 0.25 * (en - 0.5) + upper * (1.9 * turret + 0.3 * lobe);
                 // Its top: turrets pushing up into the anvil's foot, an overshooting dome over the axis.
                 float dome = kCellAnvil + 1.0 + 1.9 * exp(-(x - xa - 0.5) * (x - xa - 0.5) / 5.0);
                 float edge = min(W - abs(x - xa), dome + 1.1 * turret + 0.4 * lobe - z);
-                float sn = s, nz = 0.12, lumpy = upper;
+                // (Close, its underside is lumpy all over: rounded puffs, each lit on its underside from below.)
+                float sn = s, nz = 0.12, lumpy = max(upper, 0.85 * close);
                 // The forward flank's cloud beside it (left, downshear): a lower, flatter shelf over the rain, from a
                 // couple of km up to a shoulder falling away from the updraft, its lumps smoothed.
                 float eF = min(min(x - xa + 9.6 - 0.18 * (z - 3.3) * (z - 3.3), xa - 2.0 + 0.25 * hz - x),
@@ -1063,9 +1140,15 @@ enum SkyShaders {
                     sn = mix(sn, clamp((fx - 9.0) / 9.0, -1.0, 1.0), w); nz = mix(nz, 0.35, w);
                     stri *= 1.0 - w; lumpy = mix(lumpy, 1.0, w); edge = max(edge, eL);
                 }
-                // As sharp as a pixel (a km of softness blurred it into a cut-out).
-                float soft = max((fine > 0.5 ? 0.75 : 1.1) * px, 0.025);
-                float a = smoothstep(-soft, soft, edge) * smoothstep(-0.3, 0.05, hz) * smoothstep(1.5, 5.0, Df);
+                // As sharp as a pixel (a km of softness blurred it into a cut-out); close, ragged and soft over a couple
+                // of hundred metres, as near cloud is.
+                edge += close * 0.9 * (turb - 0.5);
+                float soft = max(max((fine > 0.5 ? 0.75 : 1.1) * px, 0.025), 0.35 * close);
+                float aCore = smoothstep(-soft, soft, edge);
+                // Close, a thin torn veil beyond its edge, fading over a km and a half, so the sky past it is graded
+                // (never a bright cut-out slot).
+                float veil = close * fine * 0.6 * smoothstep(-1.6, 0.0, edge) * smoothstep(0.25, 0.75, turb + 0.3 * (en - 0.5));
+                float a = max(aCore, veil) * smoothstep(-0.3, 0.05, hz) * smoothstep(1.5, 3.4, Df);
                 float thinA = 1.0 - smoothstep(0.0, 1.2, edge);
                 if (a > 0.002) {
                     // The normal: rounded in from its outline (each turret a dome: across its edge it turns from facing
@@ -1081,7 +1164,9 @@ enum SkyShaders {
                         out2 = -gm / max(length(gm), 1e-4);
                     }
                     float tIn = saturate(max(edge, 0.0) / 2.6);
-                    float facing = sqrt(tIn * (2.0 - tIn));
+                    // (Close, it faces you nearly everywhere: its outline's own direction, turning across the shape's
+                    // inner ridges, drew straight seams through soft cloud.)
+                    float facing = max(sqrt(tIn * (2.0 - tIn)), 0.8 * close);
                     float2 slope = (gb * (0.04 / bs) + gB * (0.5 / 1.9)) * lumpy;
                     float3 N = normalize(float3(-max(facing, 0.15), out2.x * (1.0 - facing) - slope.x,
                                                 out2.y * (1.0 - facing) + 0.2 * nz - slope.y));
@@ -1093,27 +1178,34 @@ enum SkyShaders {
                     float bandShade = cloudStriation(kb, stri, strLip);
                     // Near, each band's foot is a crisp lip (a pixel or two, not a soft swell), lit, over the shadow it
                     // casts on the top of the band under it.
-                    float near = 1.0 - smoothstep(9.0, 16.0, Df);
+                    float near = (1.0 - smoothstep(9.0, 16.0, Df)) * (1.0 - close);
                     if (near > 0.0 && stri > 0.0) {
-                        float wl = clamp(px * 1.05 * 3.0, 0.05, 0.22);
+                        float wl = clamp(px * 1.05 * 3.0, 0.09, 0.22);
                         float lipB = exp(-fb / wl);
                         float shadowB = smoothstep(1.0 - 6.0 * wl, 1.0, fb);
-                        bandShade = mix(bandShade, (1.0 + 0.35 * stri * lipB) * (1.0 - 0.45 * stri * shadowB * shadowB), near);
+                        bandShade = mix(bandShade, (1.0 + 0.35 * stri * lipB) * (1.0 - 0.3 * stri * shadowB * shadowB), near);
                         strLip = mix(strLip, stri * lipB, near);
                     }
-                    // The sky's light on it: steel blue-grey, lighter on the tops, darker low down in the base's shade.
+                    // The sky's light on it: steel blue-grey, lighter on the tops, darker low down in the base's shade;
+                    // close, mottled by its turbulence.
                     float skyLit = (0.7 + 0.5 * saturate(N.z + 0.25)) * occl;
                     float3 body3 = grey * float3(0.8, 0.9, 1.05) * (0.15 + 0.05 * en) * skyLit
-                                 * mix(0.55, 1.0, smoothstep(0.0, 3.0, hz));
+                                 * mix(0.55, 1.0, smoothstep(0.0, 3.0, hz)) * mix(1.0, 0.65 + 0.7 * turb, close);
                     float sunSide = saturate(0.7 * ndl + 0.3);
                     float3 warm = Lc * (lightAmt * sunSide * sqrt(sunSide) * occl * (0.5 + 0.6 * smoothstep(0.5, 6.0, hz)));
                     float3 c = (body3 * (1.0 - 0.3 * direct) + warm) * bandShade;
                     c += Lc * (lightAmt * 0.07 * strLip * saturate(ndl + 0.5));
+                    // Close, its cloud lit from beneath by the bright sky low under the storm: each puff's rounded underside
+                    // (the lumps' own slope), the lowest most.
+                    float underL = close * (1.0 - 0.75 * smoothstep(0.0, 3.5, hz)) * (0.4 + 0.6 * turb);
+                    c += u.horizon.rgb * (underL * (0.03 + 0.45 * saturate(-N.z)));
+                    c += nightSky * ((0.25 + 0.4 * saturate(-N.z) + 0.35 * turb) * (1.0 - 0.4 * smoothstep(1.0, 6.0, hz)));
                     // Backlit: the low light comes through where it thins, a gold rim on every turret's outline and a
                     // softer glow a little inside it; the lips of the skirt's bands catch a thread of it too, and its body
                     // takes a faint warm translucence near the light, so the storm stands in the sun's light, not before it.
-                    float rimW = max(3.0 * px, 0.06);
-                    float rim = 1.0 - smoothstep(0.0, rimW, edge);
+                    float rimW = max(max(3.0 * px, 0.06), 1.5 * soft);
+                    // (Close, its edge is torn and soft: no lit line drawn round it, only the glow where it thins.)
+                    float rim = (1.0 - smoothstep(0.0, rimW, edge)) * (1.0 - 0.8 * close);
                     float vary = smoothstep(0.25, 0.75, en + 0.35 * (fold - 0.5));
                     float lining = (0.75 * rim + 0.15 * thinA * thinA) * (0.35 + 0.65 * saturate(N.z + 0.6)) * (0.3 + 1.0 * vary);
                     c += Lc * (lightAmt * (2.2 * back + 0.35 * wideBack) * lining);
@@ -1125,6 +1217,8 @@ enum SkyShaders {
                     float junction;
                     float into = cloudAnvilMelt(z, kCellAnvil, 0.5 + 0.8 * turret, junction);
                     c = mix(c, grey * (0.17 + 0.06 * en + 0.05 * fold) + Lc * (lightAmt * 0.6 * back * lining), 0.75 * into);
+                    // (The veil: thin cloud, lit by the sky round it.)
+                    c = mix(c, haze * 0.8 + grey * 0.08, 0.6 * close * (1.0 - aCore));
                     c = mix(c, haze, 1.0 - exp(-rho / 90.0));
                     body = float4(c * a, a);
                     bodyT = rho;

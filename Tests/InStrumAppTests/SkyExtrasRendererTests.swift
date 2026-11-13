@@ -257,6 +257,7 @@ final class SkyExtrasFrameTimeTests: XCTestCase {
         let cases: [(String, SkyState)] = [
             ("plain-night", T.night()), ("storm-sprites-satellites", busy),
             ("plain-golden", R.golden()), ("supercell-approach", R.supercell(R.golden(), phase: 0.2, glow: 0.5)),
+            ("supercell-arriving", R.supercell(R.golden(), phase: 0.32, glow: 0.3)),
             ("supercell-core", R.supercell(R.golden(), phase: 0.45, glow: 0.8)),
             ("supercell-clearing", R.supercell(R.golden(), phase: WorldWeather.supercellHeld)),
             ("ashfall-night", ash),
@@ -407,6 +408,36 @@ final class FireNeonWeatherRendererTests: XCTestCase {
         XCTAssertLessThanOrEqual(gentleGlow.max() ?? 1, 1 + SkyLayer.gentleCellGlow + 1e-4)
     }
 
+    /// By night its cloud glows from within as it arrives (soft glows deep in it, most of the time, through the sky
+    /// layer's limiter), and under gentle visuals it is a slow swell, never above `gentleCellGlow`.
+    func testByNightItsCloudGlowsFromWithinUnderTheLimiter() throws {
+        guard let device = MTLCreateSystemDefaultDevice() else { throw XCTSkip("No Metal device") }
+        var s = SkySettings(); s.timeMode = .frozen; s.frozenHour = 23; s.frozenPhase = 0.1; s.cityID = "melbourne"
+        s.weatherMode = .pick; s.weather = .supercell; s.spritesMode = .off; s.satellitesMode = .off
+        let sky = LivingSky(settings: s, homeZone: TimeZone(identifier: "Australia/Melbourne")!)
+        sky.reset(settings: s)
+        let plainSky = try XCTUnwrap(SkyLayer(device: device)), gentleSky = try XCTUnwrap(SkyLayer(device: device))
+        gentleSky.gentle = true
+        let dt = 1.0 / 30
+        let start = Date(timeIntervalSince1970: 1_793_000_000)
+        var deep: [Float] = [], gentleGlow: [Float] = []
+        for i in 1...(200 * 30) {
+            let st = sky.step(now: start.addingTimeInterval(Double(i) * dt), dt: dt, meteors: .never)
+            let clock = Float(Double(i) * dt)
+            plainSky.update(st, quality: .lite, size: CGSize(width: 320, height: 180), time: clock)
+            gentleSky.update(st, quality: .lite, size: CGSize(width: 320, height: 180), time: clock)
+            guard i > 130 * 30 else { continue }   // late in its Approach and on into its Core
+            deep.append(plainSky.cellGlowOut); gentleGlow.append(gentleSky.cellGlowOut)
+        }
+        let litShare = Double(deep.filter { $0 > 0.05 }.count) / Double(max(1, deep.count))
+        XCTAssertGreaterThan(litShare, 0.5, "glowing most of the time")
+        XCTAssertLessThanOrEqual(gentleGlow.max() ?? 0, SkyLayer.gentleCellGlow + 1e-4, "gentle: a glow")
+        var gentleRise: Float = 0
+        for i in 3..<gentleGlow.count { gentleRise = max(gentleRise, gentleGlow[i] - (gentleGlow[(i - 3)...i].min() ?? 0)) }
+        XCTAssertLessThan(gentleRise, FlashLimiter.flashRise, "gentle: a swell, never a jump")
+        XCTAssertGreaterThan(Double(gentleGlow.filter { $0 > 0.02 }.count) / Double(max(1, gentleGlow.count)), 0.45, "and there")
+    }
+
     /// The dome draws the storm: its Approach stands on the horizon where the world looks (darker there than the clear
     /// golden sky), its Core darkens the whole sky, its Clearing leaves the low sky clear under the anvil; the generic
     /// cloud gives way to it; with nothing in its rows the sky is as it was.
@@ -458,21 +489,74 @@ extension WorldPreviewTests {
         let beach = settings(hour: 13, phase: 0.5, weather: .clear)
         for (name, phase, glow) in [("beach-supercell-approach", 0.12, Float(0)), ("beach-supercell-core", 0.45, Float(0)),
                                     ("beach-supercell-core-flash", 0.47, Float(0.9)),
-                                    ("beach-supercell-clearing", WorldWeather.supercellHeld, Float(0))] {
+                                    ("beach-supercell-clearing", WorldWeather.supercellHeld, Float(0)),
+                                    // Its arrival overhead, between the Approach and the Core (the shelf and base passing over).
+                                    ("beach-supercell-p20", 0.20, Float(0)), ("beach-supercell-p26", 0.26, Float(0)),
+                                    ("beach-supercell-p32", 0.32, Float(0)), ("beach-supercell-p38", 0.38, Float(0))] {
             let image = try XCTUnwrap(preview.render(themeID: GoldenHourBeachModel.id, at: [5], state: held, quality: .high,
                                                      sky: beach, skyEdit: { s in s = R.supercell(s, phase: phase, glow: glow) }).first)
             try PreviewRenderer.writePNG(image, to: url.appendingPathComponent("\(name).png"))
         }
-        // The Approach over the lake by night, flickering; and the Clearing with the stars coming out.
+        // The Approach over the lake by night, flickering; its arrival overhead; and the Clearing with the stars coming out.
         let lakeNight = settings(hour: 23, phase: 0.1, weather: .clear)
-        for (name, phase, glow) in [("lake-supercell-approach-night", 0.12, Float(0.8)), ("lake-supercell-clearing-night", 0.85, Float(0))] {
+        for (name, phase, glow) in [("lake-supercell-approach-night", 0.12, Float(0.8)), ("lake-supercell-clearing-night", 0.85, Float(0)),
+                                    ("lake-supercell-p26-night", 0.26, Float(0.5)), ("lake-supercell-p38-night", 0.38, Float(0.8))] {
             let image = try XCTUnwrap(preview.render(themeID: MoonlitLakeModel.id, at: [5], quality: .high, sky: lakeNight, mood: .serene,
                                                      skyEdit: { s in s = R.supercell(s, phase: phase, glow: glow) }).first)
             try PreviewRenderer.writePNG(image, to: url.appendingPathComponent("\(name).png"))
         }
-        // The real thing, staged by the sky: the beach 3 minutes into a picked supercell (its Approach becoming its Core).
+        // The real thing, staged by the sky: the beach 3 minutes into a picked supercell (its Approach becoming its Core),
+        // and on through its arrival, Core and passing (8 minutes a storm).
         var live = beach; live.weather = .supercell
-        let image = try XCTUnwrap(preview.render(themeID: GoldenHourBeachModel.id, at: [150], state: held, quality: .high, sky: live).first)
-        try PreviewRenderer.writePNG(image, to: url.appendingPathComponent("beach-supercell-live-t150.png"))
+        let liveTimes: [Double] = [100, 150, 200, 250, 300]
+        let liveImages = preview.render(themeID: GoldenHourBeachModel.id, at: liveTimes, state: held, quality: .high, sky: live)
+        XCTAssertEqual(liveImages.count, liveTimes.count)
+        for (t, image) in zip(liveTimes, liveImages) {
+            try PreviewRenderer.writePNG(image, to: url.appendingPathComponent("beach-supercell-live-t\(Int(t)).png"))
+        }
+        // And over the lake on a moonless night, as it arrives and passes over: glowing from within, never black (t153: a
+        // moment after t150, another instant of its glows).
+        var liveLake = lakeNight; liveLake.weather = .supercell
+        let lakeTimes: [Double] = [100, 150, 153, 200, 250]
+        let lakeImages = preview.render(themeID: MoonlitLakeModel.id, at: lakeTimes, quality: .high, sky: liveLake, mood: .serene)
+        XCTAssertEqual(lakeImages.count, lakeTimes.count)
+        for (t, image) in zip(lakeTimes, lakeImages) {
+            try PreviewRenderer.writePNG(image, to: url.appendingPathComponent("lake-supercell-live-t\(Int(t))-night.png"))
+        }
+    }
+}
+
+/// The Supercell weather in the other worlds that can show it (PREVIEW_DIR), staged by the sky as a player sees it: 150 s
+/// in (arriving) and 200 s in (its Core), by day and on a moonlit night. Judged by eye before the weather is released.
+extension WorldPreviewTests {
+    func testWriteSupercellEverywherePreviews() throws {
+        guard let dir = ProcessInfo.processInfo.environment["PREVIEW_DIR"] else { throw XCTSkip("PREVIEW_DIR not set") }
+        guard MTLCreateSystemDefaultDevice() != nil else { throw XCTSkip("No Metal device") }
+        let url = URL(fileURLWithPath: dir, isDirectory: true)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        let preview = try XCTUnwrap(PreviewRenderer(width: 1280, height: 720))
+        func settings(hour: Double, phase: Double) -> SkySettings {
+            var s = SkySettings(); s.timeMode = .frozen; s.frozenHour = hour; s.frozenPhase = phase; s.cityID = "melbourne"
+            s.weatherMode = .pick; s.weather = .supercell; s.spritesMode = .off; s.satellitesMode = .off
+            return s
+        }
+        let worlds: [(name: String, id: String)] = [
+            ("road", CoastRoadModel.id), ("drive", NeonNightDriveModel.id), ("lake", MoonlitLakeModel.id),
+            ("fjord", AuroraFjordModel.id), ("bay", BioluminescentBayModel.id), ("reef", GreatBarrierReefModel.id),
+            ("cabin", SnowboundCabinModel.id), ("bedroom", BedroomDawnModel.id), ("garden", ButterflyGardenModel.id),
+            ("volcano", VolcanoRimModel.id), ("plains", LightningPlainsModel.id)]
+        let times: [Double] = [150, 200]
+        let hours: [(label: String, hour: Double)] = [("day", 15), ("night", 23)]
+        for world in worlds {
+            for when in hours {
+                let sky: SkySettings = settings(hour: when.hour, phase: 0.55)
+                let images: [CGImage] = preview.render(themeID: world.id, at: times, quality: .high, sky: sky)
+                XCTAssertEqual(images.count, times.count, "\(world.name) \(when.label)")
+                for (t, image) in zip(times, images) {
+                    let file = "everywhere-\(world.name)-\(when.label)-t\(Int(t)).png"
+                    try PreviewRenderer.writePNG(image, to: url.appendingPathComponent(file))
+                }
+            }
+        }
     }
 }

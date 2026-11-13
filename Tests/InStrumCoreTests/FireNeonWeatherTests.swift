@@ -236,6 +236,39 @@ final class FireNeonWeatherTests: XCTestCase {
         XCTAssertEqual(s.flashLimiter.total, 0, "the sky's own limiter: nothing of its counts")
     }
 
+    /// By night, from late in its Approach through its Core, soft glows deep in its cloud keep its shape seen most of the
+    /// time, in different places, each swelling too slowly for a flash limiter to count it; earlier, and by day, only the
+    /// distant flicker's brief strokes light it (as before).
+    func testByNightItGlowsFromWithin() {
+        func litShare(_ sky: LivingSky, from a: Double, to b: Double, places: inout Set<Int>) -> Double {
+            var lit = 0, frames = 0
+            run(sky, seconds: b, dt: 1.0 / 30) { st, t in
+                guard t > a, let c = st.supercellWeather else { return }
+                frames += 1
+                if c.glow > 0.05 { lit += 1; places.insert(Int(c.spot * 10)) }
+            }
+            return Double(lit) / Double(max(1, frames))
+        }
+        var places = Set<Int>(), ignored = Set<Int>()
+        XCTAssertGreaterThan(litShare(sky(.supercell, hour: 23), from: 130, to: 300, places: &places), 0.5,
+                             "by night, glowing most of the time as it arrives and passes over")
+        XCTAssertGreaterThan(places.count, 4, "in different places")
+        XCTAssertLessThan(litShare(sky(.supercell, hour: 23), from: 20, to: 60, places: &ignored), 0.15, "not while it is far off")
+        XCTAssertLessThan(litShare(sky(.supercell), from: 130, to: 160, places: &ignored), 0.15, "not by day")
+        // Each glow alone swells under the limiter's flash rise: none of them counts as a flash.
+        XCTAssertLessThan(CloudGlow.steepestRise, 0.6 * FlashLimiter.flashRise)
+        var glow = CloudGlow(seed: 7)
+        var limiter = FlashLimiter()
+        var most: Float = 0
+        for _ in 0..<(120 * 60) {
+            let v = glow.step(dt: 1.0 / 60, active: true)
+            most = max(most, v)
+            _ = limiter.limit(exposure: 1 + v, sparkle: 0, dt: 1.0 / 60)
+        }
+        XCTAssertEqual(limiter.total, 0, "no glow is a flash")
+        XCTAssertGreaterThan(most, 0.3)
+    }
+
     /// In Random Beautiful it plays its event and moves on: its spell is its length; Calm random never picks it.
     func testRandomItPlaysAndMovesOnAndCalmNeverPicksIt() {
         var s = SkySettings(); s.weatherMode = .randomBeautiful; s.spellMinutes = 2; s.randomBlendSeconds = 10
