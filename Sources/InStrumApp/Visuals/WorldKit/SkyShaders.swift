@@ -811,9 +811,9 @@ enum SkyShaders {
         int oct = int(u.weather.z + 0.5);
         float sunAlt = u.sun.w;
         bool day = sunAlt > -6.0;
-        // By night, as it arrives (within 20 km), a faint floor of light on it: the night sky's own glow low round it, so
+        // By night, as it arrives (within 22 km), a faint floor of light on it: the night sky's own glow low round it, so
         // its shape is never lost in black between its glows. Nothing by day, nor while it is far off.
-        float nightF = sunAlt > -6.0 ? 0.0 : smoothstep(6.0, 10.0, -sunAlt) * (1.0 - smoothstep(10.0, 20.0, D));
+        float nightF = sunAlt > -6.0 ? 0.0 : smoothstep(6.0, 10.0, -sunAlt) * (1.0 - smoothstep(12.0, 22.0, D));
         float3 nightSky = u.horizon.rgb * (1.2 * nightF);
         float3 Lw = day ? u.sun.xyz : u.moon.xyz;
         float3 Lu = float3(dot(Lw.xy, b), dot(Lw.xy, rgt) * mirror, Lw.z);
