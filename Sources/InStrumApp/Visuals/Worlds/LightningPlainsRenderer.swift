@@ -62,6 +62,16 @@ final class LightningPlainsRenderer: ThemeRenderer {
     private var showWarp = false
     private let scene: SkyPipeline
     private let storm, bolts, props: MTLRenderPipelineState
+    /// The storm drawn at a reduced resolution (`plains_storm_half_fragment`, into `stormTarget`: half the view's size
+    /// on Smooth, 0.7 of it on High) and added in at full resolution (`plains_storm_compose_fragment`), where the nearer
+    /// ridge cuts it pixel by pixel.
+    private let stormHalf, stormCompose: MTLRenderPipelineState
+    private let device: MTLDevice
+    private var stormTarget: MTLTexture?
+    private(set) var stormScale: Float = 1
+    nonisolated static func reducedScale(_ q: QualityLevel) -> Float { q == .lite ? 0.5 : 0.7 }
+    /// The storm's targets made so far (tests: one a size, never one a frame).
+    private(set) var stormAllocations = 0
     /// The storm's screen bounds (NDC x0, y0, x1, y1) for its own pass; nil when it is out of view.
     private(set) var stormBox: SIMD4<Float>?
     /// Passes a timing test skips (0 in the app: everything is drawn), so one run can price each on a slow GPU: 1 the
@@ -127,8 +137,14 @@ final class LightningPlainsRenderer: ThemeRenderer {
             return try? device.makeRenderPipelineState(descriptor: d)
         }
         // Blend 1: premultiplied over (with depth); 2: additive (no depth); 3: premultiplied over (no depth).
+        let hd = MTLRenderPipelineDescriptor()
+        hd.vertexFunction = lib.skyFunction("plains_box_vertex")
+        hd.fragmentFunction = lib.skyFunction("plains_storm_half_fragment")
+        hd.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
         guard let sc = SkyPipeline(build: { make("plains_vertex", "plains_scene_fragment", blend: 0, storms: $0) }),
               let st = make("plains_box_vertex", "plains_storm_fragment", blend: 3),
+              let sco = make("plains_box_vertex", "plains_storm_compose_fragment", blend: 3),
+              let sh = try? device.makeRenderPipelineState(descriptor: hd),
               let bo = make("plains_bolt_vertex", "plains_bolt_fragment", blend: 2),
               let pr = make("plains_prop_vertex", "plains_prop_fragment", blend: 1) else { return nil }
         let row = MemoryLayout<SIMD4<Float>>.stride
@@ -139,6 +155,8 @@ final class LightningPlainsRenderer: ThemeRenderer {
             buffers.append(buf)
         }
         sky = s; weather = w; warp = gw; scene = sc; storm = st; bolts = bo; props = pr
+        stormHalf = sh; stormCompose = sco
+        self.device = device
         ring = buffers
         bufferAllocations = buffers.count
         segments.reserveCapacity(Self.segmentBudget * 3)
@@ -297,6 +315,7 @@ final class LightningPlainsRenderer: ThemeRenderer {
         let flashLight = fillUniforms(frame, sky: s, km: km, bearing: bearing, pixel: pixel, ratio: ratio, soft: soft,
                                       quality: quality, time: t, gentle: gentle)
         stormBox = stormBounds(km: km, bearing: bearing)
+        stormScale = Self.reducedScale(quality)
         buildProps(frame, params: p, quality: quality, gentle: gentle, dt: dt, pixel: pixel, time: t, flash: flashLight)
 
         let night = 1 - Self.smooth(-12, -3, Float(s.sun.altitude))
@@ -616,17 +635,54 @@ final class LightningPlainsRenderer: ThemeRenderer {
 
     // MARK: - Render
 
+    /// The storm's target for a scene `width` × `height` at `scale` (made when the size changes, kept).
+    private func stormTexture(width: Int, height: Int, scale: Float) -> MTLTexture? {
+        let w = max(1, Int((Float(width) * scale).rounded(.up))), h = max(1, Int((Float(height) * scale).rounded(.up)))
+        if stormTarget?.width != w || stormTarget?.height != h {
+            let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: RenderStack.sceneFormat, width: w, height: h, mipmapped: false)
+            d.usage = [.renderTarget, .shaderRead]
+            d.storageMode = .private
+            stormTarget = device.makeTexture(descriptor: d)
+            stormAllocations += 1
+        }
+        return stormTarget
+    }
+
     func render(stack: RenderStack, commandBuffer cb: MTLCommandBuffer) {
+        let skyU = sky.uniforms
+        // The storm first, at a reduced resolution, over its bounds (the rest of its target clear).
+        var stormDrawn: MTLTexture?
+        if var box = stormBox, skipLayers & 2 == 0, stormScale < 1, let hdr = stack.hdrTarget,
+           let target = stormTexture(width: hdr.width, height: hdr.height, scale: stormScale) {
+            let hp = MTLRenderPassDescriptor()
+            hp.colorAttachments[0].texture = target
+            hp.colorAttachments[0].loadAction = .clear
+            hp.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
+            hp.colorAttachments[0].storeAction = .store
+            if let he = cb.makeRenderCommandEncoder(descriptor: hp) {
+                he.setRenderPipelineState(stormHalf)
+                he.setVertexBytes(&box, length: MemoryLayout<SIMD4<Float>>.stride, index: 0)
+                skyU.withUnsafeBytes { he.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
+                plainsU.withUnsafeBytes { he.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
+                he.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6)
+                he.endEncoding()
+                stormDrawn = target
+            }
+        }
         guard let pass = stack.scenePass(clear: MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)),
               let e = cb.makeRenderCommandEncoder(descriptor: pass) else { return }
-        let skyU = sky.uniforms
         e.setRenderPipelineState(scene.state(storms: sky.storms))
         skyU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
         plainsU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
         sky.bindStars(e)
         if skipLayers & 1 == 0 { e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3) }
         if var box = stormBox, skipLayers & 2 == 0 {
-            e.setRenderPipelineState(storm)
+            if let drawn = stormDrawn {
+                e.setRenderPipelineState(stormCompose)
+                e.setFragmentTexture(drawn, index: 0)
+            } else {
+                e.setRenderPipelineState(storm)
+            }
             e.setVertexBytes(&box, length: MemoryLayout<SIMD4<Float>>.stride, index: 0)
             skyU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
             plainsU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }

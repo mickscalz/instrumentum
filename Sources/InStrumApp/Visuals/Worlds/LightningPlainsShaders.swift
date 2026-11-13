@@ -540,12 +540,14 @@ enum LightningPlainsShaders {
         return o;
     }
 
-    fragment ColorDepth plains_storm_fragment(PlainsOut in [[stage_in]], constant SkyU& u [[buffer(0)]],
-                                              constant PlainsU& p [[buffer(1)]]) {
-        float2 ndc = in.ndc - p.shake.xy;
+    /// The storm and its rain at a pixel (`ndcIn`, before the shake), premultiplied; `ridgeOver` false leaves out the
+    /// nearer ridge's cut (the reduced-resolution pass: the full-resolution one that adds it in cuts it, so the ridge's
+    /// outline stays sharp).
+    float4 pl_stormOver(float2 ndcIn, constant SkyU& u, constant PlainsU& p, bool ridgeOver) {
+        float2 ndc = ndcIn - p.shake.xy;
         float3 d = pl_ray(ndc, u);
         float alt = toDeg(asin(clamp(d.z, -1.0, 1.0)));
-        if (alt <= -0.5) discard_fragment();
+        if (alt <= -0.5) return float4(0.0);
         float th = pl_wrap(toDeg(atan2(d.x, d.y)) - p.storm.x);
         int octaves = int(p.frame.w + 0.5);
         float time = p.frame.y;
@@ -561,8 +563,41 @@ enum LightningPlainsShaders {
             shaft = min(0.9, 2.0 * shaft);
             o = float4(rain * shaft, shaft) + o * (1.0 - shaft);
         }
-        if (p.ridge.w < p.shake.w) o *= 1.0 - pl_ridge(th, alt, p);
+        if (ridgeOver && p.ridge.w < p.shake.w) o *= 1.0 - pl_ridge(th, alt, p);
         if (d.z < 0.0) o *= 1.0 - exp(-p.view.x / max(-d.z, 1e-5) / 1400.0);
+        return o;
+    }
+
+    fragment ColorDepth plains_storm_fragment(PlainsOut in [[stage_in]], constant SkyU& u [[buffer(0)]],
+                                              constant PlainsU& p [[buffer(1)]]) {
+        float4 o = pl_stormOver(in.ndc, u, p, true);
+        if (o.a <= 0.001) discard_fragment();
+        ColorDepth out;
+        out.color = o;
+        out.depth = float4(1.0, 0, 0, 1);
+        return out;
+    }
+
+    // The storm at a reduced resolution (half the view's size on Smooth, 0.7 of it on High): soft cloud and rain, drawn
+    // into a target of their own over the storm's bounds, and added in at full resolution over them, where the nearer
+    // ridge cuts it pixel by pixel.
+    fragment float4 plains_storm_half_fragment(PlainsOut in [[stage_in]], constant SkyU& u [[buffer(0)]],
+                                               constant PlainsU& p [[buffer(1)]]) {
+        return pl_stormOver(in.ndc, u, p, false);
+    }
+
+    fragment ColorDepth plains_storm_compose_fragment(PlainsOut in [[stage_in]], constant SkyU& u [[buffer(0)]],
+                                                      constant PlainsU& p [[buffer(1)]], texture2d<float> stormTex [[texture(0)]]) {
+        constexpr sampler s(filter::linear, address::clamp_to_edge);
+        float2 uv = float2(in.ndc.x * 0.5 + 0.5, 0.5 - in.ndc.y * 0.5);
+        float4 o = stormTex.sample(s, uv);
+        if (o.a > 0.001 && p.ridge.w < p.shake.w) {
+            float2 ndc = in.ndc - p.shake.xy;
+            float3 d = pl_ray(ndc, u);
+            float alt = toDeg(asin(clamp(d.z, -1.0, 1.0)));
+            float th = pl_wrap(toDeg(atan2(d.x, d.y)) - p.storm.x);
+            o *= 1.0 - pl_ridge(th, alt, p);
+        }
         if (o.a <= 0.001) discard_fragment();
         ColorDepth out;
         out.color = o;
