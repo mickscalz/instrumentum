@@ -289,6 +289,21 @@ final class AppModelTests: XCTestCase {
         XCTAssertNil(quiet.ambience(for: quiet.step(dt: 1.0 / 30, t: 0.1, quality: .lite), at: 0.1).key)
     }
 
+    /// Every scene the app hands the engine carries its world's ambience trim (`AmbienceTrim`), and a change of world
+    /// changes it; a change of trim alone counts as a change of scene.
+    func testTheWorldsAmbienceTrimGoesWithItsScenes() {
+        let m = makeModel()
+        m.setTheme(MoonlitLakeModel.id)
+        m.updateAmbience(AmbienceScene(levels: [.water: 0.8]), at: 0)
+        XCTAssertEqual(engine.scenes.last?.trimDB ?? 99, AmbienceTrim.db(for: MoonlitLakeModel.id), accuracy: 1e-12)
+        m.setTheme(VolcanoRimModel.id)
+        m.updateAmbience(AmbienceScene(levels: [.ventRumble: 0.5]), at: 1)
+        XCTAssertEqual(engine.scenes.last?.trimDB ?? 99, AmbienceTrim.db(for: VolcanoRimModel.id), accuracy: 1e-12)
+        let lake = AmbienceScene(levels: [.water: 0.8])
+        XCTAssertTrue(AppModel.ambienceChanged(lake, AmbienceScene(levels: [.water: 0.8], trimDB: -2)), "a new trim counts")
+        XCTAssertFalse(AppModel.ambienceChanged(lake, AmbienceScene(levels: [.water: 0.8], trimDB: 0.005)))
+    }
+
     func testLeavingTheCabinUnmufflesTheBeach() {
         let m = makeModel()
         m.updateAmbience(AmbienceScene(levels: [.fire: 0.7, .wind: 0.5], indoors: 1, snowOnGlass: 1), at: 0)

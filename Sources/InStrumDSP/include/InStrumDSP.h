@@ -116,6 +116,13 @@ void isd_synth_midi(ISDSynth *synth, const uint8_t *bytes, int length, int sampl
 void isd_synth_render(ISDSynth *synth, float *left, float *right, int frames);
 /// Any thread: every note fades out over 20 ms at the next render.
 void isd_synth_all_notes_off(ISDSynth *synth);
+/// Any thread. The preset's trim (`Patch.trimDB` as a gain, 0…4; 1, the default, leaves the sound as it is): a plain gain
+/// on the instrument's whole output, after everything the engine does, so every built-in preset plays at one loudness. It
+/// glides there in a straight line over 30 ms, so a change of preset never clicks; on a synth that has not rendered yet it
+/// is there from the first sample. A value that isn't finite is ignored. Not a parameter: hosts never see it.
+void isd_synth_set_trim(ISDSynth *synth, float gain);
+/// The trim last asked for (1 for none). Any thread.
+float isd_synth_get_trim(const ISDSynth *synth);
 int isd_synth_active_voices(const ISDSynth *synth);
 /// Internal counters for tests. Not real-time safe to rely on; read between renders.
 /// RETUNES: Felt Glass retunes. HORN_NOTE: Cabin Felt's horn note (folded into its range), or -1.
@@ -256,6 +263,13 @@ ISDAmbience *isd_ambience_create(double sampleRate, int maxFrames, uint64_t seed
 void isd_ambience_destroy(ISDAmbience *ambience);
 /// Any thread. 0…1; the source glides to it over 2.5 s. Continuous sources sit near −24 dBFS RMS at 1.
 void isd_ambience_set_level(ISDAmbience *ambience, ISDAmbienceSource source, float level);
+/// Any thread. The world's trim (`AmbienceTrim` as a gain, 0…4; 1, the default, leaves the sound as it is): a plain gain
+/// on the whole ambience, after everything the engine does, so every world's ambience sits at one loudness. The sources'
+/// own levels and the one-shots' timing are untouched. It glides there in a straight line over 0.5 s, so a change of
+/// world never steps; before the first render it is there from the first sample. A value that isn't finite is ignored.
+void isd_ambience_set_trim(ISDAmbience *ambience, float gain);
+/// The trim last asked for (1 for none). Any thread.
+float isd_ambience_get_trim(const ISDAmbience *ambience);
 /// Any thread. 0 distant (roomy, softer top) … 1 all around you (close, dry, wide).
 void isd_ambience_set_closeness(ISDAmbience *ambience, float closeness);
 /// Any thread. 0…1 while playing: ducks up to 4 dB within half a second, swells back over about 2 s.

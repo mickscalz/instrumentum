@@ -4723,8 +4723,40 @@ struct ISDAmbience {
     uint32_t eventTail = 0;
     std::atomic<float> lakeSurge{0.f}, lakeGlow{0.f};
     std::atomic<float> hz[ISD_AMB_COUNT];   // after each render: each tonal source's pitch, 0 while silent
-    ISDAmbience(double sr, uint64_t seed) : engine(sr, seed) {
+    /// The world's trim (isd_ambience_set_trim): the gain asked for (any thread), and on the render thread the gain in
+    /// use, where it is heading, its step a sample and the samples left in its glide.
+    std::atomic<float> trimAsked{1.f};
+    float trim = 1.f, trimGoal = 1.f, trimStep = 0.f;
+    int trimLeft = 0, trimGlide = 24000;
+    bool rendered = false;
+    ISDAmbience(double sr, uint64_t seed) : engine(sr, seed), trimGlide(std::max(1, (int)(0.5 * sr))) {
         for (int i = 0; i < ISD_AMB_COUNT; ++i) { levels[i].store(0.f); applied[i] = 0.f; triggerSeq[i].store(0); triggerSeen[i] = 0; hz[i].store(0.f); }
+    }
+    /// Render thread: the world's trim on the whole ambience, after everything the engine does: a plain gain that glides
+    /// in a straight line to a new value over 0.5 s, so a change of world never steps; before the first render it is there
+    /// from the first sample. At 1 and still, nothing is touched, so the output is the engine's to the bit.
+    void applyTrim(float *left, float *right, int frames) {
+        const float asked = trimAsked.load(std::memory_order_relaxed);
+        if (asked != trimGoal) {
+            trimGoal = asked;
+            if (!rendered) {
+                trim = asked;
+                trimLeft = 0;
+            } else {
+                trimLeft = trimGlide;
+                trimStep = (asked - trim) / (float)trimLeft;
+            }
+        }
+        rendered = true;
+        if (trimLeft == 0 && trim == 1.f) return;
+        for (int i = 0; i < frames; ++i) {
+            if (trimLeft > 0) {
+                --trimLeft;
+                trim = trimLeft == 0 ? trimGoal : trim + trimStep;
+            }
+            left[i] *= trim;
+            right[i] *= trim;
+        }
     }
     /// Render thread: skips every one-shot posted before `at` (a clear's or a panic's mark).
     void skipEventsBefore(uint32_t at) { if ((int32_t)(at - eventTail) > 0) eventTail = at; }
@@ -4787,6 +4819,12 @@ void isd_ambience_set_level(ISDAmbience *a, ISDAmbienceSource source, float leve
 void isd_ambience_set_closeness(ISDAmbience *a, float c) { if (a && std::isfinite(c)) a->closeness.store(isd::clamp01(c), std::memory_order_relaxed); }
 void isd_ambience_set_activity(ISDAmbience *a, float v) { if (a && std::isfinite(v)) a->activity.store(isd::clamp01(v), std::memory_order_relaxed); }
 void isd_ambience_set_night_cool(ISDAmbience *a, float v) { if (a && std::isfinite(v)) a->cool.store(isd::clamp01(v), std::memory_order_relaxed); }
+void isd_ambience_set_trim(ISDAmbience *a, float gain) {
+    if (a && std::isfinite(gain)) a->trimAsked.store(std::clamp(gain, 0.f, 4.f), std::memory_order_relaxed);
+}
+
+float isd_ambience_get_trim(const ISDAmbience *a) { return a ? a->trimAsked.load(std::memory_order_relaxed) : 1.f; }
+
 void isd_ambience_set_density(ISDAmbience *a, float v) { if (a && std::isfinite(v)) a->density.store(std::clamp(v, 0.5f, 1.5f), std::memory_order_relaxed); }
 
 void isd_ambience_trigger_thunder(ISDAmbience *a, float distance) {
@@ -4962,6 +5000,7 @@ void isd_ambience_render(ISDAmbience *a, float *left, float *right, int frames) 
         if (asked != a->triggerSeen[i]) { a->triggerSeen[i] = asked; a->engine.triggerNow(i); }
     }
     a->engine.render(left, right, frames);
+    a->applyTrim(left, right, frames);
     a->bellHz.store(a->engine.bellRingingHz(), std::memory_order_release);
     a->chimeHz.store(a->engine.chimeRingingHz(), std::memory_order_release);
     a->sonarHz.store(a->engine.sonarRingingHz(), std::memory_order_release);

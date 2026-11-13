@@ -22,6 +22,9 @@ public final class BuiltInInstrumentAU: AUAudioUnit {
     public let engine: BuiltInEngine
     /// The preset last applied (saved with the instrument's state).
     public private(set) var patchID: String?
+    /// The preset's trim in use (dB, `Patch.trimDB`): a plain gain on the output, set with the preset and saved with the
+    /// instrument's state. Not a dial: it is not in the parameter tree.
+    public private(set) var trimDB: Double = 0
 
     private let box = SynthBox()
     private let isdEngine: ISDEngine
@@ -54,11 +57,22 @@ public final class BuiltInInstrumentAU: AUAudioUnit {
 
     // MARK: - Presets, mood and state
 
-    /// Sets every dial the patch names (tuning is left as it is).
+    /// Sets every dial the patch names (tuning is left as it is), and its trim: a plain gain on the whole output that
+    /// glides there over 30 ms, so a change of preset never jumps in volume or clicks.
     public func apply(_ patch: Patch) {
         for (identifier, value) in patch.values { parameter(identifier)?.value = AUValue(value) }
         patchID = patch.id
+        setTrim(dB: patch.trimDB)
     }
+
+    /// The preset's trim (dB): a value that isn't finite counts as none.
+    func setTrim(dB: Double) {
+        trimDB = dB.isFinite ? dB : 0
+        if let synth = box.synth { isd_synth_set_trim(synth, BuiltInCatalog.trimGain(dB: trimDB)) }
+    }
+
+    /// The trim the engine is heading for, as a gain (tests).
+    var trimInUse: Float { box.synth.map { isd_synth_get_trim($0) } ?? 1 }
 
     public func setMood(_ mood: Mood) {
         for (identifier, value) in mood.parameterValues { parameter(identifier)?.value = AUValue(value) }
@@ -94,13 +108,19 @@ public final class BuiltInInstrumentAU: AUAudioUnit {
         get {
             var values: [String: NSNumber] = [:]
             for p in tree.allParameters { values[p.identifier] = NSNumber(value: p.value) }
-            return ["engine": engine.rawValue, "patchID": patchID ?? "", "values": values]
+            return ["engine": engine.rawValue, "patchID": patchID ?? "", "values": values, "trimDB": NSNumber(value: trimDB)]
         }
         set {
             guard let state = newValue else { return }
             if let id = state["patchID"] as? String { patchID = id.isEmpty ? nil : id }
             if let values = state["values"] as? [String: NSNumber] {
                 for (identifier, number) in values { parameter(identifier)?.value = number.floatValue }
+            }
+            // The trim the state was saved with; a state saved before trims existed takes its built-in preset's.
+            if let saved = state["trimDB"] as? NSNumber {
+                setTrim(dB: saved.doubleValue)
+            } else {
+                setTrim(dB: Patch.builtIn(id: patchID, engine: engine)?.trimDB ?? 0)
             }
         }
     }
@@ -189,6 +209,7 @@ public final class BuiltInInstrumentAU: AUAudioUnit {
             }
             box.retired.append(old)
         }
+        isd_synth_set_trim(fresh, BuiltInCatalog.trimGain(dB: trimDB))   // the preset's trim carries over too
         box.synth = fresh
         synthRate = rate
         return true

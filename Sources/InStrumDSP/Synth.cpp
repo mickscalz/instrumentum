@@ -377,6 +377,12 @@ struct ISDSynth {
     bool started = false;
     std::atomic<bool> allOff{false};
     std::atomic<int> voices{0};
+    /// The preset's trim (isd_synth_set_trim): the gain asked for (any thread), and on the render thread the gain in use,
+    /// where it is heading, its step a sample and the samples left in its glide.
+    double sampleRate = 48000.0;
+    std::atomic<float> trimAsked{1.f};
+    float trim = 1.f, trimGoal = 1.f, trimStep = 0.f;
+    int trimLeft = 0;
 };
 
 namespace {
@@ -437,6 +443,32 @@ void applyParams(ISDSynth *s) {
     s->started = true;
 }
 
+/// The preset's trim on the whole output, after everything the engine does (its own limiter included): a plain gain that
+/// glides in a straight line to a new value over 30 ms, so a change of preset never clicks; before the first render it is
+/// there from the first sample. At 1 and still, nothing is touched, so the output is the engine's to the bit.
+void applyTrim(ISDSynth *s, float *left, float *right, int frames, bool first) {
+    const float asked = s->trimAsked.load(std::memory_order_relaxed);
+    if (asked != s->trimGoal) {
+        s->trimGoal = asked;
+        if (first) {
+            s->trim = asked;
+            s->trimLeft = 0;
+        } else {
+            s->trimLeft = std::max(1, (int)(0.03 * s->sampleRate));
+            s->trimStep = (asked - s->trim) / (float)s->trimLeft;
+        }
+    }
+    if (s->trimLeft == 0 && s->trim == 1.f) return;
+    for (int i = 0; i < frames; ++i) {
+        if (s->trimLeft > 0) {
+            --s->trimLeft;
+            s->trim = s->trimLeft == 0 ? s->trimGoal : s->trim + s->trimStep;
+        }
+        left[i] *= s->trim;
+        right[i] *= s->trim;
+    }
+}
+
 } // namespace
 
 extern "C" {
@@ -447,6 +479,7 @@ ISDSynth *isd_synth_create(ISDEngine engine, double sampleRate, int maxFrames) {
     if (t.count == 0 || sampleRate <= 0) return nullptr;
     auto *s = new ISDSynth();
     s->params = t;
+    s->sampleRate = sampleRate;
     for (int a = 0; a < kSlots; ++a) { s->values[a].store(0.f); s->applied[a] = 0.f; }
     for (int i = 0; i < t.count; ++i) s->values[t.items[i].address].store(t.items[i].defaultValue);
     switch (engine) {
@@ -509,6 +542,7 @@ void isd_synth_midi(ISDSynth *s, const uint8_t *bytes, int length, int sampleOff
 void isd_synth_render(ISDSynth *s, float *left, float *right, int frames) {
     if (!s || frames <= 0) return;
     isd::DenormalGuard guard;
+    const bool first = !s->started;
     if (s->allOff.exchange(false)) s->engine->allNotesOff();
     applyParams(s);
     // Stable sort by offset (events usually arrive in order).
@@ -527,7 +561,14 @@ void isd_synth_render(ISDSynth *s, float *left, float *right, int frames) {
     if (pos < frames) s->engine->render(left + pos, right + pos, frames - pos);
     s->eventCount = 0;
     s->voices.store(s->engine->activeVoices(), std::memory_order_relaxed);
+    applyTrim(s, left, right, frames, first);
 }
+
+void isd_synth_set_trim(ISDSynth *s, float gain) {
+    if (s && std::isfinite(gain)) s->trimAsked.store(std::clamp(gain, 0.f, 4.f), std::memory_order_relaxed);
+}
+
+float isd_synth_get_trim(const ISDSynth *s) { return s ? s->trimAsked.load(std::memory_order_relaxed) : 1.f; }
 
 void isd_synth_all_notes_off(ISDSynth *s) { if (s) s->allOff.store(true); }
 

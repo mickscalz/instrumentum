@@ -99,4 +99,9 @@ public enum BuiltInCatalog {
     static func fourCC(_ s: String) -> OSType {
         s.utf8.reduce(0) { ($0 << 8) | OSType($1) }
     }
+
+    /// A trim in decibels (a preset's, a world's ambience's) as the Sound Core's gain: 1 for a value that isn't finite.
+    static func trimGain(dB: Double) -> Float {
+        dB.isFinite ? Float(pow(10, dB / 20)) : 1
+    }
 }

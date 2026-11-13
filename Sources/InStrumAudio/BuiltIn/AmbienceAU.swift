@@ -91,6 +91,8 @@ public final class AmbienceAU: AUAudioUnit {
         isd_ambience_set_wetness(a, Float(s.scene.wetness))
         isd_ambience_set_snow_on_glass(a, Float(s.scene.snowOnGlass))
         isd_ambience_set_lake(a, Float(s.scene.lakeSurge), Float(s.scene.lakeGlow))
+        // The world's trim: a plain gain on the whole ambience (the engine glides to it over 0.5 s).
+        isd_ambience_set_trim(a, BuiltInCatalog.trimGain(dB: s.scene.trimDB))
         // The temple bell and the sonar take a new key at their next strike or ping; while the key can't be sensed
         // they stay where they are.
         if let key = s.scene.key { isd_ambience_set_key(a, Int32(clamping: key.root), key.major ? 1 : 0) }
@@ -107,6 +109,9 @@ public final class AmbienceAU: AUAudioUnit {
             }
         }
     }
+
+    /// The world's trim the engine is heading for, as a gain (tests).
+    var trimInUse: Float { box.ambience.map { isd_ambience_get_trim($0) } ?? 1 }
 
     static func cSource(_ s: AmbienceSource) -> ISDAmbienceSource {
         switch s {

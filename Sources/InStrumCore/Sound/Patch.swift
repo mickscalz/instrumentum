@@ -46,7 +46,7 @@ public enum BuiltInEngine: String, Codable, CaseIterable {
     public var supportsArp: Bool { !arpDials.isEmpty }
 }
 
-/// A recipe for a built-in instrument: which engine, and its dial values (keyed by parameter identifier).
+/// A recipe for a built-in instrument: which engine, its dial values (keyed by parameter identifier) and its trim.
 public struct Patch: Codable, Equatable, Identifiable {
     public let id: String
     public var name: String
@@ -54,9 +54,35 @@ public struct Patch: Codable, Equatable, Identifiable {
     public var values: [String: Double]
     /// The song that inspired it (see `CreditLibrary`), if any.
     public var creditID: String?
+    /// The preset's trim in decibels: a plain gain on the instrument's whole output where the preset is loaded
+    /// (`BuiltInInstrumentAU.apply`), so that switching preset never jumps in volume. Each built-in preset's is set by
+    /// measurement: its engine's demo phrase sits within 1 LU of the built-in presets' median loudness (ITU-R BS.1770-4),
+    /// within ±9 dB, its true peak no higher than −1 dBTP. It is not a dial: never shown, never moved by the player, and
+    /// the player's volume and every dial are as they were. A patch saved before trims existed decodes with 0.
+    public var trimDB: Double
 
-    public init(id: String, name: String, engine: BuiltInEngine, values: [String: Double], creditID: String? = nil) {
+    public init(id: String, name: String, engine: BuiltInEngine, values: [String: Double], creditID: String? = nil,
+                trimDB: Double = 0) {
         self.id = id; self.name = name; self.engine = engine; self.values = values; self.creditID = creditID
+        self.trimDB = trimDB
+    }
+
+    enum CodingKeys: String, CodingKey { case id, name, engine, values, creditID, trimDB }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        engine = try c.decode(BuiltInEngine.self, forKey: .engine)
+        values = try c.decode([String: Double].self, forKey: .values)
+        creditID = try c.decodeIfPresent(String.self, forKey: .creditID)
+        trimDB = try c.decodeIfPresent(Double.self, forKey: .trimDB) ?? 0
+    }
+
+    /// The built-in preset with this id on this engine, if there is one.
+    public static func builtIn(id: String?, engine: BuiltInEngine) -> Patch? {
+        guard let id else { return nil }
+        return PatchLibrary.all.first { $0.id == id && $0.engine == engine }
     }
 }
 

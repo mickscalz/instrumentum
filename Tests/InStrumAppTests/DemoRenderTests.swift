@@ -946,103 +946,20 @@ final class DemoRenderTests: XCTestCase {
         }
     }
 
+    /// The minute-long ambience demos (Fire & Neon's two are written with their own checks: `testRenderVolcanoAmbience`,
+    /// `testRenderDriveAmbience`), each mixed as `ambienceDemo` mixes it: the four first worlds; the window worlds heard
+    /// indoors through the glass; the night waters (the fjord's ice and far waterfall; the bay's lapping, with a boat
+    /// passing at 2 s); the still places (the tea house at a snowy dusk with its screens half open, heard through the
+    /// paper, the iron kettle warming from 2 s and the temple bell struck at 3 s on E; the garden on a spring morning,
+    /// outdoors, its water-knocker starting empty at 2 s and its warbler calling on its own); the deep water (the submarine
+    /// aboard with a sonar ping and a burst of bubbles, the reef at dusk); and the storms (a strike on the field with its
+    /// thunder late and the gust front's roar; the plain at dusk, its cicadas and a far fork).
     func testWriteAmbienceDemos() throws {
         guard let dir = ProcessInfo.processInfo.environment["DEMO_DIR"] else { throw XCTSkip("DEMO_DIR not set") }
         let url = URL(fileURLWithPath: dir, isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        var swell = OceanSwell(seed: 5)
-        var waves: [Wave] = []
-        for _ in 0..<(60 * 60) { waves += swell.step(dt: 1.0 / 60) }
-        let scenes: [(String, [(ISDAmbienceSource, Float)], Float, [Wave], Float, Float)] = [
-            ("moonlit-lake-ambience", [(ISD_AMB_WATER, 0.8), (ISD_AMB_CRICKETS, 0.7), (ISD_AMB_BREEZE, 0.4), (ISD_AMB_OWL, 0.3)], 0.3, [], 0, 0),
-            ("spaceship-lounge-ambience", [(ISD_AMB_SHIP_HUM, 0.8), (ISD_AMB_AIR_FLOW, 0.5), (ISD_AMB_CHIME, 0.3), (ISD_AMB_HULL_TICKS, 0.3)], 0, [], 0, 0),
-            ("golden-hour-beach-ambience", [(ISD_AMB_SURF, 0.9), (ISD_AMB_PALMS, 0.45), (ISD_AMB_BREEZE, 0.35), (ISD_AMB_CRICKETS, 0.25)], 0.1, waves, 0, 0.15),
-            ("coast-road-ambience", [(ISD_AMB_ROAD, 0.8), (ISD_AMB_ENGINE, 0.6), (ISD_AMB_WINDOW_WIND, 0.5), (ISD_AMB_SURF, 0.5), (ISD_AMB_PASSING_CAR, 0.3)], 0, waves, 0.5, 0.9),
-        ]
-        // The window worlds: heard indoors through the glass.
-        let indoorScenes: [(String, [(ISDAmbienceSource, Float)], Float, Double?)] = [
-            ("snowbound-cabin-ambience", [(ISD_AMB_FIRE, 0.7), (ISD_AMB_WIND, 0.4), (ISD_AMB_RAIN_GLASS, 0.3)], 1, nil),
-            ("bedroom-dawn-ambience", [(ISD_AMB_DAWN_CHORUS, 0.6), (ISD_AMB_KETTLE, 0.5), (ISD_AMB_STREET, 0.5), (ISD_AMB_BREEZE, 0.35),
-                                       (ISD_AMB_DRIPS, 0.4), (ISD_AMB_CLOCK, 0.15)], 0, 2),
-        ]
-        for (name, levels, snow, kettle) in indoorScenes {
-            let audio = Self.renderAmbience(levels, seconds: 60, indoors: 1, snowOnGlass: snow, kettleAt: kettle)
-            let peak = max(audio.l.map(abs).max() ?? 0, audio.r.map(abs).max() ?? 0)
-            XCTAssertLessThanOrEqual(peak, 1.0, name)
-            let rms = (audio.l.reduce(0) { $0 + Double($1) * Double($1) } / Double(max(1, audio.l.count))).squareRoot()
-            XCTAssertGreaterThan(20 * log10(max(rms, 1e-10)), -60, name)
-            try Self.writeWAV(audio, to: url.appendingPathComponent("\(name).wav"))
-            try PreviewRenderer.writePNG(Spectrogram.image(left: audio.l, sampleRate: Self.rate, width: 1400, height: 500),
-                                         to: url.appendingPathComponent("\(name)-spectrogram.png"))
-        }
-        // The night waters (outdoors): the fjord's ice and far waterfall; the bay's lapping, with a boat passing at 2 s.
-        let nightScenes: [(String, [(ISDAmbienceSource, Float)], Double?)] = [
-            ("aurora-fjord-ambience", [(ISD_AMB_ICE_GROAN, 0.6), (ISD_AMB_WATERFALL, 0.35), (ISD_AMB_WATER, 0.5), (ISD_AMB_WIND, 0.3),
-                                       (ISD_AMB_LAPPING, 0.3)], nil),
-            ("bioluminescent-bay-ambience", [(ISD_AMB_LAPPING, 0.7), (ISD_AMB_WATER, 0.3), (ISD_AMB_CRICKETS, 0.5), (ISD_AMB_BOAT, 0.4),
-                                             (ISD_AMB_BREEZE, 0.3), (ISD_AMB_OWL, 0.15)], 2),
-        ]
-        for (name, levels, boat) in nightScenes {
-            let audio = Self.renderAmbience(levels, seconds: 60, indoors: 0, boatAt: boat)
-            let peak = max(audio.l.map(abs).max() ?? 0, audio.r.map(abs).max() ?? 0)
-            XCTAssertLessThanOrEqual(peak, 1.0, name)
-            let rms = (audio.l.reduce(0) { $0 + Double($1) * Double($1) } / Double(max(1, audio.l.count))).squareRoot()
-            XCTAssertGreaterThan(20 * log10(max(rms, 1e-10)), -60, name)
-            try Self.writeWAV(audio, to: url.appendingPathComponent("\(name).wav"))
-            try PreviewRenderer.writePNG(Spectrogram.image(left: audio.l, sampleRate: Self.rate, width: 1400, height: 500),
-                                         to: url.appendingPathComponent("\(name)-spectrogram.png"))
-        }
-        // The still places. The tea house at a snowy dusk (the Snow weather) with its screens half open, heard through the
-        // paper (indoors 0.8 − 0.5 × 0.5): the draught's rustle (0.4 × (0.4 + wind 0.25)), snow ticking on the paper
-        // (0.8 × the paper's 0.55), the iron kettle warming from 2 s, and the temple bell struck at 3 s, once its level has
-        // glided in, on E (the ambience's key until one is played, and the koto demo's). The garden on a spring morning,
-        // outdoors: the water-knocker, starting empty at 2 s, fills, tips and clacks on its stone, then fills again (one
-        // whole cycle inside the minute); the warbler calls on its own.
-        let stillScenes: [(String, [(ISDAmbienceSource, Float)], Float, Float, Double?, Double?, Double?)] = [
-            ("tea-house-snow-ambience", [(ISD_AMB_KETTLE, 0.35), (ISD_AMB_PAPER_SCREENS, 0.26), (ISD_AMB_TEMPLE_BELL, 0.5),
-                                         (ISD_AMB_WIND, 0.3), (ISD_AMB_RAIN_GLASS, 0.44)], 0.55, 0.8, 2, 3, nil),
-            ("zen-rock-garden-ambience", [(ISD_AMB_WATER_KNOCKER, 0.6), (ISD_AMB_WARBLER, 0.5), (ISD_AMB_BREEZE, 0.35),
-                                          (ISD_AMB_DAWN_CHORUS, 0.3), (ISD_AMB_TEMPLE_BELL, 0.3)], 0, 0, nil, nil, 2),
-        ]
-        for (name, levels, indoors, snow, kettle, bell, knocker) in stillScenes {
-            let audio = Self.renderAmbience(levels, seconds: 60, indoors: indoors, snowOnGlass: snow, kettleAt: kettle,
-                                            bellAt: bell, knockerAt: knocker)
-            let peak = max(audio.l.map(abs).max() ?? 0, audio.r.map(abs).max() ?? 0)
-            XCTAssertLessThanOrEqual(peak, 1.0, name)
-            let rms = (audio.l.reduce(0) { $0 + Double($1) * Double($1) } / Double(max(1, audio.l.count))).squareRoot()
-            XCTAssertGreaterThan(20 * log10(max(rms, 1e-10)), -60, name)
-            try Self.writeWAV(audio, to: url.appendingPathComponent("\(name).wav"))
-            try PreviewRenderer.writePNG(Spectrogram.image(left: audio.l, sampleRate: Self.rate, width: 1400, height: 500),
-                                         to: url.appendingPathComponent("\(name)-spectrogram.png"))
-        }
-        // The deep water: the submarine aboard with a sonar ping and a burst of bubbles, the reef at dusk.
-        for name in Self.deepWaterScenes {
-            let audio = Self.deepWaterAmbience(name, seconds: 60)
-            let peak = max(audio.l.map(abs).max() ?? 0, audio.r.map(abs).max() ?? 0)
-            XCTAssertLessThanOrEqual(peak, 1.0, name)
-            let rms = (audio.l.reduce(0) { $0 + Double($1) * Double($1) } / Double(max(1, audio.l.count))).squareRoot()
-            XCTAssertGreaterThan(20 * log10(max(rms, 1e-10)), -60, name)
-            try Self.writeWAV(audio, to: url.appendingPathComponent("\(name).wav"))
-            try PreviewRenderer.writePNG(Spectrogram.image(left: audio.l, sampleRate: Self.rate, width: 1400, height: 500),
-                                         to: url.appendingPathComponent("\(name)-spectrogram.png"))
-        }
-        // The storms: a strike on the field with its thunder late and the gust front's roar; the plain at dusk, its
-        // cicadas and a far fork.
-        for name in Self.stormScenes {
-            let demo = Self.stormAmbience(name, seconds: 60)
-            let peakLeft = demo.l.map(abs).max() ?? 0
-            let peakRight = demo.r.map(abs).max() ?? 0
-            let peak = max(peakLeft, peakRight)
-            XCTAssertLessThanOrEqual(peak, 1.0, name)
-            let power = demo.l.reduce(0) { $0 + Double($1) * Double($1) } / Double(max(1, demo.l.count))
-            let rmsDB = 10 * log10(max(power, 1e-20))
-            XCTAssertGreaterThan(rmsDB, -60, name)
-            try Self.writeWAV((l: demo.l, r: demo.r), to: url.appendingPathComponent("\(name).wav"))
-            try PreviewRenderer.writePNG(Spectrogram.image(left: demo.l, sampleRate: Self.rate, width: 1400, height: 500),
-                                         to: url.appendingPathComponent("\(name)-spectrogram.png"))
-        }
-        for (name, levels, cool, waves, speed, distance) in scenes {
-            let audio = Self.renderAmbience(levels, seconds: 60, nightCool: cool, waves: waves, speed: speed, surfDistance: distance)
+        for name in Self.ambienceDemoNames where Self.ambienceDemoSeconds(name) == 60 {
+            let audio = Self.ambienceDemo(name, seconds: 60)
             let peak = max(audio.l.map(abs).max() ?? 0, audio.r.map(abs).max() ?? 0)
             XCTAssertLessThanOrEqual(peak, 1.0, name)
             let rms = (audio.l.reduce(0) { $0 + Double($1) * Double($1) } / Double(max(1, audio.l.count))).squareRoot()
