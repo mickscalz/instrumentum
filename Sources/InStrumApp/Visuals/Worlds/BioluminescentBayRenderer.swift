@@ -41,6 +41,8 @@ final class BioluminescentBayRenderer: ThemeRenderer {
     /// The manta's span (m), and the sky's cover past which the sun and the moon are behind the cloud (their direct light
     /// on the sand falls from 1 at `cloudClear` to `cloudFloor` at `cloudHeavy`).
     nonisolated static let mantaSpan: Float = 4.6
+    /// The manta's shape is drawn this many times longer out from the shore than it is (as a higher eye would see it).
+    nonisolated static let mantaStretch: Float = 2.2
     nonisolated static let cloudClear: Float = 0.3, cloudHeavy: Float = 0.75, cloudFloor: Float = 0.04
 
     typealias Camera = (right: SIMD3<Float>, up: SIMD3<Float>, forward: SIMD3<Float>, tanH: Float, tanV: Float)
@@ -387,20 +389,21 @@ final class BioluminescentBayRenderer: ThemeRenderer {
         for sp in frame.surprises {
             switch sp.index {
             case 0:
-                // In from the bay's middle on a long diagonal, from 26 m out to 7 m (its wings spread across the view),
+                // In from the bay's middle on a long diagonal, from 15–18 m out to the shallows (its wings spread across the view),
                 // fading in and out of the deep.
                 let env = ExcitementPlay.envelope(age: sp.age, life: sp.duration, rise: 1.6, fall: 2.2)
                 guard env > 0.002 else { continue }
                 let way: Float = sp.unit(0) < 0.5 ? 1 : -1
                 let k = sp.progress
-                let out0: Float = 26 + 4 * sp.unit(1), out1: Float = 7.5
+                let out0: Float = 15 + 3 * sp.unit(1), out1: Float = 6.8
                 let out = out0 + (out1 - out0) * k
-                let across0 = -way * (2 + 4 * sp.unit(2)), across1 = way * (3 + 3 * sp.unit(3))
+                let across0 = -way * (2 + 4 * sp.unit(2)), across1 = way * (2 + 3 * sp.unit(3))
                 let across = across0 + (across1 - across0) * k
-                let heading = atan2(out1 - out0, across1 - across0)
+                // Its heading in its shape's own (stretched) frame.
+                let heading = atan2((out1 - out0) / Self.mantaStretch, across1 - across0)
                 bayU[14] = SIMD4(across, out, heading, env)
                 let beat = (sp.age / 3.4).truncatingRemainder(dividingBy: 1)
-                bayU[15] = SIMD4(Self.mantaSpan, beat, dark * sparkleScale * (gentle ? 1.2 : 1), 0)
+                bayU[15] = SIMD4(Self.mantaSpan, beat, dark * sparkleScale * (gentle ? 1.2 : 1), Self.mantaStretch)
                 mantaDrawn = true
             case 1:
                 // Up for a breath 9–14 m out, rings of glow spreading as it breaks the surface and as it dives.

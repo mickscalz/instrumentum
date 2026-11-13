@@ -25,7 +25,7 @@ enum BioluminescentBayShaders {
         float4 wave;          // the wave of light: its front (m out), light 0…1 (× the dark, after the limiter), its arrival on the shore 0…1, a drop's sparkles 0…1
         float4 excite;        // the glow gathered under the surface 0…1 (× the dark), Energy 0…1, the wave's gain (a drop's brighter), the sparkles' twinkle phase 0…1
         float4 manta;         // a manta gliding in: across (m), out (m), heading (rad, in the across–out plane), its cover 0…1
-        float4 mantaB;        // its span (m), its wingbeat's phase 0…1, the plankton lit along its edges 0…1 (× the dark), unused
+        float4 mantaB;        // its span (m), its wingbeat's phase 0…1, the plankton lit along its edges 0…1 (× the dark), its stretch out from the shore
         float4 turtle;        // a turtle surfacing: across (m), out (m), seconds since it came up, its rings' light 0…1 (× the dark)
         float4 turtleB;       // how far it is up 0…1, which way it faces (±1), its cover 0…1, unused
         float4 sand;          // the sun's and moon's direct light on the sand (falling with heavy cloud), the sky's light on it, unused, unused
@@ -398,11 +398,12 @@ enum BioluminescentBayShaders {
     float3 bayExcite(float3 d, float2 q, float f, float footprint, float fres, float3 under, constant BayU& b,
                      constant OceanU& o) {
         float night = b.a.w, eye = b.a.z;
-        float3 g = under;
+        float3 g = float3(0);          // Excitement's own light, under the surface or on it
+        float coverK = 1.0;            // the manta's dark form over what lies beneath it
         // The glow gathering under the surface (tension): soft, deep, blurred by the water over it, mid-bay.
         float gather = b.excite.x;
         if (gather > 0.001) {
-            float region = smoothstep(8.0, 16.0, f) * (1.0 - smoothstep(45.0, 110.0, f));
+            float region = smoothstep(7.0, 12.0, f) * (1.0 - smoothstep(40.0, 110.0, f));
             float ang = q.x / max(f, 1.0);
             float blobs = smoothstep(0.25, 0.8, vnoise3(float3(q.x * 0.09, f * 0.05, 1.3 * sin(o.phases.y) + 0.8 * cos(o.phases.x))));
             float breathe = 0.85 + 0.15 * sin(o.phases.x * 2.0);
@@ -439,7 +440,9 @@ enum BioluminescentBayShaders {
         float mc = b.manta.w;
         if (mc > 0.001) {
             float halfSpan = 0.5 * b.mantaB.x;
-            float2 dq = q - b.manta.xy;
+            // Its shape is drawn stretched out from the shore (b.mantaB.w), as the eye a little higher up would see it:
+            // from 1.6 m up, a manta 10 m out is a sliver.
+            float2 dq = (q - b.manta.xy) * float2(1.0, 1.0 / max(b.mantaB.w, 1.0));
             float2 fw = float2(cos(b.manta.z), sin(b.manta.z));
             float2 p = float2(dot(dq, fw), dot(dq, float2(-fw.y, fw.x))) / halfSpan;
             if (abs(p.x) < 6.0 && abs(p.y) < 1.6) {
@@ -447,7 +450,8 @@ enum BioluminescentBayShaders {
                 float m = bayMantaMargin(p, beat);
                 float w = max(0.035, 0.8 * footprint / halfSpan);
                 float inside = smoothstep(-w, w, m);
-                g *= 1.0 - 0.9 * inside * mc;
+                coverK = 1.0 - 0.9 * inside * mc;
+                g *= coverK;
                 float stroke = 0.6 + 0.4 * saturate(sin(6.2831853 * beat) + 0.3);
                 float rim = exp(-(m * m) / (w * w)) * step(-0.5, m);
                 float spanK = 0.9 + 0.1 * cos(6.2831853 * beat);
@@ -481,7 +485,8 @@ enum BioluminescentBayShaders {
                 g += mix(kGlowCyan, kWaveBlue, 0.3) * (tl * (rings * n * 1.4 + stir));
             }
         }
-        return g * (1.0 - 0.35 * fres);
+        // Glow Wake as it was (emissive, unreflected), darkened only where the manta covers it.
+        return under * coverK + g * (1.0 - 0.35 * fres);
     }
 
     /// The turtle's dark shell and head breaking the surface, seen along the ray that meets the water `f` out at q: the
