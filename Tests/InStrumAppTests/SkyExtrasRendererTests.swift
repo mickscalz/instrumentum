@@ -257,6 +257,7 @@ final class SkyExtrasFrameTimeTests: XCTestCase {
         let cases: [(String, SkyState)] = [
             ("plain-night", T.night()), ("storm-sprites-satellites", busy),
             ("plain-golden", R.golden()), ("supercell-approach", R.supercell(R.golden(), phase: 0.2, glow: 0.5)),
+            ("supercell-arriving", R.supercell(R.golden(), phase: 0.32, glow: 0.3)),
             ("supercell-core", R.supercell(R.golden(), phase: 0.45, glow: 0.8)),
             ("supercell-clearing", R.supercell(R.golden(), phase: WorldWeather.supercellHeld)),
             ("ashfall-night", ash),
