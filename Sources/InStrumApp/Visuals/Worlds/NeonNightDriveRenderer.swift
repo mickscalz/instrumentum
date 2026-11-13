@@ -55,6 +55,15 @@ final class NeonNightDriveRenderer: ThemeRenderer {
 
     private static func angle(_ a: SIMD3<Float>, _ b: SIMD3<Float>) -> Float { acos(min(1, max(-1, simd_dot(a, b)))) }
 
+    /// The half-angle (rad) of the cone round a car's axis point (as `carCone`'s) holding its face: its body, lights and
+    /// bar stand within 1.77 m of the point (2.2 m with a margin); −1 for none, 4 when the eye is that near.
+    nonisolated static func faceHalfAngle(x: Float, ahead: Float, eye: Float) -> Float {
+        guard ahead > -1e4, x.isFinite, ahead.isFinite else { return -1 }
+        let len = simd_length(SIMD3<Float>(x, 0.7 - eye, ahead))
+        let reach: Float = 2.2
+        return len > reach ? asin(reach / len) : 4
+    }
+
     nonisolated static func carCone(x: Float, ahead: Float, oncoming: Bool, eye: Float) -> SIMD4<Float> {
         guard ahead > -1e4, x.isFinite, ahead.isFinite else { return SIMD4(0, 0, 0, 2) }
         let c = SIMD3<Float>(x, 0.7 - eye, ahead)
@@ -102,6 +111,10 @@ final class NeonNightDriveRenderer: ThemeRenderer {
     /// The cars' cones' half-angles this frame (rad; −1 an empty slot, 4 a car nearer than its reach), and their lights'
     /// bearings from the eye (rad, the road's frame; 100 an empty slot).
     private var carHalf = [Float](repeating: -1, count: NeonNightDriveRenderer.carSlots)
+    /// Each car's face's cone (half-angle, rad; −1 none, 4 everywhere): its face, its lights and its bar stand within
+    /// 1.8 m of the cone's axis point.
+    private var faceHalf = [Float](repeating: -1, count: NeonNightDriveRenderer.carSlots)
+    private var faceAxis = [SIMD3<Float>](repeating: .zero, count: NeonNightDriveRenderer.carSlots)
     private var carBearing = [Float](repeating: 100, count: NeonNightDriveRenderer.carSlots)
     private var limiter = FlashLimiter()
     private var limiterStarted = false
@@ -395,6 +408,9 @@ final class NeonNightDriveRenderer: ThemeRenderer {
             let w = u[Self.carConeBase + c].w
             carHalf[c] = w > 1.5 ? -1 : (w < 0 ? 4 : acos(min(1, w)))
             let car = u[Self.carBase + c * 2]
+            faceHalf[c] = Self.faceHalfAngle(x: car.x, ahead: car.y, eye: u[Self.rowRoad3].y)
+            let axis = SIMD3<Float>(car.x, 0.7 - u[Self.rowRoad3].y, car.y)
+            faceAxis[c] = faceHalf[c] >= 0 && faceHalf[c] < 1.5 ? axis / simd_length(axis) : .zero
             carBearing[c] = car.y > -1e4 ? atan2(car.x, car.y) : 100
         }
         let cw = 2 / Float(Self.tileColumns), ch = 2 / Float(Self.tileRows)
@@ -407,12 +423,19 @@ final class NeonNightDriveRenderer: ThemeRenderer {
                 let c = Self.angle(mid, Self.tileRay(x0, y0 + ch, right: rt, up: up, forward: fw, axes: ax))
                 let d = Self.angle(mid, Self.tileRay(x0 + cw, y0 + ch, right: rt, up: up, forward: fw, axes: ax))
                 let spread = max(max(a, b), max(c, d)) * 1.05 + 0.002
+                // The glows' mask in the low 12 bits; the faces' (cones only 1.8 m round, a few tiles each) in the next 12.
                 var mask: Float = 0
                 for k in 0..<Self.carSlots where carHalf[k] >= 0 {
                     let reach = carHalf[k] + spread
                     let cone = u[Self.carConeBase + k]
                     if reach >= 1.5 || abs(simd_dot(mid, SIMD3<Float>(cone.x, cone.y, cone.z))) >= cos(reach) {
                         mask += Float(1 << k)
+                    }
+                }
+                for k in 0..<Self.carSlots where faceHalf[k] >= 0 {
+                    let reach = faceHalf[k] + spread
+                    if reach >= 1.5 || simd_dot(mid, faceAxis[k]) >= cos(reach) {
+                        mask += Float(1 << (k + 12))
                     }
                 }
                 let i = ty * Self.tileColumns + tx

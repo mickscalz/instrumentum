@@ -1341,11 +1341,14 @@ enum NeonNightDriveShaders {
         // this pixel's tile of the view are looked at: the rest can't be met here.)
         int tileX = clamp(int((in.ndc.x + 1.0) * 8.0), 0, 15), tileY = clamp(int((in.ndc.y + 1.0) * 4.5), 0, 8);
         int tile = tileY * 16 + tileX;
-        uint carMask = uint(u.carTiles[tile >> 2][tile & 3] + 0.5);
+        // (The tile's masks: the cars whose glow can reach it in the low 12 bits, whose face can in the next 12; whole
+        // numbers under 2^24, exact in a float.)
+        uint tileMasks = uint(u.carTiles[tile >> 2][tile & 3]);
+        uint carMask = tileMasks & 4095u, faceMask = tileMasks >> 12;
         float carT = 1e9;
         for (int c = 0; c < 12; c++) {
             if ((skip & 16u) != 0u) break;
-            if (((carMask >> uint(c)) & 1u) == 0u) continue;
+            if (((faceMask >> uint(c)) & 1u) == 0u) continue;
             float4 a = u.cars[c * 2];
             // (A ray outside the car's cone passes more than 13.6 m from it: its face, 1.8 m round, can't be met.)
             float4 cone = u.carCone[c];
