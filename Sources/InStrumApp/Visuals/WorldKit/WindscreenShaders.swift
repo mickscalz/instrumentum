@@ -128,6 +128,14 @@ enum WindscreenShaders {
         float r = rmax * (0.35 + 0.65 * h3 * h3);
         float margin = r / cell;
         float2 centre = (c + float2(margin + (1.0 - 2.0 * margin) * h1, margin + (1.0 - 2.0 * margin) * h2)) * cell;
+        // Not quite round: the wind of the car's speed flattens and leans each a little.
+        float2 rel = q - centre;
+        float lean = (h1 - 0.5) * 0.5;
+        rel = float2(rel.x - rel.y * lean * 0.3, rel.y * (1.0 + 0.25 * h2));
+        // (Outside the drop at its full size, a pixel is outside it at any size it has grown to: when it landed isn't
+        // worked out. Most of a drop's cell.)
+        float2 full = rel / r;
+        if (dot(full, full) >= 1.0) return float3(0);
         // Has it landed since its place was last wiped (and not while sheltered)?
         float since = wipedAgo(centre, u);
         float delay = fract(h0 * 7.13 + h2) * fill;
@@ -137,10 +145,6 @@ enum WindscreenShaders {
         // A new drop swells to its size over its first second.
         float grow = min(1.0, 0.55 + landed);
         r *= grow;
-        // Not quite round: the wind of the car's speed flattens and leans each a little.
-        float2 rel = q - centre;
-        float lean = (h1 - 0.5) * 0.5;
-        rel = float2(rel.x - rel.y * lean * 0.3, rel.y * (1.0 + 0.25 * h2));
         float2 off = rel / r;
         if (dot(off, off) >= 1.0) return float3(0);
         return float3(off, r);
