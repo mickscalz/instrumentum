@@ -717,10 +717,15 @@ enum LightningPlainsShaders {
         float lean0 = clamp(wind / 16.0 * (0.7 + 0.6 * wave) + sway, -0.75, 0.75);
         // The tussocks' rolling, ragged top.
         float sb = max(d.x, 1e-3);
-        float roll = pl_noise1(X / 0.9, b.w) * 0.65 + pl_noise1(X / 0.23, b.w + 7.7) * 0.35;
-        float rag = pl_noise1(X / (0.8 * sb), b.w + 3.3);
-        float g = H * (0.42 + 0.14 * roll + 0.1 * (rag - 0.5));
-        float body = saturate((g - Y) / aa + 0.5);
+        // (Their top stands 0.61 H at most: higher up, where only the blades reach, there is no body there, and every test
+        // below against the top falls the same way whatever it is: its noise isn't read.)
+        float rag = 0.0, g = 0.62 * H, body = 0.0;
+        if (Y <= 0.62 * H + 0.5 * aa) {
+            float roll = pl_noise1(X / 0.9, b.w) * 0.65 + pl_noise1(X / 0.23, b.w + 7.7) * 0.35;
+            rag = pl_noise1(X / (0.8 * sb), b.w + 3.3);
+            g = H * (0.42 + 0.14 * roll + 0.1 * (rag - 0.5));
+            body = saturate((g - Y) / aa + 0.5);
+        }
         // Blades and stalks out of it, tapering, bowed by the wind.
         float jitter = min(0.12, sb / (0.75 * H));
         float bow = 0.75 * lean0 * Y * Y / (0.8 * H);
