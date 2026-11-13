@@ -742,7 +742,9 @@ enum VolcanoRimShaders {
                              + float3(0, 0, -0.15 + 0.4 * f));
         if (lip > 0.0) N = normalize(mix(N, normalize(inward * 0.35 + float3(0, 0, 1)), lip));
         if (h.kind == 4) N = normalize(float3(0, 0, 1) + inward * 0.25);
-        float grain = vn2(float2(arc * 1.3, z * 1.3)) * 0.5 + vn2(float2(arc * 0.35, z * 0.35)) * 0.5;
+        // (Its finest grain is under a pixel across at the walls' distance, a speckle: Smooth takes its mean.)
+        float fineGrain = oct >= 3 ? vn2(float2(arc * 1.3, z * 1.3)) : 0.5;
+        float grain = fineGrain * 0.5 + vn2(float2(arc * 0.35, z * 0.35)) * 0.5;
         float3 basalt = float3(0.05, 0.047, 0.045) * (0.75 + 0.5 * colSeed) * (0.8 + 0.4 * grain);
         float3 scoria = float3(0.075, 0.05, 0.04) * (0.5 + 0.9 * blocksR) * (0.8 + 0.4 * grain);
         float3 basaltC = mix(basalt, scoria, rubbly);
