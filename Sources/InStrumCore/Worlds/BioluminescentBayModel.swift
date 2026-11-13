@@ -100,6 +100,8 @@ public struct BioluminescentBayModel: ThemeModel, MoodAware, SkyAware, Excitemen
     private var play = ExcitementPlay()
     private var meteors = WorldMeteors()
     private var energyEased: Float = 0
+    /// The glow gathering under the surface: it gathers slowly (τ 1 s) and breaks quickly (τ 0.3 s).
+    private var gatherEased: Float = 0
     /// The playing moment set off as a drop (its wave runs from the gathered glow).
     private var dropWave = false
 
@@ -226,7 +228,7 @@ public struct BioluminescentBayModel: ThemeModel, MoodAware, SkyAware, Excitemen
             // A drop scatters sparkles over the water behind its wave, dying away.
             if m.isDrop { frame.sparkle = m.strength * ExcitementPlay.smooth(0, 0.25, m.age) * exp(-m.age / 2.6) }
         }
-        frame.gather = play.tension
+        frame.gather = gatherEased
         frame.surprises = play.surprises
         frame.flashRequest = 0.35 * meteors.fireballLight(at: sky.meteorTime)
         frame.worldMeteors = meteors.live(at: sky.meteorTime).count
@@ -245,6 +247,7 @@ public struct BioluminescentBayModel: ThemeModel, MoodAware, SkyAware, Excitemen
         play.step(dt: Double(fd), frame: e, momentSeconds: Self.momentSeconds, dropSeconds: Self.dropSeconds,
                   surpriseSeconds: Self.surpriseSeconds)
         energyEased = ExcitementStep.ease(energyEased, to: play.energy, tau: play.energy > energyEased ? 0.8 : 3, dt: fd)
+        gatherEased = ExcitementStep.ease(gatherEased, to: play.tension, tau: play.tension > gatherEased ? 1 : 0.3, dt: fd)
         if let m = play.momentBegan { dropWave = m.isDrop }
         let now = sky.meteorTime
         meteors.prune(at: now)
