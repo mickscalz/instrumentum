@@ -80,7 +80,7 @@ final class SupercellSkyRenderer: ThemeRenderer {
     private(set) var stormScale: Float = 1
     /// The storm's layers on Smooth (half) and on High (0.7 of the view's width and height: half the pixels, the clouds'
     /// finest billows still a few of its pixels across).
-    nonisolated static func stormScale(_ q: QualityLevel) -> Float { q == .lite ? 0.5 : 0.7 }
+    nonisolated static func reducedScale(_ q: QualityLevel) -> Float { q == .lite ? 0.5 : 0.7 }
     private(set) var cloudAllocations = 0
     private var cellU = [SIMD4<Float>](repeating: .zero, count: SupercellSkyRenderer.uniformCount)
     private var birdInstances: [SIMD4<Float>] = []
@@ -300,7 +300,7 @@ final class SupercellSkyRenderer: ThemeRenderer {
         if flow > 1000 { flow -= 1000 }
 
         // The rows.
-        stormScale = Self.stormScale(quality)
+        stormScale = Self.reducedScale(quality)
         let octaves: Float = quality == .lite ? 2 : 3
         let tanV = Float(tan(Self.verticalFOV * .pi / 360))
         cellU[Self.rowA] = SIMD4(aspect, t, octaves, 2 * tanV / height)
