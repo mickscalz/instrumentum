@@ -450,7 +450,11 @@ enum VolcanoRimShaders {
         for (int k = 0; k < 2; k++) {
             float4 f = k == 0 ? u.fountA : u.fountB;
             float rp = (4.0 + 0.22 * f.z) * u.dims3.y;
-            float dist = length(p - f.xy) + 3.0 * (vn2(p * 0.15 + u.a.y * 0.3) - 0.5);
+            // (Its edge wanders 1.5 m at most (the noise is 0…1): farther off there is no pool whatever the noise, and
+            // mixing in none leaves the colour exactly as it is, so none is read.)
+            float centre = length(p - f.xy);
+            if (centre - 1.6 >= rp * 1.1) continue;
+            float dist = centre + 3.0 * (vn2(p * 0.15 + u.a.y * 0.3) - 0.5);
             float pool = 1.0 - smoothstep(rp * 0.5, rp * 1.1, dist);
             float churn = vn2(p * 0.4 + float2(u.a.y * 0.9, -u.a.y * 0.6));
             float skinOver = smoothstep(0.5, 0.75, vn2(p * 0.3 - u.a.y * 0.2)) * (1.0 - 0.6 * f.w);
