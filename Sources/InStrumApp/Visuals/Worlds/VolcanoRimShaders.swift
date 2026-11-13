@@ -173,7 +173,11 @@ enum VolcanoRimShaders {
     /// sloping and broken (a gap torn in the wall, never a sawn slot).
     float notchCut(float theta, constant VolcanoU& u) {
         float hw = u.dims3.x;
-        float off = abs(theta - u.dims2.w) + hw * 0.35 * (vn2(float2(theta * 120.0, 2.0)) - 0.5);
+        float away = abs(theta - u.dims2.w);
+        // (Its sides wander 0.175 × the half-width at most (the noise is 0…1): farther round the wall stands whole whatever
+        // the noise, so none is read there.)
+        if (away >= hw * 1.6) return 1.0;
+        float off = away + hw * 0.35 * (vn2(float2(theta * 120.0, 2.0)) - 0.5);
         return smoothstep(hw * 0.45, hw * 1.4, off);
     }
 
@@ -224,8 +228,7 @@ enum VolcanoRimShaders {
             float3 p = o + d * t;
             float r = length(p.xy - C);
             float2 qf = p.xy - C;
-            bool inNotch = r < 0.5 * (u.dims.z + u.dims.w) + 4.0 && notchCut(atan2(qf.x, qf.y), u) < 0.999;
-            if (r < u.dims.x || inNotch) {
+            if (r < u.dims.x || (r < 0.5 * (u.dims.z + u.dims.w) + 4.0 && notchCut(atan2(qf.x, qf.y), u) < 0.999)) {
                 h.edge = lakeEdge(p.xy, u);   // (read once: the lake's margin and the floor's shore use it too)
                 h.kind = length(p.xy) < h.edge ? 1 : 2;
                 h.t = t; h.p = p;
@@ -237,8 +240,14 @@ enum VolcanoRimShaders {
             float3 p = o + d * tA;
             float2 q = p.xy - C;
             float th = atan2(q.x, q.y);
-            float top = (u.dims.y + lipRag(th, 1.0)) * notchCut(th, u);
-            if (p.z >= lakeZ - 0.5 && p.z <= top) { h.kind = 3; h.t = tA; h.p = p; h.theta = th; }
+            // (The lip's rag is −27.2…36.2 m (its noise is 0…1): a point outside that band round its top is in the cliff
+            // or over it whatever the rag, which is read only where it decides; the hits are unchanged.)
+            float cut = notchCut(th, u);
+            bool cliff = false;
+            if (p.z >= lakeZ - 0.5 && p.z <= (u.dims.y + 36.3) * cut) {
+                cliff = p.z <= (u.dims.y - 27.3) * cut || p.z <= (u.dims.y + lipRag(th, 1.0)) * cut;
+            }
+            if (cliff) { h.kind = 3; h.t = tA; h.p = p; h.theta = th; }
         }
         // The bench.
         if (d.z < -1e-5) {
@@ -258,12 +267,18 @@ enum VolcanoRimShaders {
             float3 p = o + d * tB;
             float2 q = p.xy - C;
             float th = atan2(q.x, q.y);
-            float topFull = rimH + lipRag(th, 5.0);
             float cut = notchCut(th, u);
-            float top = mix(lakeZ - 1.0, topFull, cut);
-            if (p.z >= u.dims.y - 2.0 && p.z <= top) { h.kind = 3; h.t = tB; h.p = p; h.theta = th; }
+            // (As above: the rim's rag is read only where it decides; the hits are unchanged.)
+            bool below = p.z < rimH - 27.3, above = p.z >= rimH + 36.3;
+            bool upper = false;
+            if (p.z >= u.dims.y - 2.0 && p.z <= mix(lakeZ - 1.0, rimH + 36.3, cut)) {
+                upper = p.z <= mix(lakeZ - 1.0, rimH - 27.3, cut) || p.z <= mix(lakeZ - 1.0, rimH + lipRag(th, 5.0), cut);
+            }
+            if (upper) { h.kind = 3; h.t = tB; h.p = p; h.theta = th; }
             else if (h.kind == 0 && p.z < u.dims.y - 2.0 && p.z > lakeZ - 1.0) { h.kind = 3; h.t = tB; h.p = p; h.theta = th; }
-            else if (h.kind == 0 && cut < 0.999 && p.z < topFull) { h.kind = 5; h.t = tB; h.p = p; h.theta = th; }
+            else if (h.kind == 0 && cut < 0.999 && !above && (below || p.z < rimH + lipRag(th, 5.0))) {
+                h.kind = 5; h.t = tB; h.p = p; h.theta = th;
+            }
         }
         return h;
     }
