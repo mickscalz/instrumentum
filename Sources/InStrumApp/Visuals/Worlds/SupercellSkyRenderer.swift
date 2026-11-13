@@ -67,16 +67,20 @@ final class SupercellSkyRenderer: ThemeRenderer {
     private var showWarp = false
     private let scene: SkyPipeline
     private let birds, posts: MTLRenderPipelineState
-    /// Smooth: the storm's layers drawn at half resolution (`cell_cloud_fragment`, into `cloudLight` and `cloudCover`),
-    /// read back by the scene pass (`cell_compose_fragment`) under what it draws at full resolution.
+    /// The storm's layers drawn at a reduced resolution (`cell_cloud_fragment`, into `cloudLight` and `cloudCover`): half
+    /// on Smooth, 0.7 on High; read back (filtered) by the scene pass (`cell_compose_fragment`) under what it draws at full
+    /// resolution (the sky, the field and the wheat, the lightning).
     private let compose: SkyPipeline
     private let clouds: MTLRenderPipelineState
     private let device: MTLDevice
     private var cloudLight: MTLTexture?
     private var cloudCover: MTLTexture?
-    /// Whether this frame's storm is drawn at half resolution (Smooth), and the targets made so far (tests: one pair a
-    /// size, never one a frame).
-    private(set) var halfResStorm = false
+    /// The share of the view's width and height the storm's layers are drawn at this frame (Smooth 0.5, High 0.7), and
+    /// the targets made so far (tests: one pair a size, never one a frame).
+    private(set) var stormScale: Float = 1
+    /// The storm's layers on Smooth (half) and on High (0.7 of the view's width and height: half the pixels, the clouds'
+    /// finest billows still a few of its pixels across).
+    nonisolated static func stormScale(_ q: QualityLevel) -> Float { q == .lite ? 0.5 : 0.7 }
     private(set) var cloudAllocations = 0
     private var cellU = [SIMD4<Float>](repeating: .zero, count: SupercellSkyRenderer.uniformCount)
     private var birdInstances: [SIMD4<Float>] = []
@@ -91,7 +95,7 @@ final class SupercellSkyRenderer: ThemeRenderer {
     /// bits: 1 the tower, 2 the flanking line, 4 the anvil, 8 the wall cloud, 16 the base, 32 the hail and the rain core,
     /// 64 the inflow, the funnel and the dust, 128 the sky, 256 the field, 8192 the wheat, 512 the trees, the silo and the
     /// light after the storm, 1024 the lightning; the renderer's: 2048 the weather, 4096 the flock and the posts, 16384 the
-    /// storm at full resolution on Smooth (as before its half-resolution pass).
+    /// storm at full resolution (as before its reduced-resolution pass).
     var skipLayers: UInt32 = 0
 
     /// What was drawn (tests read them): the rows of wheat (distance m, lean across at the tip m, height kept, sheen),
@@ -296,7 +300,7 @@ final class SupercellSkyRenderer: ThemeRenderer {
         if flow > 1000 { flow -= 1000 }
 
         // The rows.
-        halfResStorm = quality == .lite
+        stormScale = Self.stormScale(quality)
         let octaves: Float = quality == .lite ? 2 : 3
         let tanV = Float(tan(Self.verticalFOV * .pi / 360))
         cellU[Self.rowA] = SIMD4(aspect, t, octaves, 2 * tanV / height)
@@ -535,9 +539,9 @@ final class SupercellSkyRenderer: ThemeRenderer {
 
     // MARK: - Render
 
-    /// The half-resolution targets for a scene `width` × `height` (made when the size changes, kept).
-    private func cloudTargets(width: Int, height: Int) -> (MTLTexture, MTLTexture)? {
-        let w = max(1, (width + 1) / 2), h = max(1, (height + 1) / 2)
+    /// The storm's targets for a scene `width` × `height` at `scale` (made when the size changes, kept).
+    private func cloudTargets(width: Int, height: Int, scale: Float) -> (MTLTexture, MTLTexture)? {
+        let w = max(1, Int((Float(width) * scale).rounded(.up))), h = max(1, Int((Float(height) * scale).rounded(.up)))
         if cloudLight?.width != w || cloudLight?.height != h {
             let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: RenderStack.sceneFormat, width: w, height: h, mipmapped: false)
             d.usage = [.renderTarget, .shaderRead]
@@ -554,9 +558,10 @@ final class SupercellSkyRenderer: ThemeRenderer {
         let skyU = sky.uniforms
         cellU[Self.crawlInfoBase].w = Float(skipLayers & 0x3FFF)
         defer { cellU[Self.crawlInfoBase].w = 0 }
-        // Smooth: the storm's layers first, at half resolution.
+        // The storm's layers first, at a reduced resolution.
         var halfRes: (MTLTexture, MTLTexture)?
-        if halfResStorm, skipLayers & 16384 == 0, let hdr = stack.hdrTarget, let targets = cloudTargets(width: hdr.width, height: hdr.height) {
+        if stormScale < 1, skipLayers & 16384 == 0, let hdr = stack.hdrTarget,
+           let targets = cloudTargets(width: hdr.width, height: hdr.height, scale: stormScale) {
             let p = MTLRenderPassDescriptor()
             p.colorAttachments[0].texture = targets.0
             p.colorAttachments[0].loadAction = .dontCare

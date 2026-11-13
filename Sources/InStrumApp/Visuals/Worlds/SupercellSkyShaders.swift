@@ -1107,7 +1107,10 @@ enum SupercellSkyShaders {
             // The heaviest first, while few of the others are held (fewer registers live through their noise).
             if ((skip & 1u) == 0u) L7 = tower(o, d, flash, u, octaves, t7);
             if ((skip & 2u) == 0u) L8 = flankingLine(o, d, flash, u, octaves, 0, t8);
-            if (octaves >= 3 && (skip & 2u) == 0u) L9 = flankingLine(o, d, flash, u, octaves, 1, t9);   // (the second tower: not on Smooth)
+            // The tower behind it, where the nearest lets light through (its frayed edge shows the next tower, not the
+            // sky: on Smooth without it, the nearest one's outline cut the one behind with a hard curved edge). Behind
+            // more than 99.6% cover it would add nothing (the walk front to back stops there), so it isn't read.
+            if ((skip & 2u) == 0u && L8.a <= 0.996) L9 = flankingLine(o, d, flash, u, octaves, 1, t9);
             if ((skip & 4u) == 0u) L10 = anvil(o, d, flash, u, octaves, t10);
             anvilCover = L10.a;
             if ((skip & 8u) == 0u) L3 = wallCloud(o, d, flash, u, octaves, t3);
@@ -1273,10 +1276,11 @@ enum SupercellSkyShaders {
         return cellFinish(ndc, dE, d, o, flash, cs, sky, u, octaves, skip, stars);
     }
 
-    // ---------------------------------------------------------------- Smooth: the storm at half resolution
-    // On Smooth the storm's layers (soft cloud, rain and dust, a few hundred metres to kilometres across) are drawn into
-    // two half-resolution targets, and the scene pass reads them back (filtered) under the sky, the field and the wheat
-    // and the lightning, which it draws at full resolution: a quarter of the storm's noise a frame.
+    // ---------------------------------------------------------------- the storm at a reduced resolution
+    // The storm's layers (soft cloud, rain and dust, a few hundred metres to kilometres across) are drawn into two
+    // reduced-resolution targets (half the view's size on Smooth, 0.7 of it on High), and the scene pass reads them back
+    // (filtered) under the sky, the field and the wheat and the lightning, which it draws at full resolution: a quarter
+    // of the storm's noise a frame on Smooth, half on High.
     struct CloudTargets { float4 light [[color(0)]]; float4 cover [[color(1)]]; };
 
     fragment CloudTargets cell_cloud_fragment(CellOut in [[stage_in]], constant SkyU& sky [[buffer(0)]],
