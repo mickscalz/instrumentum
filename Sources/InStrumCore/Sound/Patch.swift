@@ -56,9 +56,10 @@ public struct Patch: Codable, Equatable, Identifiable {
     public var creditID: String?
     /// The preset's trim in decibels: a plain gain on the instrument's whole output where the preset is loaded
     /// (`BuiltInInstrumentAU.apply`), so that switching preset never jumps in volume. Each built-in preset's is set by
-    /// measurement: its engine's demo phrase sits within 1 LU of the built-in presets' median loudness (ITU-R BS.1770-4),
-    /// within ±9 dB, its true peak no higher than −1 dBTP. It is not a dial: never shown, never moved by the player, and
-    /// the player's volume and every dial are as they were. A patch saved before trims existed decodes with 0.
+    /// measurement: its engine's demo phrase sits within 1 LU of the built-in presets' median loudness before trims (−20.7
+    /// LUFS, ITU-R BS.1770-4), within ±9 dB, its true peak no higher than −1 dBTP. It is not a dial: never shown, never
+    /// moved by the player, and the player's volume and every dial are as they were. A patch saved before trims existed
+    /// decodes with 0.
     public var trimDB: Double
 
     public init(id: String, name: String, engine: BuiltInEngine, values: [String: Double], creditID: String? = nil,
@@ -89,87 +90,87 @@ public struct Patch: Codable, Equatable, Identifiable {
 /// The built-in presets (values from docs/superpowers/briefs).
 public enum PatchLibrary {
     public static let all: [Patch] = [
-        Patch(id: "felt-glass", name: "Felt Glass", engine: .feltGlass, values: dials(felt: 0.55, glass: 0.35, warmth: 0.60, ring: 0.55, space: 0.45, width: 0.50), creditID: "come-back-to-earth"),
-        Patch(id: "bare-felt", name: "Bare Felt", engine: .feltGlass, values: dials(felt: 0.70, glass: 0.00, warmth: 0.65, ring: 0.50, space: 0.35, width: 0.45), creditID: "come-back-to-earth"),
-        Patch(id: "glass-choir", name: "Glass Choir", engine: .feltGlass, values: dials(felt: 0.40, glass: 0.75, warmth: 0.50, ring: 0.70, space: 0.60, width: 0.70), creditID: "come-back-to-earth"),
-        Patch(id: "lullaby", name: "Lullaby", engine: .feltGlass, values: dials(felt: 0.85, glass: 0.20, warmth: 0.80, ring: 0.45, space: 0.30, width: 0.35), creditID: "come-back-to-earth"),
-        Patch(id: "orbit-pad", name: "Orbit Pad", engine: .orbitPad, values: pad(bloom: 0.55, drift: 0.40, motion: 0.45, shimmer: 0.25, brightness: 0.50, space: 0.55), creditID: "innerbloom"),
-        Patch(id: "earthrise", name: "Earthrise", engine: .orbitPad, values: pad(bloom: 0.75, drift: 0.30, motion: 0.30, shimmer: 0.15, brightness: 0.40, space: 0.50), creditID: "innerbloom"),
-        Patch(id: "weightless", name: "Weightless", engine: .orbitPad, values: pad(bloom: 0.50, drift: 0.45, motion: 0.55, shimmer: 0.60, brightness: 0.55, space: 0.75), creditID: "innerbloom"),
-        Patch(id: "re-entry", name: "Re-entry", engine: .orbitPad, values: pad(bloom: 0.25, drift: 0.35, motion: 0.50, shimmer: 0.20, brightness: 0.75, space: 0.45), creditID: "innerbloom"),
-        Patch(id: "honey-tape", name: "Honey Tape", engine: .honeyTape, values: tape(breath: 0.45, strings: 0.30, wow: 0.35, age: 0.40, reel: 0, space: 0.50, width: 0.50), creditID: "music-to-watch-boys-to"),
-        Patch(id: "sea-flute", name: "Sea Flute", engine: .honeyTape, values: tape(breath: 0.70, strings: 0, wow: 0.30, age: 0.35, reel: 0, space: 0.55, width: 0.45), creditID: "music-to-watch-boys-to"),
-        Patch(id: "velvet-strings", name: "Velvet Strings", engine: .honeyTape, values: tape(breath: 0.20, strings: 1, wow: 0.25, age: 0.35, reel: 0, space: 0.50, width: 0.70), creditID: "music-to-watch-boys-to"),
-        Patch(id: "old-reel", name: "Old Reel", engine: .honeyTape, values: tape(breath: 0.45, strings: 0.35, wow: 0.70, age: 0.75, reel: 1, space: 0.45, width: 0.50), creditID: "music-to-watch-boys-to"),
-        Patch(id: "haze-bells", name: "Haze Bells", engine: .hazeBells, values: bells(bells: 0.80, organ: 0.25, echo: 0.35, crush: 0.15, drift: 0.30, space: 0.50), creditID: "high-by-the-beach"),
-        Patch(id: "church-keys", name: "Church Keys", engine: .hazeBells, values: bells(bells: 0.45, organ: 0.80, echo: 0.25, crush: 0.10, drift: 0.20, space: 0.60), creditID: "high-by-the-beach"),
-        Patch(id: "night-drive", name: "Night Drive", engine: .hazeBells, values: bells(bells: 0.80, organ: 0.30, echo: 0.65, crush: 0.15, drift: 0.35, space: 0.70), creditID: "high-by-the-beach"),
-        Patch(id: "lo-fi", name: "Lo-Fi", engine: .hazeBells, values: bells(bells: 0.75, organ: 0.30, echo: 0.40, crush: 0.60, drift: 0.60, space: 0.45), creditID: "high-by-the-beach"),
-        Patch(id: "cabin-felt", name: "Cabin Felt", engine: .cabinFelt, values: cabin(felt: 0.60, horn: 0.30, fire: 0.50, wood: 0.50, space: 0.35, width: 0.50), creditID: "stay"),
-        Patch(id: "fireside", name: "Fireside", engine: .cabinFelt, values: cabin(felt: 0.55, horn: 0, fire: 0.70, wood: 0.60, space: 0.30, width: 0.45), creditID: "stay"),
-        Patch(id: "snow-horn", name: "Snow Horn", engine: .cabinFelt, values: cabin(felt: 0.70, horn: 0.75, fire: 0.45, wood: 0.45, space: 0.50, width: 0.55), creditID: "stay"),
-        Patch(id: "late-night", name: "Late Night", engine: .cabinFelt, values: cabin(felt: 0.85, horn: 0.20, fire: 0.60, wood: 0.35, space: 0.25, width: 0.40), creditID: "stay"),
-        Patch(id: "morning-box", name: "Morning Box", engine: .morningBox, values: morning(bars: 0.60, box: 0.20, bloom: 0.40, build: 0.50, haze: 0.35, space: 0.50, width: 0.55), creditID: "dunno"),
-        Patch(id: "music-box", name: "Music Box", engine: .morningBox, values: morning(bars: 0.50, box: 1, bloom: 0.10, build: 0.20, haze: 0.25, space: 0.40, width: 0.40), creditID: "dunno"),
-        Patch(id: "wall-of-light", name: "Wall of Light", engine: .morningBox, values: morning(bars: 0.45, box: 0.15, bloom: 0.85, build: 0.90, haze: 0.45, space: 0.65, width: 0.80), creditID: "dunno"),
-        Patch(id: "snooze", name: "Snooze", engine: .morningBox, values: morning(bars: 0.35, box: 0.30, bloom: 0.55, build: 0.40, haze: 0.70, space: 0.55, width: 0.50), creditID: "dunno"),
-        Patch(id: "polar-choir", name: "Polar Choir", engine: .polarChoir, values: choir(vowel: 0.55, breath: 0.35, glass: 0.30, swell: 0.55, shimmer: 0.25, space: 0.60, width: 0.60), creditID: "wings"),
-        Patch(id: "far-voices", name: "Far Voices", engine: .polarChoir, values: choir(vowel: 0.70, breath: 0.55, glass: 0.10, swell: 0.75, shimmer: 0.40, space: 0.80, width: 0.75), creditID: "wings"),
-        Patch(id: "bowed-glass", name: "Bowed Glass", engine: .polarChoir, values: choir(vowel: 0.40, breath: 0.10, glass: 0.85, swell: 0.45, shimmer: 0.30, space: 0.55, width: 0.50), creditID: "wings"),
-        Patch(id: "hush", name: "Hush", engine: .polarChoir, values: choir(vowel: 0.30, breath: 0.50, glass: 0.20, swell: 0.35, shimmer: 0.10, space: 0.45, width: 0.40), creditID: "wings"),
-        Patch(id: "plankton-keys", name: "Plankton Keys", engine: .planktonKeys, values: keys(tine: 0.55, bark: 0.40, sparkle: 0.50, tremolo: 0.35, phase: 0.20, space: 0.50, width: 0.55), creditID: "happiness-is-a-butterfly"),
-        Patch(id: "glow-wake", name: "Glow Wake", engine: .planktonKeys, values: keys(tine: 0.65, bark: 0.30, sparkle: 0.85, tremolo: 0.50, phase: 0.35, space: 0.65, width: 0.70), creditID: "happiness-is-a-butterfly"),
-        Patch(id: "tide-tines", name: "Tide Tines", engine: .planktonKeys, values: keys(tine: 0.85, bark: 0.60, sparkle: 0.25, tremolo: 0.20, phase: 0.10, space: 0.40, width: 0.50), creditID: "happiness-is-a-butterfly"),
-        Patch(id: "midnight-bay", name: "Midnight Bay", engine: .planktonKeys, values: keys(tine: 0.35, bark: 0.20, sparkle: 0.40, tremolo: 0.45, phase: 0.30, space: 0.70, width: 0.60), creditID: "happiness-is-a-butterfly"),
+        Patch(id: "felt-glass", name: "Felt Glass", engine: .feltGlass, values: dials(felt: 0.55, glass: 0.35, warmth: 0.60, ring: 0.55, space: 0.45, width: 0.50), creditID: "come-back-to-earth", trimDB: 1.2),
+        Patch(id: "bare-felt", name: "Bare Felt", engine: .feltGlass, values: dials(felt: 0.70, glass: 0.00, warmth: 0.65, ring: 0.50, space: 0.35, width: 0.45), creditID: "come-back-to-earth", trimDB: 2.6),
+        Patch(id: "glass-choir", name: "Glass Choir", engine: .feltGlass, values: dials(felt: 0.40, glass: 0.75, warmth: 0.50, ring: 0.70, space: 0.60, width: 0.70), creditID: "come-back-to-earth", trimDB: -1.0),
+        Patch(id: "lullaby", name: "Lullaby", engine: .feltGlass, values: dials(felt: 0.85, glass: 0.20, warmth: 0.80, ring: 0.45, space: 0.30, width: 0.35), creditID: "come-back-to-earth", trimDB: 3.8),
+        Patch(id: "orbit-pad", name: "Orbit Pad", engine: .orbitPad, values: pad(bloom: 0.55, drift: 0.40, motion: 0.45, shimmer: 0.25, brightness: 0.50, space: 0.55), creditID: "innerbloom", trimDB: -6.3),
+        Patch(id: "earthrise", name: "Earthrise", engine: .orbitPad, values: pad(bloom: 0.75, drift: 0.30, motion: 0.30, shimmer: 0.15, brightness: 0.40, space: 0.50), creditID: "innerbloom", trimDB: -5.6),
+        Patch(id: "weightless", name: "Weightless", engine: .orbitPad, values: pad(bloom: 0.50, drift: 0.45, motion: 0.55, shimmer: 0.60, brightness: 0.55, space: 0.75), creditID: "innerbloom", trimDB: -7.0),
+        Patch(id: "re-entry", name: "Re-entry", engine: .orbitPad, values: pad(bloom: 0.25, drift: 0.35, motion: 0.50, shimmer: 0.20, brightness: 0.75, space: 0.45), creditID: "innerbloom", trimDB: -6.4),
+        Patch(id: "honey-tape", name: "Honey Tape", engine: .honeyTape, values: tape(breath: 0.45, strings: 0.30, wow: 0.35, age: 0.40, reel: 0, space: 0.50, width: 0.50), creditID: "music-to-watch-boys-to", trimDB: 0.0),
+        Patch(id: "sea-flute", name: "Sea Flute", engine: .honeyTape, values: tape(breath: 0.70, strings: 0, wow: 0.30, age: 0.35, reel: 0, space: 0.55, width: 0.45), creditID: "music-to-watch-boys-to", trimDB: -1.2),
+        Patch(id: "velvet-strings", name: "Velvet Strings", engine: .honeyTape, values: tape(breath: 0.20, strings: 1, wow: 0.25, age: 0.35, reel: 0, space: 0.50, width: 0.70), creditID: "music-to-watch-boys-to", trimDB: 3.7),
+        Patch(id: "old-reel", name: "Old Reel", engine: .honeyTape, values: tape(breath: 0.45, strings: 0.35, wow: 0.70, age: 0.75, reel: 1, space: 0.45, width: 0.50), creditID: "music-to-watch-boys-to", trimDB: -0.3),
+        Patch(id: "haze-bells", name: "Haze Bells", engine: .hazeBells, values: bells(bells: 0.80, organ: 0.25, echo: 0.35, crush: 0.15, drift: 0.30, space: 0.50), creditID: "high-by-the-beach", trimDB: 1.5),
+        Patch(id: "church-keys", name: "Church Keys", engine: .hazeBells, values: bells(bells: 0.45, organ: 0.80, echo: 0.25, crush: 0.10, drift: 0.20, space: 0.60), creditID: "high-by-the-beach", trimDB: 2.5),
+        Patch(id: "night-drive", name: "Night Drive", engine: .hazeBells, values: bells(bells: 0.80, organ: 0.30, echo: 0.65, crush: 0.15, drift: 0.35, space: 0.70), creditID: "high-by-the-beach", trimDB: 0.0),
+        Patch(id: "lo-fi", name: "Lo-Fi", engine: .hazeBells, values: bells(bells: 0.75, organ: 0.30, echo: 0.40, crush: 0.60, drift: 0.60, space: 0.45), creditID: "high-by-the-beach", trimDB: 3.0),
+        Patch(id: "cabin-felt", name: "Cabin Felt", engine: .cabinFelt, values: cabin(felt: 0.60, horn: 0.30, fire: 0.50, wood: 0.50, space: 0.35, width: 0.50), creditID: "stay", trimDB: 4.2),
+        Patch(id: "fireside", name: "Fireside", engine: .cabinFelt, values: cabin(felt: 0.55, horn: 0, fire: 0.70, wood: 0.60, space: 0.30, width: 0.45), creditID: "stay", trimDB: 8.0),
+        Patch(id: "snow-horn", name: "Snow Horn", engine: .cabinFelt, values: cabin(felt: 0.70, horn: 0.75, fire: 0.45, wood: 0.45, space: 0.50, width: 0.55), creditID: "stay", trimDB: -3.9),
+        Patch(id: "late-night", name: "Late Night", engine: .cabinFelt, values: cabin(felt: 0.85, horn: 0.20, fire: 0.60, wood: 0.35, space: 0.25, width: 0.40), creditID: "stay", trimDB: 8.7),
+        Patch(id: "morning-box", name: "Morning Box", engine: .morningBox, values: morning(bars: 0.60, box: 0.20, bloom: 0.40, build: 0.50, haze: 0.35, space: 0.50, width: 0.55), creditID: "dunno", trimDB: 2.4),
+        Patch(id: "music-box", name: "Music Box", engine: .morningBox, values: morning(bars: 0.50, box: 1, bloom: 0.10, build: 0.20, haze: 0.25, space: 0.40, width: 0.40), creditID: "dunno", trimDB: -0.4),
+        Patch(id: "wall-of-light", name: "Wall of Light", engine: .morningBox, values: morning(bars: 0.45, box: 0.15, bloom: 0.85, build: 0.90, haze: 0.45, space: 0.65, width: 0.80), creditID: "dunno", trimDB: -4.8),
+        Patch(id: "snooze", name: "Snooze", engine: .morningBox, values: morning(bars: 0.35, box: 0.30, bloom: 0.55, build: 0.40, haze: 0.70, space: 0.55, width: 0.50), creditID: "dunno", trimDB: 0.4),
+        Patch(id: "polar-choir", name: "Polar Choir", engine: .polarChoir, values: choir(vowel: 0.55, breath: 0.35, glass: 0.30, swell: 0.55, shimmer: 0.25, space: 0.60, width: 0.60), creditID: "wings", trimDB: -1.7),
+        Patch(id: "far-voices", name: "Far Voices", engine: .polarChoir, values: choir(vowel: 0.70, breath: 0.55, glass: 0.10, swell: 0.75, shimmer: 0.40, space: 0.80, width: 0.75), creditID: "wings", trimDB: -2.5),
+        Patch(id: "bowed-glass", name: "Bowed Glass", engine: .polarChoir, values: choir(vowel: 0.40, breath: 0.10, glass: 0.85, swell: 0.45, shimmer: 0.30, space: 0.55, width: 0.50), creditID: "wings", trimDB: -1.2),
+        Patch(id: "hush", name: "Hush", engine: .polarChoir, values: choir(vowel: 0.30, breath: 0.50, glass: 0.20, swell: 0.35, shimmer: 0.10, space: 0.45, width: 0.40), creditID: "wings", trimDB: -0.5),
+        Patch(id: "plankton-keys", name: "Plankton Keys", engine: .planktonKeys, values: keys(tine: 0.55, bark: 0.40, sparkle: 0.50, tremolo: 0.35, phase: 0.20, space: 0.50, width: 0.55), creditID: "happiness-is-a-butterfly", trimDB: 4.7),
+        Patch(id: "glow-wake", name: "Glow Wake", engine: .planktonKeys, values: keys(tine: 0.65, bark: 0.30, sparkle: 0.85, tremolo: 0.50, phase: 0.35, space: 0.65, width: 0.70), creditID: "happiness-is-a-butterfly", trimDB: 4.4),
+        Patch(id: "tide-tines", name: "Tide Tines", engine: .planktonKeys, values: keys(tine: 0.85, bark: 0.60, sparkle: 0.25, tremolo: 0.20, phase: 0.10, space: 0.40, width: 0.50), creditID: "happiness-is-a-butterfly", trimDB: 5.8),
+        Patch(id: "midnight-bay", name: "Midnight Bay", engine: .planktonKeys, values: keys(tine: 0.35, bark: 0.20, sparkle: 0.40, tremolo: 0.45, phase: 0.30, space: 0.70, width: 0.60), creditID: "happiness-is-a-butterfly", trimDB: 3.2),
         // Tea House Koto is born from its place (Tea House Snow), not from a song: no credit, so the names stay plain.
-        Patch(id: "tea-house-koto", name: "Tea House Koto", engine: .teaHouseKoto, values: koto(pick: 0.55, silk: 0.45, body: 0.50, bloom: 0.40, yuri: 0.30, space: 0.35, width: 0.50)),
-        Patch(id: "winter-strings", name: "Winter Strings", engine: .teaHouseKoto, values: koto(pick: 0.35, silk: 0.70, body: 0.60, bloom: 0.55, yuri: 0.20, space: 0.45, width: 0.55)),
-        Patch(id: "near-the-bridge", name: "Near the Bridge", engine: .teaHouseKoto, values: koto(pick: 0.15, silk: 0.25, body: 0.40, bloom: 0.25, yuri: 0.35, space: 0.25, width: 0.45)),
-        Patch(id: "night-tea", name: "Night Tea", engine: .teaHouseKoto, values: koto(pick: 0.45, silk: 0.60, body: 0.55, bloom: 0.60, yuri: 0.40, space: 0.50, width: 0.50)),
+        Patch(id: "tea-house-koto", name: "Tea House Koto", engine: .teaHouseKoto, values: koto(pick: 0.55, silk: 0.45, body: 0.50, bloom: 0.40, yuri: 0.30, space: 0.35, width: 0.50), trimDB: 7.1),
+        Patch(id: "winter-strings", name: "Winter Strings", engine: .teaHouseKoto, values: koto(pick: 0.35, silk: 0.70, body: 0.60, bloom: 0.55, yuri: 0.20, space: 0.45, width: 0.55), trimDB: 6.7),
+        Patch(id: "near-the-bridge", name: "Near the Bridge", engine: .teaHouseKoto, values: koto(pick: 0.15, silk: 0.25, body: 0.40, bloom: 0.25, yuri: 0.35, space: 0.25, width: 0.45), trimDB: 3.5),
+        Patch(id: "night-tea", name: "Night Tea", engine: .teaHouseKoto, values: koto(pick: 0.45, silk: 0.60, body: 0.55, bloom: 0.60, yuri: 0.40, space: 0.50, width: 0.50), trimDB: 6.9),
         // Zen Shakuhachi is born from its place (Zen Rock Garden), not from a song: no credit, so the names stay plain.
-        Patch(id: "zen-shakuhachi", name: "Zen Shakuhachi", engine: .zenShakuhachi, values: shakuhachi(breath: 0.45, air: 0.55, bend: 0.60, bamboo: 0.50, yuri: 0.40, echo: 0.30, space: 0.40, width: 0.45)),
-        Patch(id: "mountain-breath", name: "Mountain Breath", engine: .zenShakuhachi, values: shakuhachi(breath: 0.60, air: 0.70, bend: 0.70, bamboo: 0.45, yuri: 0.50, echo: 0.70, space: 0.60, width: 0.55)),
-        Patch(id: "hollow-bamboo", name: "Hollow Bamboo", engine: .zenShakuhachi, values: shakuhachi(breath: 0.30, air: 0.35, bend: 0.40, bamboo: 0.85, yuri: 0.30, echo: 0.15, space: 0.25, width: 0.40)),
-        Patch(id: "still-air", name: "Still Air", engine: .zenShakuhachi, values: shakuhachi(breath: 0.75, air: 0.90, bend: 0.50, bamboo: 0.40, yuri: 0.25, echo: 0.40, space: 0.55, width: 0.50)),
+        Patch(id: "zen-shakuhachi", name: "Zen Shakuhachi", engine: .zenShakuhachi, values: shakuhachi(breath: 0.45, air: 0.55, bend: 0.60, bamboo: 0.50, yuri: 0.40, echo: 0.30, space: 0.40, width: 0.45), trimDB: 8.9),
+        Patch(id: "mountain-breath", name: "Mountain Breath", engine: .zenShakuhachi, values: shakuhachi(breath: 0.60, air: 0.70, bend: 0.70, bamboo: 0.45, yuri: 0.50, echo: 0.70, space: 0.60, width: 0.55), trimDB: 8.1),
+        Patch(id: "hollow-bamboo", name: "Hollow Bamboo", engine: .zenShakuhachi, values: shakuhachi(breath: 0.30, air: 0.35, bend: 0.40, bamboo: 0.85, yuri: 0.30, echo: 0.15, space: 0.25, width: 0.40), trimDB: 8.7),
+        Patch(id: "still-air", name: "Still Air", engine: .zenShakuhachi, values: shakuhachi(breath: 0.75, air: 0.90, bend: 0.50, bamboo: 0.40, yuri: 0.25, echo: 0.40, space: 0.55, width: 0.50), trimDB: 7.6),
         // Reef Marimba is born from its place (Great Barrier Reef), not from a song: no credit, so the names stay plain.
-        Patch(id: "reef-marimba", name: "Reef Marimba", engine: .reefMarimba, values: reefMarimba(mallet: 0.45, strike: 0.40, tube: 0.70, roll: 0.35, steel: 0.20, space: 0.35, width: 0.55)),
-        Patch(id: "soft-yarn", name: "Soft Yarn", engine: .reefMarimba, values: reefMarimba(mallet: 0.15, strike: 0.35, tube: 0.85, roll: 0.45, steel: 0.00, space: 0.40, width: 0.50)),
-        Patch(id: "lagoon-steel", name: "Lagoon Steel", engine: .reefMarimba, values: reefMarimba(mallet: 0.60, strike: 0.45, tube: 0.55, roll: 0.25, steel: 0.70, space: 0.40, width: 0.60)),
-        Patch(id: "night-reef", name: "Night Reef", engine: .reefMarimba, values: reefMarimba(mallet: 0.30, strike: 0.50, tube: 0.80, roll: 0.55, steel: 0.10, space: 0.55, width: 0.60)),
+        Patch(id: "reef-marimba", name: "Reef Marimba", engine: .reefMarimba, values: reefMarimba(mallet: 0.45, strike: 0.40, tube: 0.70, roll: 0.35, steel: 0.20, space: 0.35, width: 0.55), trimDB: 1.6),
+        Patch(id: "soft-yarn", name: "Soft Yarn", engine: .reefMarimba, values: reefMarimba(mallet: 0.15, strike: 0.35, tube: 0.85, roll: 0.45, steel: 0.00, space: 0.40, width: 0.50), trimDB: 5.3),
+        Patch(id: "lagoon-steel", name: "Lagoon Steel", engine: .reefMarimba, values: reefMarimba(mallet: 0.60, strike: 0.45, tube: 0.55, roll: 0.25, steel: 0.70, space: 0.40, width: 0.60), trimDB: -0.5),
+        Patch(id: "night-reef", name: "Night Reef", engine: .reefMarimba, values: reefMarimba(mallet: 0.30, strike: 0.50, tube: 0.80, roll: 0.55, steel: 0.10, space: 0.55, width: 0.60), trimDB: 2.7),
         // Blue Depth, after "Underwater" (spec §4.2): every preset at the record's 118 BPM.
-        Patch(id: "blue-depth", name: "Blue Depth", engine: .blueDepth, values: blueDepth(blink: 0.60, murk: 0.55, ghosts: 0.40, echo: 0.50, bass: 0.55, tempo: 118, space: 0.55, width: 0.60), creditID: "underwater"),
-        Patch(id: "ghost-signal", name: "Ghost Signal", engine: .blueDepth, values: blueDepth(blink: 0.35, murk: 0.45, ghosts: 0.75, echo: 0.65, bass: 0.30, tempo: 118, space: 0.70, width: 0.70), creditID: "underwater"),
-        Patch(id: "pressure-hull", name: "Pressure Hull", engine: .blueDepth, values: blueDepth(blink: 0.75, murk: 0.80, ghosts: 0.25, echo: 0.40, bass: 0.80, tempo: 118, space: 0.45, width: 0.50), creditID: "underwater"),
-        Patch(id: "surface-light", name: "Surface Light", engine: .blueDepth, values: blueDepth(blink: 0.50, murk: 0.25, ghosts: 0.35, echo: 0.55, bass: 0.40, tempo: 118, space: 0.50, width: 0.65), creditID: "underwater"),
+        Patch(id: "blue-depth", name: "Blue Depth", engine: .blueDepth, values: blueDepth(blink: 0.60, murk: 0.55, ghosts: 0.40, echo: 0.50, bass: 0.55, tempo: 118, space: 0.55, width: 0.60), creditID: "underwater", trimDB: -4.5),
+        Patch(id: "ghost-signal", name: "Ghost Signal", engine: .blueDepth, values: blueDepth(blink: 0.35, murk: 0.45, ghosts: 0.75, echo: 0.65, bass: 0.30, tempo: 118, space: 0.70, width: 0.70), creditID: "underwater", trimDB: -9.0),
+        Patch(id: "pressure-hull", name: "Pressure Hull", engine: .blueDepth, values: blueDepth(blink: 0.75, murk: 0.80, ghosts: 0.25, echo: 0.40, bass: 0.80, tempo: 118, space: 0.45, width: 0.50), creditID: "underwater", trimDB: -2.5),
+        Patch(id: "surface-light", name: "Surface Light", engine: .blueDepth, values: blueDepth(blink: 0.50, murk: 0.25, ghosts: 0.35, echo: 0.55, bass: 0.40, tempo: 118, space: 0.50, width: 0.65), creditID: "underwater", trimDB: -4.3),
         // Single Note Grand, after "Runaway" (Storms spec §4.2; brief single-note-grand.md): the brief's table, Runaway
         // first (the engine's defaults), Felt .2 in every one. The spec sets no Width or Space: Runaway keeps the engine's
         // (.50, .50); Marble Hall opens out with its room, Broken Voice comes closer so the voice stays in front, Dry Grand
         // is dry and close. Reasoned rather than heard, so check them by ear.
-        Patch(id: "single-note-grand", name: "Runaway", engine: .singleNoteGrand, values: singleNoteGrand(hall: 0.70, felt: 0.20, morph: 0, octaveDown: 0.50, breakDrive: 0.50, width: 0.50, space: 0.50), creditID: "runaway"),
-        Patch(id: "marble-hall", name: "Marble Hall", engine: .singleNoteGrand, values: singleNoteGrand(hall: 1.0, felt: 0.20, morph: 0, octaveDown: 0.50, breakDrive: 0.50, width: 0.70, space: 0.70), creditID: "runaway"),
-        Patch(id: "broken-voice", name: "Broken Voice", engine: .singleNoteGrand, values: singleNoteGrand(hall: 0.70, felt: 0.20, morph: 0.60, octaveDown: 0.50, breakDrive: 0.90, width: 0.40, space: 0.40), creditID: "runaway"),
-        Patch(id: "dry-grand", name: "Dry Grand", engine: .singleNoteGrand, values: singleNoteGrand(hall: 0.10, felt: 0.20, morph: 0, octaveDown: 0.50, breakDrive: 0.50, width: 0.45, space: 0.25), creditID: "runaway"),
+        Patch(id: "single-note-grand", name: "Runaway", engine: .singleNoteGrand, values: singleNoteGrand(hall: 0.70, felt: 0.20, morph: 0, octaveDown: 0.50, breakDrive: 0.50, width: 0.50, space: 0.50), creditID: "runaway", trimDB: 6.8),
+        Patch(id: "marble-hall", name: "Marble Hall", engine: .singleNoteGrand, values: singleNoteGrand(hall: 1.0, felt: 0.20, morph: 0, octaveDown: 0.50, breakDrive: 0.50, width: 0.70, space: 0.70), creditID: "runaway", trimDB: 3.7),
+        Patch(id: "broken-voice", name: "Broken Voice", engine: .singleNoteGrand, values: singleNoteGrand(hall: 0.70, felt: 0.20, morph: 0.60, octaveDown: 0.50, breakDrive: 0.90, width: 0.40, space: 0.40), creditID: "runaway", trimDB: 2.2),
+        Patch(id: "dry-grand", name: "Dry Grand", engine: .singleNoteGrand, values: singleNoteGrand(hall: 0.10, felt: 0.20, morph: 0, octaveDown: 0.50, breakDrive: 0.50, width: 0.45, space: 0.25), creditID: "runaway", trimDB: 9.0),
         // Magma Bass (Fire & Neon spec §4.2; brief magma-bass.md), after "Hold My Liquor" (Volcano Rim's song, spec §11).
         // Mono is 0 or 1.
-        Patch(id: "magma-bass", name: "Magma", engine: .magmaBass, values: magma(growl: 0.55, heat: 0.50, erupt: 0.70, rumble: 0.35, grit: 0.25, flow: 0.20, shape: 0.15, mono: 0, spark: 0.40, res: 0.35), creditID: "hold-my-liquor"),
-        Patch(id: "basalt", name: "Basalt", engine: .magmaBass, values: magma(growl: 0.40, heat: 0.30, erupt: 0.55, rumble: 0.70, grit: 0.15, flow: 0.35, shape: 0.05, mono: 1, spark: 0.20, res: 0.25), creditID: "hold-my-liquor"),
-        Patch(id: "fissure", name: "Fissure", engine: .magmaBass, values: magma(growl: 0.65, heat: 0.70, erupt: 0.80, rumble: 0.20, grit: 0.35, flow: 0.10, shape: 0.40, mono: 0, spark: 0.50, res: 0.60), creditID: "hold-my-liquor"),
-        Patch(id: "ember-glide", name: "Ember Glide", engine: .magmaBass, values: magma(growl: 0.50, heat: 0.55, erupt: 0.60, rumble: 0.30, grit: 0.20, flow: 0.70, shape: 0.25, mono: 1, spark: 0.30, res: 0.40), creditID: "hold-my-liquor"),
+        Patch(id: "magma-bass", name: "Magma", engine: .magmaBass, values: magma(growl: 0.55, heat: 0.50, erupt: 0.70, rumble: 0.35, grit: 0.25, flow: 0.20, shape: 0.15, mono: 0, spark: 0.40, res: 0.35), creditID: "hold-my-liquor", trimDB: -5.7),
+        Patch(id: "basalt", name: "Basalt", engine: .magmaBass, values: magma(growl: 0.40, heat: 0.30, erupt: 0.55, rumble: 0.70, grit: 0.15, flow: 0.35, shape: 0.05, mono: 1, spark: 0.20, res: 0.25), creditID: "hold-my-liquor", trimDB: -3.3),
+        Patch(id: "fissure", name: "Fissure", engine: .magmaBass, values: magma(growl: 0.65, heat: 0.70, erupt: 0.80, rumble: 0.20, grit: 0.35, flow: 0.10, shape: 0.40, mono: 0, spark: 0.50, res: 0.60), creditID: "hold-my-liquor", trimDB: -7.2),
+        Patch(id: "ember-glide", name: "Ember Glide", engine: .magmaBass, values: magma(growl: 0.50, heat: 0.55, erupt: 0.60, rumble: 0.30, grit: 0.20, flow: 0.70, shape: 0.25, mono: 1, spark: 0.30, res: 0.40), creditID: "hold-my-liquor", trimDB: -4.3),
         // Replicant Brass with Chrome Bass (spec §4.3; brief replicant-brass.md). Neon Night Drive is place-born, so no
         // credit. Arp: 0 off, 1 up, 2 down, 3 up-down, 4 played, 5 random. Rate: 0 1/4 … 3 1/16 … 5 1/32. Split: a
         // note number (below 28: no split). Tempo in BPM (70…170).
-        Patch(id: "replicant-brass", name: "Replicant", engine: .replicantBrass, values: replicant(swell: 0.60, blaze: 0.50, width: 0.70, hall: 0.55, chrome: 0.60, punch: 0.50, arp: 4, rate: 3, split: 48, tempo: 120)),
-        Patch(id: "tears-in-rain", name: "Tears in Rain", engine: .replicantBrass, values: replicant(swell: 0.85, blaze: 0.35, width: 0.80, hall: 0.80, chrome: 0.45, punch: 0.35, arp: 4, rate: 1, split: 48, tempo: 120)),
-        Patch(id: "chrome-rush", name: "Chrome Rush", engine: .replicantBrass, values: replicant(swell: 0.35, blaze: 0.65, width: 0.60, hall: 0.40, chrome: 0.75, punch: 0.80, arp: 1, rate: 3, split: 48, tempo: 132)),
-        Patch(id: "night-brass", name: "Night Brass", engine: .replicantBrass, values: replicant(swell: 0.70, blaze: 0.55, width: 0.75, hall: 0.65, chrome: 0.60, punch: 0.50, arp: 0, rate: 3, split: 0, tempo: 120)),
+        Patch(id: "replicant-brass", name: "Replicant", engine: .replicantBrass, values: replicant(swell: 0.60, blaze: 0.50, width: 0.70, hall: 0.55, chrome: 0.60, punch: 0.50, arp: 4, rate: 3, split: 48, tempo: 120), trimDB: -5.7),
+        Patch(id: "tears-in-rain", name: "Tears in Rain", engine: .replicantBrass, values: replicant(swell: 0.85, blaze: 0.35, width: 0.80, hall: 0.80, chrome: 0.45, punch: 0.35, arp: 4, rate: 1, split: 48, tempo: 120), trimDB: -7.6),
+        Patch(id: "chrome-rush", name: "Chrome Rush", engine: .replicantBrass, values: replicant(swell: 0.35, blaze: 0.65, width: 0.60, hall: 0.40, chrome: 0.75, punch: 0.80, arp: 1, rate: 3, split: 48, tempo: 132), trimDB: -6.0),
+        Patch(id: "night-brass", name: "Night Brass", engine: .replicantBrass, values: replicant(swell: 0.70, blaze: 0.55, width: 0.75, hall: 0.65, chrome: 0.60, punch: 0.50, arp: 0, rate: 3, split: 0, tempo: 120), trimDB: -6.7),
         // Endless Rise, after "FADE" (Storms spec §4.1; brief endless-rise.md): the brief's table, Supercell first (the
         // engine's defaults). The spec sets no Space or Width: Supercell keeps the engine's (.50, .60); the others lean
         // with their character (Slow Front far and wide, Siren close so its pulse stays tight, Pad Only with air round it),
         // reasoned rather than heard, so check them by ear.
-        Patch(id: "endless-rise", name: "Supercell", engine: .endlessRise, values: endlessRise(rise: 0.08, pressure: 0.40, grit: 0.30, pulse: 0.50, tempo: 124, tail: 0.60, sub: 0.70, space: 0.50, width: 0.60), creditID: "fade"),
-        Patch(id: "slow-front", name: "Slow Front", engine: .endlessRise, values: endlessRise(rise: 0.03, pressure: 0.40, grit: 0.30, pulse: 0, tempo: 124, tail: 1.0, sub: 0.70, space: 0.70, width: 0.75), creditID: "fade"),
-        Patch(id: "siren", name: "Siren", engine: .endlessRise, values: endlessRise(rise: 0.30, pressure: 0.40, grit: 0.60, pulse: 0.80, tempo: 128, tail: 0.60, sub: 0.70, space: 0.35, width: 0.50), creditID: "fade"),
-        Patch(id: "pad-only", name: "Pad Only", engine: .endlessRise, values: endlessRise(rise: 0, pressure: 0.40, grit: 0.30, pulse: 0.50, tempo: 124, tail: 0.60, sub: 0.70, space: 0.60, width: 0.70), creditID: "fade"),
+        Patch(id: "endless-rise", name: "Supercell", engine: .endlessRise, values: endlessRise(rise: 0.08, pressure: 0.40, grit: 0.30, pulse: 0.50, tempo: 124, tail: 0.60, sub: 0.70, space: 0.50, width: 0.60), creditID: "fade", trimDB: -7.0),
+        Patch(id: "slow-front", name: "Slow Front", engine: .endlessRise, values: endlessRise(rise: 0.03, pressure: 0.40, grit: 0.30, pulse: 0, tempo: 124, tail: 1.0, sub: 0.70, space: 0.70, width: 0.75), creditID: "fade", trimDB: -8.3),
+        Patch(id: "siren", name: "Siren", engine: .endlessRise, values: endlessRise(rise: 0.30, pressure: 0.40, grit: 0.60, pulse: 0.80, tempo: 128, tail: 0.60, sub: 0.70, space: 0.35, width: 0.50), creditID: "fade", trimDB: -6.2),
+        Patch(id: "pad-only", name: "Pad Only", engine: .endlessRise, values: endlessRise(rise: 0, pressure: 0.40, grit: 0.30, pulse: 0.50, tempo: 124, tail: 0.60, sub: 0.70, space: 0.60, width: 0.70), creditID: "fade", trimDB: -6.6),
     ]
 
     public static func defaultPatch(for engine: BuiltInEngine) -> Patch {
