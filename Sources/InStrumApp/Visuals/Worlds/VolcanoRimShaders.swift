@@ -154,7 +154,8 @@ enum VolcanoRimShaders {
     }
 
     // ---------------------------------------------------------------- the crater's shape
-    struct Hit { int kind; float t; float3 p; float theta; };   // kind: 0 beyond, 1 lake, 2 floor, 3 cliff, 4 bench
+    struct Hit { int kind; float t; float3 p; float theta; float edge; };   // kind: 0 beyond, 1 lake, 2 floor, 3 cliff, 4 bench;
+                                                                            // edge: the lake's edge toward p (lake, floor)
 
     /// The far side of a vertical cylinder of radius R round C, seen from inside it (or 1e9).
     float cylinderFar(float3 o, float3 d, float2 C, float R) {
@@ -213,7 +214,7 @@ enum VolcanoRimShaders {
 
     Hit craterHit(float3 o, float3 d, constant VolcanoU& u) {
         Hit h;
-        h.kind = 0; h.t = 1e9; h.p = o + d * 1e4; h.theta = 0.0;
+        h.kind = 0; h.t = 1e9; h.p = o + d * 1e4; h.theta = 0.0; h.edge = 0.0;
         float2 C = u.dims2.xy;
         float rimH = u.dims2.z;
         float lakeZ = u.eye.w;
@@ -225,7 +226,8 @@ enum VolcanoRimShaders {
             float2 qf = p.xy - C;
             bool inNotch = r < 0.5 * (u.dims.z + u.dims.w) + 4.0 && notchCut(atan2(qf.x, qf.y), u) < 0.999;
             if (r < u.dims.x || inNotch) {
-                h.kind = length(p.xy) < lakeEdge(p.xy, u) ? 1 : 2;
+                h.edge = lakeEdge(p.xy, u);   // (read once: the lake's margin and the floor's shore use it too)
+                h.kind = length(p.xy) < h.edge ? 1 : 2;
                 h.t = t; h.p = p;
             }
         }
@@ -363,7 +365,7 @@ enum VolcanoRimShaders {
 
     /// The lake's own light at a point of its surface (crater metres), seen along d; J is the pixel's footprint (lake
     /// metres per pixel across x and y).
-    float3 lakeSurface(float3 P, float3 d, float2 Jx, float2 Jy, constant VolcanoU& u, int oct) {
+    float3 lakeSurface(float3 P, float3 d, float2 Jx, float2 Jy, constant VolcanoU& u, int oct, float edgeR) {
         float2 p = P.xy;
         float energy = u.play.x;
         uint skipL = uint(u.sprites.w + 0.5);
@@ -442,7 +444,7 @@ enum VolcanoRimShaders {
         }
         // The margin: old crust jammed against the shore (darker), a splash of fresh lava here and there.
         float r = length(p);
-        float toEdge = lakeEdge(p, u) - r;
+        float toEdge = edgeR - r;
         float arc = atan2(p.y, p.x) * u.lake.x;
         float jam = exp(-max(toEdge, 0.0) / 6.0);
         col *= 1.0 - 0.45 * jam;
@@ -466,7 +468,7 @@ enum VolcanoRimShaders {
         return float2(length(p - c), s);
     }
 
-    float3 floorColour(float3 P, float3 d, float foot, constant VolcanoU& u, int oct) {
+    float3 floorColour(float3 P, float3 d, float foot, constant VolcanoU& u, int oct, float edgeR) {
         float2 p = P.xy;
         // Old black lava: ropy and blocky, a little glassy, here and there a skylight onto hot lava beneath.
         float rope = fbm2(p * float2(0.035, 0.022) + float2(3.0, 1.0), oct);
@@ -500,7 +502,7 @@ enum VolcanoRimShaders {
         }
         col += blackbody(1060.0 + 120.0 * breach) * (exp(-max(rd.x - halfW, 0.0) / 8.0) * (0.05 + 0.1 * flow + 0.35 * breach) * 0.3);
         // The lake's shore: a black ledge of chilled spatter, lumpy, its lake-facing lips lit by the lake.
-        float shore = length(p) - lakeEdge(p, u);
+        float shore = length(p) - edgeR;
         float lumpy = vn2(p * 0.5) * 0.6 + vn2(p * 1.7) * 0.4;
         float ledge = exp(-max(shore, 0.0) / 5.0);
         col *= 1.0 - 0.5 * ledge;
@@ -910,6 +912,8 @@ enum VolcanoRimShaders {
         // Over the lake only (the far end of the ray decides), and churning.
         float3 end = o + d * len;
         float overLake = 1.0 - smoothstep(u.lake.x * 0.8, u.lake.x * 1.6, length(end.xy));
+        // (Where the ray ends off the lake the fume is none whatever its churn: exactly what the sum below gives.)
+        if (overLake <= 0.0) return float4(0, 0, 0, 1);
         float churn = fbm2(end.xy * 0.012 + float2(u.a.y * 0.05, -u.a.y * 0.035), oct);
         float tau = integral * 0.0024 * overLake * (0.35 + 1.3 * churn) * (0.6 + 0.6 * u.plume.x);
         float T = exp(-tau);
@@ -969,8 +973,11 @@ enum VolcanoRimShaders {
     float4 foreground(float2 ndc, constant VolcanoU& u, int oct) {
         float top = u.dims3.z;
         float x = ndc.x * u.a.x;
-        float edge = top + 0.05 * (fbm2(float2(x * 2.2, 3.0), oct) - 0.5) + 0.035 * (vn2(float2(x * 9.0, 1.0)) - 0.5);
         float pix = u.cam.w;
+        // (The edge wanders 0.0425 at most (its noise is 0…1): a pixel farther above it has no rock whatever the noise,
+        // and reads none.)
+        if (ndc.y >= top + 0.0425 + pix) return float4(0);
+        float edge = top + 0.05 * (fbm2(float2(x * 2.2, 3.0), oct) - 0.5) + 0.035 * (vn2(float2(x * 9.0, 1.0)) - 0.5);
         float cover = smoothstep(edge + pix, edge - pix, ndc.y);
         if (cover <= 0.0) return float4(0);
         float depth = edge - ndc.y;
@@ -1004,8 +1011,8 @@ enum VolcanoRimShaders {
             float tp = (u.eye.w - o.z) / min(Dc.z, -1e-6);
             float2 Jx = tp * (dx.xy - Dc.xy * (dx.z / Dc.z));
             float2 Jy = tp * (dy.xy - Dc.xy * (dy.z / Dc.z));
-            if (h.kind == 1) { if ((skip & 1u) == 0u) col = lakeSurface(h.p, d, Jx, Jy, u, oct); }
-            else if ((skip & 2u) == 0u) col = floorColour(h.p, d, max(length(Jx), length(Jy)), u, oct);
+            if (h.kind == 1) { if ((skip & 1u) == 0u) col = lakeSurface(h.p, d, Jx, Jy, u, oct, h.edge); }
+            else if ((skip & 2u) == 0u) col = floorColour(h.p, d, max(length(Jx), length(Jy)), u, oct, h.edge);
             depth = 0.6;
         } else if (h.kind >= 3) {
             if ((skip & 4u) == 0u) col = wallColour(h, d, u, oct, h.t * u.a.w);
