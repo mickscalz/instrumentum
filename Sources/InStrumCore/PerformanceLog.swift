@@ -411,13 +411,14 @@ public struct PerformanceLog: Sendable {
     static let steadyHeading = "Steady frames (from \(Int(entrySeconds)) s after entering a world), CPU, entries and stalls:"
 
     static let steadyTitles: [String] = ["World", "Quality", "Entries", "Typical", "95%", "99%", "Worst", "Over 33/50/100",
-                                         "CPU typ", "CPU worst", "Step typ", "Entry worst", "Entry CPU", "Stalls act/bg/hid"]
+                                         "GPU typ", "CPU typ", "CPU worst", "Step typ", "Entry worst", "Entry CPU",
+                                         "Stalls act/bg/hid"]
 
     /// The lines under the second table.
     static let legend: [String] = [
         "Entry: a world's first \(Int(entrySeconds)) s after it is entered (Entry worst includes stalls). Over: steady frames longer than 33, 50, 100 ms.",
-        "CPU: the main thread's time for a frame; Step: the world and sky's share of it. Stalls: gaps over 1 s, with the app",
-        "in front (act), in the background with its window showing (bg), or its window hidden (hid: the Mac pauses drawing).",
+        "GPU typ: as above, beside CPU: the main thread's time for a frame; Step: the world and sky's share of it.",
+        "Stalls: gaps over 1 s, with the app in front (act), in the background with its window showing (bg), or its window hidden (hid: the Mac pauses drawing).",
     ]
 
     /// Tenths of a millisecond, as "2.4 ms".
@@ -437,6 +438,7 @@ public struct PerformanceLog: Sendable {
         out.append(steady ? milliseconds(row.steadyP99) : "-")
         out.append(steady ? milliseconds(row.steadyWorst) : "-")
         out.append("\(row.over33)/\(row.over50)/\(row.over100)")
+        out.append(row.gpuTypical > 0 ? milliseconds(row.gpuTypical) : "-")
         let cpu = row.cpuWorst > 0
         out.append(cpu ? tenths(row.cpuTypical) : "-")
         out.append(cpu ? tenths(row.cpuWorst) : "-")

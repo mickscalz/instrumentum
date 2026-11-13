@@ -245,7 +245,8 @@ final class PerformanceLogTests: XCTestCase {
     }
 
     /// The sample report, line by line: the first table as it always was, then the second (real-Mac performance). The
-    /// sample's frames carry no CPU time and no entries, so every frame is steady and those columns read as dashes.
+    /// sample's frames carry no CPU time and no entries, so every frame is steady and those columns read as dashes; the
+    /// GPU's typical frame is repeated beside the CPU's.
     static let sampleReport: [String] = [
         "In Strum Meants performance report",
         "Build 1.2 (345)",
@@ -255,9 +256,9 @@ final class PerformanceLogTests: XCTestCase {
         "volcano-rim    High     1600x1000  3    33 ms    41 ms  120 ms  30 ms    110 ms     50%    yes  2 (longest 3.2 s)",
         "",
         "Steady frames (from 3 s after entering a world), CPU, entries and stalls:",
-        "World          Quality  Entries  Typical  95%    99%    Worst   Over 33/50/100  CPU typ  CPU worst  Step typ  Entry worst  Entry CPU  Stalls act/bg/hid",
-        "supercell-sky  Smooth   0        17 ms    24 ms  24 ms  61 ms   72/72/0         -        -          -         -            -          0/0/0",
-        "volcano-rim    High     0        33 ms    41 ms  41 ms  120 ms  336/56/56       -        -          -         -            -          2/0/0",
+        "World          Quality  Entries  Typical  95%    99%    Worst   Over 33/50/100  GPU typ  CPU typ  CPU worst  Step typ  Entry worst  Entry CPU  Stalls act/bg/hid",
+        "supercell-sky  Smooth   0        17 ms    24 ms  24 ms  61 ms   72/72/0         14 ms    -        -          -         -            -          0/0/0",
+        "volcano-rim    High     0        33 ms    41 ms  41 ms  120 ms  336/56/56       30 ms    -        -          -         -            -          2/0/0",
     ] + PerformanceLog.legend
 
     func testTheSampleReportIsExactlyThis() {

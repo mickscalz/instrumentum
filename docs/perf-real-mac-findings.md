@@ -79,7 +79,12 @@ dictionary, 88 key visuals, a few instance arrays).
   made on the main thread when first shown (counted in `ShaderWork.drawPathBuilds`); their sky, weather, warp and glass now
   come from the caches, so the remaining cost is their own library and pipelines. Including them takes two lines in each
   file (drop `@MainActor`, move `: ThemeRenderer` to an extension) and a case in `WorldRenderers.make`.
-- Not changed: the Set switch's instrument load and settings writes (audio graph changes stay on the main actor).
+- The cabin's and the bedroom's frost fields (fixed seeds) grow once per process and are shared (`FrostFieldCache`):
+  every renderer used to grow its own on a background queue, seconds of a core each. With renderers now made quickly
+  (cached shaders) those growths piled up in the test run and slowed the bay's and the submarine's wall-clock budget
+  tests that ran next; in the app the warm-up makes each renderer once, so it grows each field once as before.
+- Not changed: the Set switch's instrument load and settings writes (audio graph changes stay on the main actor);
+  `InstrumentSwitchTimingTests` (audio suite) prints what the Sound Core and the Audio Unit cost to make per engine.
 
 ## 4. Moonlit Lake 32 ms / Bay 22 ms
 
@@ -95,7 +100,7 @@ update/encode are pessimistic, the step is optimised):
 | spaceship-lounge (untouched) | 0.85 / 0.78 | 0.33 | 0.19 | 0.32 | |
 | golden-hour-beach (untouched) | 0.87 / 0.89 | 0.22 | 0.39 | 0.24 | |
 | great-barrier-reef (untouched) | 1.39 / 1.37 | 0.29 | 0.77 | 0.30 | |
-| bedroom-dawn | 3.82 / 3.76 | 0.82 | 2.70 | 0.29 | heaviest step (the curtains' cloth) and the curtains' projection; one 21-41 ms frame in each run (see section 5) |
+| bedroom-dawn | 3.82 / 3.76 | 0.82 | 2.70 | 0.29 | heaviest step (the curtains' cloth) and the curtains' projection |
 | neon-night-drive | 4.55 / 4.44 | 0.29 | 3.83 | 0.41 | heaviest update (debug build) |
 | lightning-plains | 1.99 / 2.05 | 0.27 | 1.41 | 0.31 | |
 
@@ -110,6 +115,11 @@ outside the canvas (SwiftUI or another main-thread client) or in presentation; i
 it is the world model.
 
 ## 5. CI measurements (this branch)
+
+- Pictures: the lake's, the lounge's and the volcano's previews (23 frames, sprites and storms included) rendered on this
+  branch are pixel-identical to main's (`previews` branch, build 6f77a73): max difference 0.
+- CPU sweep repeated (second run): the same medians within 0.1 ms; the bedroom's 21-41 ms slowest frame of the first run
+  did not recur (6.5 ms), so it was the runner. Slowest frames everywhere else 1-7 ms.
 
 - Warm-up (WorldRenderersTests, CI): every world and every storm program made off the main thread in 7.3 s, then every
   world entered with a frame at once and 0 builds on the draw path; Tea House Snow and Zen Rock Garden one main-thread
