@@ -509,6 +509,10 @@ enum NeonNightDriveShaders {
         float close = u.play.w;
         float xr = x * (1.0 - 0.32 * close);
         float hScale = 1.0 + 0.4 * close;
+        // (Everything of the row (its blade signs, facades, roof signs, end walls) stands where the ray has come within 7 m
+        // of its facades' line or past it, and none higher than its tallest building and a roof sign over it (34 m at
+        // most): a ray already above that there, climbing, meets none of it.)
+        if (d.y > 0.0 && eye + d.y * ((abs(xr) - 7.0) / abs(d.x)) > ground + maxH * hScale + 36.0) return r;
         // Blade signs: panels standing out from the facades towards the road, their neon facing the traffic (and you).
         // The ray is within their reach only between where it comes within 7 m of the facade and where it meets it.
         {
