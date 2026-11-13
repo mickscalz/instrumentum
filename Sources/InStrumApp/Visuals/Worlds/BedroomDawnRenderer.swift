@@ -12,8 +12,7 @@ import InStrumCore
 /// floor's patch brighter, the glow up), its light through the scene's `FlashLimiter` (a glow under gentle visuals); the
 /// light gathers with tension; Energy livens the motes. A bird on the sill and a paper plane are drawn outside, the
 /// rainbow (the sun split by the glass's bevelled edge) on the wall beside the window. Three uniform rows.
-@MainActor
-final class BedroomDawnRenderer: ThemeRenderer {
+final class BedroomDawnRenderer {
     /// Dust motes drawn (fewer on Smooth).
     static func moteBudget(_ q: QualityLevel) -> Int { CurtainLight.moteBudget(q) }
     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
@@ -93,7 +92,7 @@ final class BedroomDawnRenderer: ThemeRenderer {
     init?(device: MTLDevice) {
         guard let s = SkyLayer(device: device), let w = WeatherLayer(device: device), let gw = WarpLayer(device: device),
               let g = WindowGlassLayer(device: device),
-              let lib = try? device.makeLibrary(source: BedroomDawnShaders.source, options: nil) else { return nil }
+              let lib = ShaderCache.library(device, source: BedroomDawnShaders.source) else { return nil }
         enum Blend { case opaque, premultiplied, additive }
         func make(_ v: String, _ f: String, _ blend: Blend, writesDepth: Bool = true, storms: Bool = false) -> MTLRenderPipelineState? {
             let d = MTLRenderPipelineDescriptor()
@@ -541,3 +540,7 @@ final class BedroomDawnRenderer: ThemeRenderer {
         e.endEncoding()
     }
 }
+
+/// Made on any thread (the warm-up makes the worlds' renderers off the main thread, real-Mac performance 14 Nov), drawn on
+/// the main thread: the class itself is not tied to the main actor, only its conformance is.
+extension BedroomDawnRenderer: ThemeRenderer {}

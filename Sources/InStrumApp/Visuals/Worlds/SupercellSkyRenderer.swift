@@ -22,8 +22,7 @@ struct SupercellChannelSegment {
 /// storm. Every flash goes through a `FlashLimiter` (gentle visuals make the strikes glows inside the cloud); the camera
 /// shakes and dollies only as the model says (never under Reduce Motion, and never on Smooth). Nothing is allocated per
 /// frame: the instances go by `setVertexBytes`.
-@MainActor
-final class SupercellSkyRenderer: ThemeRenderer {
+final class SupercellSkyRenderer {
     // MARK: The shader's rows (MSL `CellU`)
     nonisolated static let rowA = 0, rowCam = 1, rowAxes = 2, rowPlace = 3, rowSpin = 4, rowLook = 5, rowSunCol = 6
     nonisolated static let rowSunL = 7, rowAmb = 8, rowHaze = 9, rowPlay = 10, rowWall = 11, rowShaft = 12, rowGust = 13
@@ -120,7 +119,7 @@ final class SupercellSkyRenderer: ThemeRenderer {
 
     init?(device: MTLDevice) {
         guard let s = SkyLayer(device: device), let w = WeatherLayer(device: device), let gw = WarpLayer(device: device),
-              let lib = try? device.makeLibrary(source: SupercellSkyShaders.source, options: nil) else { return nil }
+              let lib = ShaderCache.library(device, source: SupercellSkyShaders.source) else { return nil }
         func make(_ v: String, _ f: String, blend: Bool, keepDepth: Bool, storms: Bool = false) -> MTLRenderPipelineState? {
             let d = MTLRenderPipelineDescriptor()
             d.vertexFunction = lib.skyFunction(v, storms: storms)
@@ -613,3 +612,7 @@ final class SupercellSkyRenderer: ThemeRenderer {
         e.endEncoding()
     }
 }
+
+/// Made on any thread (the warm-up makes the worlds' renderers off the main thread, real-Mac performance 14 Nov), drawn on
+/// the main thread: the class itself is not tied to the main actor, only its conformance is.
+extension SupercellSkyRenderer: ThemeRenderer {}

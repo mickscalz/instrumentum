@@ -1,3 +1,4 @@
+import AppKit
 import MetalKit
 import QuartzCore
 import InStrumCore
@@ -25,36 +26,34 @@ final class GPUClock: @unchecked Sendable {
     }
 }
 
+/// What happened since the canvas's last drawn frame: its window was hidden, or the app went to the background (set by
+/// notifications on the main thread, read and cleared by the next frame).
+@MainActor
+private final class GapMarks {
+    var hidden = false
+    var background = false
+    weak var view: MTKView?
+}
+
 /// Runs the active theme every frame: events → director → theme renderer → finishing → screen.
 ///
 /// Frame pacing keeps the graphics chip from ever being swamped (an Intel Mac's GPU kept saturated can freeze the whole
 /// machine): at most two frames are on the GPU at once (one while the safety net is in), a frame is skipped rather than
 /// queued behind them, every frame's GPU time feeds `AutoQuality`, and on an Intel or AMD GPU every quality draws a
 /// capped number of pixels and Ultra is High.
+///
+/// Nothing is compiled on the draw path (real-Mac performance, 14 Nov): the worlds' renderers are made off the main thread
+/// by `WorldRenderers`, all of them warmed up from launch (the world on screen first), and a frame whose world isn't made
+/// yet leaves the last frame on screen (a plain dark one at launch) rather than waiting. Each frame's main-thread time and
+/// the world's step within it go to the performance log, with whether the frame is in a world's first seconds and, for a
+/// stall, whether the window was hidden or the app in the background during it.
 final class ThemeCanvas: NSObject, MTKViewDelegate {
     private let model: AppModel
     private let queue: MTLCommandQueue
     private let device: MTLDevice
     private let director: SceneDirector
     private var stack: RenderStack?
-    private var butterfly: ButterflyRenderer?
-    private var steinway: SteinwayRenderer?
-    private var moonlitLake: MoonlitLakeRenderer?
-    private var lounge: SpaceshipLoungeRenderer?
-    private var beach: GoldenHourBeachRenderer?
-    private var road: CoastRoadRenderer?
-    private var cabin: SnowboundCabinRenderer?
-    private var bedroom: BedroomDawnRenderer?
-    private var fjord: AuroraFjordRenderer?
-    private var bay: BioluminescentBayRenderer?
-    private var teaHouse: TeaHouseSnowRenderer?
-    private var zenGarden: ZenRockGardenRenderer?
-    private var submarine: SubmarineWindowRenderer?
-    private var reef: GreatBarrierReefRenderer?
-    private var plains: LightningPlainsRenderer?
-    private var supercell: SupercellSkyRenderer?
-    private var volcano: VolcanoRimRenderer?
-    private var drive: NeonNightDriveRenderer?
+    private let worlds: WorldRenderers
     private var autoQuality: AutoQuality
     private var lastTime: CFTimeInterval = 0
     private var seenVersion = -1
@@ -64,6 +63,14 @@ final class ThemeCanvas: NSObject, MTKViewDelegate {
     private let gpuClock = GPUClock()
     /// An Apple GPU (Apple silicon); false on an Intel or AMD graphics chip.
     private let appleGPU: Bool
+    /// True once a world's frame has been shown (until then, a frame whose world isn't made yet is a plain dark one).
+    private var shownAFrame = false
+    /// The world on screen and when it was entered (its first frame), for the report's entry frames.
+    private var visitWorld = ""
+    private var visitStart: CFTimeInterval = 0
+    /// What happened since the last drawn frame (for a stall's cause in the report).
+    private let marks: GapMarks
+    private var observers: [NSObjectProtocol] = []
 
     @MainActor
     init?(view: MTKView, model: AppModel) {
@@ -73,12 +80,36 @@ final class ThemeCanvas: NSObject, MTKViewDelegate {
         self.device = device
         self.queue = queue
         self.stack = stack
+        self.worlds = WorldRenderers(device: device)
         self.director = SceneDirector(themeID: model.themeID, state: model.themeState(for: model.themeID),
                                       reaction: model.reaction)
         self.autoQuality = AutoQuality(setting: model.quality)
         self.appleGPU = device.supportsFamily(.apple7)
+        let marks = GapMarks()
+        marks.view = view
+        self.marks = marks
         super.init()
         director.sky.reset(settings: model.skySettings.holdingBack())   // launch with the chosen weather, not a blend into it
+        // The app never builds a pipeline inside a frame: what a frame finds missing is made off the main thread.
+        ShaderWork.defersDrawPathBuilds = true
+        worlds.warmUp(first: model.themeID)
+        let center = NotificationCenter.default
+        observers.append(center.addObserver(forName: NSWindow.didChangeOcclusionStateNotification, object: nil,
+                                            queue: .main) { note in
+            MainActor.assumeIsolated { () -> Void in
+                guard let window = note.object as? NSWindow, window === marks.view?.window,
+                      !window.occlusionState.contains(.visible) else { return }
+                marks.hidden = true
+            }
+        })
+        observers.append(center.addObserver(forName: NSApplication.didResignActiveNotification, object: nil,
+                                            queue: .main) { _ in
+            MainActor.assumeIsolated { () -> Void in marks.background = true }
+        })
+    }
+
+    deinit {
+        for o in observers { NotificationCenter.default.removeObserver(o) }
     }
 
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
@@ -105,11 +136,47 @@ final class ThemeCanvas: NSObject, MTKViewDelegate {
         director.excitementSettings = model.excitementSettings   // Energy, big moments, surprises, build and drop
     }
 
+    /// What the app was doing in the gap before this frame, for a stall's line in the report: its window hidden at some
+    /// point (the Mac stops asking for frames: a pause, not a freeze), in the background with its window showing, or in
+    /// front. Clears the marks for the next gap.
+    @MainActor
+    private func gapCause(_ view: MTKView) -> PerformanceLog.StallCause {
+        let visible = view.window.map { $0.occlusionState.contains(.visible) } ?? true
+        let active = NSApp?.isActive ?? true
+        let cause: PerformanceLog.StallCause
+        if marks.hidden || !visible {
+            cause = .hidden
+        } else if marks.background || !active {
+            cause = .background
+        } else {
+            cause = .active
+        }
+        marks.hidden = false
+        marks.background = false
+        return cause
+    }
+
+    /// A plain dark frame (the view's clear colour), for a launch whose world isn't made yet.
+    @MainActor
+    private func presentDark(_ view: MTKView) {
+        guard let pass = view.currentRenderPassDescriptor, let drawable = view.currentDrawable,
+              let cb = queue.makeCommandBuffer(), let e = cb.makeRenderCommandEncoder(descriptor: pass) else { return }
+        e.endEncoding()
+        cb.present(drawable)
+        let clock = gpuClock
+        cb.addCompletedHandler { _ in clock.finished(gpuSeconds: 0) }
+        clock.committed()
+        cb.commit()
+    }
+
     @MainActor
     private func drawFrame(_ view: MTKView) {
         // Never queue a frame behind work the GPU hasn't finished: skip this one instead (the clock below carries the
         // gap). Two may be in flight normally, one once the safety net has stepped in.
         if gpuClock.inFlight >= (autoQuality.rescued || autoQuality.pixelScale < 1 ? 1 : 2) { return }
+        let start = CACurrentMediaTime()
+        ShaderWork.drawing = true
+        defer { ShaderWork.drawing = false }
         syncSettings()
         guard let stack else { return }
         let now = CACurrentMediaTime()
@@ -126,10 +193,24 @@ final class ThemeCanvas: NSObject, MTKViewDelegate {
         let wanted = CGSize(width: px.width, height: px.height)
         if view.drawableSize != wanted { view.drawableSize = wanted }
         let size = view.drawableSize
-        // Help > Copy Performance Report: this frame, by world and quality (no allocation after a key's first frame).
-        model.performanceLog.record(world: director.themeID, quality: level, frameTime: frameTime, gpuTime: gpuTime,
-                                    pixelScale: autoQuality.pixelScale, rescued: autoQuality.rescued,
-                                    pixels: (Int(size.width), Int(size.height)))
+        // Help > Copy Performance Report: this frame, by world and quality (no allocation after a key's first frame),
+        // recorded as the frame ends, whichever way it ends, with its main-thread time and the world's step.
+        let world = director.themeID
+        let entered = world != visitWorld
+        if entered {
+            visitWorld = world
+            visitStart = now
+        }
+        let cause = gapCause(view)
+        let recordQuality = level, pixelScale = autoQuality.pixelScale, rescued = autoQuality.rescued
+        var stepSeconds = 0.0
+        defer {
+            model.performanceLog.record(world: world, quality: recordQuality, frameTime: frameTime, gpuTime: gpuTime,
+                                        pixelScale: pixelScale, rescued: rescued, pixels: (Int(size.width), Int(size.height)),
+                                        cpuTime: CACurrentMediaTime() - start, stepTime: stepSeconds,
+                                        entering: now - visitStart < PerformanceLog.entrySeconds, entered: entered,
+                                        stallCause: cause)
+        }
         stack.resize(width: Int(size.width), height: Int(size.height))
         var controls = model.frameSceneControls   // hold, the sleep dim, Reduce Motion and breathing, before the events
         controls.gentle = model.effectiveGentleVisuals   // and gentle visuals: the drive's far siren rests
@@ -147,7 +228,9 @@ final class ThemeCanvas: NSObject, MTKViewDelegate {
         director.instrumentPulse = model.instrumentPulse   // Blue Depth's arp grid, for the visuals that blink with it
         director.instrumentPressure = model.instrumentPressure   // the grand's morph and its repeats, for the worlds
         director.instrumentRepeat = model.instrumentRepeat
+        let stepStart = CACurrentMediaTime()
         let frame = director.step(dt: frameDt, t: now, quality: level)
+        stepSeconds = CACurrentMediaTime() - stepStart
         model.cueInstrument(director.instrumentCue)   // Excitement's tension and drop (or the pressure) to the instrument
         let dt = director.visualDt   // the renderers' clock, as the director's controls shape it
         model.forceMorph(director.forcedMorph)   // the world's forced morph (the storm's arrival) to the grand
@@ -161,83 +244,14 @@ final class ThemeCanvas: NSObject, MTKViewDelegate {
             model.setMeteorsTonight(SkyControls.meteorsTonight((frame as? SkyBearing)?.sky.shower))
         }
 
-        let renderer: ThemeRenderer?
-        if let g = frame as? GardenFrame {
-            if butterfly == nil { butterfly = ButterflyRenderer(device: device) }
-            butterfly?.update(g, params: director.parameters, quality: level, gentle: gentle, dt: dt, size: size)
-            renderer = butterfly
-        } else if let s = frame as? SteinwayFrame {
-            if steinway == nil { steinway = SteinwayRenderer(device: device) }
-            steinway?.update(s, quality: level, gentle: gentle, dt: dt)
-            renderer = steinway
-        } else if let l = frame as? LakeFrame {
-            if moonlitLake == nil { moonlitLake = MoonlitLakeRenderer(device: device) }
-            moonlitLake?.update(l, params: director.parameters, quality: level, gentle: gentle, dt: dt, size: size)
-            renderer = moonlitLake
-        } else if let l = frame as? LoungeFrame {
-            if lounge == nil { lounge = SpaceshipLoungeRenderer(device: device) }
-            lounge?.update(l, params: director.parameters, quality: level, gentle: gentle, dt: dt, size: size)
-            renderer = lounge
-        } else if let b = frame as? BeachFrame {
-            if beach == nil { beach = GoldenHourBeachRenderer(device: device) }
-            beach?.update(b, params: director.parameters, quality: level, gentle: gentle, dt: dt, size: size)
-            renderer = beach
-        } else if let r = frame as? RoadFrame {
-            if road == nil { road = CoastRoadRenderer(device: device) }
-            road?.update(r, params: director.parameters, quality: level, gentle: gentle, dt: dt, size: size)
-            renderer = road
-        } else if let c = frame as? CabinFrame {
-            if cabin == nil { cabin = SnowboundCabinRenderer(device: device) }
-            cabin?.update(c, params: director.parameters, quality: level, gentle: gentle, dt: dt, size: size)
-            renderer = cabin
-        } else if let b = frame as? BedroomFrame {
-            if bedroom == nil { bedroom = BedroomDawnRenderer(device: device) }
-            bedroom?.update(b, params: director.parameters, quality: level, gentle: gentle, dt: dt, size: size)
-            renderer = bedroom
-        } else if let f = frame as? FjordFrame {
-            if fjord == nil { fjord = AuroraFjordRenderer(device: device) }
-            fjord?.update(f, params: director.parameters, quality: level, gentle: gentle, dt: dt, size: size)
-            renderer = fjord
-        } else if let y = frame as? BayFrame {
-            if bay == nil { bay = BioluminescentBayRenderer(device: device) }
-            bay?.update(y, params: director.parameters, quality: level, gentle: gentle, dt: dt, size: size)
-            renderer = bay
-        } else if let h = frame as? TeaHouseFrame {
-            if teaHouse == nil { teaHouse = TeaHouseSnowRenderer(device: device) }
-            teaHouse?.update(h, params: director.parameters, quality: level, gentle: gentle, dt: dt, size: size)
-            renderer = teaHouse
-        } else if let z = frame as? ZenGardenFrame {
-            if zenGarden == nil { zenGarden = ZenRockGardenRenderer(device: device) }
-            zenGarden?.update(z, params: director.parameters, quality: level, gentle: gentle, dt: dt, size: size)
-            renderer = zenGarden
-        } else if let w = frame as? SubFrame {
-            if submarine == nil { submarine = SubmarineWindowRenderer(device: device) }
-            submarine?.update(w, params: director.parameters, quality: level, gentle: gentle, dt: dt, size: size)
-            renderer = submarine
-        } else if let f = frame as? ReefFrame {
-            if reef == nil { reef = GreatBarrierReefRenderer(device: device) }
-            reef?.update(f, params: director.parameters, quality: level, gentle: gentle, dt: dt, size: size)
-            renderer = reef
-        } else if let f = frame as? PlainsFrame {
-            if plains == nil { plains = LightningPlainsRenderer(device: device) }
-            plains?.update(f, params: director.parameters, quality: level, gentle: gentle, dt: dt, size: size)
-            renderer = plains
-        } else if let f = frame as? SupercellFrame {
-            if supercell == nil { supercell = SupercellSkyRenderer(device: device) }
-            supercell?.update(f, params: director.parameters, quality: level, gentle: gentle, dt: dt, size: size)
-            renderer = supercell
-        } else if let f = frame as? VolcanoFrame {
-            if volcano == nil { volcano = VolcanoRimRenderer(device: device) }
-            volcano?.update(f, params: director.parameters, quality: level, gentle: gentle, dt: dt, size: size)
-            renderer = volcano
-        } else if let f = frame as? DriveFrame {
-            if drive == nil { drive = NeonNightDriveRenderer(device: device) }
-            drive?.update(f, params: director.parameters, quality: level, gentle: gentle, dt: dt, size: size)
-            renderer = drive
-        } else {
-            renderer = nil
+        // The world's renderer, if it is made: else the last frame stays on screen (a dark one at launch) while it is
+        // made off the main thread, at the front of the line.
+        guard let renderer = worlds.renderer(for: frame, params: director.parameters, quality: level, gentle: gentle,
+                                             dt: dt, size: size) else {
+            if !shownAFrame { presentDark(view) }
+            return
         }
-        guard let renderer, let pass = view.currentRenderPassDescriptor, let drawable = view.currentDrawable,
+        guard let pass = view.currentRenderPassDescriptor, let drawable = view.currentDrawable,
               let cb = queue.makeCommandBuffer() else { return }
         renderer.render(stack: stack, commandBuffer: cb)
         var post = renderer.post
@@ -248,5 +262,6 @@ final class ThemeCanvas: NSObject, MTKViewDelegate {
         cb.addCompletedHandler { cb in clock.finished(gpuSeconds: cb.gpuEndTime - cb.gpuStartTime) }
         clock.committed()
         cb.commit()
+        shownAFrame = true
     }
 }

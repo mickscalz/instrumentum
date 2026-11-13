@@ -6,8 +6,7 @@ import InStrumCore
 /// Draws Coast Road: the Living Sky through the passenger window, far headlands, the Ocean layer far below with
 /// white water at the cliff base, scrub, guardrail posts and lamps streaming past, Coast Lights, sea fog, the
 /// window frame and glass, rain on the glass and a dashboard-amber keyboard.
-@MainActor
-final class CoastRoadRenderer: ThemeRenderer {
+final class CoastRoadRenderer {
     /// Coast Lights sent to the GPU (fewer on Smooth).
     static func lightBudget(_ q: QualityLevel) -> Int { q == .lite ? 64 : CoastLights.cap }
     /// Light sprites per draw (two float4s each within setVertexBytes' 4 KB).
@@ -90,7 +89,7 @@ final class CoastRoadRenderer: ThemeRenderer {
 
     init?(device: MTLDevice) {
         guard let s = SkyLayer(device: device), let w = WeatherLayer(device: device), let gw = WarpLayer(device: device),
-              let lib = try? device.makeLibrary(source: CoastRoadShaders.source, options: nil) else { return nil }
+              let lib = ShaderCache.library(device, source: CoastRoadShaders.source) else { return nil }
         enum Blend { case opaque, premultiplied, additive }
         func make(_ v: String, _ f: String, _ blend: Blend, writesDepth: Bool = true, program: SkyProgram = .plain) -> MTLRenderPipelineState? {
             let d = MTLRenderPipelineDescriptor()
@@ -486,3 +485,7 @@ final class CoastRoadRenderer: ThemeRenderer {
         e.endEncoding()
     }
 }
+
+/// Made on any thread (the warm-up makes the worlds' renderers off the main thread, real-Mac performance 14 Nov), drawn on
+/// the main thread: the class itself is not tied to the main actor, only its conformance is.
+extension CoastRoadRenderer: ThemeRenderer {}

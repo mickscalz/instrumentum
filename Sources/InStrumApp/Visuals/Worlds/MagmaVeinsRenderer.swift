@@ -9,8 +9,7 @@ import InStrumCore
 /// round an island of crust) and each chord's joining channel is a run of instanced strokes over it, lit by the vein's
 /// own temperature as it cools, hottest near its source. A moment's split eases open (quickly, or slowly under gentle visuals) and
 /// the light it brings passes through a `FlashLimiter`. The instance buffers (a ring of three) are made once.
-@MainActor
-final class MagmaVeinsRenderer: ThemeRenderer {
+final class MagmaVeinsRenderer {
     nonisolated static let uniformCount = 27
     nonisolated static let plateBase = 3
     /// The strokes at most: every vein's channel (16, its path smoothed), two braids (6 each), a joining channel (4) and
@@ -42,7 +41,7 @@ final class MagmaVeinsRenderer: ThemeRenderer {
     var uniforms: [SIMD4<Float>] { veinsU }
 
     init?(device: MTLDevice) {
-        guard let lib = try? device.makeLibrary(source: MagmaVeinsShaders.source, options: nil) else { return nil }
+        guard let lib = ShaderCache.library(device, source: MagmaVeinsShaders.source) else { return nil }
         func make(_ v: String, _ f: String, additive: Bool, brighter: Bool = false) -> MTLRenderPipelineState? {
             let d = MTLRenderPipelineDescriptor()
             d.vertexFunction = lib.skyFunction(v)
@@ -333,3 +332,7 @@ final class MagmaVeinsRenderer: ThemeRenderer {
         e.endEncoding()
     }
 }
+
+/// Made on any thread (the warm-up makes the worlds' renderers off the main thread, real-Mac performance 14 Nov), drawn on
+/// the main thread: the class itself is not tied to the main actor, only its conformance is.
+extension MagmaVeinsRenderer: ThemeRenderer {}

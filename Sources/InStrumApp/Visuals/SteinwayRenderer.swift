@@ -7,8 +7,7 @@ import InStrumCore
 /// Excitement (Fire & Neon spec §5.5): the spotlight blooming overhead rides on the exposure through the `FlashLimiter`
 /// (a glow under gentle visuals); tension narrows the spots and dims the house; the dust motes' shimmer and the curtain
 /// stirring are drawn in the stage pass. Two uniform rows after the spots.
-@MainActor
-final class SteinwayRenderer: ThemeRenderer {
+final class SteinwayRenderer {
     static let keyboardHeight: Float = 0.28
     static let blackKeyLength: Float = 0.62
     static let maxSpotlights = 64
@@ -35,7 +34,7 @@ final class SteinwayRenderer: ThemeRenderer {
     var uniforms: [SIMD4<Float>] { stage }
 
     init?(device: MTLDevice) {
-        guard let library = try? device.makeLibrary(source: MidnightSteinwayShaders.source, options: nil) else { return nil }
+        guard let library = ShaderCache.library(device, source: MidnightSteinwayShaders.source) else { return nil }
         func pipeline(_ vertex: String, _ fragment: String) -> MTLRenderPipelineState? {
             let d = MTLRenderPipelineDescriptor()
             d.vertexFunction = library.makeFunction(name: vertex)
@@ -108,3 +107,7 @@ final class SteinwayRenderer: ThemeRenderer {
         e.endEncoding()
     }
 }
+
+/// Made on any thread (the warm-up makes the worlds' renderers off the main thread, real-Mac performance 14 Nov), drawn on
+/// the main thread: the class itself is not tied to the main actor, only its conformance is.
+extension SteinwayRenderer: ThemeRenderer {}

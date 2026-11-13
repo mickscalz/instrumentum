@@ -5,8 +5,7 @@ import InStrumCore
 
 /// Draws Golden Hour Beach: the Living Sky, a headland, the Ocean layer with breaking waves, the wash on the
 /// sand, Tide Lines, palms, weather and an amber keyboard.
-@MainActor
-final class GoldenHourBeachRenderer: ThemeRenderer {
+final class GoldenHourBeachRenderer {
     /// Tide lines sent to the GPU (fewer on Smooth).
     static func lineBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : TideLines.cap }
     /// Shore geometry in metres (matches the shader's constants).
@@ -77,7 +76,7 @@ final class GoldenHourBeachRenderer: ThemeRenderer {
 
     init?(device: MTLDevice) {
         guard let s = SkyLayer(device: device), let w = WeatherLayer(device: device), let gw = WarpLayer(device: device),
-              let lib = try? device.makeLibrary(source: GoldenHourBeachShaders.source, options: nil) else { return nil }
+              let lib = ShaderCache.library(device, source: GoldenHourBeachShaders.source) else { return nil }
         func make(_ v: String, _ f: String, program: SkyProgram = .plain) -> MTLRenderPipelineState? {
             let d = MTLRenderPipelineDescriptor()
             d.vertexFunction = lib.skyFunction(v, program: program)
@@ -524,3 +523,7 @@ final class GoldenHourBeachRenderer: ThemeRenderer {
         e.endEncoding()
     }
 }
+
+/// Made on any thread (the warm-up makes the worlds' renderers off the main thread, real-Mac performance 14 Nov), drawn on
+/// the main thread: the class itself is not tied to the main actor, only its conformance is.
+extension GoldenHourBeachRenderer: ThemeRenderer {}

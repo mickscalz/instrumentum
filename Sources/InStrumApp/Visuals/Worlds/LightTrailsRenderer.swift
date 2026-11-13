@@ -6,7 +6,6 @@ import InStrumCore
 /// model's ring as a ribbon of light along its lane and its mirror on the wet road, and a big moment's interchange bloom
 /// (`LightTrailsShaders`, one additive full-screen pass that reads the scene's depth). The streaks go to the GPU sorted by
 /// lane through a ring of three buffers made once, at their largest (128 streaks), so nothing is allocated a frame.
-@MainActor
 final class LightTrailsLayer {
     // MARK: The shader's rows (MSL `TrailsU`) and streaks
     nonisolated static let laneRows = 4, rowBloom = 4, rowInfo = 5, uniformCount = 6
@@ -31,7 +30,7 @@ final class LightTrailsLayer {
     var streakRows: [SIMD4<Float>] { Array(packed.prefix(drawn * 2)) }
 
     init?(device: MTLDevice) {
-        guard let lib = try? device.makeLibrary(source: LightTrailsShaders.source, options: nil) else { return nil }
+        guard let lib = ShaderCache.library(device, source: LightTrailsShaders.source) else { return nil }
         let d = MTLRenderPipelineDescriptor()
         d.vertexFunction = lib.skyFunction("drive_vertex")
         d.fragmentFunction = lib.skyFunction("trails_fragment")

@@ -20,8 +20,7 @@ import InStrumCore
 /// its own `FlashLimiter` (a glow under gentle visuals) and a pink haze in the water (`ReefU.spawn.w`); the visitors (a
 /// manta, a green turtle, a blacktip reef shark) are a third kind in the dots' pass, each one instance; tension's
 /// tightening and the drop's burst are the school's own (Coral Pulse's spread).
-@MainActor
-final class GreatBarrierReefRenderer: ThemeRenderer {
+final class GreatBarrierReefRenderer {
     /// Polyp patches sent to the GPU (fewer on Smooth), and the beads (the spawn's own cap: 300 on Smooth).
     static func patchBudget(_ q: QualityLevel) -> Int { q == .lite ? 24 : CoralPulse.cap }
     static func beadBudget(_ q: QualityLevel) -> Int { CoralSpawning.cap(q) }
@@ -121,7 +120,7 @@ final class GreatBarrierReefRenderer: ThemeRenderer {
 
     init?(device: MTLDevice) {
         guard let s = SkyLayer(device: device), let w = WeatherLayer(device: device), let gw = WarpLayer(device: device),
-              let lib = try? device.makeLibrary(source: GreatBarrierReefShaders.source, options: nil) else { return nil }
+              let lib = ShaderCache.library(device, source: GreatBarrierReefShaders.source) else { return nil }
         func make(_ v: String, _ f: String, blend: Bool, storms: Bool = false) -> MTLRenderPipelineState? {
             let d = MTLRenderPipelineDescriptor()
             d.vertexFunction = lib.skyFunction(v, storms: storms)
@@ -587,3 +586,7 @@ final class GreatBarrierReefRenderer: ThemeRenderer {
         e.endEncoding()
     }
 }
+
+/// Made on any thread (the warm-up makes the worlds' renderers off the main thread, real-Mac performance 14 Nov), drawn on
+/// the main thread: the class itself is not tied to the main actor, only its conformance is.
+extension GreatBarrierReefRenderer: ThemeRenderer {}

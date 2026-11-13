@@ -164,8 +164,8 @@ struct GlassPatch: Equatable { var x, y, radius, warmth: Float }
 
 /// The Window Kit's glass and frame (spec §7.2, §7.3): frost thresholded from a grown field (with warm patches,
 /// glints and, on High and Ultra, the blurred view it scatters), condensation, drips, stuck flakes and the room's
-/// reflection; then the frame and bars in log wood or a painted sash.
-@MainActor
+/// reflection; then the frame and bars in log wood or a painted sash. Made on any thread (the warm-up makes the worlds off
+/// the main thread), then used on one.
 final class WindowGlassLayer {
     static let maxFlakes = 40, maxDrips = 12, maxBars = 19, maxPatches = 48
     static func patchCap(_ q: QualityLevel) -> Int { q == .lite ? 24 : 48 }
@@ -213,8 +213,13 @@ final class WindowGlassLayer {
     private var instanceCount = 0
     private var aspect: Float = 16.0 / 9
 
-    init?(device: MTLDevice) {
-        guard let lib = try? device.makeLibrary(source: WindowKitShaders.source, options: nil) else { return nil }
+    /// The glass's six pipelines, the same in every world with a window: made once and shared.
+    private struct Pipelines {
+        let glass, drop, frame, blur, portGlass, portFrame: MTLRenderPipelineState
+    }
+
+    private static func makePipelines(_ device: MTLDevice) -> Pipelines? {
+        guard let lib = ShaderCache.library(device, source: WindowKitShaders.source) else { return nil }
         func make(_ v: String, _ f: String, blend: Bool, depth: Bool) -> MTLRenderPipelineState? {
             let d = MTLRenderPipelineDescriptor()
             d.vertexFunction = lib.makeFunction(name: v)
@@ -239,14 +244,22 @@ final class WindowGlassLayer {
               let bl = make("glass_fullscreen_vertex", "blur_down_fragment", blend: false, depth: false) else { return nil }
         guard let pg = make("glass_vertex", "port_glass_fragment", blend: true, depth: true),
               let pf = make("frame_vertex", "port_frame_fragment", blend: false, depth: true) else { return nil }
+        return Pipelines(glass: g, drop: dr, frame: fr, blur: bl, portGlass: pg, portFrame: pf)
+    }
+
+    init?(device: MTLDevice) {
+        guard let made = ShaderCache.shared.memo("WindowGlassLayer", device: device, { () -> Pipelines? in
+            WindowGlassLayer.makePipelines(device)
+        }) else { return nil }
         let pd = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba16Float, width: 1, height: 1, mipmapped: false)
         pd.usage = [.shaderRead]
         guard let ph = device.makeTexture(descriptor: pd) else { return nil }
         var zero = [UInt16](repeating: 0, count: 4)
         ph.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0, withBytes: &zero, bytesPerRow: 8)
         self.device = device
-        glassPipeline = g; dropPipeline = dr; framePipeline = fr; blurPipeline = bl; placeholder = ph
-        portGlassPipeline = pg; portFramePipeline = pf
+        glassPipeline = made.glass; dropPipeline = made.drop; framePipeline = made.frame; blurPipeline = made.blur
+        placeholder = ph
+        portGlassPipeline = made.portGlass; portFramePipeline = made.portFrame
     }
 
     /// Uploads the grown field once (16-bit, 0…1). Until then the glass draws a plain radial fallback.
@@ -481,7 +494,6 @@ final class WindowGlassLayer {
 ///     e = cb.makeRenderCommandEncoder(descriptor: stack.scenePassContinuing()!)
 ///     glass.drawPorthole(e, view: view)
 ///     glass.drawFrame(e)                                                      // the ring
-@MainActor
 extension WindowGlassLayer {
     /// A porthole's update: one pane in the brass ring, its condensation and drips masked to the circle, and never any
     /// frost. It passes the glass no frost, warm patches or snow (and round glass never draws frost): this is how a

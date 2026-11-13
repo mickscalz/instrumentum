@@ -51,56 +51,136 @@ extension MTLLibrary {
 
 /// A render pipeline whose fragment reads the shared sky: its plain program made at once (so a world that cannot build
 /// it fails as before), its storm programs the first time a frame needs each; all kept.
-@MainActor
-final class SkyPipeline {
+///
+/// Any thread (real-Mac performance, 14 Nov). In the app (`ShaderWork.defersDrawPathBuilds`) a storm program a frame finds
+/// missing is made on `ShaderWork.queue`, and frames draw with the fallback until it lands (the plain sky, or for the
+/// supercell's own program the whole storm program); previews and tests make it at once, as before. A pipeline made on
+/// `ShaderWork.queue` (a world the warm-up made) is listed for the warm-up, which makes its storm programs there once
+/// every world is made (`nextUnwarmed`, `warm`).
+final class SkyPipeline: @unchecked Sendable {
     private let build: (SkyProgram) -> MTLRenderPipelineState?
     private let plain: MTLRenderPipelineState
+    /// Made from a storms flag (`init(build:)`): its supercell program is the whole storm program, so it is never made
+    /// twice.
+    private let cellIsStorms: Bool
+    private let lock = NSLock()
     private var stormy: MTLRenderPipelineState?
     private var cellOnly: MTLRenderPipelineState?
+    /// Asked for (made, on its way, or failed: a failed build is not tried again).
     private var stormTried = false, cellTried = false
+    private var builds = 0
     /// How many times a storm program (the whole one or the supercell's alone) was built (tests: once each, however many
     /// frames need it; a failed build is not tried again).
-    private(set) var stormBuilds = 0
+    var stormBuilds: Int { lock.lock(); defer { lock.unlock() }; return builds }
+
+    private struct Listed { weak var pipeline: SkyPipeline? }
+    private static let listLock = NSLock()
+    private static var listed: [Listed] = []
 
     /// `build(program)` makes the pipeline with its functions taken through `skyFunction(_:program:)`.
-    init?(program build: @escaping (SkyProgram) -> MTLRenderPipelineState?) {
+    init?(program build: @escaping (SkyProgram) -> MTLRenderPipelineState?, cellIsStorms: Bool = false) {
         guard let p = build(.plain) else { return nil }
         self.build = build
+        self.cellIsStorms = cellIsStorms
         plain = p
+        if ShaderWork.onQueue {
+            Self.listLock.lock()
+            Self.listed.removeAll { $0.pipeline == nil }
+            Self.listed.append(Listed(pipeline: self))
+            Self.listLock.unlock()
+        }
     }
 
     /// `build(storms)` makes the pipeline with its functions taken through `skyFunction(_:storms:)` (a world that never
     /// asks for the supercell's program alone).
     convenience init?(build: @escaping (Bool) -> MTLRenderPipelineState?) {
-        self.init(program: { build($0 != .plain) })
+        self.init(program: { build($0 != .plain) }, cellIsStorms: true)
     }
 
     /// The program for a sky with (`storms`) or without its storm weathers.
     func state(storms: Bool) -> MTLRenderPipelineState { state(storms ? .storms : .plain) }
 
     /// The program for `program`. Should a storm program ever fail to build, the plain one draws (the sky without its
-    /// storm, never a missing world); should the supercell's alone, the whole storm program does.
+    /// storm, never a missing world); should the supercell's alone, the whole storm program does. In the app, the same
+    /// stand in while a missing one is made off the main thread.
     func state(_ program: SkyProgram) -> MTLRenderPipelineState {
-        switch program {
-        case .plain:
-            return plain
-        case .storms:
-            if let s = stormy { return s }
-            guard !stormTried else { return plain }
-            stormTried = true
-            stormBuilds += 1
-            stormy = build(.storms)
-            return stormy ?? plain
-        case .cell:
-            if let c = cellOnly { return c }
-            guard !cellTried else { return state(.storms) }
-            cellTried = true
-            stormBuilds += 1
-            cellOnly = build(.cell)
-            return cellOnly ?? state(.storms)
+        if program == .plain { return plain }
+        if program == .cell && cellIsStorms { return state(.storms) }
+        let storms = program == .storms
+        lock.lock()
+        if let ready = storms ? stormy : cellOnly {
+            lock.unlock()
+            return ready
         }
+        let tried = storms ? stormTried : cellTried
+        if !tried {
+            if storms { stormTried = true } else { cellTried = true }
+            builds += 1
+        }
+        lock.unlock()
+        if tried { return fallback(program) }
+        if ShaderWork.defersDrawPathBuilds {
+            ShaderWork.queue.async { self.make(program) }
+            return fallback(program)
+        }
+        ShaderWork.noteBuild("a sky storm program")
+        return make(program) ?? fallback(program)
+    }
+
+    private func fallback(_ program: SkyProgram) -> MTLRenderPipelineState {
+        program == .cell ? state(.storms) : plain
+    }
+
+    @discardableResult
+    private func make(_ program: SkyProgram) -> MTLRenderPipelineState? {
+        let made = build(program)
+        lock.lock()
+        defer { lock.unlock() }
+        if program == .storms { stormy = made } else { cellOnly = made }
+        return made
+    }
+
+    /// Makes `program` now unless something has asked for it already (the warm-up, on `ShaderWork.queue`).
+    func warm(_ program: SkyProgram) {
+        guard program != .plain, !(program == .cell && cellIsStorms) else { return }
+        let storms = program == .storms
+        lock.lock()
+        let tried = storms ? stormTried : cellTried
+        if !tried {
+            if storms { stormTried = true } else { cellTried = true }
+            builds += 1
+        }
+        lock.unlock()
+        if !tried { make(program) }
+    }
+
+    /// The storm programs nothing has asked for yet.
+    var unasked: [SkyProgram] {
+        lock.lock()
+        defer { lock.unlock() }
+        var out: [SkyProgram] = []
+        if !stormTried { out.append(.storms) }
+        if !cellIsStorms && !cellTried { out.append(.cell) }
+        return out
+    }
+
+    /// The next storm program the warm-up should make: the whole storm programs first (a far storm or a sprite can come
+    /// to any world), then the supercell's own; nil when every pipeline made on `ShaderWork.queue` has all of its.
+    static func nextUnwarmed() -> (pipeline: SkyPipeline, program: SkyProgram)? {
+        listLock.lock()
+        listed.removeAll { $0.pipeline == nil }
+        let live = listed.compactMap { $0.pipeline }
+        listLock.unlock()
+        for wanted in [SkyProgram.storms, .cell] {
+            for p in live where p.unasked.contains(wanted) { return (p, wanted) }
+        }
+        return nil
     }
 
     /// Whether a storm program (the whole one or the supercell's alone) has been made.
-    var hasStormProgram: Bool { stormy != nil || cellOnly != nil }
+    var hasStormProgram: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return stormy != nil || cellOnly != nil
+    }
 }

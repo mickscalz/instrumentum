@@ -8,12 +8,12 @@ import InStrumCore
 /// and no host name, and every character of it is ASCII.
 enum PerformanceReport {
     /// The header lines: the title, the build, macOS, the Mac, one line for each graphics chip, the quality setting and
-    /// how long the app has been running.
+    /// how long the app has been running, then any `extra` lines (the shaders' warm-up, `ShaderWork.reportLine`).
     /// - Parameters:
     ///   - quality: the quality setting, as the Display section shows it.
     ///   - gentleVisuals: the Gentle visuals switch.
     ///   - runningSeconds: seconds since the app started.
-    static func header(quality: QualitySetting, gentleVisuals: Bool, runningSeconds: Double) -> [String] {
+    static func header(quality: QualitySetting, gentleVisuals: Bool, runningSeconds: Double, extra: [String] = []) -> [String] {
         var lines: [String] = []
         lines.append("In Strum Meants performance report")
         lines.append(buildLine())
@@ -23,6 +23,7 @@ enum PerformanceReport {
         let gentle = gentleVisuals ? "on" : "off"
         lines.append("Quality setting: " + qualityName(quality) + ", Gentle visuals " + gentle)
         lines.append("Running for \(wholeMinutes(runningSeconds)) min")
+        lines += extra
         return lines.map { (line: String) -> String in PerformanceLog.asciiOnly(line) }
     }
 

@@ -8,8 +8,7 @@ import InStrumCore
 /// fishing village's lights with their reflections (and pillars in diamond dust); drifting ice floes; the jetty's snowy
 /// rails and ice-blue glass keys. Curtain Lights ripples the aurora itself (the sky's ripples and tint); Galaxy Warp
 /// streams over the sky instead when chosen.
-@MainActor
-final class AuroraFjordRenderer: ThemeRenderer {
+final class AuroraFjordRenderer {
     /// Curtain Lights' band (the keyboard's 0.08…0.92) is laid over the part of the curtain the V of sky shows: the
     /// shader's band units 0.5 ± 0.42 × bandSpan (about ±21° along the aurora). Travel and widths scale with it, so a
     /// ripple crosses the V as it crosses the keyboard.
@@ -102,7 +101,7 @@ final class AuroraFjordRenderer: ThemeRenderer {
 
     init?(device: MTLDevice) {
         guard let s = SkyLayer(device: device), let w = WeatherLayer(device: device), let gw = WarpLayer(device: device),
-              let lib = try? device.makeLibrary(source: AuroraFjordShaders.source, options: nil) else { return nil }
+              let lib = ShaderCache.library(device, source: AuroraFjordShaders.source) else { return nil }
         enum Blend { case opaque, premultiplied, additive }
         func make(_ v: String, _ f: String, _ blend: Blend, writesDepth: Bool = true, storms: Bool = false) -> MTLRenderPipelineState? {
             let d = MTLRenderPipelineDescriptor()
@@ -565,3 +564,7 @@ final class AuroraFjordRenderer: ThemeRenderer {
         e.endEncoding()
     }
 }
+
+/// Made on any thread (the warm-up makes the worlds' renderers off the main thread, real-Mac performance 14 Nov), drawn on
+/// the main thread: the class itself is not tied to the main actor, only its conformance is.
+extension AuroraFjordRenderer: ThemeRenderer {}
