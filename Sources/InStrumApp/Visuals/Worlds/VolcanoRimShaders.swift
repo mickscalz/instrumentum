@@ -34,7 +34,7 @@ enum VolcanoRimShaders {
         float4 fireball; // progress 0…1 (< 0 none), start bearing (deg from the view), start altitude (deg), light
         float4 rockfall; // progress (< 0 none), angle round the wall centre (rad), seed, 0
         float4 steam;    // progress (< 0 none), angle round the wall centre (rad), seed, 0
-        float4 sprites;  // unused (a far storm and its sprites are SkyKit's): −1, 0, 0, 0
+        float4 sprites;  // unused (a far storm and its sprites are SkyKit's): −1, 0, 0, layers a timing test skips (0)
         float4 tree;     // progress (< 0 none), share along the river, seed, 0
         float4 dims;     // foot radius, bench height, bench radius, top radius (m)
         float4 dims2;    // wall centre (m xy), rim height (m), breach angle (rad)
@@ -366,7 +366,10 @@ enum VolcanoRimShaders {
     float3 lakeSurface(float3 P, float3 d, float2 Jx, float2 Jy, constant VolcanoU& u, int oct) {
         float2 p = P.xy;
         float energy = u.play.x;
-        Plates pl = plates(p, u);
+        uint skipL = uint(u.sprites.w + 0.5);
+        Plates pl;
+        if ((skipL & 512u) == 0u) pl = plates(p, u);
+        else { pl.i1 = 0; pl.i2 = 1; pl.i3 = 2; pl.border = 9.0; pl.border2 = 12.0; pl.n = float2(1, 0); pl.n2 = float2(0, 1); pl.q = p; }
         float4 A = u.cellA[pl.i1];
         float4 Ab = u.cellB[pl.i1];
         float foot = max(length(Jx), length(Jy));
@@ -419,7 +422,7 @@ enum VolcanoRimShaders {
         col += albedo * (1.3 * spill + u.glow.rgb * (0.35 * u.plume.x) + u.skyL.rgb);
         col += u.glow.rgb * float3(0.95, 0.9, 0.85) * (0.32 * sheen * u.plume.x);
         // Dim hairlines within the plate (some of them glowing: the skin's hotter seams).
-        if (oct >= 3) {
+        if (oct >= 3 && (skipL & 1024u) == 0u) {
             float fine = fineCracks(local, 5.0 + 7.0 * (1.0 - A.w));
             float hot = smoothstep(0.35, 0.7, vn2(local * 0.12 + 3.0));
             float fineT = Tc + 230.0 + 90.0 * u.temps.w + 80.0 * A.z;
@@ -988,8 +991,10 @@ enum VolcanoRimShaders {
         float3 d = float3(dot(dE, right3), dot(dE, fwd3), dE.z);
         float3 o = u.eye.xyz;
         Hit h = craterHit(o, d, u);
-        float3 col;
+        float3 col = float3(0.05);
         float depth = 1.0;
+        // (The timing test's mask: a set bit skips a layer, so one run can price each. Always 0 in the app.)
+        uint skip = uint(u.sprites.w + 0.5);
         if (h.kind == 1 || h.kind == 2) {
             // The pixel's footprint on the plane (metres per pixel across x and y), from the unnormalised ray.
             float3 Dc = float3(dot(Dn, right3), dot(Dn, fwd3), Dn.z);
@@ -999,14 +1004,14 @@ enum VolcanoRimShaders {
             float tp = (u.eye.w - o.z) / min(Dc.z, -1e-6);
             float2 Jx = tp * (dx.xy - Dc.xy * (dx.z / Dc.z));
             float2 Jy = tp * (dy.xy - Dc.xy * (dy.z / Dc.z));
-            if (h.kind == 1) col = lakeSurface(h.p, d, Jx, Jy, u, oct);
-            else col = floorColour(h.p, d, max(length(Jx), length(Jy)), u, oct);
+            if (h.kind == 1) { if ((skip & 1u) == 0u) col = lakeSurface(h.p, d, Jx, Jy, u, oct); }
+            else if ((skip & 2u) == 0u) col = floorColour(h.p, d, max(length(Jx), length(Jy)), u, oct);
             depth = 0.6;
         } else if (h.kind >= 3) {
-            col = wallColour(h, d, u, oct, h.t * u.a.w);
+            if ((skip & 4u) == 0u) col = wallColour(h, d, u, oct, h.t * u.a.w);
             depth = 0.7;
         } else {
-            col = beyond(dE, d, sky, u, stars, ndc);
+            if ((skip & 8u) == 0u) col = beyond(dE, d, sky, u, stars, ndc);
             if (h.kind == 5) {
                 // Through the breach: the river pouring over its lip lights the fume in the gap from below.
                 float zz = h.p.z - u.eye.w;
@@ -1018,14 +1023,19 @@ enum VolcanoRimShaders {
         // What stands over the lake, nearest last: by the walls a steam blast and a lava tree, the fountains, then the
         // column and the plume on the middle plane.
         float tHit = (h.kind == 0 || h.kind == 5) ? 1e9 : h.t;
-        float4 jet = steamJet(o, d, u, tHit, oct);
-        col = col * (1.0 - jet.a) + jet.rgb;
-        float4 tree = lavaTree(o, d, u, tHit);
-        col = col * (1.0 - tree.a) + tree.rgb;
+        if ((skip & 32u) == 0u) {
+            float4 jet = steamJet(o, d, u, tHit, oct);
+            col = col * (1.0 - jet.a) + jet.rgb;
+            float4 tree = lavaTree(o, d, u, tHit);
+            col = col * (1.0 - tree.a) + tree.rgb;
+        }
         float fpA = ((u.fountA.y - o.y) / max(d.y, 1e-4)) * sky.up.w * u.cam.w;
         float fpB = ((u.fountB.y - o.y) / max(d.y, 1e-4)) * sky.up.w * u.cam.w;
-        float4 fa = fountain(o, d, u.fountA, u, tHit, fpA, oct);
-        float4 fb = fountain(o, d, u.fountB, u, tHit, fpB, oct);
+        float4 fa = float4(0), fb = float4(0);
+        if ((skip & 16u) == 0u) {
+            fa = fountain(o, d, u.fountA, u, tHit, fpA, oct);
+            fb = fountain(o, d, u.fountB, u, tHit, fpB, oct);
+        }
         float ta = (u.fountA.y - o.y) / max(d.y, 1e-4), tb = (u.fountB.y - o.y) / max(d.y, 1e-4);
         float tm = (0.0 - o.y) / max(d.y, 1e-4);
         float4 farF = ta > tb ? fa : fb, nearF = ta > tb ? fb : fa;
@@ -1034,8 +1044,8 @@ enum VolcanoRimShaders {
         float4 pl = float4(0);
         if (tm < tHit && tm > 0.0) {
             float3 P = o + d * tm;
-            mid = column(P, u, tm * sky.up.w * u.cam.w, oct);
-            pl = plume(P, u, oct, u.glow.rgb);
+            if ((skip & 32u) == 0u) mid = column(P, u, tm * sky.up.w * u.cam.w, oct);
+            if ((skip & 64u) == 0u) pl = plume(P, u, oct, u.glow.rgb);
         }
         // The column stands inside the plume: the gas veils it a little, its light shows through.
         float veil = 1.0 - 0.45 * pl.a;
@@ -1051,11 +1061,15 @@ enum VolcanoRimShaders {
             col = col * (1.0 - nearF.a) + nearF.rgb;
         }
         // The fume over the lake, in front of it all.
-        float4 fm = fume(o, d, min(tHit, tm > 0.0 ? max(tm, tHit) : tHit), u, oct);
-        col = col * fm.a + fm.rgb;
+        if ((skip & 128u) == 0u) {
+            float4 fm = fume(o, d, min(tHit, tm > 0.0 ? max(tm, tHit) : tHit), u, oct);
+            col = col * fm.a + fm.rgb;
+        }
         // The near rim's rocks.
-        float4 fg = foreground(in.ndc, u, oct);
-        col = col * (1.0 - fg.a) + fg.rgb;
+        if ((skip & 256u) == 0u) {
+            float4 fg = foreground(in.ndc, u, oct);
+            col = col * (1.0 - fg.a) + fg.rgb;
+        }
         ColorDepth out;
         out.color = float4(max(col, 0.0), 1.0);
         out.depth = float4(depth, 0, 0, 1);

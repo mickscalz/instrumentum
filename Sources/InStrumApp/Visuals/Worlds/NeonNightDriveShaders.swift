@@ -34,7 +34,7 @@ enum NeonNightDriveShaders {
         float4 dead;     // the dying sign's slot (−1 none), its light, 0, 0
         float4 road1;    // left parapet x, left edge x, median near x, median far x (m)
         float4 road2;    // far parapet x, parapet height, median height, lane width (m)
-        float4 road3;    // your lane's centre x, eye height (m), 0, 0
+        float4 road3;    // your lane's centre x, eye height (m), 0, layers a timing test skips (0 in the app)
         float4 signs[12];   // the 48 signs' pulses, four a row
         float4 studs[16];   // ahead (m; ≤ 0 empty), brightness, 0, 0
         float4 cars[24];    // per car: (x centre, ahead, oncoming, brake), (seed 0…1, light bar, body, 0); empty: ahead −1e5
@@ -1042,6 +1042,8 @@ enum NeonNightDriveShaders {
         bool bridge = bs < 1e4;
         float railT = 1e9, railCov = 0.0;
         float3 railCol = float3(0);
+        // (The timing test's mask: a set bit skips a layer, so one run can price each. Always 0 in the app.)
+        uint skip = uint(u.road3.w + 0.5);
 
         // The tunnel: its interior (from inside, or through its mouth ahead), its portal's face.
         float ts = u.route.x, te = u.route.y;
@@ -1091,7 +1093,8 @@ enum NeonNightDriveShaders {
                         col = float3(0.06, 0.06, 0.058) * (u.amb.rgb + u.haze.rgb * 1.2);
                     } else {
                         kind = 1;
-                        col = shadeRoad(p, d, tr, u, pa, false);
+                        col = float3(0.02);
+                        if ((skip & 1u) == 0u) col = shadeRoad(p, d, tr, u, pa, false);
                     }
                 }
             }
@@ -1216,7 +1219,7 @@ enum NeonNightDriveShaders {
         }
 
         // The city: the rows along the road (left or right), then the downtown's layers ahead; roof signs glow as you pass.
-        if (kind == 0) {
+        if (kind == 0 && (skip & 2u) == 0u) {
             float zMax = 470.0;
             for (int i = 0; i < 2; i++) {
                 // The row's facade line (m across), side, cell, lowest and tallest building (m) and seed: the near and
@@ -1232,7 +1235,7 @@ enum NeonNightDriveShaders {
                 if (r.t < 1e8) { tHit = r.t; col = r.col; kind = 20; break; }
             }
         }
-        if (kind == 0) {
+        if (kind == 0 && (skip & 4u) == 0u) {
             for (int i = 0; i < 4; i++) {
                 // Each layer's distance, cell, lowest and tallest tower (m) and the gap the road runs through, chosen
                 // without arrays (indexed at run time in a loop that isn't unrolled, private arrays live in scratch
@@ -1260,7 +1263,7 @@ enum NeonNightDriveShaders {
                 col = float3(0.004, 0.006, 0.01) * (0.6 + 0.8 * swell) + u.haze.rgb * 0.15;
             } else {
                 tHit = tg; kind = 2;
-                col = shadeGround(float3(d.x * tg, -12.0, d.z * tg), tg, u, pa);
+                if ((skip & 8u) == 0u) col = shadeGround(float3(d.x * tg, -12.0, d.z * tg), tg, u, pa);
             }
         }
 
@@ -1268,6 +1271,7 @@ enum NeonNightDriveShaders {
         float carT = 1e9;
         for (int c = 0; c < 12; c++) {
             float4 a = u.cars[c * 2];
+            if ((skip & 16u) != 0u) break;
             if (a.y < 1.0 || a.y > 700.0 || a.y < zMin || d.z <= 0.0) continue;
             float tc = a.y / d.z;
             if (tc >= tHit) continue;
@@ -1283,12 +1287,14 @@ enum NeonNightDriveShaders {
 
         // The air: the haze over everything hit, and the lights glowing in the rain.
         if (kind == 0) {
-            col = driveSky(dE, d, sky, u, stars, cell);
+            col = float3(0.01);
+            if ((skip & 128u) == 0u) col = driveSky(dE, d, sky, u, stars, cell);
         } else {
             col = applyHaze(col, tHit, d, u);
         }
         col += add;
         for (int row = 0; row < 3; row++) {
+            if ((skip & 32u) != 0u) break;
             float3 rx = lampRowX(row, u);
             float3 lamp;
             lampNearest(d, rx.x, kLampHeight, kLampSpacing, rx.y, u.move.x, eye, lamp);
@@ -1309,6 +1315,7 @@ enum NeonNightDriveShaders {
         }
         for (int c = 0; c < 12; c++) {
             float4 a = u.cars[c * 2];
+            if ((skip & 64u) != 0u) break;
             if (a.y < zMin) continue;
             col += carGlow(d, a, tHit, eye, rain, pa);
         }

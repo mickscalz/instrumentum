@@ -32,6 +32,11 @@ final class ButterflyRenderer: ThemeRenderer {
 
     private let device: MTLDevice
     private let sky, wings, blooms, trails, particles, keys: MTLRenderPipelineState
+    /// High and Ultra: the sun's shafts through the leaves (a march toward the sun) drawn at half resolution into
+    /// `shaftTexture` before the sky, which reads them back filtered. Made once a size.
+    private let shafts: MTLRenderPipelineState
+    private var shaftTexture: MTLTexture?
+    private(set) var shaftAllocations = 0
     private var uniforms = [SIMD4<Float>](repeating: .zero, count: 11)
     private var butterflySprites: [Sprite] = []
     private var bloomSprites: [Sprite] = []
@@ -87,8 +92,13 @@ final class ButterflyRenderer: ThemeRenderer {
               let t = make("sprite_vertex", "trail_fragment", .add, writeDepth: false),
               let p = make("particle_vertex", "particle_fragment", .add, writeDepth: false),
               let k = make("keys_vertex", "keys_fragment", .none, writeDepth: true) else { return nil }
+        let sd = MTLRenderPipelineDescriptor()
+        sd.vertexFunction = lib.makeFunction(name: "sky_vertex")
+        sd.fragmentFunction = lib.makeFunction(name: "shaft_fragment")
+        sd.colorAttachments[0].pixelFormat = .r16Float
+        guard let sh = try? device.makeRenderPipelineState(descriptor: sd) else { return nil }
         self.device = device
-        sky = s; wings = w; blooms = b; trails = t; particles = p; keys = k
+        sky = s; wings = w; blooms = b; trails = t; particles = p; keys = k; shafts = sh
     }
 
     func update(_ f: GardenFrame, params p: ParameterSet, quality: QualityLevel, gentle: Bool, dt: Double, size: CGSize) {
@@ -217,13 +227,41 @@ final class ButterflyRenderer: ThemeRenderer {
         return items.withUnsafeBytes { device.makeBuffer(bytes: $0.baseAddress!, length: $0.count, options: .storageModeShared) }
     }
 
+    /// The half-resolution shaft target for a scene `width` × `height` (made when the size changes, kept).
+    private func shaftTarget(width: Int, height: Int) -> MTLTexture? {
+        let w = max(1, (width + 1) / 2), h = max(1, (height + 1) / 2)
+        if shaftTexture?.width != w || shaftTexture?.height != h {
+            let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .r16Float, width: w, height: h, mipmapped: false)
+            d.usage = [.renderTarget, .shaderRead]
+            d.storageMode = .private
+            shaftTexture = device.makeTexture(descriptor: d)
+            shaftAllocations += 1
+        }
+        return shaftTexture
+    }
+
     func render(stack: RenderStack, commandBuffer cb: MTLCommandBuffer) {
-        guard let pass = stack.scenePass(clear: MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)),
-              let e = cb.makeRenderCommandEncoder(descriptor: pass) else { return }
         var u = uniforms
         let uLen = u.count * MemoryLayout<SIMD4<Float>>.stride
+        guard let hdr = stack.hdrTarget, let shaft = shaftTarget(width: hdr.width, height: hdr.height) else { return }
+        // The shafts first, at half resolution, where the quality marches them (Smooth doesn't).
+        if u.count > 10, u[10].x > 0, u[1].z > 0.01 {
+            let sp = MTLRenderPassDescriptor()
+            sp.colorAttachments[0].texture = shaft
+            sp.colorAttachments[0].loadAction = .dontCare
+            sp.colorAttachments[0].storeAction = .store
+            if let se = cb.makeRenderCommandEncoder(descriptor: sp) {
+                se.setRenderPipelineState(shafts)
+                se.setFragmentBytes(&u, length: uLen, index: 0)
+                se.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+                se.endEncoding()
+            }
+        }
+        guard let pass = stack.scenePass(clear: MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)),
+              let e = cb.makeRenderCommandEncoder(descriptor: pass) else { return }
         e.setRenderPipelineState(sky)
         e.setFragmentBytes(&u, length: uLen, index: 0)
+        e.setFragmentTexture(shaft, index: 0)
         e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
 
         func sprites(_ list: [Sprite], _ pipeline: MTLRenderPipelineState) {

@@ -44,6 +44,11 @@ final class VolcanoRimRenderer: ThemeRenderer {
     let veinsRenderer: MagmaVeinsRenderer
     private var showWarp = false
     private(set) var showingVeins = false
+    /// Layers a timing test skips (0 in the app: everything is drawn), so one run can price each on a slow GPU. The scene's
+    /// bits: 1 the lake, 512 the lake's plates, 1024 its fine cracks, 2 the floor and the river, 4 the walls, 8 the sky, 16
+    /// the fountains, 32 the eruption's column (and a steam blast, a lava tree), 64 the plume, 128 the fume, 256 the near
+    /// rocks; the renderer's: 2048 the embers and the bolts, 4096 the weather, 8192 the basalt columns (the keys).
+    var skipLayers: UInt32 = 0
     private let scene: SkyPipeline
     private let sparks, bolts, columns: MTLRenderPipelineState
     private var volU = [SIMD4<Float>](repeating: .zero, count: VolcanoRimRenderer.uniformCount)
@@ -481,14 +486,16 @@ final class VolcanoRimRenderer: ThemeRenderer {
         let skyU = sky.uniforms
         e.setRenderPipelineState(scene.state(storms: sky.storms))
         skyU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
+        volU[Self.rowSprites].w = Float(skipLayers & 0x7FF)
         volU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
+        volU[Self.rowSprites].w = 0
         sky.bindStars(e)
         e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         if showWarp { warp.draw(e) }
         let row = MemoryLayout<SIMD4<Float>>.stride
         let sparkBytes = sparkInstances.count * row
         let boltBytes = boltInstances.count * row
-        if sparkBytes + boltBytes > 0, !ring.isEmpty {
+        if sparkBytes + boltBytes > 0, !ring.isEmpty, skipLayers & 2048 == 0 {
             slot = (slot + 1) % ring.count
             let buf = ring[slot]
             if sparkBytes > 0 { sparkInstances.withUnsafeBytes { buf.contents().copyMemory(from: $0.baseAddress!, byteCount: sparkBytes) } }
@@ -510,8 +517,8 @@ final class VolcanoRimRenderer: ThemeRenderer {
                 e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6, instanceCount: boltCount)
             }
         }
-        weather.draw(e)
-        if !columnInstances.isEmpty {
+        if skipLayers & 4096 == 0 { weather.draw(e) }
+        if !columnInstances.isEmpty, skipLayers & 8192 == 0 {
             e.setRenderPipelineState(columns)
             columnInstances.withUnsafeBytes { e.setVertexBytes($0.baseAddress!, length: $0.count, index: 0) }
             var still = SIMD4<Float>(view.x, 0, 0, 0)   // the columns stand still while the world shakes
