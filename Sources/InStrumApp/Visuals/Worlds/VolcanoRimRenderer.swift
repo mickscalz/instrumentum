@@ -360,8 +360,9 @@ final class VolcanoRimRenderer: ThemeRenderer {
         for k in 0..<VolcanoRimModel.cellCount {
             if k < frame.cells.count {
                 let c = frame.cells[k]
-                volU[Self.cellABase + k] = SIMD4(c.position.x, c.position.y, Self.unit(c.glow), Self.unit(c.heat))
-                volU[Self.cellBBase + k] = SIMD4(Self.unit(c.birth), Float(c.twin), Self.plateWeight(k, twin: c.twin, birth: c.birth), 0)
+                // (The place and the weight in one row: the plates' search reads one row a seed, not two.)
+                volU[Self.cellABase + k] = SIMD4(c.position.x, c.position.y, Self.plateWeight(k, twin: c.twin, birth: c.birth), Self.unit(c.heat))
+                volU[Self.cellBBase + k] = SIMD4(Self.unit(c.birth), Float(c.twin), Self.unit(c.glow), 0)
             } else {
                 volU[Self.cellABase + k] = SIMD4(1e5, 1e5, 0, 0)
                 volU[Self.cellBBase + k] = SIMD4(1, -1, 0, 0)

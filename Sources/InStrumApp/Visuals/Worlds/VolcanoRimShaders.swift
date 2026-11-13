@@ -41,8 +41,8 @@ enum VolcanoRimShaders {
         float4 dims2;    // wall centre (m xy), rim height (m), breach angle (rad)
         float4 dims3;    // breach halfW-width (rad), fountain pool scale, foreground top (NDC), keys shown 0/1
         float4 riverA;   // river start (m xy), river end (m xy)
-        float4 cellA[64];  // crust seeds: place (m xy), a note's glow, young heat
-        float4 cellB[64];  // birth 0…1, the twin it split from (index; −1 none), its plate's weight (m²), 0
+        float4 cellA[64];  // crust seeds: place (m xy), its plate's weight (m²), young heat (all the plates' search reads)
+        float4 cellB[64];  // birth 0…1, the twin it split from (index; −1 none), a note's glow, 0
     };
     struct VolOut { float4 pos [[position]]; float2 ndc; };
 
@@ -319,7 +319,7 @@ enum VolcanoRimShaders {
         for (int k = 0; k < 64; k++) {
             float2 dl = u.cellA[k].xy - q;
             float2 t = float2(dot(dl, dir) * squeeze, dot(dl, perp));
-            float P = dot(t, t) - u.cellB[k].z;
+            float P = dot(t, t) - u.cellA[k].z;
             if (P < best) { best = P; i1 = k; t1 = t; }
         }
         float lt1 = length(t1);
@@ -331,7 +331,7 @@ enum VolcanoRimShaders {
             float2 dl = u.cellA[k].xy - q;
             float2 t = float2(dot(dl, dir) * squeeze, dot(dl, perp));
             float lt = length(t);
-            float Pk = dot(t, t) - u.cellB[k].z;
+            float Pk = dot(t, t) - u.cellA[k].z;
             // A seed this far off is past the second nearest crack: skip it.
             if ((lt * lt - 1400.0 - best) / (2.0 * (lt + lt1) + 1e-3) > border2 * 1.0) continue;
             float2 dt = t - t1;
@@ -379,7 +379,7 @@ enum VolcanoRimShaders {
         for (int k = 0; k < 64; k++) {
             float2 dl = u.cellA[k].xy - q;
             float2 t = float2(dot(dl, dir) * squeeze, dot(dl, perp));
-            float P = dot(t, t) - u.cellB[k].z;
+            float P = dot(t, t) - u.cellA[k].z;
             if (P >= p11) continue;
             // In at the end, then down the sorted twelve to its place (no array: they stay in registers).
             p11 = P; k11 = k;
@@ -432,7 +432,7 @@ enum VolcanoRimShaders {
             int k = plateCandidate(c, n);
             float2 dl = u.cellA[k].xy - q;
             float2 t = float2(dot(dl, dir) * squeeze, dot(dl, perp));
-            float P = dot(t, t) - u.cellB[k].z;
+            float P = dot(t, t) - u.cellA[k].z;
             if (P < best) { best = P; i1 = k; t1 = t; }
         }
         float lt1 = length(t1);
@@ -445,7 +445,7 @@ enum VolcanoRimShaders {
             float2 dl = u.cellA[k].xy - q;
             float2 t = float2(dot(dl, dir) * squeeze, dot(dl, perp));
             float lt = length(t);
-            float Pk = dot(t, t) - u.cellB[k].z;
+            float Pk = dot(t, t) - u.cellA[k].z;
             if ((lt * lt - 1400.0 - best) / (2.0 * (lt + lt1) + 1e-3) > border2 * 1.0) continue;
             float2 dt = t - t1;
             float L = length(dt);
@@ -531,7 +531,7 @@ enum VolcanoRimShaders {
             float pair = hash12(float2(lo * 7.13, hi * 3.71));
             float heat = 0.5 * (heatA + Bj.w);
             float wide = max(smoothstep(0.85 - 0.17 * energy, 0.97 - 0.12 * energy, pair), 0.8 * heat * heat);
-            float note = max(A.z, Bj.z);
+            float note = max(Ab.z, Bjb.z);
             float along = vn2(pl.q * 0.045 + pair * 31.0);
             float along2 = vn2(pl.q * 0.2 + pair * 7.0);
             float pinch = smoothstep(0.15, 0.6, along) * (0.4 + 1.2 * along2);
@@ -572,7 +572,7 @@ enum VolcanoRimShaders {
             float hot = smoothstep(0.35, 0.7, vn2(local * 0.12 + 3.0));
             if (hot > 0.0) {
                 float fine = fineCracks(local, 5.0 + 7.0 * (1.0 - A.w));
-                float fineT = Tc + 230.0 + 90.0 * u.temps.w + 80.0 * A.z;
+                float fineT = Tc + 230.0 + 90.0 * u.temps.w + 80.0 * Ab.z;
                 col += crackGlow(fine, 0.05 + 0.05 * A.w, foot, fineT) * (hot * (0.3 + 0.5 * u.temps.w));
             }
         }
