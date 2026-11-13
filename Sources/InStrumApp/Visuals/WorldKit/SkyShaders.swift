@@ -1147,7 +1147,9 @@ enum SkyShaders {
                         out2 = -gm / max(length(gm), 1e-4);
                     }
                     float tIn = saturate(max(edge, 0.0) / 2.6);
-                    float facing = sqrt(tIn * (2.0 - tIn));
+                    // (Close, it faces you nearly everywhere: its outline's own direction, turning across the shape's
+                    // inner ridges, drew straight seams through soft cloud.)
+                    float facing = max(sqrt(tIn * (2.0 - tIn)), 0.8 * close);
                     float2 slope = (gb * (0.04 / bs) + gB * (0.5 / 1.9)) * lumpy;
                     float3 N = normalize(float3(-max(facing, 0.15), out2.x * (1.0 - facing) - slope.x,
                                                 out2.y * (1.0 - facing) + 0.2 * nz - slope.y));
@@ -1184,7 +1186,8 @@ enum SkyShaders {
                     // softer glow a little inside it; the lips of the skirt's bands catch a thread of it too, and its body
                     // takes a faint warm translucence near the light, so the storm stands in the sun's light, not before it.
                     float rimW = max(max(3.0 * px, 0.06), 1.5 * soft);
-                    float rim = 1.0 - smoothstep(0.0, rimW, edge);
+                    // (Close, its edge is torn and soft: no lit line drawn round it, only the glow where it thins.)
+                    float rim = (1.0 - smoothstep(0.0, rimW, edge)) * (1.0 - 0.8 * close);
                     float vary = smoothstep(0.25, 0.75, en + 0.35 * (fold - 0.5));
                     float lining = (0.75 * rim + 0.15 * thinA * thinA) * (0.35 + 0.65 * saturate(N.z + 0.6)) * (0.3 + 1.0 * vary);
                     c += Lc * (lightAmt * (2.2 * back + 0.35 * wideBack) * lining);
