@@ -239,18 +239,22 @@ enum VolcanoRimShaders {
         }
         // The cliff above the floor (its top ragged, cut by the notch).
         float tA = cylinderFar(o, d, C, u.dims.x);
+        // (Above the lip's highest reach, or below the lake, there is no cliff whatever the notch: its angle isn't
+        // worked out there.)
         if (tA < h.t) {
             float3 p = o + d * tA;
-            float2 q = p.xy - C;
-            float th = atan2(q.x, q.y);
-            // (The lip's rag is −27.2…36.2 m (its noise is 0…1): a point outside that band round its top is in the cliff
-            // or over it whatever the rag, which is read only where it decides; the hits are unchanged.)
-            float cut = notchCut(th, u);
-            bool cliff = false;
-            if (p.z >= lakeZ - 0.5 && p.z <= (u.dims.y + 36.3) * cut) {
-                cliff = p.z <= (u.dims.y - 27.3) * cut || p.z <= (u.dims.y + lipRag(th, 1.0)) * cut;
+            if (p.z >= lakeZ - 0.5 && p.z <= u.dims.y + 36.3) {
+                float2 q = p.xy - C;
+                float th = atan2(q.x, q.y);
+                // (The lip's rag is −27.2…36.2 m (its noise is 0…1): a point outside that band round its top is in the
+                // cliff or over it whatever the rag, which is read only where it decides; the hits are unchanged.)
+                float cut = notchCut(th, u);
+                bool cliff = false;
+                if (p.z <= (u.dims.y + 36.3) * cut) {
+                    cliff = p.z <= (u.dims.y - 27.3) * cut || p.z <= (u.dims.y + lipRag(th, 1.0)) * cut;
+                }
+                if (cliff) { h.kind = 3; h.t = tA; h.p = p; h.theta = th; }
             }
-            if (cliff) { h.kind = 3; h.t = tA; h.p = p; h.theta = th; }
         }
         // The bench.
         if (d.z < -1e-5) {
@@ -266,7 +270,8 @@ enum VolcanoRimShaders {
         // The upper cliff to the rim.
         float rB = 0.5 * (u.dims.z + u.dims.w);
         float tB = cylinderFar(o, d, C, rB);
-        if (tB < h.t) {
+        // (Over the rim's highest reach nothing is hit here whatever the notch: its angle isn't worked out there.)
+        if (tB < h.t && o.z + d.z * tB < rimH + 36.3) {
             float3 p = o + d * tB;
             float2 q = p.xy - C;
             float th = atan2(q.x, q.y);
