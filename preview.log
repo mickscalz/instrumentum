@@ -1,0 +1,2114 @@
+Fetching https://github.com/sparkle-project/Sparkle
+[1/44348] Fetching sparkle
+Fetched https://github.com/sparkle-project/Sparkle from cache (5.03s)
+Computing version for https://github.com/sparkle-project/Sparkle
+Computed https://github.com/sparkle-project/Sparkle at 2.6.4 (21.41s)
+Creating working copy for https://github.com/sparkle-project/Sparkle
+Working copy of https://github.com/sparkle-project/Sparkle resolved at 2.6.4
+Downloading binary artifact https://github.com/sparkle-project/Sparkle/releases/download/2.6.4/Sparkle-for-Swift-Package-Manager.zip
+[6881/9272451] Downloading https://github.com/sparkle-project/Sparkle/releases/download/2.6.4/Sparkle-for-Swift-Package-Manager.zip
+Downloaded https://github.com/sparkle-project/Sparkle/releases/download/2.6.4/Sparkle-for-Swift-Package-Manager.zip (1.62s)
+Building for debugging...
+[0/36] /Users/runner/work/instrumentum/instrumentum/.build/x86_64-apple-macosx/debug/InStrumMeantsPackageTests.derived/runner.swift
+[1/36] Write sources
+[1/36] Write InStrumMeants-entitlement.plist
+[3/36] Write swift-version--79AA4F9932D1E87A.txt
+[4/36] Copying Sparkle.framework
+[5/36] Write sources
+[6/36] Compiling InStrumDSP Synth.cpp
+[7/36] Compiling InStrumDSP SpaceReverb.cpp
+[7/36] Compiling InStrumDSP TeaHouseKoto.cpp
+[7/36] Compiling InStrumDSP ZenShakuhachi.cpp
+[10/36] Compiling InStrumDSP PolarChoir.cpp
+[11/36] Compiling InStrumDSP ReefMarimba.cpp
+[12/36] Compiling InStrumDSP ReplicantBrass.cpp
+[13/36] Compiling InStrumDSP SingleNoteGrand.cpp
+[14/36] Compiling InStrumDSP PlanktonKeys.cpp
+[15/36] Compiling InStrumDSP OrbitPad.cpp
+[16/36] Compiling InStrumDSP MagmaBass.cpp
+[17/36] Compiling InStrumDSP MorningBox.cpp
+[18/36] Compiling InStrumDSP HoneyTape.cpp
+[19/36] Compiling InStrumDSP HazeBells.cpp
+[20/36] Compiling InStrumDSP FeltGlass.cpp
+[21/36] Compiling InStrumDSP EndlessRise.cpp
+[22/36] Write sources
+[25/101] Compiling InStrumDSP CabinFelt.cpp
+[26/101] Write sources
+[29/101] Compiling InStrumDSP BlueDepth.cpp
+[30/101] Compiling InStrumDSP Ambience.cpp
+[32/101] Emitting module InStrumCore
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:48:20: warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 46 |     public struct Row: Equatable, Sendable {
+ 47 |         public let world: String
+ 48 |         public let quality: QualityLevel
+    |                    `- warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 49 |         /// Frames drawn (stalls are not frames).
+ 50 |         public let frames: Int
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/ThemeModel.swift:2:13: note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 1 | /// Rendering detail level.
+ 2 | public enum QualityLevel: String, Codable, CaseIterable { case lite, high, ultra }
+   |             `- note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 3 | 
+ 4 | /// A theme's behaviour: its settings and how it reacts. Drawing lives in the app.
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:238:17: warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+106 |     }
+107 | 
+108 |     fileprivate struct Key: Hashable {
+    |                        `- note: consider making struct 'Key' conform to the 'Sendable' protocol
+109 |         let world: String
+110 |         let quality: QualityLevel
+    :
+236 | 
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+    |                 `- warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+239 |     private var entries: [Entry] = []
+240 | 
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:239:17: warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+112 | 
+113 |     /// Everything kept for one key. The two histograms are allocated once, with the key's first frame.
+114 |     fileprivate struct Entry {
+    |                        `- note: consider making struct 'Entry' conform to the 'Sendable' protocol
+115 |         let key: Key
+116 |         var frames = 0
+    :
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+239 |     private var entries: [Entry] = []
+    |                 `- warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+240 | 
+241 |     public init() {}
+[33/101] Compiling InStrumCore StarCatalogue.swift
+[34/101] Compiling InStrumCore StarTexture.swift
+[35/101] Compiling InStrumCore Supercell.swift
+[36/101] Compiling InStrumCore Weather.swift
+[37/101] Compiling InStrumCore SleepFade.swift
+[38/101] Compiling InStrumCore AmbienceBreath.swift
+[39/101] Compiling InStrumCore AmbienceScene.swift
+[40/101] Compiling InStrumCore AmbienceTrim.swift
+[41/101] Compiling InStrumCore Credit.swift
+[42/101] Compiling InStrumCore DemoPhrases.swift
+[43/101] Compiling InStrumCore ListenLink.swift
+[44/101] Compiling InStrumCore Mood.swift
+[45/101] Compiling InStrumCore Patch.swift
+[46/101] Compiling InStrumCore KeyGesture.swift
+[47/101] Compiling InStrumCore StandardMIDIFile.swift
+[48/101] Compiling InStrumCore TakeKeeper.swift
+[49/101] Compiling InStrumCore TakeNote.swift
+[50/101] Compiling InStrumCore TakeStore.swift
+[51/101] Compiling InStrumCore ThemeModel.swift
+[52/101] Compiling InStrumCore TouchCurve.swift
+[53/101] Compiling InStrumCore VisualScene.swift
+[54/101] Compiling InStrumCore AppSettings.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:48:20: warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 46 |     public struct Row: Equatable, Sendable {
+ 47 |         public let world: String
+ 48 |         public let quality: QualityLevel
+    |                    `- warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 49 |         /// Frames drawn (stalls are not frames).
+ 50 |         public let frames: Int
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/ThemeModel.swift:2:13: note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 1 | /// Rendering detail level.
+ 2 | public enum QualityLevel: String, Codable, CaseIterable { case lite, high, ultra }
+   |             `- note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 3 | 
+ 4 | /// A theme's behaviour: its settings and how it reacts. Drawing lives in the app.
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:238:17: warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+106 |     }
+107 | 
+108 |     fileprivate struct Key: Hashable {
+    |                        `- note: consider making struct 'Key' conform to the 'Sendable' protocol
+109 |         let world: String
+110 |         let quality: QualityLevel
+    :
+236 | 
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+    |                 `- warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+239 |     private var entries: [Entry] = []
+240 | 
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:239:17: warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+112 | 
+113 |     /// Everything kept for one key. The two histograms are allocated once, with the key's first frame.
+114 |     fileprivate struct Entry {
+    |                        `- note: consider making struct 'Entry' conform to the 'Sendable' protocol
+115 |         let key: Key
+116 |         var frames = 0
+    :
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+239 |     private var entries: [Entry] = []
+    |                 `- warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+240 | 
+241 |     public init() {}
+[55/101] Compiling InStrumCore AutoQuality.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:48:20: warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 46 |     public struct Row: Equatable, Sendable {
+ 47 |         public let world: String
+ 48 |         public let quality: QualityLevel
+    |                    `- warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 49 |         /// Frames drawn (stalls are not frames).
+ 50 |         public let frames: Int
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/ThemeModel.swift:2:13: note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 1 | /// Rendering detail level.
+ 2 | public enum QualityLevel: String, Codable, CaseIterable { case lite, high, ultra }
+   |             `- note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 3 | 
+ 4 | /// A theme's behaviour: its settings and how it reacts. Drawing lives in the app.
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:238:17: warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+106 |     }
+107 | 
+108 |     fileprivate struct Key: Hashable {
+    |                        `- note: consider making struct 'Key' conform to the 'Sendable' protocol
+109 |         let world: String
+110 |         let quality: QualityLevel
+    :
+236 | 
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+    |                 `- warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+239 |     private var entries: [Entry] = []
+240 | 
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:239:17: warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+112 | 
+113 |     /// Everything kept for one key. The two histograms are allocated once, with the key's first frame.
+114 |     fileprivate struct Entry {
+    |                        `- note: consider making struct 'Entry' conform to the 'Sendable' protocol
+115 |         let key: Key
+116 |         var frames = 0
+    :
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+239 |     private var entries: [Entry] = []
+    |                 `- warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+240 | 
+241 |     public init() {}
+[56/101] Compiling InStrumCore ButterflyGardenModel.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:48:20: warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 46 |     public struct Row: Equatable, Sendable {
+ 47 |         public let world: String
+ 48 |         public let quality: QualityLevel
+    |                    `- warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 49 |         /// Frames drawn (stalls are not frames).
+ 50 |         public let frames: Int
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/ThemeModel.swift:2:13: note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 1 | /// Rendering detail level.
+ 2 | public enum QualityLevel: String, Codable, CaseIterable { case lite, high, ultra }
+   |             `- note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 3 | 
+ 4 | /// A theme's behaviour: its settings and how it reacts. Drawing lives in the app.
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:238:17: warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+106 |     }
+107 | 
+108 |     fileprivate struct Key: Hashable {
+    |                        `- note: consider making struct 'Key' conform to the 'Sendable' protocol
+109 |         let world: String
+110 |         let quality: QualityLevel
+    :
+236 | 
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+    |                 `- warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+239 |     private var entries: [Entry] = []
+240 | 
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:239:17: warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+112 | 
+113 |     /// Everything kept for one key. The two histograms are allocated once, with the key's first frame.
+114 |     fileprivate struct Entry {
+    |                        `- note: consider making struct 'Entry' conform to the 'Sendable' protocol
+115 |         let key: Key
+116 |         var frames = 0
+    :
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+239 |     private var entries: [Entry] = []
+    |                 `- warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+240 | 
+241 |     public init() {}
+[57/101] Compiling InStrumCore ButterflyLooks.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:48:20: warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 46 |     public struct Row: Equatable, Sendable {
+ 47 |         public let world: String
+ 48 |         public let quality: QualityLevel
+    |                    `- warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 49 |         /// Frames drawn (stalls are not frames).
+ 50 |         public let frames: Int
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/ThemeModel.swift:2:13: note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 1 | /// Rendering detail level.
+ 2 | public enum QualityLevel: String, Codable, CaseIterable { case lite, high, ultra }
+   |             `- note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 3 | 
+ 4 | /// A theme's behaviour: its settings and how it reacts. Drawing lives in the app.
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:238:17: warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+106 |     }
+107 | 
+108 |     fileprivate struct Key: Hashable {
+    |                        `- note: consider making struct 'Key' conform to the 'Sendable' protocol
+109 |         let world: String
+110 |         let quality: QualityLevel
+    :
+236 | 
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+    |                 `- warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+239 |     private var entries: [Entry] = []
+240 | 
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:239:17: warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+112 | 
+113 |     /// Everything kept for one key. The two histograms are allocated once, with the key's first frame.
+114 |     fileprivate struct Entry {
+    |                        `- note: consider making struct 'Entry' conform to the 'Sendable' protocol
+115 |         let key: Key
+116 |         var frames = 0
+    :
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+239 |     private var entries: [Entry] = []
+    |                 `- warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+240 | 
+241 |     public init() {}
+[58/101] Compiling InStrumCore ButterflyParams.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:48:20: warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 46 |     public struct Row: Equatable, Sendable {
+ 47 |         public let world: String
+ 48 |         public let quality: QualityLevel
+    |                    `- warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 49 |         /// Frames drawn (stalls are not frames).
+ 50 |         public let frames: Int
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/ThemeModel.swift:2:13: note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 1 | /// Rendering detail level.
+ 2 | public enum QualityLevel: String, Codable, CaseIterable { case lite, high, ultra }
+   |             `- note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 3 | 
+ 4 | /// A theme's behaviour: its settings and how it reacts. Drawing lives in the app.
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:238:17: warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+106 |     }
+107 | 
+108 |     fileprivate struct Key: Hashable {
+    |                        `- note: consider making struct 'Key' conform to the 'Sendable' protocol
+109 |         let world: String
+110 |         let quality: QualityLevel
+    :
+236 | 
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+    |                 `- warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+239 |     private var entries: [Entry] = []
+240 | 
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:239:17: warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+112 | 
+113 |     /// Everything kept for one key. The two histograms are allocated once, with the key's first frame.
+114 |     fileprivate struct Entry {
+    |                        `- note: consider making struct 'Entry' conform to the 'Sendable' protocol
+115 |         let key: Key
+116 |         var frames = 0
+    :
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+239 |     private var entries: [Entry] = []
+    |                 `- warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+240 | 
+241 |     public init() {}
+[59/101] Compiling InStrumCore ComputerKeyMap.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:48:20: warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 46 |     public struct Row: Equatable, Sendable {
+ 47 |         public let world: String
+ 48 |         public let quality: QualityLevel
+    |                    `- warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 49 |         /// Frames drawn (stalls are not frames).
+ 50 |         public let frames: Int
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/ThemeModel.swift:2:13: note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 1 | /// Rendering detail level.
+ 2 | public enum QualityLevel: String, Codable, CaseIterable { case lite, high, ultra }
+   |             `- note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 3 | 
+ 4 | /// A theme's behaviour: its settings and how it reacts. Drawing lives in the app.
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:238:17: warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+106 |     }
+107 | 
+108 |     fileprivate struct Key: Hashable {
+    |                        `- note: consider making struct 'Key' conform to the 'Sendable' protocol
+109 |         let world: String
+110 |         let quality: QualityLevel
+    :
+236 | 
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+    |                 `- warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+239 |     private var entries: [Entry] = []
+240 | 
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:239:17: warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+112 | 
+113 |     /// Everything kept for one key. The two histograms are allocated once, with the key's first frame.
+114 |     fileprivate struct Entry {
+    |                        `- note: consider making struct 'Entry' conform to the 'Sendable' protocol
+115 |         let key: Key
+116 |         var frames = 0
+    :
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+239 |     private var entries: [Entry] = []
+    |                 `- warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+240 | 
+241 |     public init() {}
+[60/101] Compiling InStrumCore Excitement.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:48:20: warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 46 |     public struct Row: Equatable, Sendable {
+ 47 |         public let world: String
+ 48 |         public let quality: QualityLevel
+    |                    `- warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 49 |         /// Frames drawn (stalls are not frames).
+ 50 |         public let frames: Int
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/ThemeModel.swift:2:13: note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 1 | /// Rendering detail level.
+ 2 | public enum QualityLevel: String, Codable, CaseIterable { case lite, high, ultra }
+   |             `- note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 3 | 
+ 4 | /// A theme's behaviour: its settings and how it reacts. Drawing lives in the app.
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:238:17: warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+106 |     }
+107 | 
+108 |     fileprivate struct Key: Hashable {
+    |                        `- note: consider making struct 'Key' conform to the 'Sendable' protocol
+109 |         let world: String
+110 |         let quality: QualityLevel
+    :
+236 | 
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+    |                 `- warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+239 |     private var entries: [Entry] = []
+240 | 
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:239:17: warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+112 | 
+113 |     /// Everything kept for one key. The two histograms are allocated once, with the key's first frame.
+114 |     fileprivate struct Entry {
+    |                        `- note: consider making struct 'Entry' conform to the 'Sendable' protocol
+115 |         let key: Key
+116 |         var frames = 0
+    :
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+239 |     private var entries: [Entry] = []
+    |                 `- warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+240 | 
+241 |     public init() {}
+[61/101] Compiling InStrumCore FlashLimiter.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:48:20: warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 46 |     public struct Row: Equatable, Sendable {
+ 47 |         public let world: String
+ 48 |         public let quality: QualityLevel
+    |                    `- warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 49 |         /// Frames drawn (stalls are not frames).
+ 50 |         public let frames: Int
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/ThemeModel.swift:2:13: note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 1 | /// Rendering detail level.
+ 2 | public enum QualityLevel: String, Codable, CaseIterable { case lite, high, ultra }
+   |             `- note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 3 | 
+ 4 | /// A theme's behaviour: its settings and how it reacts. Drawing lives in the app.
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:238:17: warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+106 |     }
+107 | 
+108 |     fileprivate struct Key: Hashable {
+    |                        `- note: consider making struct 'Key' conform to the 'Sendable' protocol
+109 |         let world: String
+110 |         let quality: QualityLevel
+    :
+236 | 
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+    |                 `- warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+239 |     private var entries: [Entry] = []
+240 | 
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:239:17: warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+112 | 
+113 |     /// Everything kept for one key. The two histograms are allocated once, with the key's first frame.
+114 |     fileprivate struct Entry {
+    |                        `- note: consider making struct 'Entry' conform to the 'Sendable' protocol
+115 |         let key: Key
+116 |         var frames = 0
+    :
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+239 |     private var entries: [Entry] = []
+    |                 `- warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+240 | 
+241 |     public init() {}
+[62/101] Compiling InStrumCore InStrumCore.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:48:20: warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 46 |     public struct Row: Equatable, Sendable {
+ 47 |         public let world: String
+ 48 |         public let quality: QualityLevel
+    |                    `- warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 49 |         /// Frames drawn (stalls are not frames).
+ 50 |         public let frames: Int
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/ThemeModel.swift:2:13: note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 1 | /// Rendering detail level.
+ 2 | public enum QualityLevel: String, Codable, CaseIterable { case lite, high, ultra }
+   |             `- note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 3 | 
+ 4 | /// A theme's behaviour: its settings and how it reacts. Drawing lives in the app.
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:238:17: warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+106 |     }
+107 | 
+108 |     fileprivate struct Key: Hashable {
+    |                        `- note: consider making struct 'Key' conform to the 'Sendable' protocol
+109 |         let world: String
+110 |         let quality: QualityLevel
+    :
+236 | 
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+    |                 `- warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+239 |     private var entries: [Entry] = []
+240 | 
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:239:17: warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+112 | 
+113 |     /// Everything kept for one key. The two histograms are allocated once, with the key's first frame.
+114 |     fileprivate struct Entry {
+    |                        `- note: consider making struct 'Entry' conform to the 'Sendable' protocol
+115 |         let key: Key
+116 |         var frames = 0
+    :
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+239 |     private var entries: [Entry] = []
+    |                 `- warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+240 | 
+241 |     public init() {}
+[63/101] Compiling InStrumCore InputRouting.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:48:20: warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 46 |     public struct Row: Equatable, Sendable {
+ 47 |         public let world: String
+ 48 |         public let quality: QualityLevel
+    |                    `- warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 49 |         /// Frames drawn (stalls are not frames).
+ 50 |         public let frames: Int
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/ThemeModel.swift:2:13: note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 1 | /// Rendering detail level.
+ 2 | public enum QualityLevel: String, Codable, CaseIterable { case lite, high, ultra }
+   |             `- note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 3 | 
+ 4 | /// A theme's behaviour: its settings and how it reacts. Drawing lives in the app.
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:238:17: warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+106 |     }
+107 | 
+108 |     fileprivate struct Key: Hashable {
+    |                        `- note: consider making struct 'Key' conform to the 'Sendable' protocol
+109 |         let world: String
+110 |         let quality: QualityLevel
+    :
+236 | 
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+    |                 `- warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+239 |     private var entries: [Entry] = []
+240 | 
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:239:17: warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+112 | 
+113 |     /// Everything kept for one key. The two histograms are allocated once, with the key's first frame.
+114 |     fileprivate struct Entry {
+    |                        `- note: consider making struct 'Entry' conform to the 'Sendable' protocol
+115 |         let key: Key
+116 |         var frames = 0
+    :
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+239 |     private var entries: [Entry] = []
+    |                 `- warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+240 | 
+241 |     public init() {}
+[64/101] Compiling InStrumCore Inputs.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:48:20: warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 46 |     public struct Row: Equatable, Sendable {
+ 47 |         public let world: String
+ 48 |         public let quality: QualityLevel
+    |                    `- warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 49 |         /// Frames drawn (stalls are not frames).
+ 50 |         public let frames: Int
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/ThemeModel.swift:2:13: note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 1 | /// Rendering detail level.
+ 2 | public enum QualityLevel: String, Codable, CaseIterable { case lite, high, ultra }
+   |             `- note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 3 | 
+ 4 | /// A theme's behaviour: its settings and how it reacts. Drawing lives in the app.
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:238:17: warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+106 |     }
+107 | 
+108 |     fileprivate struct Key: Hashable {
+    |                        `- note: consider making struct 'Key' conform to the 'Sendable' protocol
+109 |         let world: String
+110 |         let quality: QualityLevel
+    :
+236 | 
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+    |                 `- warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+239 |     private var entries: [Entry] = []
+240 | 
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:239:17: warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+112 | 
+113 |     /// Everything kept for one key. The two histograms are allocated once, with the key's first frame.
+114 |     fileprivate struct Entry {
+    |                        `- note: consider making struct 'Entry' conform to the 'Sendable' protocol
+115 |         let key: Key
+116 |         var frames = 0
+    :
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+239 |     private var entries: [Entry] = []
+    |                 `- warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+240 | 
+241 |     public init() {}
+[65/101] Compiling InStrumCore KeyboardLayout.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:48:20: warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 46 |     public struct Row: Equatable, Sendable {
+ 47 |         public let world: String
+ 48 |         public let quality: QualityLevel
+    |                    `- warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 49 |         /// Frames drawn (stalls are not frames).
+ 50 |         public let frames: Int
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/ThemeModel.swift:2:13: note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 1 | /// Rendering detail level.
+ 2 | public enum QualityLevel: String, Codable, CaseIterable { case lite, high, ultra }
+   |             `- note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 3 | 
+ 4 | /// A theme's behaviour: its settings and how it reacts. Drawing lives in the app.
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:238:17: warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+106 |     }
+107 | 
+108 |     fileprivate struct Key: Hashable {
+    |                        `- note: consider making struct 'Key' conform to the 'Sendable' protocol
+109 |         let world: String
+110 |         let quality: QualityLevel
+    :
+236 | 
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+    |                 `- warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+239 |     private var entries: [Entry] = []
+240 | 
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:239:17: warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+112 | 
+113 |     /// Everything kept for one key. The two histograms are allocated once, with the key's first frame.
+114 |     fileprivate struct Entry {
+    |                        `- note: consider making struct 'Entry' conform to the 'Sendable' protocol
+115 |         let key: Key
+116 |         var frames = 0
+    :
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+239 |     private var entries: [Entry] = []
+    |                 `- warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+240 | 
+241 |     public init() {}
+[66/101] Compiling InStrumCore LaunchGuard.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:48:20: warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 46 |     public struct Row: Equatable, Sendable {
+ 47 |         public let world: String
+ 48 |         public let quality: QualityLevel
+    |                    `- warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 49 |         /// Frames drawn (stalls are not frames).
+ 50 |         public let frames: Int
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/ThemeModel.swift:2:13: note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 1 | /// Rendering detail level.
+ 2 | public enum QualityLevel: String, Codable, CaseIterable { case lite, high, ultra }
+   |             `- note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 3 | 
+ 4 | /// A theme's behaviour: its settings and how it reacts. Drawing lives in the app.
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:238:17: warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+106 |     }
+107 | 
+108 |     fileprivate struct Key: Hashable {
+    |                        `- note: consider making struct 'Key' conform to the 'Sendable' protocol
+109 |         let world: String
+110 |         let quality: QualityLevel
+    :
+236 | 
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+    |                 `- warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+239 |     private var entries: [Entry] = []
+240 | 
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:239:17: warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+112 | 
+113 |     /// Everything kept for one key. The two histograms are allocated once, with the key's first frame.
+114 |     fileprivate struct Entry {
+    |                        `- note: consider making struct 'Entry' conform to the 'Sendable' protocol
+115 |         let key: Key
+116 |         var frames = 0
+    :
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+239 |     private var entries: [Entry] = []
+    |                 `- warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+240 | 
+241 |     public init() {}
+[67/101] Compiling InStrumCore Links.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:48:20: warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 46 |     public struct Row: Equatable, Sendable {
+ 47 |         public let world: String
+ 48 |         public let quality: QualityLevel
+    |                    `- warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 49 |         /// Frames drawn (stalls are not frames).
+ 50 |         public let frames: Int
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/ThemeModel.swift:2:13: note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 1 | /// Rendering detail level.
+ 2 | public enum QualityLevel: String, Codable, CaseIterable { case lite, high, ultra }
+   |             `- note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 3 | 
+ 4 | /// A theme's behaviour: its settings and how it reacts. Drawing lives in the app.
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:238:17: warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+106 |     }
+107 | 
+108 |     fileprivate struct Key: Hashable {
+    |                        `- note: consider making struct 'Key' conform to the 'Sendable' protocol
+109 |         let world: String
+110 |         let quality: QualityLevel
+    :
+236 | 
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+    |                 `- warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+239 |     private var entries: [Entry] = []
+240 | 
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:239:17: warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+112 | 
+113 |     /// Everything kept for one key. The two histograms are allocated once, with the key's first frame.
+114 |     fileprivate struct Entry {
+    |                        `- note: consider making struct 'Entry' conform to the 'Sendable' protocol
+115 |         let key: Key
+116 |         var frames = 0
+    :
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+239 |     private var entries: [Entry] = []
+    |                 `- warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+240 | 
+241 |     public init() {}
+[68/101] Compiling InStrumCore MIDIChannelFilter.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:48:20: warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 46 |     public struct Row: Equatable, Sendable {
+ 47 |         public let world: String
+ 48 |         public let quality: QualityLevel
+    |                    `- warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 49 |         /// Frames drawn (stalls are not frames).
+ 50 |         public let frames: Int
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/ThemeModel.swift:2:13: note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 1 | /// Rendering detail level.
+ 2 | public enum QualityLevel: String, Codable, CaseIterable { case lite, high, ultra }
+   |             `- note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 3 | 
+ 4 | /// A theme's behaviour: its settings and how it reacts. Drawing lives in the app.
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:238:17: warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+106 |     }
+107 | 
+108 |     fileprivate struct Key: Hashable {
+    |                        `- note: consider making struct 'Key' conform to the 'Sendable' protocol
+109 |         let world: String
+110 |         let quality: QualityLevel
+    :
+236 | 
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+    |                 `- warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+239 |     private var entries: [Entry] = []
+240 | 
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:239:17: warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+112 | 
+113 |     /// Everything kept for one key. The two histograms are allocated once, with the key's first frame.
+114 |     fileprivate struct Entry {
+    |                        `- note: consider making struct 'Entry' conform to the 'Sendable' protocol
+115 |         let key: Key
+116 |         var frames = 0
+    :
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+239 |     private var entries: [Entry] = []
+    |                 `- warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+240 | 
+241 |     public init() {}
+[69/101] Compiling InStrumCore MIDIMessage.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:48:20: warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 46 |     public struct Row: Equatable, Sendable {
+ 47 |         public let world: String
+ 48 |         public let quality: QualityLevel
+    |                    `- warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 49 |         /// Frames drawn (stalls are not frames).
+ 50 |         public let frames: Int
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/ThemeModel.swift:2:13: note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 1 | /// Rendering detail level.
+ 2 | public enum QualityLevel: String, Codable, CaseIterable { case lite, high, ultra }
+   |             `- note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 3 | 
+ 4 | /// A theme's behaviour: its settings and how it reacts. Drawing lives in the app.
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:238:17: warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+106 |     }
+107 | 
+108 |     fileprivate struct Key: Hashable {
+    |                        `- note: consider making struct 'Key' conform to the 'Sendable' protocol
+109 |         let world: String
+110 |         let quality: QualityLevel
+    :
+236 | 
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+    |                 `- warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+239 |     private var entries: [Entry] = []
+240 | 
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:239:17: warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+112 | 
+113 |     /// Everything kept for one key. The two histograms are allocated once, with the key's first frame.
+114 |     fileprivate struct Entry {
+    |                        `- note: consider making struct 'Entry' conform to the 'Sendable' protocol
+115 |         let key: Key
+116 |         var frames = 0
+    :
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+239 |     private var entries: [Entry] = []
+    |                 `- warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+240 | 
+241 |     public init() {}
+[70/101] Compiling InStrumCore MidnightSteinwayModel.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:48:20: warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 46 |     public struct Row: Equatable, Sendable {
+ 47 |         public let world: String
+ 48 |         public let quality: QualityLevel
+    |                    `- warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 49 |         /// Frames drawn (stalls are not frames).
+ 50 |         public let frames: Int
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/ThemeModel.swift:2:13: note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 1 | /// Rendering detail level.
+ 2 | public enum QualityLevel: String, Codable, CaseIterable { case lite, high, ultra }
+   |             `- note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 3 | 
+ 4 | /// A theme's behaviour: its settings and how it reacts. Drawing lives in the app.
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:238:17: warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+106 |     }
+107 | 
+108 |     fileprivate struct Key: Hashable {
+    |                        `- note: consider making struct 'Key' conform to the 'Sendable' protocol
+109 |         let world: String
+110 |         let quality: QualityLevel
+    :
+236 | 
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+    |                 `- warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+239 |     private var entries: [Entry] = []
+240 | 
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:239:17: warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+112 | 
+113 |     /// Everything kept for one key. The two histograms are allocated once, with the key's first frame.
+114 |     fileprivate struct Entry {
+    |                        `- note: consider making struct 'Entry' conform to the 'Sendable' protocol
+115 |         let key: Key
+116 |         var frames = 0
+    :
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+239 |     private var entries: [Entry] = []
+    |                 `- warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+240 | 
+241 |     public init() {}
+[71/101] Compiling InStrumCore MidnightSteinwayScene.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:48:20: warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 46 |     public struct Row: Equatable, Sendable {
+ 47 |         public let world: String
+ 48 |         public let quality: QualityLevel
+    |                    `- warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 49 |         /// Frames drawn (stalls are not frames).
+ 50 |         public let frames: Int
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/ThemeModel.swift:2:13: note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 1 | /// Rendering detail level.
+ 2 | public enum QualityLevel: String, Codable, CaseIterable { case lite, high, ultra }
+   |             `- note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 3 | 
+ 4 | /// A theme's behaviour: its settings and how it reacts. Drawing lives in the app.
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:238:17: warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+106 |     }
+107 | 
+108 |     fileprivate struct Key: Hashable {
+    |                        `- note: consider making struct 'Key' conform to the 'Sendable' protocol
+109 |         let world: String
+110 |         let quality: QualityLevel
+    :
+236 | 
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+    |                 `- warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+239 |     private var entries: [Entry] = []
+240 | 
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:239:17: warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+112 | 
+113 |     /// Everything kept for one key. The two histograms are allocated once, with the key's first frame.
+114 |     fileprivate struct Entry {
+    |                        `- note: consider making struct 'Entry' conform to the 'Sendable' protocol
+115 |         let key: Key
+116 |         var frames = 0
+    :
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+239 |     private var entries: [Entry] = []
+    |                 `- warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+240 | 
+241 |     public init() {}
+[72/101] Compiling InStrumCore Parameters.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:48:20: warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 46 |     public struct Row: Equatable, Sendable {
+ 47 |         public let world: String
+ 48 |         public let quality: QualityLevel
+    |                    `- warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 49 |         /// Frames drawn (stalls are not frames).
+ 50 |         public let frames: Int
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/ThemeModel.swift:2:13: note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 1 | /// Rendering detail level.
+ 2 | public enum QualityLevel: String, Codable, CaseIterable { case lite, high, ultra }
+   |             `- note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 3 | 
+ 4 | /// A theme's behaviour: its settings and how it reacts. Drawing lives in the app.
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:238:17: warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+106 |     }
+107 | 
+108 |     fileprivate struct Key: Hashable {
+    |                        `- note: consider making struct 'Key' conform to the 'Sendable' protocol
+109 |         let world: String
+110 |         let quality: QualityLevel
+    :
+236 | 
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+    |                 `- warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+239 |     private var entries: [Entry] = []
+240 | 
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:239:17: warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+112 | 
+113 |     /// Everything kept for one key. The two histograms are allocated once, with the key's first frame.
+114 |     fileprivate struct Entry {
+    |                        `- note: consider making struct 'Entry' conform to the 'Sendable' protocol
+115 |         let key: Key
+116 |         var frames = 0
+    :
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+239 |     private var entries: [Entry] = []
+    |                 `- warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+240 | 
+241 |     public init() {}
+[73/101] Compiling InStrumCore PerformanceLog.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:48:20: warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 46 |     public struct Row: Equatable, Sendable {
+ 47 |         public let world: String
+ 48 |         public let quality: QualityLevel
+    |                    `- warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 49 |         /// Frames drawn (stalls are not frames).
+ 50 |         public let frames: Int
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/ThemeModel.swift:2:13: note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 1 | /// Rendering detail level.
+ 2 | public enum QualityLevel: String, Codable, CaseIterable { case lite, high, ultra }
+   |             `- note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 3 | 
+ 4 | /// A theme's behaviour: its settings and how it reacts. Drawing lives in the app.
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:238:17: warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+106 |     }
+107 | 
+108 |     fileprivate struct Key: Hashable {
+    |                        `- note: consider making struct 'Key' conform to the 'Sendable' protocol
+109 |         let world: String
+110 |         let quality: QualityLevel
+    :
+236 | 
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+    |                 `- warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+239 |     private var entries: [Entry] = []
+240 | 
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:239:17: warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+112 | 
+113 |     /// Everything kept for one key. The two histograms are allocated once, with the key's first frame.
+114 |     fileprivate struct Entry {
+    |                        `- note: consider making struct 'Entry' conform to the 'Sendable' protocol
+115 |         let key: Key
+116 |         var frames = 0
+    :
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+239 |     private var entries: [Entry] = []
+    |                 `- warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+240 | 
+241 |     public init() {}
+[74/101] Compiling InStrumCore PerformanceState.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:48:20: warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 46 |     public struct Row: Equatable, Sendable {
+ 47 |         public let world: String
+ 48 |         public let quality: QualityLevel
+    |                    `- warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 49 |         /// Frames drawn (stalls are not frames).
+ 50 |         public let frames: Int
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/ThemeModel.swift:2:13: note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 1 | /// Rendering detail level.
+ 2 | public enum QualityLevel: String, Codable, CaseIterable { case lite, high, ultra }
+   |             `- note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 3 | 
+ 4 | /// A theme's behaviour: its settings and how it reacts. Drawing lives in the app.
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:238:17: warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+106 |     }
+107 | 
+108 |     fileprivate struct Key: Hashable {
+    |                        `- note: consider making struct 'Key' conform to the 'Sendable' protocol
+109 |         let world: String
+110 |         let quality: QualityLevel
+    :
+236 | 
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+    |                 `- warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+239 |     private var entries: [Entry] = []
+240 | 
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:239:17: warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+112 | 
+113 |     /// Everything kept for one key. The two histograms are allocated once, with the key's first frame.
+114 |     fileprivate struct Entry {
+    |                        `- note: consider making struct 'Entry' conform to the 'Sendable' protocol
+115 |         let key: Key
+116 |         var frames = 0
+    :
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+239 |     private var entries: [Entry] = []
+    |                 `- warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+240 | 
+241 |     public init() {}
+[75/101] Compiling InStrumCore PlayingAnalyzer.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:48:20: warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 46 |     public struct Row: Equatable, Sendable {
+ 47 |         public let world: String
+ 48 |         public let quality: QualityLevel
+    |                    `- warning: stored property 'quality' of 'Sendable'-conforming struct 'Row' has non-sendable type 'QualityLevel'; this is an error in the Swift 6 language mode
+ 49 |         /// Frames drawn (stalls are not frames).
+ 50 |         public let frames: Int
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/ThemeModel.swift:2:13: note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 1 | /// Rendering detail level.
+ 2 | public enum QualityLevel: String, Codable, CaseIterable { case lite, high, ultra }
+   |             `- note: consider making enum 'QualityLevel' conform to the 'Sendable' protocol
+ 3 | 
+ 4 | /// A theme's behaviour: its settings and how it reacts. Drawing lives in the app.
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:238:17: warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+106 |     }
+107 | 
+108 |     fileprivate struct Key: Hashable {
+    |                        `- note: consider making struct 'Key' conform to the 'Sendable' protocol
+109 |         let world: String
+110 |         let quality: QualityLevel
+    :
+236 | 
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+    |                 `- warning: stored property 'slots' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Key : Int]'; this is an error in the Swift 6 language mode
+239 |     private var entries: [Entry] = []
+240 | 
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumCore/PerformanceLog.swift:239:17: warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+112 | 
+113 |     /// Everything kept for one key. The two histograms are allocated once, with the key's first frame.
+114 |     fileprivate struct Entry {
+    |                        `- note: consider making struct 'Entry' conform to the 'Sendable' protocol
+115 |         let key: Key
+116 |         var frames = 0
+    :
+237 |     /// Where each key's entry is.
+238 |     private var slots: [Key: Int] = [:]
+239 |     private var entries: [Entry] = []
+    |                 `- warning: stored property 'entries' of 'Sendable'-conforming struct 'PerformanceLog' has non-sendable type '[PerformanceLog.Entry]'; this is an error in the Swift 6 language mode
+240 | 
+241 |     public init() {}
+[76/143] Compiling InStrumCore Presets.swift
+[77/143] Compiling InStrumCore ReactionPresets.swift
+[78/143] Compiling InStrumCore Roles.swift
+[79/143] Compiling InStrumCore SceneControls.swift
+[80/143] Compiling InStrumCore SceneDirector.swift
+[81/143] Compiling InStrumCore ScriptedPerformance.swift
+[82/143] Compiling InStrumCore InStrumSet.swift
+[83/143] Compiling InStrumCore AnvilCrawlers.swift
+[84/143] Compiling InStrumCore Astronomy.swift
+[85/143] Compiling InStrumCore Aurora.swift
+[86/143] Compiling InStrumCore Cities.swift
+[87/143] Compiling InStrumCore ConstellationLines.swift
+[88/143] Compiling InStrumCore HaloOptics.swift
+[89/143] Compiling InStrumCore LivingSky.swift
+[90/143] Compiling InStrumCore MeteorShowers.swift
+[91/143] Compiling InStrumCore MeteorSky.swift
+[92/143] Compiling InStrumCore RedSprites.swift
+[93/143] Compiling InStrumCore Satellites.swift
+[94/143] Compiling InStrumCore SheetLightning.swift
+[95/143] Compiling InStrumCore SkyClock.swift
+[96/143] Compiling InStrumCore SolarLongitude.swift
+[97/143] Compiling InStrumCore AuroraFjordModel.swift
+[98/143] Compiling InStrumCore BedroomDawnModel.swift
+[99/143] Compiling InStrumCore BioluminescentBayModel.swift
+[100/143] Compiling InStrumCore Cloth.swift
+[101/143] Compiling InStrumCore CoastLights.swift
+[102/143] Compiling InStrumCore CoastRoadModel.swift
+[103/143] Compiling InStrumCore CoralPulse.swift
+[104/143] Compiling InStrumCore CoralSpawning.swift
+[105/143] Compiling InStrumCore CurtainLight.swift
+[106/143] Compiling InStrumCore CurtainLights.swift
+[107/143] Compiling InStrumCore DeepLights.swift
+[108/143] Compiling InStrumCore ExcitementPlay.swift
+[109/143] Compiling InStrumCore FrostField.swift
+[110/143] Compiling InStrumCore FrostGrow.swift
+[111/143] Compiling InStrumCore GalaxyWarp.swift
+[112/143] Compiling InStrumCore GlowWake.swift
+[113/143] Compiling InStrumCore GoldenHourBeachModel.swift
+[114/143] Compiling InStrumCore GreatBarrierReefModel.swift
+[115/143] Compiling InStrumCore LakeRipples.swift
+[116/143] Compiling InStrumCore LightTrails.swift
+[117/143] Compiling InStrumCore LightningPlainsModel.swift
+[118/143] Compiling InStrumCore MagmaVeins.swift
+[119/143] Compiling InStrumCore MarineSnow.swift
+[120/143] Compiling InStrumCore MoonlitLakeModel.swift
+[121/143] Compiling InStrumCore NeonNightDriveModel.swift
+[122/143] Compiling InStrumCore OceanSwell.swift
+[123/143] Compiling InStrumCore RakeLines.swift
+[124/143] Compiling InStrumCore SnowboundCabinModel.swift
+[125/143] Compiling InStrumCore SpaceshipLoungeModel.swift
+[126/143] Compiling InStrumCore SteamLines.swift
+[127/143] Compiling InStrumCore StrikeLines.swift
+[128/143] Compiling InStrumCore SubmarineWindowModel.swift
+[129/143] Compiling InStrumCore SupercellSkyModel.swift
+[130/143] Compiling InStrumCore TeaHouseSnowModel.swift
+[131/143] Compiling InStrumCore TideLines.swift
+[132/143] Compiling InStrumCore VolcanoRimModel.swift
+[133/143] Compiling InStrumCore WallCloud.swift
+[134/143] Compiling InStrumCore WeatherAmbience.swift
+[135/143] Compiling InStrumCore WindField.swift
+[136/143] Compiling InStrumCore WorldExcitement.swift
+[137/143] Compiling InStrumCore WorldWeather.swift
+[138/143] Compiling InStrumCore ZenRockGardenModel.swift
+[139/200] Compiling InStrumCoreTests AmbienceBreathTests.swift
+[140/200] Compiling InStrumCoreTests AstronomyTests.swift
+[141/202] Compiling InStrumCoreTests AuroraTests.swift
+[142/202] Compiling InStrumCoreTests BloomTests.swift
+[143/202] Compiling InStrumCoreTests ButterflyGardenModelTests.swift
+[144/202] Emitting module InStrumAudio
+[145/202] Compiling InStrumCoreTests ClothTests.swift
+[146/202] Compiling InStrumCoreTests CoastLightsTests.swift
+[147/202] Compiling InStrumAudio PluginCatalog.swift
+[148/202] Compiling InStrumAudio SoundCharacter.swift
+[149/300] Emitting module InStrumCoreTests
+[150/316] Emitting module InStrumApp
+[151/339] Emitting module InStrumAudioTests
+[152/347] Compiling InStrumApp SetsGallery.swift
+[153/347] Compiling InStrumApp SettingsPanel.swift
+[154/347] Compiling InStrumApp SettingsPopover.swift
+[155/347] Compiling InStrumApp SkyControls.swift
+[156/347] Compiling InStrumApp HoldPad.swift
+[157/347] Compiling InStrumApp KeepButton.swift
+[158/347] Compiling InStrumApp PlayMenu.swift
+[159/347] Compiling InStrumApp SleepMenu.swift
+[160/347] Compiling InStrumApp ToastBanner.swift
+[161/347] Compiling InStrumApp VisualSettings.swift
+[162/347] Compiling InStrumApp ButterflyRenderer.swift
+[163/347] Compiling InStrumApp ButterflyShaders.swift
+[164/347] Compiling InStrumApp MetalCanvas.swift
+[165/347] Compiling InStrumApp MidnightSteinwayShaders.swift
+[166/347] Compiling InStrumApp PostShaders.swift
+[167/347] Compiling InStrumApp PreviewRenderer.swift
+[168/347] Compiling InStrumApp RenderStack.swift
+[169/347] Compiling InStrumApp ShaderCache.swift
+[170/347] Compiling InStrumApp Spectrogram.swift
+[171/347] Compiling InStrumApp SteinwayRenderer.swift
+[172/347] Compiling InStrumApp ThemeCanvas.swift
+[173/347] Compiling InStrumApp ExcitementGlow.swift
+[174/347] Compiling InStrumApp OceanShaders.swift
+[175/347] Compiling InStrumAudioTests DialReaderTests.swift
+[176/347] Compiling InStrumAudioTests MIDIInputTests.swift
+[177/347] Compiling InStrumAudioTests SoundCharacterTests.swift
+[178/347] Compiling InStrumApp BedroomDawnRenderer.swift
+[179/347] Compiling InStrumApp BedroomDawnShaders.swift
+[180/347] Compiling InStrumApp BioluminescentBayRenderer.swift
+[181/347] Compiling InStrumApp BioluminescentBayShaders.swift
+[182/347] Compiling InStrumApp CoastRoadRenderer.swift
+[183/347] Compiling InStrumApp CoastRoadShaders.swift
+[184/347] Compiling InStrumApp GoldenHourBeachRenderer.swift
+[185/347] Compiling InStrumApp GoldenHourBeachShaders.swift
+[186/347] Compiling InStrumApp GreatBarrierReefRenderer.swift
+[187/347] Compiling InStrumApp GreatBarrierReefShaders.swift
+[188/347] Compiling InStrumApp LightTrailsRenderer.swift
+[189/347] Compiling InStrumApp AppModel+Hold.swift
+[190/347] Compiling InStrumApp AppModel+ReduceMotion.swift
+[214/347] Compiling InStrumApp SkyLayer.swift
+[215/347] Compiling InStrumApp SkyPipeline.swift
+[216/347] Compiling InStrumApp SkyShaders.swift
+[217/347] Compiling InStrumApp UnderwaterShaders.swift
+[245/347] Compiling InStrumAudioTests SpaceReverbTests.swift
+[246/347] Compiling InStrumAudioTests SynthRender.swift
+[247/347] Compiling InStrumAudioTests TeaHouseKotoTests.swift
+[248/347] Compiling InStrumAudioTests TrimTests.swift
+[249/347] Compiling InStrumAudioTests ZenShakuhachiTests.swift
+[258/347] Compiling InStrumCoreTests SleepFadeTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumCoreTests/VolcanoRimTests.swift:524:44: warning: 'is' test is always true
+522 |     func testRedSpritesAreTheSkysAndTheCraterSendsEmbers() {
+523 |         XCTAssertTrue(VolcanoRimModel.emberSource)
+524 |         XCTAssertTrue(VolcanoRimModel.self is SkyWorldFlags.Type)
+    |                                            `- warning: 'is' test is always true
+525 |         var stormy = night(); stormy.farStorm = 1
+526 |         var surprise = excitement(energy: 0.4)
+[259/347] Compiling InStrumCoreTests SmokeTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumCoreTests/VolcanoRimTests.swift:524:44: warning: 'is' test is always true
+522 |     func testRedSpritesAreTheSkysAndTheCraterSendsEmbers() {
+523 |         XCTAssertTrue(VolcanoRimModel.emberSource)
+524 |         XCTAssertTrue(VolcanoRimModel.self is SkyWorldFlags.Type)
+    |                                            `- warning: 'is' test is always true
+525 |         var stormy = night(); stormy.farStorm = 1
+526 |         var surprise = excitement(energy: 0.4)
+[260/347] Compiling InStrumCoreTests StandardMIDIFileTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumCoreTests/VolcanoRimTests.swift:524:44: warning: 'is' test is always true
+522 |     func testRedSpritesAreTheSkysAndTheCraterSendsEmbers() {
+523 |         XCTAssertTrue(VolcanoRimModel.emberSource)
+524 |         XCTAssertTrue(VolcanoRimModel.self is SkyWorldFlags.Type)
+    |                                            `- warning: 'is' test is always true
+525 |         var stormy = night(); stormy.farStorm = 1
+526 |         var surprise = excitement(energy: 0.4)
+[261/347] Compiling InStrumCoreTests StarCatalogueTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumCoreTests/VolcanoRimTests.swift:524:44: warning: 'is' test is always true
+522 |     func testRedSpritesAreTheSkysAndTheCraterSendsEmbers() {
+523 |         XCTAssertTrue(VolcanoRimModel.emberSource)
+524 |         XCTAssertTrue(VolcanoRimModel.self is SkyWorldFlags.Type)
+    |                                            `- warning: 'is' test is always true
+525 |         var stormy = night(); stormy.farStorm = 1
+526 |         var surprise = excitement(energy: 0.4)
+[262/347] Compiling InStrumCoreTests SteamLinesTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumCoreTests/VolcanoRimTests.swift:524:44: warning: 'is' test is always true
+522 |     func testRedSpritesAreTheSkysAndTheCraterSendsEmbers() {
+523 |         XCTAssertTrue(VolcanoRimModel.emberSource)
+524 |         XCTAssertTrue(VolcanoRimModel.self is SkyWorldFlags.Type)
+    |                                            `- warning: 'is' test is always true
+525 |         var stormy = night(); stormy.farStorm = 1
+526 |         var surprise = excitement(energy: 0.4)
+[263/347] Compiling InStrumCoreTests StormSkyTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumCoreTests/VolcanoRimTests.swift:524:44: warning: 'is' test is always true
+522 |     func testRedSpritesAreTheSkysAndTheCraterSendsEmbers() {
+523 |         XCTAssertTrue(VolcanoRimModel.emberSource)
+524 |         XCTAssertTrue(VolcanoRimModel.self is SkyWorldFlags.Type)
+    |                                            `- warning: 'is' test is always true
+525 |         var stormy = night(); stormy.farStorm = 1
+526 |         var surprise = excitement(energy: 0.4)
+[264/347] Compiling InStrumCoreTests StrikeLinesTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumCoreTests/VolcanoRimTests.swift:524:44: warning: 'is' test is always true
+522 |     func testRedSpritesAreTheSkysAndTheCraterSendsEmbers() {
+523 |         XCTAssertTrue(VolcanoRimModel.emberSource)
+524 |         XCTAssertTrue(VolcanoRimModel.self is SkyWorldFlags.Type)
+    |                                            `- warning: 'is' test is always true
+525 |         var stormy = night(); stormy.farStorm = 1
+526 |         var surprise = excitement(energy: 0.4)
+[265/347] Compiling InStrumCoreTests TakeKeeperTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumCoreTests/VolcanoRimTests.swift:524:44: warning: 'is' test is always true
+522 |     func testRedSpritesAreTheSkysAndTheCraterSendsEmbers() {
+523 |         XCTAssertTrue(VolcanoRimModel.emberSource)
+524 |         XCTAssertTrue(VolcanoRimModel.self is SkyWorldFlags.Type)
+    |                                            `- warning: 'is' test is always true
+525 |         var stormy = night(); stormy.farStorm = 1
+526 |         var surprise = excitement(energy: 0.4)
+[266/347] Compiling InStrumCoreTests TakeStoreTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumCoreTests/VolcanoRimTests.swift:524:44: warning: 'is' test is always true
+522 |     func testRedSpritesAreTheSkysAndTheCraterSendsEmbers() {
+523 |         XCTAssertTrue(VolcanoRimModel.emberSource)
+524 |         XCTAssertTrue(VolcanoRimModel.self is SkyWorldFlags.Type)
+    |                                            `- warning: 'is' test is always true
+525 |         var stormy = night(); stormy.farStorm = 1
+526 |         var surprise = excitement(energy: 0.4)
+[267/347] Compiling InStrumCoreTests ThemeTestHelpers.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumCoreTests/VolcanoRimTests.swift:524:44: warning: 'is' test is always true
+522 |     func testRedSpritesAreTheSkysAndTheCraterSendsEmbers() {
+523 |         XCTAssertTrue(VolcanoRimModel.emberSource)
+524 |         XCTAssertTrue(VolcanoRimModel.self is SkyWorldFlags.Type)
+    |                                            `- warning: 'is' test is always true
+525 |         var stormy = night(); stormy.farStorm = 1
+526 |         var surprise = excitement(energy: 0.4)
+[268/347] Compiling InStrumCoreTests TideLinesTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumCoreTests/VolcanoRimTests.swift:524:44: warning: 'is' test is always true
+522 |     func testRedSpritesAreTheSkysAndTheCraterSendsEmbers() {
+523 |         XCTAssertTrue(VolcanoRimModel.emberSource)
+524 |         XCTAssertTrue(VolcanoRimModel.self is SkyWorldFlags.Type)
+    |                                            `- warning: 'is' test is always true
+525 |         var stormy = night(); stormy.farStorm = 1
+526 |         var surprise = excitement(energy: 0.4)
+[269/347] Compiling InStrumCoreTests TouchCurveTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumCoreTests/VolcanoRimTests.swift:524:44: warning: 'is' test is always true
+522 |     func testRedSpritesAreTheSkysAndTheCraterSendsEmbers() {
+523 |         XCTAssertTrue(VolcanoRimModel.emberSource)
+524 |         XCTAssertTrue(VolcanoRimModel.self is SkyWorldFlags.Type)
+    |                                            `- warning: 'is' test is always true
+525 |         var stormy = night(); stormy.farStorm = 1
+526 |         var surprise = excitement(energy: 0.4)
+[270/347] Compiling InStrumCoreTests VolcanoRimTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumCoreTests/VolcanoRimTests.swift:524:44: warning: 'is' test is always true
+522 |     func testRedSpritesAreTheSkysAndTheCraterSendsEmbers() {
+523 |         XCTAssertTrue(VolcanoRimModel.emberSource)
+524 |         XCTAssertTrue(VolcanoRimModel.self is SkyWorldFlags.Type)
+    |                                            `- warning: 'is' test is always true
+525 |         var stormy = night(); stormy.farStorm = 1
+526 |         var surprise = excitement(energy: 0.4)
+[271/347] Compiling InStrumCoreTests WallCloudTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumCoreTests/VolcanoRimTests.swift:524:44: warning: 'is' test is always true
+522 |     func testRedSpritesAreTheSkysAndTheCraterSendsEmbers() {
+523 |         XCTAssertTrue(VolcanoRimModel.emberSource)
+524 |         XCTAssertTrue(VolcanoRimModel.self is SkyWorldFlags.Type)
+    |                                            `- warning: 'is' test is always true
+525 |         var stormy = night(); stormy.farStorm = 1
+526 |         var surprise = excitement(energy: 0.4)
+[272/347] Compiling InStrumCoreTests WindFieldTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumCoreTests/VolcanoRimTests.swift:524:44: warning: 'is' test is always true
+522 |     func testRedSpritesAreTheSkysAndTheCraterSendsEmbers() {
+523 |         XCTAssertTrue(VolcanoRimModel.emberSource)
+524 |         XCTAssertTrue(VolcanoRimModel.self is SkyWorldFlags.Type)
+    |                                            `- warning: 'is' test is always true
+525 |         var stormy = night(); stormy.farStorm = 1
+526 |         var surprise = excitement(energy: 0.4)
+[273/347] Compiling InStrumCoreTests WorldTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumCoreTests/VolcanoRimTests.swift:524:44: warning: 'is' test is always true
+522 |     func testRedSpritesAreTheSkysAndTheCraterSendsEmbers() {
+523 |         XCTAssertTrue(VolcanoRimModel.emberSource)
+524 |         XCTAssertTrue(VolcanoRimModel.self is SkyWorldFlags.Type)
+    |                                            `- warning: 'is' test is always true
+525 |         var stormy = night(); stormy.farStorm = 1
+526 |         var surprise = excitement(energy: 0.4)
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:665:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 663 |         }
+ 664 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 665 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 666 |         var beam = Path()
+ 667 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:665:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 663 |         }
+ 664 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 665 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 666 |         var beam = Path()
+ 667 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:665:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 663 |         }
+ 664 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 665 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 666 |         var beam = Path()
+ 667 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:665:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 663 |         }
+ 664 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 665 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 666 |         var beam = Path()
+ 667 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:665:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 663 |         }
+ 664 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 665 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 666 |         var beam = Path()
+ 667 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:665:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 663 |         }
+ 664 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 665 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 666 |         var beam = Path()
+ 667 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:665:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 663 |         }
+ 664 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 665 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 666 |         var beam = Path()
+ 667 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:665:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 663 |         }
+ 664 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 665 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 666 |         var beam = Path()
+ 667 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:665:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 663 |         }
+ 664 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 665 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 666 |         var beam = Path()
+ 667 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:665:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 663 |         }
+ 664 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 665 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 666 |         var beam = Path()
+ 667 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:665:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 663 |         }
+ 664 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 665 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 666 |         var beam = Path()
+ 667 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:665:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 663 |         }
+ 664 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 665 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 666 |         var beam = Path()
+ 667 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:665:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 663 |         }
+ 664 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 665 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 666 |         var beam = Path()
+ 667 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:665:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 663 |         }
+ 664 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 665 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 666 |         var beam = Path()
+ 667 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:665:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 663 |         }
+ 664 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 665 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 666 |         var beam = Path()
+ 667 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:665:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 663 |         }
+ 664 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 665 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 666 |         var beam = Path()
+ 667 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:665:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 663 |         }
+ 664 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 665 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 666 |         var beam = Path()
+ 667 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:665:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 663 |         }
+ 664 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 665 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 666 |         var beam = Path()
+ 667 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+[292/347] Compiling InStrumApp MappingEdits.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:665:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 663 |         }
+ 664 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 665 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 666 |         var beam = Path()
+ 667 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+[293/347] Compiling InStrumApp OnScreenKeyboard.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:665:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 663 |         }
+ 664 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 665 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 666 |         var beam = Path()
+ 667 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+[294/347] Compiling InStrumApp ParamControl.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:665:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 663 |         }
+ 664 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 665 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 666 |         var beam = Path()
+ 667 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+[295/347] Compiling InStrumApp PluginWindowController.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:665:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 663 |         }
+ 664 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 665 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 666 |         var beam = Path()
+ 667 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+[296/347] Compiling InStrumApp PresetBar.swift
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/Views/CardArt.swift:665:13: warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 663 |         }
+ 664 |         // One diagonal beam from the window down across the room: warm light over the room, never clipped to white.
+ 665 |         var light = ctx
+     |             `- warning: variable 'light' was never mutated; consider changing to 'let' constant
+ 666 |         var beam = Path()
+ 667 |         beam.move(to: CGPoint(x: win.minX, y: win.minY + 10))
+[320/347] Compiling InStrumApp LightTrailsShaders.swift
+[321/347] Compiling InStrumApp LightningPlainsRenderer.swift
+[322/347] Compiling InStrumApp LightningPlainsShaders.swift
+[323/347] Compiling InStrumApp MagmaVeinsRenderer.swift
+[324/347] Compiling InStrumApp MagmaVeinsShaders.swift
+[325/347] Compiling InStrumApp MoonlitLakeRenderer.swift
+[326/347] Compiling InStrumApp MoonlitLakeShaders.swift
+[327/347] Compiling InStrumApp NeonNightDriveRenderer.swift
+[328/347] Compiling InStrumApp NeonNightDriveShaders.swift
+[329/347] Compiling InStrumApp SnowboundCabinRenderer.swift
+[330/347] Compiling InStrumApp SnowboundCabinShaders.swift
+[331/347] Compiling InStrumApp SpaceshipLoungeRenderer.swift
+[332/347] Compiling InStrumApp SpaceshipLoungeShaders.swift
+[333/347] Compiling InStrumApp SubmarineWindowRenderer.swift
+[334/347] Compiling InStrumApp SubmarineWindowShaders.swift
+[335/347] Compiling InStrumApp SupercellSkyRenderer.swift
+[336/347] Compiling InStrumApp SupercellSkyShaders.swift
+[337/347] Compiling InStrumApp TeaHouseSnowRenderer.swift
+[338/347] Compiling InStrumApp TeaHouseSnowShaders.swift
+[339/347] Compiling InStrumApp VolcanoRimRenderer.swift
+[340/347] Compiling InStrumApp VolcanoRimShaders.swift
+[341/347] Compiling InStrumApp ZenRockGardenRenderer.swift
+[342/347] Compiling InStrumApp ZenRockGardenShaders.swift
+[343/381] Emitting module InStrumMeants
+[344/381] Compiling InStrumMeants main.swift
+[344/381] Write Objects.LinkFileList
+[345/381] Linking InStrumMeants
+[346/381] Applying InStrumMeants
+[348/381] Emitting module InStrumAppTests
+[349/391] Compiling InStrumAppTests NeonNightDriveRendererTests.swift
+[350/391] Compiling InStrumAppTests PerformanceReportTests.swift
+[351/391] Compiling InStrumAppTests PortholeTests.swift
+[352/391] Compiling InStrumAppTests ReduceMotionTests.swift
+[353/391] Compiling InStrumAppTests RenderStackTests.swift
+[354/391] Compiling InStrumAppTests SettingsPanelTests.swift
+[355/391] Compiling InStrumAppTests ShaderTests.swift
+[356/391] Compiling InStrumAppTests SkyControlsTests.swift
+[357/391] Compiling InStrumAppTests SkyExtrasRendererTests.swift
+[358/391] Compiling InStrumAppTests SkySpecialisationTests.swift
+[359/391] Compiling InStrumAppTests ExcitementWorldsRendererTests.swift
+[360/391] Compiling InStrumAppTests GreatBarrierReefRendererTests.swift
+[361/391] Compiling InStrumAppTests HeavyWorldLayerCostTests.swift
+[362/391] Compiling InStrumAppTests HoldTheMomentTests.swift
+[363/391] Compiling InStrumAppTests InspiredByCardTests.swift
+[364/391] Compiling InStrumAppTests KeepThatTests.swift
+[365/391] Compiling InStrumAppTests KeyRoutingTests.swift
+[366/391] Compiling InStrumAppTests LightningPlainsRendererTests.swift
+[367/391] Compiling InStrumAppTests LoudnessMeter.swift
+[368/391] Compiling InStrumAppTests MappingEditorTests.swift
+[369/391] Compiling InStrumAppTests AmbienceLoudnessTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/AppModelTests.swift:225:16: warning: instance will be immediately deallocated because property 'midi' is 'weak'
+ 223 |     func testRescanReleasesHeldNotes() {
+ 224 |         let m = makeModel()
+ 225 |         m.midi = FakeMIDI()
+     |                |- warning: instance will be immediately deallocated because property 'midi' is 'weak'
+     |                `- note: a strong reference is required to prevent the instance from being deallocated
+ 226 |         let before = engine.panicCount
+ 227 |         m.rescanMIDI()
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/AppModel.swift:421:21: note: 'midi' declared here
+ 419 |     @Published public private(set) var disabledMIDISources: Set<String>
+ 420 |     /// The MIDI input (weak: the app container owns it). Setting it hands over the saved on/off choices.
+ 421 |     public weak var midi: MIDIControlling? {
+     |                     `- note: 'midi' declared here
+ 422 |         didSet { midi?.setDisabled(disabledMIDISources) }
+ 423 |     }
+[370/391] Compiling InStrumAppTests AppModelTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/AppModelTests.swift:225:16: warning: instance will be immediately deallocated because property 'midi' is 'weak'
+ 223 |     func testRescanReleasesHeldNotes() {
+ 224 |         let m = makeModel()
+ 225 |         m.midi = FakeMIDI()
+     |                |- warning: instance will be immediately deallocated because property 'midi' is 'weak'
+     |                `- note: a strong reference is required to prevent the instance from being deallocated
+ 226 |         let before = engine.panicCount
+ 227 |         m.rescanMIDI()
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/AppModel.swift:421:21: note: 'midi' declared here
+ 419 |     @Published public private(set) var disabledMIDISources: Set<String>
+ 420 |     /// The MIDI input (weak: the app container owns it). Setting it hands over the saved on/off choices.
+ 421 |     public weak var midi: MIDIControlling? {
+     |                     `- note: 'midi' declared here
+ 422 |         didSet { midi?.setDisabled(disabledMIDISources) }
+ 423 |     }
+[371/391] Compiling InStrumAppTests AppUpdatesTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/AppModelTests.swift:225:16: warning: instance will be immediately deallocated because property 'midi' is 'weak'
+ 223 |     func testRescanReleasesHeldNotes() {
+ 224 |         let m = makeModel()
+ 225 |         m.midi = FakeMIDI()
+     |                |- warning: instance will be immediately deallocated because property 'midi' is 'weak'
+     |                `- note: a strong reference is required to prevent the instance from being deallocated
+ 226 |         let before = engine.panicCount
+ 227 |         m.rescanMIDI()
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/AppModel.swift:421:21: note: 'midi' declared here
+ 419 |     @Published public private(set) var disabledMIDISources: Set<String>
+ 420 |     /// The MIDI input (weak: the app container owns it). Setting it hands over the saved on/off choices.
+ 421 |     public weak var midi: MIDIControlling? {
+     |                     `- note: 'midi' declared here
+ 422 |         didSet { midi?.setDisabled(disabledMIDISources) }
+ 423 |     }
+[372/391] Compiling InStrumAppTests BreathSettingsTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/AppModelTests.swift:225:16: warning: instance will be immediately deallocated because property 'midi' is 'weak'
+ 223 |     func testRescanReleasesHeldNotes() {
+ 224 |         let m = makeModel()
+ 225 |         m.midi = FakeMIDI()
+     |                |- warning: instance will be immediately deallocated because property 'midi' is 'weak'
+     |                `- note: a strong reference is required to prevent the instance from being deallocated
+ 226 |         let before = engine.panicCount
+ 227 |         m.rescanMIDI()
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/AppModel.swift:421:21: note: 'midi' declared here
+ 419 |     @Published public private(set) var disabledMIDISources: Set<String>
+ 420 |     /// The MIDI input (weak: the app container owns it). Setting it hands over the saved on/off choices.
+ 421 |     public weak var midi: MIDIControlling? {
+     |                     `- note: 'midi' declared here
+ 422 |         didSet { midi?.setDisabled(disabledMIDISources) }
+ 423 |     }
+[373/391] Compiling InStrumAppTests BuiltInPanelTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/AppModelTests.swift:225:16: warning: instance will be immediately deallocated because property 'midi' is 'weak'
+ 223 |     func testRescanReleasesHeldNotes() {
+ 224 |         let m = makeModel()
+ 225 |         m.midi = FakeMIDI()
+     |                |- warning: instance will be immediately deallocated because property 'midi' is 'weak'
+     |                `- note: a strong reference is required to prevent the instance from being deallocated
+ 226 |         let before = engine.panicCount
+ 227 |         m.rescanMIDI()
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/AppModel.swift:421:21: note: 'midi' declared here
+ 419 |     @Published public private(set) var disabledMIDISources: Set<String>
+ 420 |     /// The MIDI input (weak: the app container owns it). Setting it hands over the saved on/off choices.
+ 421 |     public weak var midi: MIDIControlling? {
+     |                     `- note: 'midi' declared here
+ 422 |         didSet { midi?.setDisabled(disabledMIDISources) }
+ 423 |     }
+[374/391] Compiling InStrumAppTests ButterflyRendererTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/AppModelTests.swift:225:16: warning: instance will be immediately deallocated because property 'midi' is 'weak'
+ 223 |     func testRescanReleasesHeldNotes() {
+ 224 |         let m = makeModel()
+ 225 |         m.midi = FakeMIDI()
+     |                |- warning: instance will be immediately deallocated because property 'midi' is 'weak'
+     |                `- note: a strong reference is required to prevent the instance from being deallocated
+ 226 |         let before = engine.panicCount
+ 227 |         m.rescanMIDI()
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/AppModel.swift:421:21: note: 'midi' declared here
+ 419 |     @Published public private(set) var disabledMIDISources: Set<String>
+ 420 |     /// The MIDI input (weak: the app container owns it). Setting it hands over the saved on/off choices.
+ 421 |     public weak var midi: MIDIControlling? {
+     |                     `- note: 'midi' declared here
+ 422 |         didSet { midi?.setDisabled(disabledMIDISources) }
+ 423 |     }
+[375/391] Compiling InStrumAppTests DemoRenderTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/AppModelTests.swift:225:16: warning: instance will be immediately deallocated because property 'midi' is 'weak'
+ 223 |     func testRescanReleasesHeldNotes() {
+ 224 |         let m = makeModel()
+ 225 |         m.midi = FakeMIDI()
+     |                |- warning: instance will be immediately deallocated because property 'midi' is 'weak'
+     |                `- note: a strong reference is required to prevent the instance from being deallocated
+ 226 |         let before = engine.panicCount
+ 227 |         m.rescanMIDI()
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/AppModel.swift:421:21: note: 'midi' declared here
+ 419 |     @Published public private(set) var disabledMIDISources: Set<String>
+ 420 |     /// The MIDI input (weak: the app container owns it). Setting it hands over the saved on/off choices.
+ 421 |     public weak var midi: MIDIControlling? {
+     |                     `- note: 'midi' declared here
+ 422 |         didSet { midi?.setDisabled(disabledMIDISources) }
+ 423 |     }
+[376/391] Compiling InStrumAppTests ExcitementBayTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/AppModelTests.swift:225:16: warning: instance will be immediately deallocated because property 'midi' is 'weak'
+ 223 |     func testRescanReleasesHeldNotes() {
+ 224 |         let m = makeModel()
+ 225 |         m.midi = FakeMIDI()
+     |                |- warning: instance will be immediately deallocated because property 'midi' is 'weak'
+     |                `- note: a strong reference is required to prevent the instance from being deallocated
+ 226 |         let before = engine.panicCount
+ 227 |         m.rescanMIDI()
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/AppModel.swift:421:21: note: 'midi' declared here
+ 419 |     @Published public private(set) var disabledMIDISources: Set<String>
+ 420 |     /// The MIDI input (weak: the app container owns it). Setting it hands over the saved on/off choices.
+ 421 |     public weak var midi: MIDIControlling? {
+     |                     `- note: 'midi' declared here
+ 422 |         didSet { midi?.setDisabled(disabledMIDISources) }
+ 423 |     }
+[377/391] Compiling InStrumAppTests ExcitementControlsTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/AppModelTests.swift:225:16: warning: instance will be immediately deallocated because property 'midi' is 'weak'
+ 223 |     func testRescanReleasesHeldNotes() {
+ 224 |         let m = makeModel()
+ 225 |         m.midi = FakeMIDI()
+     |                |- warning: instance will be immediately deallocated because property 'midi' is 'weak'
+     |                `- note: a strong reference is required to prevent the instance from being deallocated
+ 226 |         let before = engine.panicCount
+ 227 |         m.rescanMIDI()
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/AppModel.swift:421:21: note: 'midi' declared here
+ 419 |     @Published public private(set) var disabledMIDISources: Set<String>
+ 420 |     /// The MIDI input (weak: the app container owns it). Setting it hands over the saved on/off choices.
+ 421 |     public weak var midi: MIDIControlling? {
+     |                     `- note: 'midi' declared here
+ 422 |         didSet { midi?.setDisabled(disabledMIDISources) }
+ 423 |     }
+[378/391] Compiling InStrumAppTests ExcitementPartBPreviewTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/AppModelTests.swift:225:16: warning: instance will be immediately deallocated because property 'midi' is 'weak'
+ 223 |     func testRescanReleasesHeldNotes() {
+ 224 |         let m = makeModel()
+ 225 |         m.midi = FakeMIDI()
+     |                |- warning: instance will be immediately deallocated because property 'midi' is 'weak'
+     |                `- note: a strong reference is required to prevent the instance from being deallocated
+ 226 |         let before = engine.panicCount
+ 227 |         m.rescanMIDI()
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/AppModel.swift:421:21: note: 'midi' declared here
+ 419 |     @Published public private(set) var disabledMIDISources: Set<String>
+ 420 |     /// The MIDI input (weak: the app container owns it). Setting it hands over the saved on/off choices.
+ 421 |     public weak var midi: MIDIControlling? {
+     |                     `- note: 'midi' declared here
+ 422 |         didSet { midi?.setDisabled(disabledMIDISources) }
+ 423 |     }
+[379/391] Compiling InStrumAppTests ExcitementPartBTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/AppModelTests.swift:225:16: warning: instance will be immediately deallocated because property 'midi' is 'weak'
+ 223 |     func testRescanReleasesHeldNotes() {
+ 224 |         let m = makeModel()
+ 225 |         m.midi = FakeMIDI()
+     |                |- warning: instance will be immediately deallocated because property 'midi' is 'weak'
+     |                `- note: a strong reference is required to prevent the instance from being deallocated
+ 226 |         let before = engine.panicCount
+ 227 |         m.rescanMIDI()
+
+/Users/runner/work/instrumentum/instrumentum/Sources/InStrumApp/AppModel.swift:421:21: note: 'midi' declared here
+ 419 |     @Published public private(set) var disabledMIDISources: Set<String>
+ 420 |     /// The MIDI input (weak: the app container owns it). Setting it hands over the saved on/off choices.
+ 421 |     public weak var midi: MIDIControlling? {
+     |                     `- note: 'midi' declared here
+ 422 |         didSet { midi?.setDisabled(disabledMIDISources) }
+ 423 |     }
+[380/391] Compiling InStrumAppTests SleepTimerTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/WorldKitTests.swift:2180:59: warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2095 | 
+2096 |     /// Steps the bedroom at 60 fps (notes go down at 0.5 s and stay held) and renders the frame at `seconds`.
+2097 |     private func renderBedroom(notes: [UInt8], at seconds: Double, state: ThemeState = ThemeState(),
+     |                  `- note: 'renderBedroom(notes:at:state:sky:quality:gentle:width:height:skyEdit:each:)' declared here
+2098 |                                sky: SkySettings = BedroomDawnRendererTests.sky(hour: 13), quality: QualityLevel = .high,
+2099 |                                gentle: Bool = false, width: Int = 640, height: Int = 360,
+     :
+2178 |     func testBedroomHonoursGentleVisuals() throws {
+2179 |         var plain: (glint: Float, glow: Float) = (0, 0), gentle: (glint: Float, glow: Float) = (0, 0)
+2180 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3) { r, _ in plain = (max(plain.glint, r.glintOut), max(plain.glow, r.glowOut)) }
+     |                                                           `- warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2181 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3, gentle: true) { r, _ in gentle = (max(gentle.glint, r.glintOut), max(gentle.glow, r.glowOut)) }
+2182 |         XCTAssertGreaterThan(plain.glow, 0.3)
+
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/WorldKitTests.swift:2181:73: warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2095 | 
+2096 |     /// Steps the bedroom at 60 fps (notes go down at 0.5 s and stay held) and renders the frame at `seconds`.
+2097 |     private func renderBedroom(notes: [UInt8], at seconds: Double, state: ThemeState = ThemeState(),
+     |                  `- note: 'renderBedroom(notes:at:state:sky:quality:gentle:width:height:skyEdit:each:)' declared here
+2098 |                                sky: SkySettings = BedroomDawnRendererTests.sky(hour: 13), quality: QualityLevel = .high,
+2099 |                                gentle: Bool = false, width: Int = 640, height: Int = 360,
+     :
+2179 |         var plain: (glint: Float, glow: Float) = (0, 0), gentle: (glint: Float, glow: Float) = (0, 0)
+2180 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3) { r, _ in plain = (max(plain.glint, r.glintOut), max(plain.glow, r.glowOut)) }
+2181 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3, gentle: true) { r, _ in gentle = (max(gentle.glint, r.glintOut), max(gentle.glow, r.glowOut)) }
+     |                                                                         `- warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2182 |         XCTAssertGreaterThan(plain.glow, 0.3)
+2183 |         XCTAssertLessThanOrEqual(gentle.glint, plain.glint * 0.55)
+[381/391] Compiling InStrumAppTests SubmarineWindowRendererTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/WorldKitTests.swift:2180:59: warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2095 | 
+2096 |     /// Steps the bedroom at 60 fps (notes go down at 0.5 s and stay held) and renders the frame at `seconds`.
+2097 |     private func renderBedroom(notes: [UInt8], at seconds: Double, state: ThemeState = ThemeState(),
+     |                  `- note: 'renderBedroom(notes:at:state:sky:quality:gentle:width:height:skyEdit:each:)' declared here
+2098 |                                sky: SkySettings = BedroomDawnRendererTests.sky(hour: 13), quality: QualityLevel = .high,
+2099 |                                gentle: Bool = false, width: Int = 640, height: Int = 360,
+     :
+2178 |     func testBedroomHonoursGentleVisuals() throws {
+2179 |         var plain: (glint: Float, glow: Float) = (0, 0), gentle: (glint: Float, glow: Float) = (0, 0)
+2180 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3) { r, _ in plain = (max(plain.glint, r.glintOut), max(plain.glow, r.glowOut)) }
+     |                                                           `- warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2181 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3, gentle: true) { r, _ in gentle = (max(gentle.glint, r.glintOut), max(gentle.glow, r.glowOut)) }
+2182 |         XCTAssertGreaterThan(plain.glow, 0.3)
+
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/WorldKitTests.swift:2181:73: warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2095 | 
+2096 |     /// Steps the bedroom at 60 fps (notes go down at 0.5 s and stay held) and renders the frame at `seconds`.
+2097 |     private func renderBedroom(notes: [UInt8], at seconds: Double, state: ThemeState = ThemeState(),
+     |                  `- note: 'renderBedroom(notes:at:state:sky:quality:gentle:width:height:skyEdit:each:)' declared here
+2098 |                                sky: SkySettings = BedroomDawnRendererTests.sky(hour: 13), quality: QualityLevel = .high,
+2099 |                                gentle: Bool = false, width: Int = 640, height: Int = 360,
+     :
+2179 |         var plain: (glint: Float, glow: Float) = (0, 0), gentle: (glint: Float, glow: Float) = (0, 0)
+2180 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3) { r, _ in plain = (max(plain.glint, r.glintOut), max(plain.glow, r.glowOut)) }
+2181 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3, gentle: true) { r, _ in gentle = (max(gentle.glint, r.glintOut), max(gentle.glow, r.glowOut)) }
+     |                                                                         `- warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2182 |         XCTAssertGreaterThan(plain.glow, 0.3)
+2183 |         XCTAssertLessThanOrEqual(gentle.glint, plain.glint * 0.55)
+[382/391] Compiling InStrumAppTests SupercellSkyRendererTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/WorldKitTests.swift:2180:59: warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2095 | 
+2096 |     /// Steps the bedroom at 60 fps (notes go down at 0.5 s and stay held) and renders the frame at `seconds`.
+2097 |     private func renderBedroom(notes: [UInt8], at seconds: Double, state: ThemeState = ThemeState(),
+     |                  `- note: 'renderBedroom(notes:at:state:sky:quality:gentle:width:height:skyEdit:each:)' declared here
+2098 |                                sky: SkySettings = BedroomDawnRendererTests.sky(hour: 13), quality: QualityLevel = .high,
+2099 |                                gentle: Bool = false, width: Int = 640, height: Int = 360,
+     :
+2178 |     func testBedroomHonoursGentleVisuals() throws {
+2179 |         var plain: (glint: Float, glow: Float) = (0, 0), gentle: (glint: Float, glow: Float) = (0, 0)
+2180 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3) { r, _ in plain = (max(plain.glint, r.glintOut), max(plain.glow, r.glowOut)) }
+     |                                                           `- warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2181 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3, gentle: true) { r, _ in gentle = (max(gentle.glint, r.glintOut), max(gentle.glow, r.glowOut)) }
+2182 |         XCTAssertGreaterThan(plain.glow, 0.3)
+
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/WorldKitTests.swift:2181:73: warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2095 | 
+2096 |     /// Steps the bedroom at 60 fps (notes go down at 0.5 s and stay held) and renders the frame at `seconds`.
+2097 |     private func renderBedroom(notes: [UInt8], at seconds: Double, state: ThemeState = ThemeState(),
+     |                  `- note: 'renderBedroom(notes:at:state:sky:quality:gentle:width:height:skyEdit:each:)' declared here
+2098 |                                sky: SkySettings = BedroomDawnRendererTests.sky(hour: 13), quality: QualityLevel = .high,
+2099 |                                gentle: Bool = false, width: Int = 640, height: Int = 360,
+     :
+2179 |         var plain: (glint: Float, glow: Float) = (0, 0), gentle: (glint: Float, glow: Float) = (0, 0)
+2180 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3) { r, _ in plain = (max(plain.glint, r.glintOut), max(plain.glow, r.glowOut)) }
+2181 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3, gentle: true) { r, _ in gentle = (max(gentle.glint, r.glintOut), max(gentle.glow, r.glowOut)) }
+     |                                                                         `- warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2182 |         XCTAssertGreaterThan(plain.glow, 0.3)
+2183 |         XCTAssertLessThanOrEqual(gentle.glint, plain.glint * 0.55)
+[383/391] Compiling InStrumAppTests UnderwaterKitTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/WorldKitTests.swift:2180:59: warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2095 | 
+2096 |     /// Steps the bedroom at 60 fps (notes go down at 0.5 s and stay held) and renders the frame at `seconds`.
+2097 |     private func renderBedroom(notes: [UInt8], at seconds: Double, state: ThemeState = ThemeState(),
+     |                  `- note: 'renderBedroom(notes:at:state:sky:quality:gentle:width:height:skyEdit:each:)' declared here
+2098 |                                sky: SkySettings = BedroomDawnRendererTests.sky(hour: 13), quality: QualityLevel = .high,
+2099 |                                gentle: Bool = false, width: Int = 640, height: Int = 360,
+     :
+2178 |     func testBedroomHonoursGentleVisuals() throws {
+2179 |         var plain: (glint: Float, glow: Float) = (0, 0), gentle: (glint: Float, glow: Float) = (0, 0)
+2180 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3) { r, _ in plain = (max(plain.glint, r.glintOut), max(plain.glow, r.glowOut)) }
+     |                                                           `- warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2181 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3, gentle: true) { r, _ in gentle = (max(gentle.glint, r.glintOut), max(gentle.glow, r.glowOut)) }
+2182 |         XCTAssertGreaterThan(plain.glow, 0.3)
+
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/WorldKitTests.swift:2181:73: warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2095 | 
+2096 |     /// Steps the bedroom at 60 fps (notes go down at 0.5 s and stay held) and renders the frame at `seconds`.
+2097 |     private func renderBedroom(notes: [UInt8], at seconds: Double, state: ThemeState = ThemeState(),
+     |                  `- note: 'renderBedroom(notes:at:state:sky:quality:gentle:width:height:skyEdit:each:)' declared here
+2098 |                                sky: SkySettings = BedroomDawnRendererTests.sky(hour: 13), quality: QualityLevel = .high,
+2099 |                                gentle: Bool = false, width: Int = 640, height: Int = 360,
+     :
+2179 |         var plain: (glint: Float, glow: Float) = (0, 0), gentle: (glint: Float, glow: Float) = (0, 0)
+2180 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3) { r, _ in plain = (max(plain.glint, r.glintOut), max(plain.glow, r.glowOut)) }
+2181 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3, gentle: true) { r, _ in gentle = (max(gentle.glint, r.glintOut), max(gentle.glow, r.glowOut)) }
+     |                                                                         `- warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2182 |         XCTAssertGreaterThan(plain.glow, 0.3)
+2183 |         XCTAssertLessThanOrEqual(gentle.glint, plain.glint * 0.55)
+[384/391] Compiling InStrumAppTests VolcanoRimRendererTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/WorldKitTests.swift:2180:59: warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2095 | 
+2096 |     /// Steps the bedroom at 60 fps (notes go down at 0.5 s and stay held) and renders the frame at `seconds`.
+2097 |     private func renderBedroom(notes: [UInt8], at seconds: Double, state: ThemeState = ThemeState(),
+     |                  `- note: 'renderBedroom(notes:at:state:sky:quality:gentle:width:height:skyEdit:each:)' declared here
+2098 |                                sky: SkySettings = BedroomDawnRendererTests.sky(hour: 13), quality: QualityLevel = .high,
+2099 |                                gentle: Bool = false, width: Int = 640, height: Int = 360,
+     :
+2178 |     func testBedroomHonoursGentleVisuals() throws {
+2179 |         var plain: (glint: Float, glow: Float) = (0, 0), gentle: (glint: Float, glow: Float) = (0, 0)
+2180 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3) { r, _ in plain = (max(plain.glint, r.glintOut), max(plain.glow, r.glowOut)) }
+     |                                                           `- warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2181 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3, gentle: true) { r, _ in gentle = (max(gentle.glint, r.glintOut), max(gentle.glow, r.glowOut)) }
+2182 |         XCTAssertGreaterThan(plain.glow, 0.3)
+
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/WorldKitTests.swift:2181:73: warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2095 | 
+2096 |     /// Steps the bedroom at 60 fps (notes go down at 0.5 s and stay held) and renders the frame at `seconds`.
+2097 |     private func renderBedroom(notes: [UInt8], at seconds: Double, state: ThemeState = ThemeState(),
+     |                  `- note: 'renderBedroom(notes:at:state:sky:quality:gentle:width:height:skyEdit:each:)' declared here
+2098 |                                sky: SkySettings = BedroomDawnRendererTests.sky(hour: 13), quality: QualityLevel = .high,
+2099 |                                gentle: Bool = false, width: Int = 640, height: Int = 360,
+     :
+2179 |         var plain: (glint: Float, glow: Float) = (0, 0), gentle: (glint: Float, glow: Float) = (0, 0)
+2180 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3) { r, _ in plain = (max(plain.glint, r.glintOut), max(plain.glow, r.glowOut)) }
+2181 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3, gentle: true) { r, _ in gentle = (max(gentle.glint, r.glintOut), max(gentle.glow, r.glowOut)) }
+     |                                                                         `- warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2182 |         XCTAssertGreaterThan(plain.glow, 0.3)
+2183 |         XCTAssertLessThanOrEqual(gentle.glint, plain.glint * 0.55)
+[385/391] Compiling InStrumAppTests WindowKitTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/WorldKitTests.swift:2180:59: warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2095 | 
+2096 |     /// Steps the bedroom at 60 fps (notes go down at 0.5 s and stay held) and renders the frame at `seconds`.
+2097 |     private func renderBedroom(notes: [UInt8], at seconds: Double, state: ThemeState = ThemeState(),
+     |                  `- note: 'renderBedroom(notes:at:state:sky:quality:gentle:width:height:skyEdit:each:)' declared here
+2098 |                                sky: SkySettings = BedroomDawnRendererTests.sky(hour: 13), quality: QualityLevel = .high,
+2099 |                                gentle: Bool = false, width: Int = 640, height: Int = 360,
+     :
+2178 |     func testBedroomHonoursGentleVisuals() throws {
+2179 |         var plain: (glint: Float, glow: Float) = (0, 0), gentle: (glint: Float, glow: Float) = (0, 0)
+2180 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3) { r, _ in plain = (max(plain.glint, r.glintOut), max(plain.glow, r.glowOut)) }
+     |                                                           `- warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2181 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3, gentle: true) { r, _ in gentle = (max(gentle.glint, r.glintOut), max(gentle.glow, r.glowOut)) }
+2182 |         XCTAssertGreaterThan(plain.glow, 0.3)
+
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/WorldKitTests.swift:2181:73: warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2095 | 
+2096 |     /// Steps the bedroom at 60 fps (notes go down at 0.5 s and stay held) and renders the frame at `seconds`.
+2097 |     private func renderBedroom(notes: [UInt8], at seconds: Double, state: ThemeState = ThemeState(),
+     |                  `- note: 'renderBedroom(notes:at:state:sky:quality:gentle:width:height:skyEdit:each:)' declared here
+2098 |                                sky: SkySettings = BedroomDawnRendererTests.sky(hour: 13), quality: QualityLevel = .high,
+2099 |                                gentle: Bool = false, width: Int = 640, height: Int = 360,
+     :
+2179 |         var plain: (glint: Float, glow: Float) = (0, 0), gentle: (glint: Float, glow: Float) = (0, 0)
+2180 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3) { r, _ in plain = (max(plain.glint, r.glintOut), max(plain.glow, r.glowOut)) }
+2181 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3, gentle: true) { r, _ in gentle = (max(gentle.glint, r.glintOut), max(gentle.glow, r.glowOut)) }
+     |                                                                         `- warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2182 |         XCTAssertGreaterThan(plain.glow, 0.3)
+2183 |         XCTAssertLessThanOrEqual(gentle.glint, plain.glint * 0.55)
+[386/391] Compiling InStrumAppTests WorldCPUTimeSweepTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/WorldKitTests.swift:2180:59: warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2095 | 
+2096 |     /// Steps the bedroom at 60 fps (notes go down at 0.5 s and stay held) and renders the frame at `seconds`.
+2097 |     private func renderBedroom(notes: [UInt8], at seconds: Double, state: ThemeState = ThemeState(),
+     |                  `- note: 'renderBedroom(notes:at:state:sky:quality:gentle:width:height:skyEdit:each:)' declared here
+2098 |                                sky: SkySettings = BedroomDawnRendererTests.sky(hour: 13), quality: QualityLevel = .high,
+2099 |                                gentle: Bool = false, width: Int = 640, height: Int = 360,
+     :
+2178 |     func testBedroomHonoursGentleVisuals() throws {
+2179 |         var plain: (glint: Float, glow: Float) = (0, 0), gentle: (glint: Float, glow: Float) = (0, 0)
+2180 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3) { r, _ in plain = (max(plain.glint, r.glintOut), max(plain.glow, r.glowOut)) }
+     |                                                           `- warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2181 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3, gentle: true) { r, _ in gentle = (max(gentle.glint, r.glintOut), max(gentle.glow, r.glowOut)) }
+2182 |         XCTAssertGreaterThan(plain.glow, 0.3)
+
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/WorldKitTests.swift:2181:73: warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2095 | 
+2096 |     /// Steps the bedroom at 60 fps (notes go down at 0.5 s and stay held) and renders the frame at `seconds`.
+2097 |     private func renderBedroom(notes: [UInt8], at seconds: Double, state: ThemeState = ThemeState(),
+     |                  `- note: 'renderBedroom(notes:at:state:sky:quality:gentle:width:height:skyEdit:each:)' declared here
+2098 |                                sky: SkySettings = BedroomDawnRendererTests.sky(hour: 13), quality: QualityLevel = .high,
+2099 |                                gentle: Bool = false, width: Int = 640, height: Int = 360,
+     :
+2179 |         var plain: (glint: Float, glow: Float) = (0, 0), gentle: (glint: Float, glow: Float) = (0, 0)
+2180 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3) { r, _ in plain = (max(plain.glint, r.glintOut), max(plain.glow, r.glowOut)) }
+2181 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3, gentle: true) { r, _ in gentle = (max(gentle.glint, r.glintOut), max(gentle.glow, r.glowOut)) }
+     |                                                                         `- warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2182 |         XCTAssertGreaterThan(plain.glow, 0.3)
+2183 |         XCTAssertLessThanOrEqual(gentle.glint, plain.glint * 0.55)
+[387/391] Compiling InStrumAppTests WorldFrameTimeSweepTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/WorldKitTests.swift:2180:59: warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2095 | 
+2096 |     /// Steps the bedroom at 60 fps (notes go down at 0.5 s and stay held) and renders the frame at `seconds`.
+2097 |     private func renderBedroom(notes: [UInt8], at seconds: Double, state: ThemeState = ThemeState(),
+     |                  `- note: 'renderBedroom(notes:at:state:sky:quality:gentle:width:height:skyEdit:each:)' declared here
+2098 |                                sky: SkySettings = BedroomDawnRendererTests.sky(hour: 13), quality: QualityLevel = .high,
+2099 |                                gentle: Bool = false, width: Int = 640, height: Int = 360,
+     :
+2178 |     func testBedroomHonoursGentleVisuals() throws {
+2179 |         var plain: (glint: Float, glow: Float) = (0, 0), gentle: (glint: Float, glow: Float) = (0, 0)
+2180 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3) { r, _ in plain = (max(plain.glint, r.glintOut), max(plain.glow, r.glowOut)) }
+     |                                                           `- warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2181 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3, gentle: true) { r, _ in gentle = (max(gentle.glint, r.glintOut), max(gentle.glow, r.glowOut)) }
+2182 |         XCTAssertGreaterThan(plain.glow, 0.3)
+
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/WorldKitTests.swift:2181:73: warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2095 | 
+2096 |     /// Steps the bedroom at 60 fps (notes go down at 0.5 s and stay held) and renders the frame at `seconds`.
+2097 |     private func renderBedroom(notes: [UInt8], at seconds: Double, state: ThemeState = ThemeState(),
+     |                  `- note: 'renderBedroom(notes:at:state:sky:quality:gentle:width:height:skyEdit:each:)' declared here
+2098 |                                sky: SkySettings = BedroomDawnRendererTests.sky(hour: 13), quality: QualityLevel = .high,
+2099 |                                gentle: Bool = false, width: Int = 640, height: Int = 360,
+     :
+2179 |         var plain: (glint: Float, glow: Float) = (0, 0), gentle: (glint: Float, glow: Float) = (0, 0)
+2180 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3) { r, _ in plain = (max(plain.glint, r.glintOut), max(plain.glow, r.glowOut)) }
+2181 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3, gentle: true) { r, _ in gentle = (max(gentle.glint, r.glintOut), max(gentle.glow, r.glowOut)) }
+     |                                                                         `- warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2182 |         XCTAssertGreaterThan(plain.glow, 0.3)
+2183 |         XCTAssertLessThanOrEqual(gentle.glint, plain.glint * 0.55)
+[388/391] Compiling InStrumAppTests WorldKitTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/WorldKitTests.swift:2180:59: warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2095 | 
+2096 |     /// Steps the bedroom at 60 fps (notes go down at 0.5 s and stay held) and renders the frame at `seconds`.
+2097 |     private func renderBedroom(notes: [UInt8], at seconds: Double, state: ThemeState = ThemeState(),
+     |                  `- note: 'renderBedroom(notes:at:state:sky:quality:gentle:width:height:skyEdit:each:)' declared here
+2098 |                                sky: SkySettings = BedroomDawnRendererTests.sky(hour: 13), quality: QualityLevel = .high,
+2099 |                                gentle: Bool = false, width: Int = 640, height: Int = 360,
+     :
+2178 |     func testBedroomHonoursGentleVisuals() throws {
+2179 |         var plain: (glint: Float, glow: Float) = (0, 0), gentle: (glint: Float, glow: Float) = (0, 0)
+2180 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3) { r, _ in plain = (max(plain.glint, r.glintOut), max(plain.glow, r.glowOut)) }
+     |                                                           `- warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2181 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3, gentle: true) { r, _ in gentle = (max(gentle.glint, r.glintOut), max(gentle.glow, r.glowOut)) }
+2182 |         XCTAssertGreaterThan(plain.glow, 0.3)
+
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/WorldKitTests.swift:2181:73: warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2095 | 
+2096 |     /// Steps the bedroom at 60 fps (notes go down at 0.5 s and stay held) and renders the frame at `seconds`.
+2097 |     private func renderBedroom(notes: [UInt8], at seconds: Double, state: ThemeState = ThemeState(),
+     |                  `- note: 'renderBedroom(notes:at:state:sky:quality:gentle:width:height:skyEdit:each:)' declared here
+2098 |                                sky: SkySettings = BedroomDawnRendererTests.sky(hour: 13), quality: QualityLevel = .high,
+2099 |                                gentle: Bool = false, width: Int = 640, height: Int = 360,
+     :
+2179 |         var plain: (glint: Float, glow: Float) = (0, 0), gentle: (glint: Float, glow: Float) = (0, 0)
+2180 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3) { r, _ in plain = (max(plain.glint, r.glintOut), max(plain.glow, r.glowOut)) }
+2181 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3, gentle: true) { r, _ in gentle = (max(gentle.glint, r.glintOut), max(gentle.glow, r.glowOut)) }
+     |                                                                         `- warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2182 |         XCTAssertGreaterThan(plain.glow, 0.3)
+2183 |         XCTAssertLessThanOrEqual(gentle.glint, plain.glint * 0.55)
+[389/391] Compiling InStrumAppTests WorldRenderersTests.swift
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/WorldKitTests.swift:2180:59: warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2095 | 
+2096 |     /// Steps the bedroom at 60 fps (notes go down at 0.5 s and stay held) and renders the frame at `seconds`.
+2097 |     private func renderBedroom(notes: [UInt8], at seconds: Double, state: ThemeState = ThemeState(),
+     |                  `- note: 'renderBedroom(notes:at:state:sky:quality:gentle:width:height:skyEdit:each:)' declared here
+2098 |                                sky: SkySettings = BedroomDawnRendererTests.sky(hour: 13), quality: QualityLevel = .high,
+2099 |                                gentle: Bool = false, width: Int = 640, height: Int = 360,
+     :
+2178 |     func testBedroomHonoursGentleVisuals() throws {
+2179 |         var plain: (glint: Float, glow: Float) = (0, 0), gentle: (glint: Float, glow: Float) = (0, 0)
+2180 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3) { r, _ in plain = (max(plain.glint, r.glintOut), max(plain.glow, r.glowOut)) }
+     |                                                           `- warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2181 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3, gentle: true) { r, _ in gentle = (max(gentle.glint, r.glintOut), max(gentle.glow, r.glowOut)) }
+2182 |         XCTAssertGreaterThan(plain.glow, 0.3)
+
+/Users/runner/work/instrumentum/instrumentum/Tests/InStrumAppTests/WorldKitTests.swift:2181:73: warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2095 | 
+2096 |     /// Steps the bedroom at 60 fps (notes go down at 0.5 s and stay held) and renders the frame at `seconds`.
+2097 |     private func renderBedroom(notes: [UInt8], at seconds: Double, state: ThemeState = ThemeState(),
+     |                  `- note: 'renderBedroom(notes:at:state:sky:quality:gentle:width:height:skyEdit:each:)' declared here
+2098 |                                sky: SkySettings = BedroomDawnRendererTests.sky(hour: 13), quality: QualityLevel = .high,
+2099 |                                gentle: Bool = false, width: Int = 640, height: Int = 360,
+     :
+2179 |         var plain: (glint: Float, glow: Float) = (0, 0), gentle: (glint: Float, glow: Float) = (0, 0)
+2180 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3) { r, _ in plain = (max(plain.glint, r.glintOut), max(plain.glow, r.glowOut)) }
+2181 |         _ = try renderBedroom(notes: [72, 84, 96], at: 3, gentle: true) { r, _ in gentle = (max(gentle.glint, r.glintOut), max(gentle.glow, r.glowOut)) }
+     |                                                                         `- warning: backward matching of the unlabeled trailing closure is deprecated; label the argument with 'each' to suppress this warning
+2182 |         XCTAssertGreaterThan(plain.glow, 0.3)
+2183 |         XCTAssertLessThanOrEqual(gentle.glint, plain.glint * 0.55)
+[390/393] Emitting module InStrumMeantsPackageTests
+[391/393] Compiling InStrumMeantsPackageTests runner.swift
+[391/393] Write Objects.LinkFileList
+[392/393] Linking InStrumMeantsPackageTests
+Build complete! (586.27s)
+Test Suite 'Selected tests' started at 2026-11-13 17:19:56.081.
+Test Suite 'InStrumMeantsPackageTests.xctest' started at 2026-11-13 17:19:56.084.
+Test Suite 'WorldCPUTimeSweepTests' started at 2026-11-13 17:19:56.084.
+Test Case '-[InStrumAppTests.WorldCPUTimeSweepTests testEveryWorldCPUTime]' started.
+Test Case '-[InStrumAppTests.WorldCPUTimeSweepTests testEveryWorldCPUTime]' passed (217.821 seconds).
+Test Suite 'WorldCPUTimeSweepTests' passed at 2026-11-13 17:23:33.905.
+	 Executed 1 test, with 0 failures (0 unexpected) in 217.821 (217.821) seconds
+Test Suite 'WorldPreviewTests' started at 2026-11-13 17:23:33.905.
+Test Case '-[InStrumAppTests.WorldPreviewTests testWriteLakePreviews]' started.
+Test Case '-[InStrumAppTests.WorldPreviewTests testWriteLakePreviews]' passed (2.309 seconds).
+Test Case '-[InStrumAppTests.WorldPreviewTests testWriteLoungePreviews]' started.
+Test Case '-[InStrumAppTests.WorldPreviewTests testWriteLoungePreviews]' passed (1.473 seconds).
+Test Case '-[InStrumAppTests.WorldPreviewTests testWriteVolcanoPreviews]' started.
+Test Case '-[InStrumAppTests.WorldPreviewTests testWriteVolcanoPreviews]' passed (9.398 seconds).
+Test Suite 'WorldPreviewTests' passed at 2026-11-13 17:23:47.085.
+	 Executed 3 tests, with 0 failures (0 unexpected) in 13.179 (13.180) seconds
+Test Suite 'InStrumMeantsPackageTests.xctest' passed at 2026-11-13 17:23:47.085.
+	 Executed 4 tests, with 0 failures (0 unexpected) in 231.000 (231.001) seconds
+Test Suite 'Selected tests' passed at 2026-11-13 17:23:47.085.
+	 Executed 4 tests, with 0 failures (0 unexpected) in 231.000 (231.005) seconds
+CPU TIME sweep midnight-steinway night Smooth 1264x790 (medians of 240, ms): step 0.14, update 0.08, encode 0.22, frame 0.44; slowest frame 0.78 (frame 107; slowest step 0.33, update 0.16, encode 0.40); switch 0.09, first step 0.35
+CPU TIME sweep midnight-steinway day Smooth 1264x790 (medians of 240, ms): step 0.14, update 0.08, encode 0.21, frame 0.43; slowest frame 1.24 (frame 216; slowest step 0.25, update 0.21, encode 0.93); switch 0.01, first step 0.09
+CPU TIME sweep butterfly-garden night Smooth 1264x790 (medians of 240, ms): step 0.29, update 0.26, encode 0.39, frame 1.01; slowest frame 1.37 (frame 194; slowest step 0.58, update 0.54, encode 0.85); switch 0.12, first step 0.47
+CPU TIME sweep butterfly-garden day Smooth 1264x790 (medians of 240, ms): step 0.33, update 0.28, encode 0.42, frame 1.05; slowest frame 2.79 (frame 176; slowest step 0.70, update 0.70, encode 2.32); switch 0.02, first step 0.10
+CPU TIME sweep moonlit-lake night Smooth 1264x790 (medians of 240, ms): step 0.24, update 0.42, encode 0.26, frame 0.93; slowest frame 1.60 (frame 297; slowest step 0.80, update 0.78, encode 0.49); switch 0.17, first step 0.64
+CPU TIME sweep moonlit-lake day Smooth 1264x790 (medians of 240, ms): step 0.23, update 0.41, encode 0.26, frame 0.91; slowest frame 1.46 (frame 238; slowest step 0.46, update 0.76, encode 0.46); switch 0.02, first step 0.14
+CPU TIME sweep spaceship-lounge night Smooth 1264x790 (medians of 240, ms): step 0.27, update 0.17, encode 0.30, frame 0.78; slowest frame 1.16 (frame 175; slowest step 0.44, update 0.37, encode 0.46); switch 0.01, first step 0.13
+CPU TIME sweep spaceship-lounge day Smooth 1264x790 (medians of 240, ms): step 0.27, update 0.17, encode 0.29, frame 0.77; slowest frame 1.07 (frame 277; slowest step 0.44, update 0.42, encode 0.46); switch 0.01, first step 0.11
+CPU TIME sweep golden-hour-beach night Smooth 1264x790 (medians of 240, ms): step 0.23, update 0.43, encode 0.26, frame 0.92; slowest frame 1.77 (frame 267; slowest step 0.54, update 1.02, encode 0.42); switch 0.19, first step 0.47
+CPU TIME sweep golden-hour-beach day Smooth 1264x790 (medians of 240, ms): step 0.23, update 0.43, encode 0.26, frame 0.92; slowest frame 1.45 (frame 142; slowest step 0.42, update 0.84, encode 0.44); switch 0.02, first step 0.13
+CPU TIME sweep coast-road night Smooth 1264x790 (medians of 240, ms): step 0.23, update 0.39, encode 0.27, frame 0.91; slowest frame 1.82 (frame 270; slowest step 0.78, update 0.80, encode 0.59); switch 0.12, first step 0.33
+CPU TIME sweep coast-road day Smooth 1264x790 (medians of 240, ms): step 0.24, update 0.39, encode 0.27, frame 0.91; slowest frame 1.69 (frame 172; slowest step 0.40, update 0.83, encode 0.47); switch 0.02, first step 0.13
+CPU TIME sweep snowbound-cabin night Smooth 1264x790 (medians of 240, ms): step 0.23, update 0.47, encode 0.27, frame 0.97; slowest frame 1.45 (frame 225; slowest step 0.37, update 0.82, encode 0.54); switch 0.09, first step 0.31
+CPU TIME sweep snowbound-cabin day Smooth 1264x790 (medians of 240, ms): step 0.23, update 0.49, encode 0.27, frame 1.01; slowest frame 2.05 (frame 180; slowest step 0.38, update 1.37, encode 0.45); switch 0.02, first step 0.17
+CPU TIME sweep bedroom-dawn night Smooth 1264x790 (medians of 240, ms): step 0.86, update 2.76, encode 0.29, frame 3.93; slowest frame 6.14 (frame 85; slowest step 1.60, update 4.45, encode 0.44); switch 0.80, first step 1.11
+CPU TIME sweep bedroom-dawn day Smooth 1264x790 (medians of 240, ms): step 0.88, update 2.79, encode 0.29, frame 3.98; slowest frame 6.45 (frame 294; slowest step 1.68, update 4.80, encode 0.45); switch 0.64, first step 0.75
+CPU TIME sweep aurora-fjord night Smooth 1264x790 (medians of 240, ms): step 0.28, update 0.48, encode 0.30, frame 1.08; slowest frame 2.07 (frame 173; slowest step 0.43, update 1.13, encode 0.63); switch 0.14, first step 0.49
+CPU TIME sweep aurora-fjord day Smooth 1264x790 (medians of 240, ms): step 0.23, update 0.42, encode 0.27, frame 0.92; slowest frame 1.60 (frame 115; slowest step 0.42, update 0.84, encode 0.56); switch 0.02, first step 0.19
+CPU TIME sweep bioluminescent-bay night Smooth 1264x790 (medians of 240, ms): step 0.23, update 0.45, encode 0.26, frame 0.95; slowest frame 2.00 (frame 225; slowest step 0.43, update 1.21, encode 0.45); switch 0.09, first step 0.33
+CPU TIME sweep bioluminescent-bay day Smooth 1264x790 (medians of 240, ms): step 0.25, update 0.47, encode 0.27, frame 1.01; slowest frame 1.53 (frame 223; slowest step 0.42, update 0.80, encode 0.38); switch 0.02, first step 0.19
+CPU TIME sweep tea-house-snow night Smooth 1264x790 (medians of 240, ms): step 0.22, update 0.53, encode 0.26, frame 1.03; slowest frame 1.68 (frame 301; slowest step 0.44, update 0.94, encode 0.46); switch 0.09, first step 0.33
+CPU TIME sweep tea-house-snow day Smooth 1264x790 (medians of 240, ms): step 0.23, update 0.54, encode 0.27, frame 1.06; slowest frame 1.87 (frame 247; slowest step 0.47, update 1.07, encode 0.46); switch 0.01, first step 0.12
+CPU TIME sweep zen-rock-garden night Smooth 1264x790 (medians of 240, ms): step 0.25, update 0.39, encode 0.25, frame 0.90; slowest frame 1.55 (frame 220; slowest step 0.61, update 0.76, encode 0.48); switch 3.88, first step 0.56
+CPU TIME sweep zen-rock-garden day Smooth 1264x790 (medians of 240, ms): step 0.25, update 0.40, encode 0.25, frame 0.93; slowest frame 1.66 (frame 107; slowest step 0.63, update 0.80, encode 0.47); switch 0.03, first step 0.14
+CPU TIME sweep submarine-window night Smooth 1264x790 (medians of 240, ms): step 0.26, update 0.77, encode 0.28, frame 1.31; slowest frame 1.99 (frame 225; slowest step 0.50, update 1.27, encode 0.42); switch 0.18, first step 0.57
+CPU TIME sweep submarine-window day Smooth 1264x790 (medians of 240, ms): step 0.26, update 0.78, encode 0.27, frame 1.31; slowest frame 2.47 (frame 261; slowest step 0.48, update 1.58, encode 0.46); switch 0.03, first step 0.15
+CPU TIME sweep great-barrier-reef night Smooth 1264x790 (medians of 240, ms): step 0.26, update 0.71, encode 0.27, frame 1.26; slowest frame 1.91 (frame 92; slowest step 0.46, update 1.18, encode 0.43); switch 0.15, first step 0.38
+CPU TIME sweep great-barrier-reef day Smooth 1264x790 (medians of 240, ms): step 0.26, update 0.70, encode 0.26, frame 1.24; slowest frame 1.90 (frame 110; slowest step 0.45, update 1.17, encode 0.39); switch 0.05, first step 0.20
+CPU TIME sweep supercell-sky night Smooth 1264x790 (medians of 240, ms): step 0.28, update 0.30, encode 0.30, frame 0.91; slowest frame 2.16 (frame 83; slowest step 0.80, update 0.81, encode 0.69); switch 0.15, first step 0.41
+CPU TIME sweep supercell-sky day Smooth 1264x790 (medians of 240, ms): step 0.24, update 0.26, encode 0.27, frame 0.79; slowest frame 1.35 (frame 92; slowest step 0.45, update 0.70, encode 0.44); switch 0.03, first step 0.20
+CPU TIME sweep lightning-plains night Smooth 1264x790 (medians of 240, ms): step 0.25, update 1.38, encode 0.28, frame 1.91; slowest frame 3.00 (frame 218; slowest step 0.41, update 2.26, encode 0.42); switch 0.10, first step 0.37
+CPU TIME sweep lightning-plains day Smooth 1264x790 (medians of 240, ms): step 0.24, update 1.35, encode 0.27, frame 1.88; slowest frame 3.05 (frame 93; slowest step 0.44, update 2.34, encode 0.40); switch 0.02, first step 0.14
+CPU TIME sweep volcano-rim night Smooth 1264x790 (medians of 240, ms): step 0.25, update 0.72, encode 0.32, frame 1.30; slowest frame 1.90 (frame 259; slowest step 0.48, update 1.14, encode 0.49); switch 0.12, first step 0.36
+CPU TIME sweep volcano-rim day Smooth 1264x790 (medians of 240, ms): step 0.25, update 0.72, encode 0.32, frame 1.31; slowest frame 2.00 (frame 299; slowest step 0.44, update 1.27, encode 0.51); switch 0.08, first step 0.17
+CPU TIME sweep neon-night-drive night Smooth 1264x790 (medians of 240, ms): step 0.25, update 3.59, encode 0.40, frame 4.24; slowest frame 6.39 (frame 93; slowest step 0.44, update 5.52, encode 0.63); switch 0.14, first step 0.39
+CPU TIME sweep neon-night-drive day Smooth 1264x790 (medians of 240, ms): step 0.25, update 3.55, encode 0.39, frame 4.22; slowest frame 6.78 (frame 275; slowest step 1.04, update 5.86, encode 0.87); switch 0.03, first step 0.20
+◇ Test run started.
+↳ Testing Library Version: 124.4
+↳ Target Platform: x86_64-apple-macos14.0
+✔ Test run with 0 tests passed after 0.001 seconds.
+exit 0
