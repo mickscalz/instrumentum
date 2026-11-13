@@ -695,9 +695,13 @@ enum VolcanoRimShaders {
         // and the gullies cut it.
         float holds = smoothstep(0.4, 0.62, vn2(float2(arc * 0.012, Li * 2.3))) * step(0.25, seedL) * (1.0 - gully);
         // Its lit edge thickens and thins along the wall and fades in and out (a broken edge, never a drawn line).
-        float lipW = 0.07 + 0.2 * vn2(float2(arc * 0.021, Li * 4.7));
-        float lip = smoothstep(0.95 - 1.6 * lipW, 0.95 - 0.6 * lipW, f) * (1.0 - smoothstep(0.95, 1.0, f)) * holds
-                  * (0.35 + 0.9 * vn2(float2(arc * 0.035, Li * 1.9 + 6.0)));
+        // (None where nothing holds, or below the lowest the lip reaches (f under 0.95 − 1.6 × 0.27): its noise isn't read.)
+        float lip = 0.0;
+        if (holds > 0.0 && f > 0.518) {
+            float lipW = 0.07 + 0.2 * vn2(float2(arc * 0.021, Li * 4.7));
+            lip = smoothstep(0.95 - 1.6 * lipW, 0.95 - 0.6 * lipW, f) * (1.0 - smoothstep(0.95, 1.0, f)) * holds
+                * (0.35 + 0.9 * vn2(float2(arc * 0.035, Li * 1.9 + 6.0)));
+        }
         float under = (1.0 - smoothstep(0.0, 0.2, f)) * holds;
         // The wall's big relief: buttresses between the gullies, the gullies themselves recessed and shaded.
         float relief = fbm2(float2(arc * 0.025, z * 0.006 + 4.0), oct);
@@ -706,7 +710,7 @@ enum VolcanoRimShaders {
         float lean = (relief - 0.5) * 1.1 + (buttress - 0.5) * 1.6 + gully * side * 1.2;
         float3 N = normalize(inward + tangent * (lean + facet * (1.0 - rubbly) + (blocksR - 0.5) * 0.8 * (1.0 - colonnade))
                              + float3(0, 0, -0.15 + 0.4 * f));
-        N = normalize(mix(N, normalize(inward * 0.35 + float3(0, 0, 1)), lip));
+        if (lip > 0.0) N = normalize(mix(N, normalize(inward * 0.35 + float3(0, 0, 1)), lip));
         if (h.kind == 4) N = normalize(float3(0, 0, 1) + inward * 0.25);
         float grain = vn2(float2(arc * 1.3, z * 1.3)) * 0.5 + vn2(float2(arc * 0.35, z * 0.35)) * 0.5;
         float3 basalt = float3(0.05, 0.047, 0.045) * (0.75 + 0.5 * colSeed) * (0.8 + 0.4 * grain);
@@ -719,12 +723,17 @@ enum VolcanoRimShaders {
         float footZ = h.p.z > u.dims.y + 1.0 ? u.dims.y : u.eye.w;
         float coneR = 25.0 + 45.0 * gseed;
         float cone = step(0.3, gseed) * saturate(1.0 - gd / coneR);
-        float talusH = 8.0 + 10.0 * relief + 6.0 * vn2(float2(arc * 0.05, 1.0)) + (30.0 + 40.0 * gseed) * cone;
-        float talus = h.kind == 3 ? (1.0 - smoothstep(talusH * 0.75, talusH, P.z - footZ)) : 0.0;
-        float blocks = vn2(float2(arc * 0.22, P.z * 0.22)) * 0.6 + 0.4 * vn2(float2(arc * 0.7, P.z * 0.7));
-        basaltC = mix(basaltC, float3(0.058, 0.052, 0.048) * (0.6 + 0.7 * blocks), talus);
-        N = normalize(mix(N, normalize(inward + float3(0, 0, 0.8) + tangent * (0.6 * side * cone)), talus));
-        ao = mix(ao, 0.7 + 0.3 * blocks, talus);
+        // (The talus stands 94 m at most (its noise is 0…1): higher up there is none, and its noise isn't read.)
+        if (h.kind == 3 && P.z - footZ < 94.0) {
+            float talusH = 8.0 + 10.0 * relief + 6.0 * vn2(float2(arc * 0.05, 1.0)) + (30.0 + 40.0 * gseed) * cone;
+            float talus = 1.0 - smoothstep(talusH * 0.75, talusH, P.z - footZ);
+            if (talus > 0.0) {
+                float blocks = vn2(float2(arc * 0.22, P.z * 0.22)) * 0.6 + 0.4 * vn2(float2(arc * 0.7, P.z * 0.7));
+                basaltC = mix(basaltC, float3(0.058, 0.052, 0.048) * (0.6 + 0.7 * blocks), talus);
+                N = normalize(mix(N, normalize(inward + float3(0, 0, 0.8) + tangent * (0.6 * side * cone)), talus));
+                ao = mix(ao, 0.7 + 0.3 * blocks, talus);
+            }
+        }
         if (h.kind == 4) {
             basaltC = float3(0.06, 0.052, 0.048) * (0.5 + 0.8 * vn2(P.xy * 0.15));
             ao = 0.8;
@@ -755,9 +764,11 @@ enum VolcanoRimShaders {
             float debris = smoothstep(0.82, 0.95, vn2(float2(da * 0.25, P.z * 0.18 + pr * 40.0))) * spread * body;
             col += blackbody(1000.0) * (0.4 * debris);
         }
-        // Hot seams in the old walls, here and there low down, livelier with Energy.
-        float seam = smoothstep(0.94, 0.975, vn2(float2(arc * 0.08, lz * 3.2))) * (1.0 - smoothstep(0.0, 50.0, z));
-        col += blackbody(960.0 + 120.0 * u.play.x) * (0.15 * seam);
+        // Hot seams in the old walls, here and there low down, livelier with Energy (none 50 m up: not read there).
+        if (z < 50.0) {
+            float seam = smoothstep(0.94, 0.975, vn2(float2(arc * 0.08, lz * 3.2))) * (1.0 - smoothstep(0.0, 50.0, z));
+            col += blackbody(960.0 + 120.0 * u.play.x) * (0.15 * seam);
+        }
         return col;
     }
 
