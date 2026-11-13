@@ -458,21 +458,34 @@ extension WorldPreviewTests {
         let beach = settings(hour: 13, phase: 0.5, weather: .clear)
         for (name, phase, glow) in [("beach-supercell-approach", 0.12, Float(0)), ("beach-supercell-core", 0.45, Float(0)),
                                     ("beach-supercell-core-flash", 0.47, Float(0.9)),
-                                    ("beach-supercell-clearing", WorldWeather.supercellHeld, Float(0))] {
+                                    ("beach-supercell-clearing", WorldWeather.supercellHeld, Float(0)),
+                                    // Its arrival overhead, between the Approach and the Core (the shelf and base passing over).
+                                    ("beach-supercell-p20", 0.20, Float(0)), ("beach-supercell-p26", 0.26, Float(0)),
+                                    ("beach-supercell-p32", 0.32, Float(0)), ("beach-supercell-p38", 0.38, Float(0))] {
             let image = try XCTUnwrap(preview.render(themeID: GoldenHourBeachModel.id, at: [5], state: held, quality: .high,
                                                      sky: beach, skyEdit: { s in s = R.supercell(s, phase: phase, glow: glow) }).first)
             try PreviewRenderer.writePNG(image, to: url.appendingPathComponent("\(name).png"))
         }
-        // The Approach over the lake by night, flickering; and the Clearing with the stars coming out.
+        // The Approach over the lake by night, flickering; its arrival overhead; and the Clearing with the stars coming out.
         let lakeNight = settings(hour: 23, phase: 0.1, weather: .clear)
-        for (name, phase, glow) in [("lake-supercell-approach-night", 0.12, Float(0.8)), ("lake-supercell-clearing-night", 0.85, Float(0))] {
+        for (name, phase, glow) in [("lake-supercell-approach-night", 0.12, Float(0.8)), ("lake-supercell-clearing-night", 0.85, Float(0)),
+                                    ("lake-supercell-p26-night", 0.26, Float(0.5)), ("lake-supercell-p38-night", 0.38, Float(0.8))] {
             let image = try XCTUnwrap(preview.render(themeID: MoonlitLakeModel.id, at: [5], quality: .high, sky: lakeNight, mood: .serene,
                                                      skyEdit: { s in s = R.supercell(s, phase: phase, glow: glow) }).first)
             try PreviewRenderer.writePNG(image, to: url.appendingPathComponent("\(name).png"))
         }
-        // The real thing, staged by the sky: the beach 3 minutes into a picked supercell (its Approach becoming its Core).
+        // The real thing, staged by the sky: the beach 3 minutes into a picked supercell (its Approach becoming its Core),
+        // and on through its arrival, Core and passing (8 minutes a storm).
         var live = beach; live.weather = .supercell
-        let image = try XCTUnwrap(preview.render(themeID: GoldenHourBeachModel.id, at: [150], state: held, quality: .high, sky: live).first)
-        try PreviewRenderer.writePNG(image, to: url.appendingPathComponent("beach-supercell-live-t150.png"))
+        let liveTimes: [Double] = [100, 150, 200, 250, 300]
+        let liveImages = preview.render(themeID: GoldenHourBeachModel.id, at: liveTimes, state: held, quality: .high, sky: live)
+        XCTAssertEqual(liveImages.count, liveTimes.count)
+        for (t, image) in zip(liveTimes, liveImages) {
+            try PreviewRenderer.writePNG(image, to: url.appendingPathComponent("beach-supercell-live-t\(Int(t)).png"))
+        }
+        // And over the lake by night, as it arrives.
+        var liveLake = lakeNight; liveLake.weather = .supercell
+        let lakeImage = try XCTUnwrap(preview.render(themeID: MoonlitLakeModel.id, at: [150], quality: .high, sky: liveLake, mood: .serene).first)
+        try PreviewRenderer.writePNG(lakeImage, to: url.appendingPathComponent("lake-supercell-live-t150-night.png"))
     }
 }
