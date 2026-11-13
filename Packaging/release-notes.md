@@ -1,3 +1,27 @@
+<!-- title: A real eruption, a natural lava shore, and a clearer storm base -->
+**Install:** click the round-arrows button in the app's top bar (left of Keep); when it turns into an orange **Update**, click it and choose **Install Update**. Your settings, presets and keeps stay as they are. (No app yet on this Mac? Download the **.dmg** below, drag *In Strum Meants* onto *Applications*, then right-click the app → **Open** → **Open**.)
+
+**Three worlds look better in this update:** Volcano Rim, Supercell Sky and Lightning Plains.
+
+**Volcano Rim.**
+- **A real eruption.** A hard chord now throws up a dense lava fountain that glows white-yellow at its base and cools to dark red as the clots rise, arc and splash back into the lake. A boiling pool opens at the vent, and the fountain lights the crater walls and nearby rocks. An ash column boils up above it, lit orange from below, and keeps rising after the fountain dies. Bombs leave bright, cooling trails.
+- **The lava lake's edge** is no longer a line. Lake and floor blend over an uneven, lit-rubble shore.
+- **Magma Veins** are now thin cracks that branch and taper, with a hot thread in the middle cooling to dark edges. The big-moment split no longer washes out the whole view, and the veins draw about twice as fast.
+- **Known gap:** in the busiest frames the veins still read a little like tendrils. It's better than before but not finished.
+
+**Supercell Sky.** The pale band under the cloud base is gone. The base is now a dark cloud the rain hangs from, and it darkens toward the horizon. At night the storm's pulse no longer smears a warm band across it.
+
+**Lightning Plains.** Far storms get a broad veil of lighter rain with two or three heavier shafts inside it, slanted downwind and lit from inside by the flashes. It's subtle in daytime and clearest at dusk.
+
+With **Gentle visuals** on, flashes remain slow glows.
+
+**Things to try:**
+- In **Volcano Rim**, play a big chord and watch the whole eruption, then look at the lake's edge when it's calm.
+- In **Supercell Sky**, pick the storm at dusk and watch the base.
+- In **Lightning Plains** at dusk, look under the far clouds for the rain.
+
+<!-- older -->
+
 <!-- title: Bigger Bay, Coast Road and Reef, and every sound at the same loudness -->
 **Install:** click the round-arrows button in the app's top bar (left of Keep); when it turns into an orange **Update**, click it and choose **Install Update**. Your settings, presets and keeps stay as they are. (No app yet on this Mac? Download the **.dmg** below, drag *In Strum Meants* onto *Applications*, then right-click the app → **Open** → **Open**.)
 
@@ -19,8 +43,6 @@
 - In **Coast Road** by day, play hard and watch the sun's glitter.
 - In the **Great Barrier Reef**, play a big chord and wait for the spawning.
 - Switch between presets and worlds at a steady volume, and tell me if any still jump out.
-
-<!-- older -->
 
 <!-- title: The Supercell weather, and four heavy worlds made lighter -->
 
