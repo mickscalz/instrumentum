@@ -330,31 +330,39 @@ enum NeonNightDriveShaders {
         float cover = cu * cv;
         float col = floor(u / colW), fl = floor(v / floorH);
         float lit;
-        float3 wc;
-        float bright;
         if (glass) {
             float floorLit = hash12(float2(fl * 1.3 + seed, seed * 31.0 + floor(col / 7.0)));
             lit = step(floorLit, litShare * 1.4) * step(hash12(float2(col * 1.7 + seed, fl * 3.1)), 0.88);
-            float tint = hash12(float2(fl * 0.7 + seed, floor(col / 7.0)));
-            wc = h5 < 0.7 ? (tint < 0.6 ? float3(0.74, 0.9, 1.0) : float3(0.95, 0.96, 0.9)) : float3(1.0, 0.84, 0.62);
-            // Desks and partitions break the floor's light up; its ceiling panels are the brightest.
-            bright = (0.48 + 0.5 * hash12(float2(fl, seed))) * (0.3 + 1.2 * hash12(float2(floor(u / 0.9), fl + seed)));
         } else {
             float winLit = hash12(float2(col * 1.7 + seed * 5.0, fl * 3.1 + seed));
             lit = step(winLit, litShare);
-            float temp = hash12(float2(col + seed, fl * 0.37));
-            wc = temp < 0.08 ? float3(0.55, 0.7, 1.0) : mix(float3(1.0, 0.5, 0.18), float3(1.0, 0.72, 0.42), temp);
-            bright = 0.35 + 0.7 * hash12(float2(col * 3.3 + seed, fl));
         }
-        // Under its ceiling a window is brighter (the room's lights), towards its sill darker.
-        float vin = clamp((fract((v + floorH * (1.0 - winH) * 0.5) / floorH) * floorH) / (floorH * winH), 0.0, 1.0);
-        // An office's ceiling panels in rows; below them, the desks' dark shapes against the far wall's light.
-        float panels = glass ? smoothstep(0.84, 0.93, vin) * step(fract(u / 1.2 + seed), 0.55) : 0.0;
-        float desks = glass ? 1.0 - 0.55 * step(vin, 0.32) * step(0.4, hash12(float2(floor(u / 1.6), fl * 1.9 + seed))) : 1.0;
-        float inner = glass ? (0.5 + 0.45 * vin) * desks + 2.2 * panels : 0.7 + 0.55 * vin;
+        // (An unlit window has no light of its own: its tint, its brightness and the room inside aren't worked out. Most
+        // windows.)
+        float3 sharp = float3(0.0);
+        if (lit > 0.0) {
+            float3 wc;
+            float bright;
+            if (glass) {
+                float tint = hash12(float2(fl * 0.7 + seed, floor(col / 7.0)));
+                wc = h5 < 0.7 ? (tint < 0.6 ? float3(0.74, 0.9, 1.0) : float3(0.95, 0.96, 0.9)) : float3(1.0, 0.84, 0.62);
+                // Desks and partitions break the floor's light up; its ceiling panels are the brightest.
+                bright = (0.48 + 0.5 * hash12(float2(fl, seed))) * (0.3 + 1.2 * hash12(float2(floor(u / 0.9), fl + seed)));
+            } else {
+                float temp = hash12(float2(col + seed, fl * 0.37));
+                wc = temp < 0.08 ? float3(0.55, 0.7, 1.0) : mix(float3(1.0, 0.5, 0.18), float3(1.0, 0.72, 0.42), temp);
+                bright = 0.35 + 0.7 * hash12(float2(col * 3.3 + seed, fl));
+            }
+            // Under its ceiling a window is brighter (the room's lights), towards its sill darker.
+            float vin = clamp((fract((v + floorH * (1.0 - winH) * 0.5) / floorH) * floorH) / (floorH * winH), 0.0, 1.0);
+            // An office's ceiling panels in rows; below them, the desks' dark shapes against the far wall's light.
+            float panels = glass ? smoothstep(0.84, 0.93, vin) * step(fract(u / 1.2 + seed), 0.55) : 0.0;
+            float desks = glass ? 1.0 - 0.55 * step(vin, 0.32) * step(0.4, hash12(float2(floor(u / 1.6), fl * 1.9 + seed))) : 1.0;
+            float inner = glass ? (0.5 + 0.45 * vin) * desks + 2.2 * panels : 0.7 + 0.55 * vin;
+            sharp = wc * (lit * bright * inner);
+        }
         // Recessed windows hide behind their reveals when seen at a grazing angle; flush glass mirrors instead.
         float reveal = glass ? 0.35 + 0.65 * smoothstep(0.02, 0.4, cosI) : smoothstep(0.04, 0.45, cosI);
-        float3 sharp = wc * (lit * bright * inner);
         float far = smoothstep(0.45, 1.5, max(fu / colW, fv / floorH));
         float3 avgCol = (glass ? (h5 < 0.7 ? float3(0.78, 0.9, 1.0) : float3(1.0, 0.84, 0.62)) * 0.41 * 1.4
                                : float3(1.0, 0.6, 0.3) * 0.7) * litShare;
@@ -365,20 +373,27 @@ enum NeonNightDriveShaders {
         float3 dayWall = (glass ? float3(0.12, 0.13, 0.15) : float3(0.2, 0.19, 0.18)) * u0.amb.rgb * 8.0;
         float3 nightWall = wall * (u0.haze.rgb * 2.2 + u0.glow.rgb * u0.glow.w * 0.6 * (glass ? up : 0.2) + float3(0.002));
         float3 base = mix(dayWall, nightWall, night) * (1.0 - 0.6 * cover * (1.0 - far));
-        // The street's light washing the lowest floors; a lit crown on some towers.
-        float pools = 0.35 + 0.65 * sq(0.5 + 0.5 * cos(u * 0.157 + seed * 6.0));
-        float wash = exp(-max(v - 3.0, 0.0) / 7.0) * 0.016 * pools * night * (1.0 - near);
+        // The street's light washing the lowest floors (not the rows beside the road: `near` 1); a lit crown on some towers.
+        // (Where either is none its light isn't worked out: the same sum.)
+        float wash = 0.0;
+        if (near < 1.0) {
+            float pools = 0.35 + 0.65 * sq(0.5 + 0.5 * cos(u * 0.157 + seed * 6.0));
+            wash = exp(-max(v - 3.0, 0.0) / 7.0) * 0.016 * pools * night * (1.0 - near);
+        }
         // Tall towers' crowns are washed by uplights: cones of light fanning up from a ledge, brightest at their feet.
         float crownOn = step(0.62, h2) * step(45.0, height) * night * u0.neon.z * (1.0 - 0.6 * near);
+        float3 crown = float3(0.0);
         float cz = v - (height - 9.0);
-        float crownV = step(0.0, cz) * step(v, height) * exp(-max(cz, 0.0) / 5.0);
-        float spacing = 3.2;
-        float across = (fract(u / spacing) - 0.5) * spacing;
-        float spread = 0.35 + 0.22 * max(cz, 0.0);
-        float cone = exp(-across * across / (spread * spread)) * (0.35 / spread + 0.15);
-        float coneAvg = 0.2 + 0.05 * spread;
-        cone = mix(cone, coneAvg, smoothstep(0.5, 1.5, fu / spacing));
-        float3 crown = mix(float3(1.0, 0.72, 0.45), float3(0.65, 0.82, 1.0), step(0.75, h1)) * (0.22 * crownOn * crownV * cone);
+        if (crownOn > 0.0 && cz >= 0.0 && v <= height) {
+            float crownV = step(0.0, cz) * step(v, height) * exp(-max(cz, 0.0) / 5.0);
+            float spacing = 3.2;
+            float across = (fract(u / spacing) - 0.5) * spacing;
+            float spread = 0.35 + 0.22 * max(cz, 0.0);
+            float cone = exp(-across * across / (spread * spread)) * (0.35 / spread + 0.15);
+            float coneAvg = 0.2 + 0.05 * spread;
+            cone = mix(cone, coneAvg, smoothstep(0.5, 1.5, fu / spacing));
+            crown = mix(float3(1.0, 0.72, 0.45), float3(0.65, 0.82, 1.0), step(0.75, h1)) * (0.22 * crownOn * crownV * cone);
+        }
         return base + windowLight * 0.95 + float3(1.0, 0.8, 0.6) * wash + crown;
     }
 
