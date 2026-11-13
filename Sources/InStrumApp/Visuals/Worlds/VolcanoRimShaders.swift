@@ -552,10 +552,14 @@ enum VolcanoRimShaders {
         float grazing = 1.0 - saturate(-d.z);
         float g2 = grazing * grazing;
         float fres = 0.04 + 0.96 * g2 * g2 * grazing;
-        float rough = smoothstep(0.35, 0.75, fbm2(local * 0.35 + float2(2.0, 9.0), oct));
-        float sheen = fres * (0.55 - 0.4 * rough) * smoothstep(-80.0, 150.0, p.y);
         col += albedo * (1.3 * spill + u.glow.rgb * (0.35 * u.plume.x) + u.skyL.rgb);
-        col += u.glow.rgb * float3(0.95, 0.9, 0.85) * (0.32 * sheen * u.plume.x);
+        // (The sheen is none on the near half of the lake (80 m short of its middle): its roughness isn't read there.)
+        float sheenFar = smoothstep(-80.0, 150.0, p.y);
+        if (sheenFar > 0.0) {
+            float rough = smoothstep(0.35, 0.75, fbm2(local * 0.35 + float2(2.0, 9.0), oct));
+            float sheen = fres * (0.55 - 0.4 * rough) * sheenFar;
+            col += u.glow.rgb * float3(0.95, 0.9, 0.85) * (0.32 * sheen * u.plume.x);
+        }
         // Dim hairlines within the plate (some of them glowing: the skin's hotter seams).
         if (oct >= 3 && (skipL & 1024u) == 0u) {
             // (Where the skin's seams are cold there are none to see: the net isn't walked there.)
@@ -589,10 +593,14 @@ enum VolcanoRimShaders {
         float jam = exp(-max(toEdge, 0.0) / 6.0);
         col *= 1.0 - 0.45 * jam;
         float splash = smoothstep(0.72, 0.9, vn2(float2(arc * 0.05, u.a.y * 0.35)) * 0.75 + vn2(float2(arc * 0.3, 2.0)) * 0.35);
-        col += crackGlow(abs(toEdge - 0.6), 0.5 + 1.2 * splash, foot, 1120.0 + 120.0 * splash + 60.0 * u.glow.w) * splash;
+        if (splash > 0.0) {
+            col += crackGlow(abs(toEdge - 0.6), 0.5 + 1.2 * splash, foot, 1120.0 + 120.0 * splash + 60.0 * u.glow.w) * splash;
+        }
         // The breach's new river leaves the lake here: the lake's own crust torn open toward it.
-        float toMouth = length(p - u.riverA.xy);
-        col += blackbody(1240.0 + 80.0 * u.river.z) * (u.river.z * exp(-toMouth / 18.0) * 0.6);
+        if (u.river.z > 0.0) {
+            float toMouth = length(p - u.riverA.xy);
+            col += blackbody(1240.0 + 80.0 * u.river.z) * (u.river.z * exp(-toMouth / 18.0) * 0.6);
+        }
         return col;
     }
 
