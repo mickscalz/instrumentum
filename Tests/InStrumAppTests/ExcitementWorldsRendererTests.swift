@@ -566,5 +566,24 @@ final class ExcitementFrameTimeTests: XCTestCase {
         try time(try T.road(1.6, big(moment), sky: T.sky(hour: 22)).renderer, label: "road beam")
         try time(try T.fjord(2.5, big(T.Plan(energy: 0.8))).renderer, label: "fjord calm")
         try time(try T.fjord(2.5, big(moment)).renderer, label: "fjord surge")
+        // Bioluminescent Bay (13 Nov): at rest, its wave of light 1.2 s in, a manta gliding in.
+        typealias B = ExcitementBayRendererTests
+        try time(try B.bay(1.6, big(T.Plan(energy: 0.8))).renderer, label: "bay calm")
+        try time(try B.bay(2.2, big(moment)).renderer, label: "bay wave")
+        try time(try B.bay(5, big(T.Plan(energy: 0.8, surprises: [10: WorldSurprise(index: 0, seed: 11)]))).renderer, label: "bay manta")
+        // Coast Road by day: at rest, and the sun breaking out with its glitter racing in and the gulls.
+        let day = T.sky(hour: 18.6)
+        var dayCalm = B.roadDay()
+        dayCalm.energy = 0.8
+        try time(try T.road(1.6, big(dayCalm), sky: day).renderer, label: "road day calm")
+        var dayMoment = dayCalm
+        dayMoment.moments = [60: T.chord(1)]
+        try time(try T.road(2.4, big(dayMoment), sky: day).renderer, label: "road day glitter")
+        // Great Barrier Reef: at rest, and 2.5 s into a spawning burst (its second puff, the haze rising).
+        let reef = try PartBRig(.reef, width: 1280, height: 720)
+        reef.run(120, PartBRig.excitement(energy: 0.8))
+        try time(try XCTUnwrap(reef.reefR), label: "reef calm")
+        reef.run(150, PartBRig.excitement(energy: 0.8, moment: PartBRig.chord(1)))
+        try time(try XCTUnwrap(reef.reefR), label: "reef burst")
     }
 }

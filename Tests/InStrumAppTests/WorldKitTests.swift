@@ -2890,6 +2890,17 @@ extension WorldPreviewTests {
                                                      mood: .secretGlow).first)
             try PreviewRenderer.writePNG(image, to: url.appendingPathComponent("\(name).png"))
         }
+        // The sand under heavy cloud by night, a bright moon behind it (13 Nov): as dark as the scene, not white. The
+        // Supercell staged as `testWriteSupercellEverywherePreviews` renders the bay at night, and a plain storm.
+        func moonlit(_ weather: WeatherKind) -> SkySettings {
+            var s = SkySettings(); s.timeMode = .frozen; s.frozenHour = 23; s.frozenPhase = 0.55; s.cityID = "melbourne"
+            s.weatherMode = .pick; s.weather = weather; s.spritesMode = .off; s.satellitesMode = .off
+            return s
+        }
+        let cell = try XCTUnwrap(preview.render(themeID: BioluminescentBayModel.id, at: [150], quality: .high, sky: moonlit(.supercell)).first)
+        try PreviewRenderer.writePNG(cell, to: url.appendingPathComponent("bay-supercell-night-t150.png"))
+        let storm = try XCTUnwrap(preview.render(themeID: BioluminescentBayModel.id, at: [5], quality: .high, sky: moonlit(.storm)).first)
+        try PreviewRenderer.writePNG(storm, to: url.appendingPathComponent("bay-storm-moon.png"))
     }
 }
 
