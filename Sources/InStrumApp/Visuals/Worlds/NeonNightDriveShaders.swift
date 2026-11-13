@@ -1308,6 +1308,9 @@ enum NeonNightDriveShaders {
                 float2 gap = i == 0 ? float2(-24.0, 40.0) : (i == 1 ? float2(-34.0, 52.0)
                            : (i == 2 ? float2(-48.0, 66.0) : float2(0.0, 0.0)));
                 if (lay.x < zMin) continue;
+                // (Higher than its tallest tower's spire (1.17 of its height) and a roof sign over it (34 m at most) a
+                // layer has nothing: it isn't looked at. The sky over the skyline.)
+                if (d.z > 1e-4 && u.road3.y + d.y * (lay.x / d.z) > lay.w * 1.17 * (1.0 + 0.25 * u.play.w) + 24.0) continue;
                 Tower r = downtown(d, lay.x, lay.y, lay.z, lay.w, gap.x, gap.y, float(i), u, pa);
                 if (r.addT < 1e8) add += r.add * exp(-r.addT / max(u.haze.w, 1.0));
                 if (r.t < 1e8) { tHit = r.t; col = r.col; kind = 30; break; }
