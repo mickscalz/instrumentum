@@ -64,6 +64,10 @@ final class LightningPlainsRenderer: ThemeRenderer {
     private let storm, bolts, props: MTLRenderPipelineState
     /// The storm's screen bounds (NDC x0, y0, x1, y1) for its own pass; nil when it is out of view.
     private(set) var stormBox: SIMD4<Float>?
+    /// Passes a timing test skips (0 in the app: everything is drawn), so one run can price each on a slow GPU: 1 the
+    /// scene's sky, canopy, ridge and plain, 2 the storm, 4 the forks and crawlers, 8 the grass, the posts and the props,
+    /// 16 the weather.
+    var skipLayers: UInt32 = 0
     private var plainsU = [SIMD4<Float>](repeating: .zero, count: LightningPlainsRenderer.uniformCount)
     private var segments: [SIMD4<Float>] = []
     private var propInstances: [SIMD4<Float>] = []
@@ -620,8 +624,8 @@ final class LightningPlainsRenderer: ThemeRenderer {
         skyU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
         plainsU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
         sky.bindStars(e)
-        e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
-        if var box = stormBox {
+        if skipLayers & 1 == 0 { e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3) }
+        if var box = stormBox, skipLayers & 2 == 0 {
             e.setRenderPipelineState(storm)
             e.setVertexBytes(&box, length: MemoryLayout<SIMD4<Float>>.stride, index: 0)
             skyU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
@@ -640,13 +644,13 @@ final class LightningPlainsRenderer: ThemeRenderer {
             if propBytes > 0 {
                 propInstances.withUnsafeBytes { (buf.contents() + boltBytes).copyMemory(from: $0.baseAddress!, byteCount: propBytes) }
             }
-            if segmentCount > 0 {
+            if segmentCount > 0, skipLayers & 4 == 0 {
                 e.setRenderPipelineState(bolts)
                 e.setVertexBuffer(buf, offset: 0, index: 0)
                 plainsU.withUnsafeBytes { e.setVertexBytes($0.baseAddress!, length: $0.count, index: 1) }
                 e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6, instanceCount: segmentCount)
             }
-            if propCount > 0 {
+            if propCount > 0, skipLayers & 8 == 0 {
                 e.setRenderPipelineState(props)
                 e.setVertexBuffer(buf, offset: boltBytes, index: 0)
                 plainsU.withUnsafeBytes { e.setVertexBytes($0.baseAddress!, length: $0.count, index: 1) }
@@ -656,7 +660,7 @@ final class LightningPlainsRenderer: ThemeRenderer {
                 e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6, instanceCount: propCount)
             }
         }
-        weather.draw(e)
+        if skipLayers & 16 == 0 { weather.draw(e) }
         e.endEncoding()
     }
 }

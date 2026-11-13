@@ -97,6 +97,17 @@ final class HeavyWorldLayerCostTests: XCTestCase {
         }
     }
 
+    func testPlainsLayerCosts() throws {
+        guard MTLCreateSystemDefaultDevice() != nil else { throw XCTSkip("No Metal device") }
+        let v = Self.variants([("scene", 1), ("storm", 2), ("bolts", 4), ("props", 8), ("weather", 16)], allOff: 31)
+        for q in [QualityLevel.lite, .high] {
+            let ms = try price(world: LightningPlainsModel.id, quality: q, variants: v) { r, m in
+                (r as? LightningPlainsRenderer)?.skipLayers = m
+            }
+            report("plains \(q == .lite ? "Smooth" : "High")", v, ms)
+        }
+    }
+
     func testDriveLayerCosts() throws {
         guard MTLCreateSystemDefaultDevice() != nil else { throw XCTSkip("No Metal device") }
         let v = Self.variants([("road", 1), ("rows", 2), ("downtown", 4), ("street", 8), ("cars", 16), ("lamp-glow", 32),
