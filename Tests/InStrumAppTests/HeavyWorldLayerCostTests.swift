@@ -23,6 +23,10 @@ final class HeavyWorldLayerCostTests: XCTestCase {
         let size = CGSize(width: 1280, height: 720)
         let r = try XCTUnwrap(WorldFrameTimeSweepTests.renderer(themeID: world, seconds: 3, quality: quality, device: device,
                                                                 size: size))
+        // (The quarter-size frames have a renderer of their own: one that keeps targets at the view's size would remake
+        // them at every switch between sizes, and the first frame after it, every round "all", would pay for that.)
+        let rq = try XCTUnwrap(WorldFrameTimeSweepTests.renderer(themeID: world, seconds: 3, quality: quality, device: device,
+                                                                 size: size))
         func stack(_ w: Int, _ h: Int) throws -> (RenderStack, MTLTexture) {
             let s = try XCTUnwrap(RenderStack(device: device, pixelFormat: .bgra8Unorm))
             s.resize(width: w, height: h)
@@ -35,15 +39,16 @@ final class HeavyWorldLayerCostTests: XCTestCase {
         var times = [[Double]](repeating: [], count: variants.count)
         for rep in 0..<14 {
             for (i, v) in variants.enumerated() {
-                apply(r, v.mask)
+                let rv = v.quarter ? rq : r
+                apply(rv, v.mask)
                 let (s, target) = v.quarter ? quarter : full
                 guard let cb = queue.makeCommandBuffer() else { continue }
-                r.render(stack: s, commandBuffer: cb)
+                rv.render(stack: s, commandBuffer: cb)
                 let pass = MTLRenderPassDescriptor()
                 pass.colorAttachments[0].texture = target
                 pass.colorAttachments[0].loadAction = .clear
                 pass.colorAttachments[0].storeAction = .store
-                s.post(into: pass, commandBuffer: cb, settings: r.post)
+                s.post(into: pass, commandBuffer: cb, settings: rv.post)
                 cb.commit()
                 cb.waitUntilCompleted()
                 if rep >= 2 { times[i].append((cb.gpuEndTime - cb.gpuStartTime) * 1000) }
