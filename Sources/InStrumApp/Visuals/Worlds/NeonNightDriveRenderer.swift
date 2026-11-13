@@ -325,7 +325,10 @@ final class NeonNightDriveRenderer: ThemeRenderer {
         // The cabin's outline, so the road never mirrors what the pillars hide from you.
         let glass = WindowSpec.windscreen(aspect: aspect)
         if let w = glass.windscreen {
-            u[Self.rowCabin] = SIMD4(w.dash, w.roof, 0, 0)
+            // (Deep under the dashboard, 0.2 below its lowest point: the glass's most blurred drops look no farther
+            // down than 0.19 past the glass's foot, so nothing drawn there is seen.)
+            let hiddenBelow = w.dash + min(0, w.dashCurve) - 0.2
+            u[Self.rowCabin] = SIMD4(w.dash, w.roof, hiddenBelow + 3, 0)
             u[Self.rowPillars] = SIMD4(w.leftPillar.x, w.leftPillar.y, w.rightPillar.x, w.rightPillar.y)
         }
         screen.update(spec: glass, wipers: frame.wipers, glassRain: frame.glassRain, speed: frame.speed,

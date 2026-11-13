@@ -40,7 +40,8 @@ enum NeonNightDriveShaders {
         float4 cars[24];    // per car: (x centre, ahead, oncoming, brake), (seed 0…1, light bar, body, 0); empty: ahead −1e5
         float4 pal[6];      // the neon now: three palette colours (rgb), then three accents (rgb)
         float4 moon;        // the moon behind the overcast: its direction (east-north-up), how much shows 0…1
-        float4 cabin;       // the windscreen's outline (NDC): the dashboard's line y, the roof's line y, 0, 0
+        float4 cabin;       // the windscreen's outline (NDC): the dashboard's line y, the roof's line y, 3 + the line (NDC
+                            // y) below which the dashboard hides the view and no blur of the glass reaches (0: none), 0
         float4 pillars;     // the left pillar's inner edge x at the dashboard and at the roof, the right pillar's
         float4 carCone[12]; // per car: the direction to its lights (the road's frame), and the cosine within which a ray
                             // passes nearer than its glow reaches (|cos| under it: none of the car; empty 2, always −1)
@@ -1043,6 +1044,14 @@ enum NeonNightDriveShaders {
     fragment ColorDepth drive_scene_fragment(DriveOut in [[stage_in]], constant SkyU& sky [[buffer(0)]],
                                              constant DriveU& u [[buffer(1)]], texture2d<float> stars [[texture(0)]],
                                              texture2d<float> cell [[texture(9)]]) {
+        // Deep under the dashboard (opaque, drawn over the view, and below where the glass's blurred drops look) nothing
+        // of the scene is ever seen: not drawn.
+        if (in.ndc.y < u.cabin.z - 3.0) {
+            ColorDepth hidden;
+            hidden.color = float4(0.0, 0.0, 0.0, 1.0);
+            hidden.depth = float4(0.0, 0, 0, 1);
+            return hidden;
+        }
         float3 dE;
         float3 d = driveRay(in.ndc, sky, u, dE);
         float pa = u.a.w;
@@ -1445,6 +1454,7 @@ enum NeonNightDriveShaders {
     fragment float4 drive_mirror_fragment(DriveOut in [[stage_in]], constant SkyU& sky [[buffer(0)]],
                                           constant DriveU& u [[buffer(1)]], texture2d<float> view [[texture(0)]],
                                           texture2d<float> depth [[texture(1)]]) {
+        if (in.ndc.y < u.cabin.z - 3.2) return float4(0.0);   // (deep under the dashboard, a texel's margin below its cut)
         return driveMirror(in.ndc, in.pos.xy, sky, u, view, depth, false);
     }
 
