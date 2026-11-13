@@ -34,8 +34,8 @@ enum VolcanoRimShaders {
         float4 fireball; // progress 0…1 (< 0 none), start bearing (deg from the view), start altitude (deg), light
         float4 rockfall; // progress (< 0 none), angle round the wall centre (rad), seed, 0
         float4 steam;    // progress (< 0 none), angle round the wall centre (rad), seed, 0
-        float4 sprites;  // −1 (a far storm and its sprites are SkyKit's), the plates' map is whole 0/1, 3 + the line (NDC
-                         // y) below which the keys' columns hide the scene (0: none), layers a timing test skips (0)
+        float4 sprites;  // the plume drawn at half size (1; else drawn here), the plates' map is whole 0/1, 3 + the line
+                         // (NDC y) below which the keys' columns hide the scene (0: none), layers a timing test skips (0)
         float4 tree;     // progress (< 0 none), share along the river, seed, 0
         float4 dims;     // foot radius, bench height, bench radius, top radius (m)
         float4 dims2;    // wall centre (m xy), rim height (m), breach angle (rad)
@@ -1168,7 +1168,8 @@ enum VolcanoRimShaders {
     // ---------------------------------------------------------------- the scene
     fragment ColorDepth volcano_scene_fragment(VolOut in [[stage_in]], constant SkyU& sky [[buffer(0)]],
                                                constant VolcanoU& u [[buffer(1)]], texture2d<float> stars [[texture(0)]],
-                                               texture2d<float> plateMap [[texture(1)]]) {
+                                               texture2d<float> plateMap [[texture(1)]],
+                                               texture2d<float> plumeTex [[texture(2)]]) {
         // Under the keys' white columns, opaque there and drawn over the scene, nothing of it is seen: not drawn.
         if (in.ndc.y < u.sprites.z - 3.0) {
             ColorDepth hidden;
@@ -1238,7 +1239,14 @@ enum VolcanoRimShaders {
         if (tm < tHit && tm > 0.0) {
             float3 P = o + d * tm;
             if ((skip & 32u) == 0u) mid = column(P, u, tm * sky.up.w * u.cam.w, oct);
-            if ((skip & 64u) == 0u) pl = plume(P, u, oct, u.glow.rgb);
+            if ((skip & 64u) == 0u) {
+                if (u.sprites.x > 0.5) {
+                    constexpr sampler ps(filter::linear, address::clamp_to_edge);
+                    pl = plumeTex.sample(ps, float2(0.5 + 0.5 * in.ndc.x, 0.5 - 0.5 * in.ndc.y));
+                } else {
+                    pl = plume(P, u, oct, u.glow.rgb);
+                }
+            }
         }
         // The column stands inside the plume: the gas veils it a little, its light shows through.
         float veil = 1.0 - 0.45 * pl.a;
@@ -1267,6 +1275,24 @@ enum VolcanoRimShaders {
         out.color = float4(max(col, 0.0), 1.0);
         out.depth = float4(depth, 0, 0, 1);
         return out;
+    }
+
+    // ---------------------------------------------------------------- the plume at half size
+    // The plume is soft gas (its finest billows metres across, tens of pixels): drawn into a half-size target wherever the
+    // ray crosses its plane, and read back (filtered) by the scene, which still decides pixel by pixel what stands in
+    // front of it.
+    fragment float4 volcano_plume_fragment(VolOut in [[stage_in]], constant SkyU& sky [[buffer(0)]],
+                                           constant VolcanoU& u [[buffer(1)]]) {
+        float2 ndc = in.ndc - u.cam.xy;
+        int oct = int(u.a.z + 0.5);
+        float3 Dn = sky.forward.xyz + sky.right.xyz * (ndc.x * sky.right.w) + sky.up.xyz * (ndc.y * sky.up.w);
+        float3 dE = normalize(Dn);
+        float3 fwd3 = float3(u.axes.xy, 0.0), right3 = float3(u.axes.zw, 0.0);
+        float3 d = float3(dot(dE, right3), dot(dE, fwd3), dE.z);
+        float3 o = u.eye.xyz;
+        float tm = (0.0 - o.y) / max(d.y, 1e-4);
+        if (tm <= 0.0) return float4(0.0);
+        return plume(o + d * tm, u, oct, u.glow.rgb);
     }
 
     // ---------------------------------------------------------------- embers, blobs, bombs, sparks

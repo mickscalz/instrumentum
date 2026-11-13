@@ -59,6 +59,12 @@ final class VolcanoRimRenderer: ThemeRenderer {
     nonisolated static let plateMapStrips = 16
     private let plateKernel: MTLComputePipelineState?
     private let plateMap: MTLTexture
+    /// The plume drawn at half size (`volcano_plume_fragment`, into `plumeTarget`) and read back by the scene.
+    private let plumeHalf: MTLRenderPipelineState
+    private let device: MTLDevice
+    private var plumeTarget: MTLTexture?
+    /// The plume's targets made so far (tests: one a size, never one a frame).
+    private(set) var plumeAllocations = 0
     private var plateMapWhole = false
     private var plateMapClock: Float = .nan
     private var plateMapStrip = 0
@@ -140,9 +146,16 @@ final class VolcanoRimRenderer: ThemeRenderer {
         md.usage = [.shaderRead, .shaderWrite]
         md.storageMode = .private
         guard let plates = device.makeTexture(descriptor: md) else { return nil }
+        let pd = MTLRenderPipelineDescriptor()
+        pd.vertexFunction = lib.skyFunction("volcano_vertex")
+        pd.fragmentFunction = lib.skyFunction("volcano_plume_fragment")
+        pd.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
+        guard let plumePipe = try? device.makeRenderPipelineState(descriptor: pd) else { return nil }
         sky = s; weather = w; warp = gw; veinsRenderer = mv
         scene = sc; sparks = sp; bolts = bo; columns = co
         plateMap = plates
+        plumeHalf = plumePipe
+        self.device = device
         if let f = lib.skyFunction("volcano_plate_map") {
             plateKernel = try? device.makeComputePipelineState(function: f)
         } else {
@@ -544,17 +557,48 @@ final class VolcanoRimRenderer: ThemeRenderer {
         }
     }
 
+    /// The plume's half-size target for a scene `width` × `height` (made when the size changes, kept).
+    private func plumeTexture(width: Int, height: Int) -> MTLTexture? {
+        let w = max(1, (width + 1) / 2), h = max(1, (height + 1) / 2)
+        if plumeTarget?.width != w || plumeTarget?.height != h {
+            let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: RenderStack.sceneFormat, width: w, height: h, mipmapped: false)
+            d.usage = [.renderTarget, .shaderRead]
+            d.storageMode = .private
+            plumeTarget = device.makeTexture(descriptor: d)
+            plumeAllocations += 1
+        }
+        return plumeTarget
+    }
+
     func render(stack: RenderStack, commandBuffer cb: MTLCommandBuffer) {
         if showingVeins {
             veinsRenderer.render(stack: stack, commandBuffer: cb)
             return
         }
         encodePlateMap(cb)
+        let skyRows = sky.uniforms
+        // The plume first, at half size.
+        var plumeDrawn: MTLTexture?
+        if skipLayers & 64 == 0, let hdr = stack.hdrTarget, let target = plumeTexture(width: hdr.width, height: hdr.height) {
+            let pp = MTLRenderPassDescriptor()
+            pp.colorAttachments[0].texture = target
+            pp.colorAttachments[0].loadAction = .dontCare
+            pp.colorAttachments[0].storeAction = .store
+            if let pe = cb.makeRenderCommandEncoder(descriptor: pp) {
+                pe.setRenderPipelineState(plumeHalf)
+                skyRows.withUnsafeBytes { pe.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
+                volU.withUnsafeBytes { pe.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
+                pe.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+                pe.endEncoding()
+                plumeDrawn = target
+            }
+        }
         guard let pass = stack.scenePass(clear: MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)),
               let e = cb.makeRenderCommandEncoder(descriptor: pass) else { return }
         let skyU = sky.uniforms
         e.setRenderPipelineState(scene.state(storms: sky.storms))
         skyU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
+        volU[Self.rowSprites].x = plumeDrawn == nil ? -1 : 1
         volU[Self.rowSprites].y = plateMapWhole ? 1 : 0
         volU[Self.rowSprites].z = columnInstances.isEmpty || skipLayers & 8192 != 0 ? 0 : keysOpaqueBelow + 3
         volU[Self.rowSprites].w = Float(skipLayers & 0x7FF)
@@ -562,6 +606,7 @@ final class VolcanoRimRenderer: ThemeRenderer {
         volU[Self.rowSprites].w = 0
         sky.bindStars(e)
         e.setFragmentTexture(plateMap, index: 1)
+        e.setFragmentTexture(plumeDrawn ?? plateMap, index: 2)
         e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         if showWarp { warp.draw(e) }
         let row = MemoryLayout<SIMD4<Float>>.stride
