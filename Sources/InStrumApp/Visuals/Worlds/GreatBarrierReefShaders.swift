@@ -903,19 +903,19 @@ enum GreatBarrierReefShaders {
         float2 sq = (p - float2(-0.05, -0.04)) / float2(0.5, 0.3);
         float shell = (1.0 - smoothstep(1.0 - px * 3.0, 1.0 + px * 3.0, length(sq))) * smoothstep(-0.12, -0.09, p.y);
         float head = 1.0 - smoothstep(0.85, 1.0, length((p - float2(0.53, 0.0)) / float2(0.12, 0.08)));
-        float fa = -2.2 + 0.75 * stroke;
+        float fa = -2.55 + 0.55 * stroke;   // swept back and down, rowing
         float2 fd = float2(cos(fa), sin(fa));
         float2 fv = p - float2(0.24, -0.06);
         float along = dot(fv, fd), across = dot(fv, float2(-fd.y, fd.x));
         float ft = saturate(along / 0.56);
-        float fw = 0.016 + 0.085 * sin(3.14159265 * min(1.0, ft * 1.1)) * (1.0 - 0.35 * ft);   // a long paddle, broad mid-way
+        float fw = 0.02 + 0.12 * sin(3.14159265 * min(1.0, ft * 1.05)) * (1.0 - 0.3 * ft);   // a long paddle, broad mid-way
         float fore = (along > 0.0 && along < 0.56) ? 1.0 - smoothstep(fw - px, fw + px, abs(across)) : 0.0;
         float2 hv = p - float2(-0.5, -0.08);
         float2 hr = float2(hv.x * 0.95 - hv.y * 0.3, hv.x * 0.3 + hv.y * 0.95);
         float hind = 1.0 - smoothstep(0.85, 1.0, length(hr / float2(0.13, 0.04)));
         // The shell's plates: a row along the top and a row below it, each with light seams and rays from its middle.
         float row = sq.y > 0.35 ? 0.0 : 1.0;
-        float cx = sq.x * (row > 0.5 ? 2.2 : 2.6) + row * 0.5;
+        float cx = sq.x * (row > 0.5 ? 2.2 : 2.6) + row * 0.5 + 0.12 * sin(sq.y * 7.0 + row * 2.0);
         float plate = fract(cx);
         float seam = smoothstep(0.42, 0.49, abs(plate - 0.5)) + smoothstep(0.03, 0.0, abs(sq.y - 0.35));
         float rays = 0.5 + 0.5 * sin(atan2(sq.y - 0.35 + 0.2 * row, plate - 0.5) * 7.0);

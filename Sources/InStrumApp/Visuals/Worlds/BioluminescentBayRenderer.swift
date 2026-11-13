@@ -399,8 +399,8 @@ final class BioluminescentBayRenderer: ThemeRenderer {
                 let out = out0 + (out1 - out0) * k
                 let across0 = -way * (0.5 + 1.5 * sp.unit(2)), across1 = way * (0.5 + 1.5 * sp.unit(3))
                 let across = across0 + (across1 - across0) * k
-                // Its heading in its shape's own (stretched) frame.
-                let heading = atan2((out1 - out0) / Self.mantaStretch, across1 - across0)
+                // Facing the shore (its wings spread across the view), turned a little the way it drifts.
+                let heading: Float = -.pi / 2 + 0.12 * way
                 bayU[14] = SIMD4(across, out, heading, env)
                 let beat = (sp.age / 3.4).truncatingRemainder(dividingBy: 1)
                 bayU[15] = SIMD4(Self.mantaSpan, beat, dark * sparkleScale * (gentle ? 1.2 : 1), Self.mantaStretch)

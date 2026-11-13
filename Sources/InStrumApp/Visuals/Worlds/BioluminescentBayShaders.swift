@@ -379,12 +379,11 @@ enum BioluminescentBayShaders {
     float bayMantaMargin(float2 p, float beat) {
         float spanK = 0.9 + 0.1 * cos(6.2831853 * beat);   // the tips lift and fall: seen from above, the span breathes
         float ax = abs(p.y) / spanK;
-        float m = -1.0;
-        if (ax < 1.0) {
-            float lead = 0.42 - 0.7 * ax * sqrt(ax);
-            float trail = -0.3 + 0.25 * sin(3.14159265 * sqrt(ax) * ax) - 0.04 * ax;
-            m = min(lead - p.x, p.x - trail);
-        }
+        // Continuous past the wingtips (the margin runs on outside them), so its glow has no edge there.
+        float axc = min(ax, 1.0);
+        float lead = 0.42 - 0.7 * axc * sqrt(axc);
+        float trail = -0.3 + 0.25 * sin(3.14159265 * sqrt(axc) * axc) - 0.04 * axc;
+        float m = min(min(lead - p.x, p.x - trail), (1.0 - ax) * spanK);
         float2 h1 = (p - float2(0.46, 0.08)) / float2(0.08, 0.03), h2 = (p - float2(0.46, -0.08)) / float2(0.08, 0.03);
         m = max(m, 0.03 * (1.0 - min(length(h1), length(h2))));
         float tail = (p.x < -0.25 && p.x > -0.95) ? 0.012 - abs(p.y) : -1.0;
@@ -408,7 +407,8 @@ enum BioluminescentBayShaders {
             float blobs = smoothstep(0.3, 0.8, vnoise3(float3(q.x * 0.09, f * 0.05, 1.3 * sin(o.phases.y) + 0.8 * cos(o.phases.x))));
             float motes = vnoise3(float3(q.x * 0.35, f * 0.18, 2.0 + 1.1 * sin(o.phases.z)));
             float breathe = 0.85 + 0.15 * sin(o.phases.x * 2.0);
-            g += float3(0.03, 0.36, 0.55) * (gather * region * exp(-ang * ang / 0.3) * (0.12 + 0.88 * blobs) * (0.6 + 0.6 * motes) * breathe * 0.65);
+            float mottled = (0.06 + 0.94 * blobs) * (0.35 + 0.95 * smoothstep(0.3, 0.75, motes));
+            g += float3(0.03, 0.36, 0.55) * (gather * region * exp(-ang * ang / 0.3) * mottled * breathe * 0.75);
         }
         // The wave of light: a band running in from the mouth (its middle ahead, an arc), broken into patches of plankton,
         // brightest along its crest, the water behind it still lit and fading.
@@ -449,7 +449,7 @@ enum BioluminescentBayShaders {
             float2 dq = (q - b.manta.xy) * float2(1.0, 1.0 / max(b.mantaB.w, 1.0));
             float2 fw = float2(cos(b.manta.z), sin(b.manta.z));
             float2 p = float2(dot(dq, fw), dot(dq, float2(-fw.y, fw.x))) / halfSpan;
-            if (abs(p.x) < 6.0 && abs(p.y) < 1.6) {
+            if (abs(p.x) < 6.0 && abs(p.y) < 2.2) {
                 float beat = b.mantaB.y;
                 float m = bayMantaMargin(p, beat);
                 float w = max(0.035, 0.8 * footprint / halfSpan);
@@ -515,7 +515,10 @@ enum BioluminescentBayShaders {
         float hx = xc - b.turtle.x - b.turtleB.y * 0.78;
         float2 hd = float2(hx / 0.13, (z - 0.06 - 0.17 * up) / 0.085);
         float head = f > T ? (1.0 - smoothstep(0.8, 1.0, length(hd))) : 0.0;
-        float neck = f > T ? step(abs(xc - b.turtle.x - b.turtleB.y * 0.62), 0.09) * step(z, 0.06 + 0.15 * up) : 0.0;
+        float2 na = float2(b.turtle.x + b.turtleB.y * 0.5, 0.03), nb = float2(b.turtle.x + b.turtleB.y * 0.74, 0.05 + 0.15 * up);
+        float2 npa = float2(xc, z) - na, nba = nb - na;
+        float nd = length(npa - nba * saturate(dot(npa, nba) / max(dot(nba, nba), 1e-6)));
+        float neck = f > T ? 1.0 - smoothstep(0.05 - pxm, 0.05 + pxm, nd) : 0.0;
         head = max(head, neck * up);
         return max(max(shell, foot), head) * cover;
     }
