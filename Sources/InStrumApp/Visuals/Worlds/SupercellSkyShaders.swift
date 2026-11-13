@@ -380,8 +380,11 @@ enum SupercellSkyShaders {
     /// The flanking line: cumulus towers stepping down to the right of the updraft, feeding it (spheroids standing on
     /// the base's level, billowed and lit as the tower is). `which` 0 is the nearest tower the ray meets, 1 the one
     /// behind it (so the front one's ragged edge shows the next, not the sky).
-    Layer flankingLine(float3 o, float3 d, float3 flash, constant CellU& u, int octaves, int which, thread float& tHit) {
-        Layer L; L.a = 0.0; L.c = float3(0); tHit = 1e9;
+    /// Where the ray meets the flanking line's towers: the nearest (`best`, how far inside its outline the ray passes,
+    /// its centre and radii) and the one behind it (`second`, …); 1e9 for none.
+    struct FlankHits { float best, bestInside, second, secondInside; float3 bestCentre, bestRadii, secondCentre, secondRadii; };
+
+    FlankHits flankHits(float3 o, float3 d, constant CellU& u) {
         float2 C = u.place.xy;
         float hb = u.dims.x, Rb = u.dims.y;
         float best = 1e9, bestInside = -1e3, second = 1e9, secondInside = -1e3;
@@ -406,7 +409,21 @@ enum SupercellSkyShaders {
                 second = t; secondInside = inside; secondCentre = centre; secondRadii = radii;
             }
         }
-        if (which == 1) { best = second; bestInside = secondInside; bestCentre = secondCentre; bestRadii = secondRadii; }
+        FlankHits fh;
+        fh.best = best; fh.bestInside = bestInside; fh.bestCentre = bestCentre; fh.bestRadii = bestRadii;
+        fh.second = second; fh.secondInside = secondInside; fh.secondCentre = secondCentre; fh.secondRadii = secondRadii;
+        return fh;
+    }
+
+    /// One of the flanking line's towers (`which` 0 the nearest the ray meets, 1 the one behind it), from its hits.
+    Layer flankingLine(float3 o, float3 d, float3 flash, constant CellU& u, int octaves, FlankHits fh, int which,
+                       thread float& tHit) {
+        Layer L; L.a = 0.0; L.c = float3(0); tHit = 1e9;
+        float hb = u.dims.x;
+        float best = which == 1 ? fh.second : fh.best;
+        float bestInside = which == 1 ? fh.secondInside : fh.bestInside;
+        float3 bestCentre = which == 1 ? fh.secondCentre : fh.bestCentre;
+        float3 bestRadii = which == 1 ? fh.secondRadii : fh.bestRadii;
         if (best > 1e8) return L;
         float3 P = o + d * best;
         float2 pr = rot2(P.xy - u.place.xy, -0.3 * u.spin.x);
@@ -1106,11 +1123,14 @@ enum SupercellSkyShaders {
         if (dE.z >= -0.01) {
             // The heaviest first, while few of the others are held (fewer registers live through their noise).
             if ((skip & 1u) == 0u) L7 = tower(o, d, flash, u, octaves, t7);
-            if ((skip & 2u) == 0u) L8 = flankingLine(o, d, flash, u, octaves, 0, t8);
-            // The tower behind it, where the nearest lets light through (its frayed edge shows the next tower, not the
-            // sky: on Smooth without it, the nearest one's outline cut the one behind with a hard curved edge). Behind
-            // more than 99.6% cover it would add nothing (the walk front to back stops there), so it isn't read.
-            if ((skip & 2u) == 0u && L8.a <= 0.996) L9 = flankingLine(o, d, flash, u, octaves, 1, t9);
+            if ((skip & 2u) == 0u) {
+                FlankHits fh = flankHits(o, d, u);
+                L8 = flankingLine(o, d, flash, u, octaves, fh, 0, t8);
+                // The tower behind it, where the nearest lets light through (its frayed edge shows the next tower, not
+                // the sky: on Smooth without it, the nearest one's outline cut the one behind with a hard curved edge).
+                // Behind more than 99.6% cover it would add nothing (the walk front to back stops there): not read.
+                if (L8.a <= 0.996 && fh.second < 1e8) L9 = flankingLine(o, d, flash, u, octaves, fh, 1, t9);
+            }
             if ((skip & 4u) == 0u) L10 = anvil(o, d, flash, u, octaves, t10);
             anvilCover = L10.a;
             if ((skip & 8u) == 0u) L3 = wallCloud(o, d, flash, u, octaves, t3);
