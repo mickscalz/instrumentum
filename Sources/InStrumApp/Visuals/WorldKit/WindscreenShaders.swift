@@ -76,15 +76,28 @@ enum WindscreenShaders {
     }
 
     /// Where a point lies in a blade's sweep: (0…1 through it, or < 0 outside it) and its radius (NDC y units).
-    float2 bladePlace(float2 q, float4 blade, constant ScreenU& u) {
-        float2 rel = q - blade.xy;
-        float r = length(rel);
-        if (r < blade.z || r > blade.w) return float2(-1.0, r);
-        float ang = atan2(rel.y, rel.x);
+    float2 sweepPlace(float ang, float r, constant ScreenU& u) {
         float rest = u.sweep.x, sweep = u.sweep.y;
         float f = (ang - rest) / sweep;
         if (f < -0.02 || f > 1.02) return float2(-1.0, r);
         return float2(clamp(f, 0.0, 1.0), r);
+    }
+    float2 bladePlace(float2 q, float4 blade, constant ScreenU& u) {
+        float2 rel = q - blade.xy;
+        float r = length(rel);
+        if (r < blade.z || r > blade.w) return float2(-1.0, r);
+        return sweepPlace(atan2(rel.y, rel.x), r, u);
+    }
+    /// A pixel's place round a blade's pivot (radius, angle), worked out once for both the film's and the blade's
+    /// tests (the angle only within the blade's reach, where either reads it).
+    float2 bladePolar(float2 q, float4 blade) {
+        float2 rel = q - blade.xy;
+        float r = length(rel);
+        return float2(r, (r >= blade.z * 0.3 && r <= blade.w + 0.01) ? atan2(rel.y, rel.x) : 0.0);
+    }
+    float2 bladePlaceAt(float2 pol, float4 blade, constant ScreenU& u) {
+        if (pol.x < blade.z || pol.x > blade.w) return float2(-1.0, pol.x);
+        return sweepPlace(pol.y, pol.x, u);
     }
 
     /// Seconds since the glass at `q` (aspect units) was last wiped, by either blade.
@@ -96,13 +109,21 @@ enum WindscreenShaders {
         if (b.x >= 0.0) since = min(since, sinceWiped(b.x, u));
         return since;
     }
+    /// The same from a pixel's places round the two pivots (`bladePolar`).
+    float wipedAgoAt(float2 polA, float2 polB, constant ScreenU& u) {
+        float since = 1000.0;
+        float2 a = bladePlaceAt(polA, u.bladeA, u);
+        if (a.x >= 0.0) since = min(since, sinceWiped(a.x, u));
+        float2 b = bladePlaceAt(polB, u.bladeB, u);
+        if (b.x >= 0.0) since = min(since, sinceWiped(b.x, u));
+        return since;
+    }
 
     /// The blades: dark rubber on a thin arm, smeared across the arc they swept in the last frame.
-    float bladeCover(float2 q, float4 blade, constant ScreenU& u, float px) {
-        float2 rel = q - blade.xy;
-        float r = length(rel);
+    float bladeCover(float2 pol, float4 blade, constant ScreenU& u, float px) {
+        float r = pol.x;
         if (r < blade.z * 0.3 || r > blade.w + 0.01) return 0.0;
-        float ang = atan2(rel.y, rel.x);
+        float ang = pol.y;
         float now = u.sweep.x + u.sweep.y * u.sweep.z;
         float was = u.sweep.x + u.sweep.y * u.sweep.w;
         float lo = min(now, was), hi = max(now, was);
@@ -128,6 +149,14 @@ enum WindscreenShaders {
         float r = rmax * (0.35 + 0.65 * h3 * h3);
         float margin = r / cell;
         float2 centre = (c + float2(margin + (1.0 - 2.0 * margin) * h1, margin + (1.0 - 2.0 * margin) * h2)) * cell;
+        // Not quite round: the wind of the car's speed flattens and leans each a little.
+        float2 rel = q - centre;
+        float lean = (h1 - 0.5) * 0.5;
+        rel = float2(rel.x - rel.y * lean * 0.3, rel.y * (1.0 + 0.25 * h2));
+        // (Outside the drop at its full size, a pixel is outside it at any size it has grown to: when it landed isn't
+        // worked out. Most of a drop's cell.)
+        float2 full = rel / r;
+        if (dot(full, full) >= 1.0) return float3(0);
         // Has it landed since its place was last wiped (and not while sheltered)?
         float since = wipedAgo(centre, u);
         float delay = fract(h0 * 7.13 + h2) * fill;
@@ -137,10 +166,6 @@ enum WindscreenShaders {
         // A new drop swells to its size over its first second.
         float grow = min(1.0, 0.55 + landed);
         r *= grow;
-        // Not quite round: the wind of the car's speed flattens and leans each a little.
-        float2 rel = q - centre;
-        float lean = (h1 - 0.5) * 0.5;
-        rel = float2(rel.x - rel.y * lean * 0.3, rel.y * (1.0 + 0.25 * h2));
         float2 off = rel / r;
         if (dot(off, off) >= 1.0) return float3(0);
         return float3(off, r);
@@ -183,7 +208,9 @@ enum WindscreenShaders {
         constexpr sampler s(filter::linear, mip_filter::linear, address::clamp_to_edge);
         float2 p = in.ndc;
         float inside = glassInside(p, u);
-        if (inside < -0.01) return float4(0);
+        // (Where the glass adds nothing (blended over: the same frame) the pixel is let go, so the view there isn't read
+        // and written back: off the glass, and on it between the drops.)
+        if (inside < -0.01) { discard_fragment(); return float4(0); }
         float aspect = u.a.x;
         float2 q = float2(p.x * aspect, p.y);
         float2 uv = float2(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5);
@@ -195,7 +222,9 @@ enum WindscreenShaders {
         // Composed back to front, premultiplied: the film a blade leaves, the drops, the blades.
         float3 C = float3(0);
         float A = 0.0;
-        float since = wipedAgo(q, u);
+        // (Each pivot's radius and angle once, for the film's test and the blade's.)
+        float2 polA = bladePolar(q, u.bladeA), polB = bladePolar(q, u.bladeB);
+        float since = wipedAgoAt(polA, polB, u);
         float film = exp(-since / 0.18) * step(since, 0.9) * min(1.0, rain * 3.0);
         if (film > 0.003) {
             float streak = 0.6 + 0.4 * sh12(float2(floor(length(q - u.bladeA.xy) * 260.0), 1.0));
@@ -229,7 +258,7 @@ enum WindscreenShaders {
             A = ad + A * (1.0 - ad);
         }
         // The blades.
-        float blade = max(bladeCover(q, u.bladeA, u, px), bladeCover(q, u.bladeB, u, px));
+        float blade = max(bladeCover(polA, u.bladeA, u, px), bladeCover(polB, u.bladeB, u, px));
         if (blade > 0.0) {
             float3 rubber = float3(0.006, 0.006, 0.007) + u.light.rgb * 0.05;
             C = rubber * blade + C * (1.0 - blade);
@@ -253,6 +282,7 @@ enum WindscreenShaders {
                 C += kr * (0.12 * exp(-max(above, 0.0) / 0.05) * smoothstep(-0.04, 0.0, above));
             }
         }
+        if (A == 0.0 && C.x == 0.0 && C.y == 0.0 && C.z == 0.0) discard_fragment();
         return float4(C, A);
     }
 

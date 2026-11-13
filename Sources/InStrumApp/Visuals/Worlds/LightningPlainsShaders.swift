@@ -540,12 +540,14 @@ enum LightningPlainsShaders {
         return o;
     }
 
-    fragment ColorDepth plains_storm_fragment(PlainsOut in [[stage_in]], constant SkyU& u [[buffer(0)]],
-                                              constant PlainsU& p [[buffer(1)]]) {
-        float2 ndc = in.ndc - p.shake.xy;
+    /// The storm and its rain at a pixel (`ndcIn`, before the shake), premultiplied; `ridgeOver` false leaves out the
+    /// nearer ridge's cut (the reduced-resolution pass: the full-resolution one that adds it in cuts it, so the ridge's
+    /// outline stays sharp).
+    float4 pl_stormOver(float2 ndcIn, constant SkyU& u, constant PlainsU& p, bool ridgeOver) {
+        float2 ndc = ndcIn - p.shake.xy;
         float3 d = pl_ray(ndc, u);
         float alt = toDeg(asin(clamp(d.z, -1.0, 1.0)));
-        if (alt <= -0.5) discard_fragment();
+        if (alt <= -0.5) return float4(0.0);
         float th = pl_wrap(toDeg(atan2(d.x, d.y)) - p.storm.x);
         int octaves = int(p.frame.w + 0.5);
         float time = p.frame.y;
@@ -561,8 +563,41 @@ enum LightningPlainsShaders {
             shaft = min(0.9, 2.0 * shaft);
             o = float4(rain * shaft, shaft) + o * (1.0 - shaft);
         }
-        if (p.ridge.w < p.shake.w) o *= 1.0 - pl_ridge(th, alt, p);
+        if (ridgeOver && p.ridge.w < p.shake.w) o *= 1.0 - pl_ridge(th, alt, p);
         if (d.z < 0.0) o *= 1.0 - exp(-p.view.x / max(-d.z, 1e-5) / 1400.0);
+        return o;
+    }
+
+    fragment ColorDepth plains_storm_fragment(PlainsOut in [[stage_in]], constant SkyU& u [[buffer(0)]],
+                                              constant PlainsU& p [[buffer(1)]]) {
+        float4 o = pl_stormOver(in.ndc, u, p, true);
+        if (o.a <= 0.001) discard_fragment();
+        ColorDepth out;
+        out.color = o;
+        out.depth = float4(1.0, 0, 0, 1);
+        return out;
+    }
+
+    // The storm at a reduced resolution (half the view's size on Smooth, 0.7 of it on High): soft cloud and rain, drawn
+    // into a target of their own over the storm's bounds, and added in at full resolution over them, where the nearer
+    // ridge cuts it pixel by pixel.
+    fragment float4 plains_storm_half_fragment(PlainsOut in [[stage_in]], constant SkyU& u [[buffer(0)]],
+                                               constant PlainsU& p [[buffer(1)]]) {
+        return pl_stormOver(in.ndc, u, p, false);
+    }
+
+    fragment ColorDepth plains_storm_compose_fragment(PlainsOut in [[stage_in]], constant SkyU& u [[buffer(0)]],
+                                                      constant PlainsU& p [[buffer(1)]], texture2d<float> stormTex [[texture(0)]]) {
+        constexpr sampler s(filter::linear, address::clamp_to_edge);
+        float2 uv = float2(in.ndc.x * 0.5 + 0.5, 0.5 - in.ndc.y * 0.5);
+        float4 o = stormTex.sample(s, uv);
+        if (o.a > 0.001 && p.ridge.w < p.shake.w) {
+            float2 ndc = in.ndc - p.shake.xy;
+            float3 d = pl_ray(ndc, u);
+            float alt = toDeg(asin(clamp(d.z, -1.0, 1.0)));
+            float th = pl_wrap(toDeg(atan2(d.x, d.y)) - p.storm.x);
+            o *= 1.0 - pl_ridge(th, alt, p);
+        }
         if (o.a <= 0.001) discard_fragment();
         ColorDepth out;
         out.color = o;
@@ -664,8 +699,10 @@ enum LightningPlainsShaders {
         float X = t * dot(ray.xy, p.ahead.zw);
         float Y = p.view.x + t * ray.z;
         float H = b.z;
-        if (Y < -0.05 || Y > 1.5 * H + 0.05) return float4(0.0);
         float aa = max(t * p.view.y, 1e-4);           // a pixel's size there (m)
+        // (Nothing of the row stands higher than its tallest blade, 1.1875 H, or its tussocks' top, 0.61 H, and half a
+        // pixel: above that nothing is drawn, so nothing is worked out.)
+        if (Y < -0.05 || Y > max(1.1875 * H, 0.61 * H + 0.5 * aa) + 0.02) return float4(0.0);
         float sx = saturate(ndc.x * 0.5 + 0.5) * 3.0;
         int i0 = min(int(sx), 2);
         float f = sx - float(i0);
@@ -680,10 +717,15 @@ enum LightningPlainsShaders {
         float lean0 = clamp(wind / 16.0 * (0.7 + 0.6 * wave) + sway, -0.75, 0.75);
         // The tussocks' rolling, ragged top.
         float sb = max(d.x, 1e-3);
-        float roll = pl_noise1(X / 0.9, b.w) * 0.65 + pl_noise1(X / 0.23, b.w + 7.7) * 0.35;
-        float rag = pl_noise1(X / (0.8 * sb), b.w + 3.3);
-        float g = H * (0.42 + 0.14 * roll + 0.1 * (rag - 0.5));
-        float body = saturate((g - Y) / aa + 0.5);
+        // (Their top stands 0.61 H at most: higher up, where only the blades reach, there is no body there, and every test
+        // below against the top falls the same way whatever it is: its noise isn't read.)
+        float rag = 0.0, g = 0.62 * H, body = 0.0;
+        if (Y <= 0.62 * H + 0.5 * aa) {
+            float roll = pl_noise1(X / 0.9, b.w) * 0.65 + pl_noise1(X / 0.23, b.w + 7.7) * 0.35;
+            rag = pl_noise1(X / (0.8 * sb), b.w + 3.3);
+            g = H * (0.42 + 0.14 * roll + 0.1 * (rag - 0.5));
+            body = saturate((g - Y) / aa + 0.5);
+        }
         // Blades and stalks out of it, tapering, bowed by the wind.
         float jitter = min(0.12, sb / (0.75 * H));
         float bow = 0.75 * lean0 * Y * Y / (0.8 * H);

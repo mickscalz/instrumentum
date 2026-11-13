@@ -34,14 +34,15 @@ enum VolcanoRimShaders {
         float4 fireball; // progress 0…1 (< 0 none), start bearing (deg from the view), start altitude (deg), light
         float4 rockfall; // progress (< 0 none), angle round the wall centre (rad), seed, 0
         float4 steam;    // progress (< 0 none), angle round the wall centre (rad), seed, 0
-        float4 sprites;  // unused (a far storm and its sprites are SkyKit's): −1, 0, 0, layers a timing test skips (0)
+        float4 sprites;  // the plume drawn at half size (1; else drawn here), the plates' map is whole 0/1, 3 + the line
+                         // (NDC y) below which the keys' columns hide the scene (0: none), layers a timing test skips (0)
         float4 tree;     // progress (< 0 none), share along the river, seed, 0
         float4 dims;     // foot radius, bench height, bench radius, top radius (m)
         float4 dims2;    // wall centre (m xy), rim height (m), breach angle (rad)
         float4 dims3;    // breach halfW-width (rad), fountain pool scale, foreground top (NDC), keys shown 0/1
         float4 riverA;   // river start (m xy), river end (m xy)
-        float4 cellA[64];  // crust seeds: place (m xy), a note's glow, young heat
-        float4 cellB[64];  // birth 0…1, the twin it split from (index; −1 none), its plate's weight (m²), 0
+        float4 cellA[64];  // crust seeds: place (m xy), its plate's weight (m²), young heat (all the plates' search reads)
+        float4 cellB[64];  // birth 0…1, the twin it split from (index; −1 none), a note's glow, 0
     };
     struct VolOut { float4 pos [[position]]; float2 ndc; };
 
@@ -154,7 +155,8 @@ enum VolcanoRimShaders {
     }
 
     // ---------------------------------------------------------------- the crater's shape
-    struct Hit { int kind; float t; float3 p; float theta; };   // kind: 0 beyond, 1 lake, 2 floor, 3 cliff, 4 bench
+    struct Hit { int kind; float t; float3 p; float theta; float edge; };   // kind: 0 beyond, 1 lake, 2 floor, 3 cliff, 4 bench;
+                                                                            // edge: the lake's edge toward p (lake, floor)
 
     /// The far side of a vertical cylinder of radius R round C, seen from inside it (or 1e9).
     float cylinderFar(float3 o, float3 d, float2 C, float R) {
@@ -172,7 +174,11 @@ enum VolcanoRimShaders {
     /// sloping and broken (a gap torn in the wall, never a sawn slot).
     float notchCut(float theta, constant VolcanoU& u) {
         float hw = u.dims3.x;
-        float off = abs(theta - u.dims2.w) + hw * 0.35 * (vn2(float2(theta * 120.0, 2.0)) - 0.5);
+        float away = abs(theta - u.dims2.w);
+        // (Its sides wander 0.175 × the half-width at most (the noise is 0…1): farther round the wall stands whole whatever
+        // the noise, so none is read there.)
+        if (away >= hw * 1.6) return 1.0;
+        float off = away + hw * 0.35 * (vn2(float2(theta * 120.0, 2.0)) - 0.5);
         return smoothstep(hw * 0.45, hw * 1.4, off);
     }
 
@@ -203,17 +209,19 @@ enum VolcanoRimShaders {
         float b5 = a + 2.05; b5 -= 6.2831853 * floor((b5 + 3.14159265) / 6.2831853);
         e += 60.0 * exp(-b1 * b1 / 0.06) + 40.0 * exp(-b2 * b2 / 0.03) + 35.0 * exp(-b4 * b4 / 0.05);
         // The ledge: a tongue of crust from the right shore, narrow and blunt-ended; a spit of old spatter near the left.
-        e -= 95.0 * exp(-b3 * b3 / 0.01) * (0.8 + 0.4 * vn2(float2(arc * 0.05, 3.0)));
+        // (Each shelf's noise is read only within its reach: farther round it takes off under 2e-7 m, which an edge of
+        // a few hundred metres doesn't hold in a float, so the edge is the same.)
+        if (b3 * b3 < 0.2) e -= 95.0 * exp(-b3 * b3 / 0.01) * (0.8 + 0.4 * vn2(float2(arc * 0.05, 3.0)));
         e -= 50.0 * exp(-b5 * b5 / 0.02);
         // A second, broader shelf of crust from the far shore, its end ragged.
         float b6 = a - 1.72; b6 -= 6.2831853 * floor((b6 + 3.14159265) / 6.2831853);
-        e -= 75.0 * exp(-b6 * b6 / 0.018) * (0.75 + 0.5 * vn2(float2(arc * 0.06, 9.0)));
+        if (b6 * b6 < 0.36) e -= 75.0 * exp(-b6 * b6 / 0.018) * (0.75 + 0.5 * vn2(float2(arc * 0.06, 9.0)));
         return e;
     }
 
     Hit craterHit(float3 o, float3 d, constant VolcanoU& u) {
         Hit h;
-        h.kind = 0; h.t = 1e9; h.p = o + d * 1e4; h.theta = 0.0;
+        h.kind = 0; h.t = 1e9; h.p = o + d * 1e4; h.theta = 0.0; h.edge = 0.0;
         float2 C = u.dims2.xy;
         float rimH = u.dims2.z;
         float lakeZ = u.eye.w;
@@ -223,20 +231,30 @@ enum VolcanoRimShaders {
             float3 p = o + d * t;
             float r = length(p.xy - C);
             float2 qf = p.xy - C;
-            bool inNotch = r < 0.5 * (u.dims.z + u.dims.w) + 4.0 && notchCut(atan2(qf.x, qf.y), u) < 0.999;
-            if (r < u.dims.x || inNotch) {
-                h.kind = length(p.xy) < lakeEdge(p.xy, u) ? 1 : 2;
+            if (r < u.dims.x || (r < 0.5 * (u.dims.z + u.dims.w) + 4.0 && notchCut(atan2(qf.x, qf.y), u) < 0.999)) {
+                h.edge = lakeEdge(p.xy, u);   // (read once: the lake's margin and the floor's shore use it too)
+                h.kind = length(p.xy) < h.edge ? 1 : 2;
                 h.t = t; h.p = p;
             }
         }
         // The cliff above the floor (its top ragged, cut by the notch).
         float tA = cylinderFar(o, d, C, u.dims.x);
+        // (Above the lip's highest reach, or below the lake, there is no cliff whatever the notch: its angle isn't
+        // worked out there.)
         if (tA < h.t) {
             float3 p = o + d * tA;
-            float2 q = p.xy - C;
-            float th = atan2(q.x, q.y);
-            float top = (u.dims.y + lipRag(th, 1.0)) * notchCut(th, u);
-            if (p.z >= lakeZ - 0.5 && p.z <= top) { h.kind = 3; h.t = tA; h.p = p; h.theta = th; }
+            if (p.z >= lakeZ - 0.5 && p.z <= u.dims.y + 36.3) {
+                float2 q = p.xy - C;
+                float th = atan2(q.x, q.y);
+                // (The lip's rag is −27.2…36.2 m (its noise is 0…1): a point outside that band round its top is in the
+                // cliff or over it whatever the rag, which is read only where it decides; the hits are unchanged.)
+                float cut = notchCut(th, u);
+                bool cliff = false;
+                if (p.z <= (u.dims.y + 36.3) * cut) {
+                    cliff = p.z <= (u.dims.y - 27.3) * cut || p.z <= (u.dims.y + lipRag(th, 1.0)) * cut;
+                }
+                if (cliff) { h.kind = 3; h.t = tA; h.p = p; h.theta = th; }
+            }
         }
         // The bench.
         if (d.z < -1e-5) {
@@ -252,16 +270,24 @@ enum VolcanoRimShaders {
         // The upper cliff to the rim.
         float rB = 0.5 * (u.dims.z + u.dims.w);
         float tB = cylinderFar(o, d, C, rB);
-        if (tB < h.t) {
+        // (Over the rim's highest reach nothing is hit here whatever the notch: its angle isn't worked out there. A
+        // metre's margin, so the test below decides every point near it, rounded as it is there.)
+        if (tB < h.t && o.z + d.z * tB < rimH + 37.3) {
             float3 p = o + d * tB;
             float2 q = p.xy - C;
             float th = atan2(q.x, q.y);
-            float topFull = rimH + lipRag(th, 5.0);
             float cut = notchCut(th, u);
-            float top = mix(lakeZ - 1.0, topFull, cut);
-            if (p.z >= u.dims.y - 2.0 && p.z <= top) { h.kind = 3; h.t = tB; h.p = p; h.theta = th; }
+            // (As above: the rim's rag is read only where it decides; the hits are unchanged.)
+            bool below = p.z < rimH - 27.3, above = p.z >= rimH + 36.3;
+            bool upper = false;
+            if (p.z >= u.dims.y - 2.0 && p.z <= mix(lakeZ - 1.0, rimH + 36.3, cut)) {
+                upper = p.z <= mix(lakeZ - 1.0, rimH - 27.3, cut) || p.z <= mix(lakeZ - 1.0, rimH + lipRag(th, 5.0), cut);
+            }
+            if (upper) { h.kind = 3; h.t = tB; h.p = p; h.theta = th; }
             else if (h.kind == 0 && p.z < u.dims.y - 2.0 && p.z > lakeZ - 1.0) { h.kind = 3; h.t = tB; h.p = p; h.theta = th; }
-            else if (h.kind == 0 && cut < 0.999 && p.z < topFull) { h.kind = 5; h.t = tB; h.p = p; h.theta = th; }
+            else if (h.kind == 0 && cut < 0.999 && !above && (below || p.z < rimH + lipRag(th, 5.0))) {
+                h.kind = 5; h.t = tB; h.p = p; h.theta = th;
+            }
         }
         return h;
     }
@@ -293,7 +319,7 @@ enum VolcanoRimShaders {
         for (int k = 0; k < 64; k++) {
             float2 dl = u.cellA[k].xy - q;
             float2 t = float2(dot(dl, dir) * squeeze, dot(dl, perp));
-            float P = dot(t, t) - u.cellB[k].z;
+            float P = dot(t, t) - u.cellA[k].z;
             if (P < best) { best = P; i1 = k; t1 = t; }
         }
         float lt1 = length(t1);
@@ -305,7 +331,7 @@ enum VolcanoRimShaders {
             float2 dl = u.cellA[k].xy - q;
             float2 t = float2(dot(dl, dir) * squeeze, dot(dl, perp));
             float lt = length(t);
-            float Pk = dot(t, t) - u.cellB[k].z;
+            float Pk = dot(t, t) - u.cellA[k].z;
             // A seed this far off is past the second nearest crack: skip it.
             if ((lt * lt - 1400.0 - best) / (2.0 * (lt + lt1) + 1e-3) > border2 * 1.0) continue;
             float2 dt = t - t1;
@@ -320,6 +346,119 @@ enum VolcanoRimShaders {
                 border = dist; i2 = k; nrm = g / gl;
             } else if (dist < border2) {
                 border2 = dist; i3 = k; nrm2 = g / gl;
+            }
+        }
+        r.i1 = i1; r.i2 = i2; r.i3 = i3; r.border = max(border, 0.0); r.border2 = max(border2, 0.0); r.n = nrm; r.n2 = nrm2;
+        return r;
+    }
+
+    // The plates' candidates. Every lake pixel looked for its plate among all 64 seeds, twice (its plate, then its two
+    // nearest cracks): on Intel and AMD GPUs that was a quarter of the frame. The seeds drift a few metres a second at
+    // most, so a map of the warped plane (q, ±kPlateSpan m each way, `volcano_plate_map`) holds for each texel the 12 seeds
+    // of least power at its middle (three to a channel, a + 64 b + 4096 c, exact in a float), refreshed a sixteenth of its
+    // rows a frame (every 16th row, so nothing tears; the whole map when it is new or the clock jumped), and the lake
+    // reads only those 12 (`platesNear`: the same sums on the same seeds, so the same plates and cracks; on the CPU, at
+    // 235,000 points of the lake in six layouts of the seeds, every plate and every crack within 25 m is the same as
+    // with all 64 but at 28 points, where a second crack 14 m or more off is another one at nearly its distance).
+    constant float kPlateSpan = 420.0;
+
+    void plateOrder(thread float& a, thread float& b, thread int& i, thread int& j) {
+        if (b < a) { float t = a; a = b; b = t; int s = i; i = j; j = s; }
+    }
+
+    /// The 12 seeds of least power at q (in the drift's frame there, as `plates` measures), packed for the map.
+    float4 plateCandidates(float2 q, constant VolcanoU& u) {
+        float2 off = q - float2(-40.0, 30.0);
+        float lo = length(off);
+        float2 dir = lo > 1e-3 ? off / lo : float2(1, 0);
+        float2 perp = float2(-dir.y, dir.x);
+        const float squeeze = 0.6;
+        float p0 = 1e30, p1 = 1e30, p2 = 1e30, p3 = 1e30, p4 = 1e30, p5 = 1e30;
+        float p6 = 1e30, p7 = 1e30, p8 = 1e30, p9 = 1e30, p10 = 1e30, p11 = 1e30;
+        int k0 = 0, k1 = 0, k2 = 0, k3 = 0, k4 = 0, k5 = 0, k6 = 0, k7 = 0, k8 = 0, k9 = 0, k10 = 0, k11 = 0;
+        for (int k = 0; k < 64; k++) {
+            float2 dl = u.cellA[k].xy - q;
+            float2 t = float2(dot(dl, dir) * squeeze, dot(dl, perp));
+            float P = dot(t, t) - u.cellA[k].z;
+            if (P >= p11) continue;
+            // In at the end, then down the sorted twelve to its place (no array: they stay in registers).
+            p11 = P; k11 = k;
+            plateOrder(p10, p11, k10, k11); plateOrder(p9, p10, k9, k10); plateOrder(p8, p9, k8, k9);
+            plateOrder(p7, p8, k7, k8); plateOrder(p6, p7, k6, k7); plateOrder(p5, p6, k5, k6); plateOrder(p4, p5, k4, k5);
+            plateOrder(p3, p4, k3, k4); plateOrder(p2, p3, k2, k3); plateOrder(p1, p2, k1, k2); plateOrder(p0, p1, k0, k1);
+        }
+        return float4(float(k0 + 64 * k1 + 4096 * k2), float(k3 + 64 * k4 + 4096 * k5), float(k6 + 64 * k7 + 4096 * k8),
+                      float(k9 + 64 * k10 + 4096 * k11));
+    }
+
+    kernel void volcano_plate_map(texture2d<float, access::write> map [[texture(0)]], constant VolcanoU& u [[buffer(0)]],
+                                  constant uint4& job [[buffer(1)]], uint2 gid [[thread_position_in_grid]]) {
+        uint w = map.get_width(), h = map.get_height();
+        uint y = job.x + gid.y * job.y;           // rows first, first + strips, …
+        if (gid.x >= w || y >= h) return;
+        float2 q = ((float2(float(gid.x), float(y)) + 0.5) / float2(float(w), float(h)) * 2.0 - 1.0) * kPlateSpan;
+        map.write(plateCandidates(q, u), uint2(gid.x, y));
+    }
+
+    /// The map's candidate `n` (0…11) from its texel.
+    int plateCandidate(float4 c, int n) {
+        int code = int(n < 3 ? c.x : (n < 6 ? c.y : (n < 9 ? c.z : c.w)));
+        int slot = n - 3 * (n / 3);
+        return (code >> (6 * slot)) & 63;
+    }
+
+    /// `plates`, among the map's 12 candidates at q instead of all 64 seeds.
+    Plates platesNear(float2 p, constant VolcanoU& u, texture2d<float> map) {
+        float2 q0 = p * 0.028;
+        float2 w1 = float2(vn2(q0 + float2(3.1, 7.7)), vn2(q0 + float2(11.3, 1.9))) - 0.5;
+        float2 q1 = p * 0.14;
+        float2 w2 = float2(vn2(q1 + float2(5.2, 3.3)), vn2(q1 + float2(9.4, 6.1))) - 0.5;
+        float2 q = p + w1 * 26.0 + w2 * 5.0;
+        float2 off = q - float2(-40.0, 30.0);
+        float lo = length(off);
+        float2 dir = lo > 1e-3 ? off / lo : float2(1, 0);
+        float2 perp = float2(-dir.y, dir.x);
+        const float squeeze = 0.6;
+        Plates r;
+        r.q = q;
+        float mw = float(map.get_width()), mh = float(map.get_height());
+        float2 g = (q / kPlateSpan * 0.5 + 0.5) * float2(mw, mh);
+        uint2 tx = uint2(clamp(floor(g), float2(0.0), float2(mw - 1.0, mh - 1.0)));
+        float4 c = map.read(tx);
+        int i1 = 0;
+        float best = 1e12;
+        float2 t1 = float2(0);
+        for (int n = 0; n < 12; n++) {
+            int k = plateCandidate(c, n);
+            float2 dl = u.cellA[k].xy - q;
+            float2 t = float2(dot(dl, dir) * squeeze, dot(dl, perp));
+            float P = dot(t, t) - u.cellA[k].z;
+            if (P < best) { best = P; i1 = k; t1 = t; }
+        }
+        float lt1 = length(t1);
+        float border = 1e9, border2 = 1e9;
+        int i2 = i1, i3 = i1;
+        float2 nrm = float2(1, 0), nrm2 = float2(0, 1);
+        for (int n = 0; n < 12; n++) {
+            int k = plateCandidate(c, n);
+            if (k == i1) continue;
+            float2 dl = u.cellA[k].xy - q;
+            float2 t = float2(dot(dl, dir) * squeeze, dot(dl, perp));
+            float lt = length(t);
+            float Pk = dot(t, t) - u.cellA[k].z;
+            if ((lt * lt - 1400.0 - best) / (2.0 * (lt + lt1) + 1e-3) > border2 * 1.0) continue;
+            float2 dt = t - t1;
+            float L = length(dt);
+            if (L < 1e-3) continue;
+            float2 nt = dt / L;
+            float2 gr = dir * (nt.x * squeeze) + perp * nt.y;
+            float gl = max(length(gr), 1e-3);
+            float dist = (Pk - best) / (2.0 * L * gl);
+            if (dist < border) {
+                border2 = border; i3 = i2; nrm2 = nrm;
+                border = dist; i2 = k; nrm = gr / gl;
+            } else if (dist < border2) {
+                border2 = dist; i3 = k; nrm2 = gr / gl;
             }
         }
         r.i1 = i1; r.i2 = i2; r.i3 = i3; r.border = max(border, 0.0); r.border2 = max(border2, 0.0); r.n = nrm; r.n2 = nrm2;
@@ -363,12 +502,14 @@ enum VolcanoRimShaders {
 
     /// The lake's own light at a point of its surface (crater metres), seen along d; J is the pixel's footprint (lake
     /// metres per pixel across x and y).
-    float3 lakeSurface(float3 P, float3 d, float2 Jx, float2 Jy, constant VolcanoU& u, int oct) {
+    float3 lakeSurface(float3 P, float3 d, float2 Jx, float2 Jy, constant VolcanoU& u, int oct, float edgeR,
+                       texture2d<float> plateMap) {
         float2 p = P.xy;
         float energy = u.play.x;
         uint skipL = uint(u.sprites.w + 0.5);
         Plates pl;
-        if ((skipL & 512u) == 0u) pl = plates(p, u);
+        // (The map's 12 candidates once it is whole; all 64 seeds without it.)
+        if ((skipL & 512u) == 0u) pl = u.sprites.y > 0.5 ? platesNear(p, u, plateMap) : plates(p, u);
         else { pl.i1 = 0; pl.i2 = 1; pl.i3 = 2; pl.border = 9.0; pl.border2 = 12.0; pl.n = float2(1, 0); pl.n2 = float2(0, 1); pl.q = p; }
         float4 A = u.cellA[pl.i1];
         float4 Ab = u.cellB[pl.i1];
@@ -390,7 +531,7 @@ enum VolcanoRimShaders {
             float pair = hash12(float2(lo * 7.13, hi * 3.71));
             float heat = 0.5 * (heatA + Bj.w);
             float wide = max(smoothstep(0.85 - 0.17 * energy, 0.97 - 0.12 * energy, pair), 0.8 * heat * heat);
-            float note = max(A.z, Bj.z);
+            float note = max(Ab.z, Bjb.z);
             float along = vn2(pl.q * 0.045 + pair * 31.0);
             float along2 = vn2(pl.q * 0.2 + pair * 7.0);
             float pinch = smoothstep(0.15, 0.6, along) * (0.4 + 1.2 * along2);
@@ -417,23 +558,34 @@ enum VolcanoRimShaders {
         float grazing = 1.0 - saturate(-d.z);
         float g2 = grazing * grazing;
         float fres = 0.04 + 0.96 * g2 * g2 * grazing;
-        float rough = smoothstep(0.35, 0.75, fbm2(local * 0.35 + float2(2.0, 9.0), oct));
-        float sheen = fres * (0.55 - 0.4 * rough) * smoothstep(-80.0, 150.0, p.y);
         col += albedo * (1.3 * spill + u.glow.rgb * (0.35 * u.plume.x) + u.skyL.rgb);
-        col += u.glow.rgb * float3(0.95, 0.9, 0.85) * (0.32 * sheen * u.plume.x);
+        // (The sheen is none on the near half of the lake (80 m short of its middle): its roughness isn't read there.)
+        float sheenFar = smoothstep(-80.0, 150.0, p.y);
+        if (sheenFar > 0.0) {
+            float rough = smoothstep(0.35, 0.75, fbm2(local * 0.35 + float2(2.0, 9.0), oct));
+            float sheen = fres * (0.55 - 0.4 * rough) * sheenFar;
+            col += u.glow.rgb * float3(0.95, 0.9, 0.85) * (0.32 * sheen * u.plume.x);
+        }
         // Dim hairlines within the plate (some of them glowing: the skin's hotter seams).
         if (oct >= 3 && (skipL & 1024u) == 0u) {
-            float fine = fineCracks(local, 5.0 + 7.0 * (1.0 - A.w));
+            // (Where the skin's seams are cold there are none to see: the net isn't walked there.)
             float hot = smoothstep(0.35, 0.7, vn2(local * 0.12 + 3.0));
-            float fineT = Tc + 230.0 + 90.0 * u.temps.w + 80.0 * A.z;
-            col += crackGlow(fine, 0.05 + 0.05 * A.w, foot, fineT) * (hot * (0.3 + 0.5 * u.temps.w));
+            if (hot > 0.0) {
+                float fine = fineCracks(local, 5.0 + 7.0 * (1.0 - A.w));
+                float fineT = Tc + 230.0 + 90.0 * u.temps.w + 80.0 * Ab.z;
+                col += crackGlow(fine, 0.05 + 0.05 * A.w, foot, fineT) * (hot * (0.3 + 0.5 * u.temps.w));
+            }
         }
         col += crack;
         // The fountains' pools: fresh lava churning at their feet, crusting over between bursts.
         for (int k = 0; k < 2; k++) {
             float4 f = k == 0 ? u.fountA : u.fountB;
             float rp = (4.0 + 0.22 * f.z) * u.dims3.y;
-            float dist = length(p - f.xy) + 3.0 * (vn2(p * 0.15 + u.a.y * 0.3) - 0.5);
+            // (Its edge wanders 1.5 m at most (the noise is 0…1): farther off there is no pool whatever the noise, and
+            // mixing in none leaves the colour exactly as it is, so none is read.)
+            float centre = length(p - f.xy);
+            if (centre - 1.6 >= rp * 1.1) continue;
+            float dist = centre + 3.0 * (vn2(p * 0.15 + u.a.y * 0.3) - 0.5);
             float pool = 1.0 - smoothstep(rp * 0.5, rp * 1.1, dist);
             float churn = vn2(p * 0.4 + float2(u.a.y * 0.9, -u.a.y * 0.6));
             float skinOver = smoothstep(0.5, 0.75, vn2(p * 0.3 - u.a.y * 0.2)) * (1.0 - 0.6 * f.w);
@@ -442,15 +594,19 @@ enum VolcanoRimShaders {
         }
         // The margin: old crust jammed against the shore (darker), a splash of fresh lava here and there.
         float r = length(p);
-        float toEdge = lakeEdge(p, u) - r;
+        float toEdge = edgeR - r;
         float arc = atan2(p.y, p.x) * u.lake.x;
         float jam = exp(-max(toEdge, 0.0) / 6.0);
         col *= 1.0 - 0.45 * jam;
         float splash = smoothstep(0.72, 0.9, vn2(float2(arc * 0.05, u.a.y * 0.35)) * 0.75 + vn2(float2(arc * 0.3, 2.0)) * 0.35);
-        col += crackGlow(abs(toEdge - 0.6), 0.5 + 1.2 * splash, foot, 1120.0 + 120.0 * splash + 60.0 * u.glow.w) * splash;
+        if (splash > 0.0) {
+            col += crackGlow(abs(toEdge - 0.6), 0.5 + 1.2 * splash, foot, 1120.0 + 120.0 * splash + 60.0 * u.glow.w) * splash;
+        }
         // The breach's new river leaves the lake here: the lake's own crust torn open toward it.
-        float toMouth = length(p - u.riverA.xy);
-        col += blackbody(1240.0 + 80.0 * u.river.z) * (u.river.z * exp(-toMouth / 18.0) * 0.6);
+        if (u.river.z > 0.0) {
+            float toMouth = length(p - u.riverA.xy);
+            col += blackbody(1240.0 + 80.0 * u.river.z) * (u.river.z * exp(-toMouth / 18.0) * 0.6);
+        }
         return col;
     }
 
@@ -466,7 +622,7 @@ enum VolcanoRimShaders {
         return float2(length(p - c), s);
     }
 
-    float3 floorColour(float3 P, float3 d, float foot, constant VolcanoU& u, int oct) {
+    float3 floorColour(float3 P, float3 d, float foot, constant VolcanoU& u, int oct, float edgeR) {
         float2 p = P.xy;
         // Old black lava: ropy and blocky, a little glassy, here and there a skylight onto hot lava beneath.
         float rope = fbm2(p * float2(0.035, 0.022) + float2(3.0, 1.0), oct);
@@ -474,39 +630,50 @@ enum VolcanoRimShaders {
         float3 albedo = float3(0.04, 0.036, 0.034) * (0.55 + 0.5 * rope + 0.2 * block);
         float3 N = normalize(float3((rope - 0.5) * 0.5, (block - 0.5) * 0.5, 1.0));
         float3 col = albedo * (craterLight(P, N, u) + u.skyL.rgb);
-        float sky = smoothstep(0.86, 0.93, vn2(p * 0.03 + float2(7.0, 2.0))) * smoothstep(0.5, 0.8, vn2(p * 0.12));
-        col += blackbody(980.0 + 120.0 * u.play.x) * (0.25 * sky);
+        // (A skylight's second noise is read only where its first opens one.)
+        float sky = smoothstep(0.86, 0.93, vn2(p * 0.03 + float2(7.0, 2.0)));
+        if (sky > 0.0) {
+            sky *= smoothstep(0.5, 0.8, vn2(p * 0.12));
+            col += blackbody(980.0 + 120.0 * u.play.x) * (0.25 * sky);
+        }
         // The river: from a bright lip where the lake spills over its ledge, a channel running to the breach, rafts of
         // crust riding on it (moving with the flow, more of them and darker downstream), incandescent lava in the gaps
         // between them, its banks' inner edges glowing.
         float2 rd = riverDistance(p, u);
         float flow = u.river.x, breach = u.river.z;
-        float lenR = length(u.riverA.zw - u.riverA.xy);
-        float halfW = (3.0 + 3.0 * flow + 7.0 * breach) * (0.75 + 0.5 * vn2(float2(rd.y * 7.0, 3.0)) + 0.2 * (vn2(p * 0.15) - 0.5));
-        float inside = 1.0 - smoothstep(halfW - max(1.0, foot), halfW + max(1.0, foot), rd.x);
-        if (inside > 0.0) {
-            float alongM = rd.y * lenR - u.river.y;
-            float2 rp = float2(alongM * 0.8, rd.x * 1.1 + 3.0);
-            float edgeR = oct >= 3 ? fineCracks(rp + float2(13.0, 5.0), 6.0) : 6.0 * abs(vn2(rp * 0.17) - 0.5);
-            float gapW = mix(1.4, 0.2, rd.y) * (0.45 + 0.6 * breach + 0.25 * flow);
-            float Tlava = 1160.0 + 130.0 * breach + 50.0 * flow - 260.0 * rd.y;
-            float3 raft = blackbody(760.0 + 120.0 * breach - 140.0 * rd.y)
-                        + float3(0.06, 0.055, 0.05) * (0.5 + 0.6 * vn2(rp * 0.9)) * (u.glow.rgb * 0.6 + u.skyL.rgb);
-            float3 river = raft + crackGlow(edgeR, gapW, foot, Tlava);
-            float lip = exp(-sq((rd.y - 0.05) / 0.035));
-            river = mix(river, blackbody(1220.0 + 110.0 * breach + 40.0 * (vn2(p * 0.6 + u.a.y) - 0.5)), lip * (0.35 + 0.65 * breach));
-            river += blackbody(1080.0 + 100.0 * breach) * (exp(-abs(rd.x - halfW * 0.9) / 1.0) * (0.12 + 0.35 * breach) * (1.0 - 0.6 * rd.y));
-            col = mix(col, river, inside);
+        // (The river is 17.6 m wide at most and its glow beside it fades by e^-20 over 160 m: farther off neither is
+        // drawn, and the river's noise isn't read.)
+        if (rd.x < 180.0) {
+            float lenR = length(u.riverA.zw - u.riverA.xy);
+            float halfW = (3.0 + 3.0 * flow + 7.0 * breach) * (0.75 + 0.5 * vn2(float2(rd.y * 7.0, 3.0)) + 0.2 * (vn2(p * 0.15) - 0.5));
+            float inside = 1.0 - smoothstep(halfW - max(1.0, foot), halfW + max(1.0, foot), rd.x);
+            if (inside > 0.0) {
+                float alongM = rd.y * lenR - u.river.y;
+                float2 rp = float2(alongM * 0.8, rd.x * 1.1 + 3.0);
+                float edgeR = oct >= 3 ? fineCracks(rp + float2(13.0, 5.0), 6.0) : 6.0 * abs(vn2(rp * 0.17) - 0.5);
+                float gapW = mix(1.4, 0.2, rd.y) * (0.45 + 0.6 * breach + 0.25 * flow);
+                float Tlava = 1160.0 + 130.0 * breach + 50.0 * flow - 260.0 * rd.y;
+                float3 raft = blackbody(760.0 + 120.0 * breach - 140.0 * rd.y)
+                            + float3(0.06, 0.055, 0.05) * (0.5 + 0.6 * vn2(rp * 0.9)) * (u.glow.rgb * 0.6 + u.skyL.rgb);
+                float3 river = raft + crackGlow(edgeR, gapW, foot, Tlava);
+                float lip = exp(-sq((rd.y - 0.05) / 0.035));
+                river = mix(river, blackbody(1220.0 + 110.0 * breach + 40.0 * (vn2(p * 0.6 + u.a.y) - 0.5)), lip * (0.35 + 0.65 * breach));
+                river += blackbody(1080.0 + 100.0 * breach) * (exp(-abs(rd.x - halfW * 0.9) / 1.0) * (0.12 + 0.35 * breach) * (1.0 - 0.6 * rd.y));
+                col = mix(col, river, inside);
+            }
+            col += blackbody(1060.0 + 120.0 * breach) * (exp(-max(rd.x - halfW, 0.0) / 8.0) * (0.05 + 0.1 * flow + 0.35 * breach) * 0.3);
         }
-        col += blackbody(1060.0 + 120.0 * breach) * (exp(-max(rd.x - halfW, 0.0) / 8.0) * (0.05 + 0.1 * flow + 0.35 * breach) * 0.3);
-        // The lake's shore: a black ledge of chilled spatter, lumpy, its lake-facing lips lit by the lake.
-        float shore = length(p) - lakeEdge(p, u);
-        float lumpy = vn2(p * 0.5) * 0.6 + vn2(p * 1.7) * 0.4;
+        // The lake's shore: a black ledge of chilled spatter, lumpy, its lake-facing lips lit by the lake (they fade by
+        // e^-20 within 50 m of the shore: farther off their noise isn't read).
+        float shore = length(p) - edgeR;
         float ledge = exp(-max(shore, 0.0) / 5.0);
         col *= 1.0 - 0.5 * ledge;
-        col += u.glow.rgb * float3(1.0, 0.85, 0.7) * (0.05 * smoothstep(0.45, 0.8, lumpy) * exp(-max(shore, 0.0) / 2.5));
-        float drip = smoothstep(0.8, 0.95, vn2(p * 0.9 + 4.0)) * exp(-max(shore, 0.0) / 1.5);
-        col += blackbody(1060.0 + 60.0 * u.play.x) * (0.25 * drip);
+        if (shore < 50.0) {
+            float lumpy = vn2(p * 0.5) * 0.6 + vn2(p * 1.7) * 0.4;
+            col += u.glow.rgb * float3(1.0, 0.85, 0.7) * (0.05 * smoothstep(0.45, 0.8, lumpy) * exp(-max(shore, 0.0) / 2.5));
+            float drip = smoothstep(0.8, 0.95, vn2(p * 0.9 + 4.0)) * exp(-max(shore, 0.0) / 1.5);
+            col += blackbody(1060.0 + 60.0 * u.play.x) * (0.25 * drip);
+        }
         return col;
     }
 
@@ -556,11 +723,17 @@ enum VolcanoRimShaders {
         float rubbly = max(smoothstep(0.55, 0.8, f), 1.0 - colonnade);
         // A ledge only here and there: where a unit's top stands out and holds, catching the lake's light; it breaks off,
         // and the gullies cut it.
-        float holds = smoothstep(0.4, 0.62, vn2(float2(arc * 0.012, Li * 2.3))) * step(0.25, seedL) * (1.0 - gully);
+        // (Its noise is read only on a unit that can hold a ledge, outside a gully's floor: elsewhere none holds.)
+        float holdsOn = step(0.25, seedL) * (1.0 - gully);
+        float holds = holdsOn > 0.0 ? smoothstep(0.4, 0.62, vn2(float2(arc * 0.012, Li * 2.3))) * step(0.25, seedL) * (1.0 - gully) : 0.0;
         // Its lit edge thickens and thins along the wall and fades in and out (a broken edge, never a drawn line).
-        float lipW = 0.07 + 0.2 * vn2(float2(arc * 0.021, Li * 4.7));
-        float lip = smoothstep(0.95 - 1.6 * lipW, 0.95 - 0.6 * lipW, f) * (1.0 - smoothstep(0.95, 1.0, f)) * holds
-                  * (0.35 + 0.9 * vn2(float2(arc * 0.035, Li * 1.9 + 6.0)));
+        // (None where nothing holds, or below the lowest the lip reaches (f under 0.95 − 1.6 × 0.27): its noise isn't read.)
+        float lip = 0.0;
+        if (holds > 0.0 && f > 0.518) {
+            float lipW = 0.07 + 0.2 * vn2(float2(arc * 0.021, Li * 4.7));
+            lip = smoothstep(0.95 - 1.6 * lipW, 0.95 - 0.6 * lipW, f) * (1.0 - smoothstep(0.95, 1.0, f)) * holds
+                * (0.35 + 0.9 * vn2(float2(arc * 0.035, Li * 1.9 + 6.0)));
+        }
         float under = (1.0 - smoothstep(0.0, 0.2, f)) * holds;
         // The wall's big relief: buttresses between the gullies, the gullies themselves recessed and shaded.
         float relief = fbm2(float2(arc * 0.025, z * 0.006 + 4.0), oct);
@@ -569,9 +742,11 @@ enum VolcanoRimShaders {
         float lean = (relief - 0.5) * 1.1 + (buttress - 0.5) * 1.6 + gully * side * 1.2;
         float3 N = normalize(inward + tangent * (lean + facet * (1.0 - rubbly) + (blocksR - 0.5) * 0.8 * (1.0 - colonnade))
                              + float3(0, 0, -0.15 + 0.4 * f));
-        N = normalize(mix(N, normalize(inward * 0.35 + float3(0, 0, 1)), lip));
+        if (lip > 0.0) N = normalize(mix(N, normalize(inward * 0.35 + float3(0, 0, 1)), lip));
         if (h.kind == 4) N = normalize(float3(0, 0, 1) + inward * 0.25);
-        float grain = vn2(float2(arc * 1.3, z * 1.3)) * 0.5 + vn2(float2(arc * 0.35, z * 0.35)) * 0.5;
+        // (Its finest grain is under a pixel across at the walls' distance, a speckle: Smooth takes its mean.)
+        float fineGrain = oct >= 3 ? vn2(float2(arc * 1.3, z * 1.3)) : 0.5;
+        float grain = fineGrain * 0.5 + vn2(float2(arc * 0.35, z * 0.35)) * 0.5;
         float3 basalt = float3(0.05, 0.047, 0.045) * (0.75 + 0.5 * colSeed) * (0.8 + 0.4 * grain);
         float3 scoria = float3(0.075, 0.05, 0.04) * (0.5 + 0.9 * blocksR) * (0.8 + 0.4 * grain);
         float3 basaltC = mix(basalt, scoria, rubbly);
@@ -582,12 +757,17 @@ enum VolcanoRimShaders {
         float footZ = h.p.z > u.dims.y + 1.0 ? u.dims.y : u.eye.w;
         float coneR = 25.0 + 45.0 * gseed;
         float cone = step(0.3, gseed) * saturate(1.0 - gd / coneR);
-        float talusH = 8.0 + 10.0 * relief + 6.0 * vn2(float2(arc * 0.05, 1.0)) + (30.0 + 40.0 * gseed) * cone;
-        float talus = h.kind == 3 ? (1.0 - smoothstep(talusH * 0.75, talusH, P.z - footZ)) : 0.0;
-        float blocks = vn2(float2(arc * 0.22, P.z * 0.22)) * 0.6 + 0.4 * vn2(float2(arc * 0.7, P.z * 0.7));
-        basaltC = mix(basaltC, float3(0.058, 0.052, 0.048) * (0.6 + 0.7 * blocks), talus);
-        N = normalize(mix(N, normalize(inward + float3(0, 0, 0.8) + tangent * (0.6 * side * cone)), talus));
-        ao = mix(ao, 0.7 + 0.3 * blocks, talus);
+        // (The talus stands 94 m at most (its noise is 0…1): higher up there is none, and its noise isn't read.)
+        if (h.kind == 3 && P.z - footZ < 94.0) {
+            float talusH = 8.0 + 10.0 * relief + 6.0 * vn2(float2(arc * 0.05, 1.0)) + (30.0 + 40.0 * gseed) * cone;
+            float talus = 1.0 - smoothstep(talusH * 0.75, talusH, P.z - footZ);
+            if (talus > 0.0) {
+                float blocks = vn2(float2(arc * 0.22, P.z * 0.22)) * 0.6 + 0.4 * vn2(float2(arc * 0.7, P.z * 0.7));
+                basaltC = mix(basaltC, float3(0.058, 0.052, 0.048) * (0.6 + 0.7 * blocks), talus);
+                N = normalize(mix(N, normalize(inward + float3(0, 0, 0.8) + tangent * (0.6 * side * cone)), talus));
+                ao = mix(ao, 0.7 + 0.3 * blocks, talus);
+            }
+        }
         if (h.kind == 4) {
             basaltC = float3(0.06, 0.052, 0.048) * (0.5 + 0.8 * vn2(P.xy * 0.15));
             ao = 0.8;
@@ -618,9 +798,11 @@ enum VolcanoRimShaders {
             float debris = smoothstep(0.82, 0.95, vn2(float2(da * 0.25, P.z * 0.18 + pr * 40.0))) * spread * body;
             col += blackbody(1000.0) * (0.4 * debris);
         }
-        // Hot seams in the old walls, here and there low down, livelier with Energy.
-        float seam = smoothstep(0.94, 0.975, vn2(float2(arc * 0.08, lz * 3.2))) * (1.0 - smoothstep(0.0, 50.0, z));
-        col += blackbody(960.0 + 120.0 * u.play.x) * (0.15 * seam);
+        // Hot seams in the old walls, here and there low down, livelier with Energy (none 50 m up: not read there).
+        if (z < 50.0) {
+            float seam = smoothstep(0.94, 0.975, vn2(float2(arc * 0.08, lz * 3.2))) * (1.0 - smoothstep(0.0, 50.0, z));
+            col += blackbody(960.0 + 120.0 * u.play.x) * (0.15 * seam);
+        }
         return col;
     }
 
@@ -904,12 +1086,15 @@ enum VolcanoRimShaders {
         float z0 = o.z - lakeZ, z1 = o.z + d.z * min(t, 4000.0) - lakeZ;
         float dz = z0 - z1;
         float len = min(t, 4000.0);
-        float integral;
-        if (dz > 0.5) integral = len * hs * (exp(-max(z1, 0.0) / hs) - exp(-z0 / hs)) / dz;
-        else integral = len * exp(-max(z1, 0.0) / hs);
         // Over the lake only (the far end of the ray decides), and churning.
         float3 end = o + d * len;
         float overLake = 1.0 - smoothstep(u.lake.x * 0.8, u.lake.x * 1.6, length(end.xy));
+        // (Where the ray ends off the lake the fume is none whatever its churn or its depth: exactly what the sum below
+        // gives, and neither is worked out.)
+        if (overLake <= 0.0) return float4(0, 0, 0, 1);
+        float integral;
+        if (dz > 0.5) integral = len * hs * (exp(-max(z1, 0.0) / hs) - exp(-z0 / hs)) / dz;
+        else integral = len * exp(-max(z1, 0.0) / hs);
         float churn = fbm2(end.xy * 0.012 + float2(u.a.y * 0.05, -u.a.y * 0.035), oct);
         float tau = integral * 0.0024 * overLake * (0.35 + 1.3 * churn) * (0.6 + 0.6 * u.plume.x);
         float T = exp(-tau);
@@ -931,12 +1116,15 @@ enum VolcanoRimShaders {
             col = sky.horizon.rgb * 0.3 * exp(dE.z * 30.0);
         }
         // Far volcanoes on the plain's horizon: low dark ranges and a broad cone, hazed by distance, hiding the stars.
-        float range = 0.006 + 0.012 * vn2(float2(az * 9.0, 2.0)) + 0.006 * vn2(float2(az * 31.0, 5.0));
-        float cone = 0.034 * smoothstep(0.32, 0.0, abs(az - 0.55)) * (1.0 - 0.15 * vn2(float2(az * 60.0, 1.0)));
-        float ridge = max(range, cone);
-        if (el < ridge) {
-            float haze = exp(-(ridge - el) / 0.01);
-            col = mix(sky.horizon.rgb * 0.18, sky.horizon.rgb * 0.45, haze * 0.5);
+        // (They stand 0.034 rad at most: above that their noise isn't read.)
+        if (el < 0.034) {
+            float range = 0.006 + 0.012 * vn2(float2(az * 9.0, 2.0)) + 0.006 * vn2(float2(az * 31.0, 5.0));
+            float cone = 0.034 * smoothstep(0.32, 0.0, abs(az - 0.55)) * (1.0 - 0.15 * vn2(float2(az * 60.0, 1.0)));
+            float ridge = max(range, cone);
+            if (el < ridge) {
+                float haze = exp(-(ridge - el) / 0.01);
+                col = mix(sky.horizon.rgb * 0.18, sky.horizon.rgb * 0.45, haze * 0.5);
+            }
         }
         // The plume's glow on the low sky round it (the air scatters the lit plume).
         float bendX = u.plume.z * 200.0 * 200.0;
@@ -969,8 +1157,11 @@ enum VolcanoRimShaders {
     float4 foreground(float2 ndc, constant VolcanoU& u, int oct) {
         float top = u.dims3.z;
         float x = ndc.x * u.a.x;
-        float edge = top + 0.05 * (fbm2(float2(x * 2.2, 3.0), oct) - 0.5) + 0.035 * (vn2(float2(x * 9.0, 1.0)) - 0.5);
         float pix = u.cam.w;
+        // (The edge wanders 0.0425 at most (its noise is 0…1): a pixel farther above it has no rock whatever the noise,
+        // and reads none.)
+        if (ndc.y >= top + 0.0425 + pix) return float4(0);
+        float edge = top + 0.05 * (fbm2(float2(x * 2.2, 3.0), oct) - 0.5) + 0.035 * (vn2(float2(x * 9.0, 1.0)) - 0.5);
         float cover = smoothstep(edge + pix, edge - pix, ndc.y);
         if (cover <= 0.0) return float4(0);
         float depth = edge - ndc.y;
@@ -982,7 +1173,16 @@ enum VolcanoRimShaders {
 
     // ---------------------------------------------------------------- the scene
     fragment ColorDepth volcano_scene_fragment(VolOut in [[stage_in]], constant SkyU& sky [[buffer(0)]],
-                                               constant VolcanoU& u [[buffer(1)]], texture2d<float> stars [[texture(0)]]) {
+                                               constant VolcanoU& u [[buffer(1)]], texture2d<float> stars [[texture(0)]],
+                                               texture2d<float> plateMap [[texture(1)]],
+                                               texture2d<float> plumeTex [[texture(2)]]) {
+        // Under the keys' white columns, opaque there and drawn over the scene, nothing of it is seen: not drawn.
+        if (in.ndc.y < u.sprites.z - 3.0) {
+            ColorDepth hidden;
+            hidden.color = float4(0.0, 0.0, 0.0, 1.0);
+            hidden.depth = float4(0.6, 0, 0, 1);
+            return hidden;
+        }
         float2 ndc = in.ndc - u.cam.xy;
         int oct = int(u.a.z + 0.5);
         float3 Dn = sky.forward.xyz + sky.right.xyz * (ndc.x * sky.right.w) + sky.up.xyz * (ndc.y * sky.up.w);
@@ -1004,8 +1204,8 @@ enum VolcanoRimShaders {
             float tp = (u.eye.w - o.z) / min(Dc.z, -1e-6);
             float2 Jx = tp * (dx.xy - Dc.xy * (dx.z / Dc.z));
             float2 Jy = tp * (dy.xy - Dc.xy * (dy.z / Dc.z));
-            if (h.kind == 1) { if ((skip & 1u) == 0u) col = lakeSurface(h.p, d, Jx, Jy, u, oct); }
-            else if ((skip & 2u) == 0u) col = floorColour(h.p, d, max(length(Jx), length(Jy)), u, oct);
+            if (h.kind == 1) { if ((skip & 1u) == 0u) col = lakeSurface(h.p, d, Jx, Jy, u, oct, h.edge, plateMap); }
+            else if ((skip & 2u) == 0u) col = floorColour(h.p, d, max(length(Jx), length(Jy)), u, oct, h.edge);
             depth = 0.6;
         } else if (h.kind >= 3) {
             if ((skip & 4u) == 0u) col = wallColour(h, d, u, oct, h.t * u.a.w);
@@ -1045,7 +1245,14 @@ enum VolcanoRimShaders {
         if (tm < tHit && tm > 0.0) {
             float3 P = o + d * tm;
             if ((skip & 32u) == 0u) mid = column(P, u, tm * sky.up.w * u.cam.w, oct);
-            if ((skip & 64u) == 0u) pl = plume(P, u, oct, u.glow.rgb);
+            if ((skip & 64u) == 0u) {
+                if (u.sprites.x > 0.5) {
+                    constexpr sampler ps(filter::linear, address::clamp_to_edge);
+                    pl = plumeTex.sample(ps, float2(0.5 + 0.5 * in.ndc.x, 0.5 - 0.5 * in.ndc.y));
+                } else {
+                    pl = plume(P, u, oct, u.glow.rgb);
+                }
+            }
         }
         // The column stands inside the plume: the gas veils it a little, its light shows through.
         float veil = 1.0 - 0.45 * pl.a;
@@ -1074,6 +1281,24 @@ enum VolcanoRimShaders {
         out.color = float4(max(col, 0.0), 1.0);
         out.depth = float4(depth, 0, 0, 1);
         return out;
+    }
+
+    // ---------------------------------------------------------------- the plume at half size
+    // The plume is soft gas (its finest billows metres across, tens of pixels): drawn into a half-size target wherever the
+    // ray crosses its plane, and read back (filtered) by the scene, which still decides pixel by pixel what stands in
+    // front of it.
+    fragment float4 volcano_plume_fragment(VolOut in [[stage_in]], constant SkyU& sky [[buffer(0)]],
+                                           constant VolcanoU& u [[buffer(1)]]) {
+        float2 ndc = in.ndc - u.cam.xy;
+        int oct = int(u.a.z + 0.5);
+        float3 Dn = sky.forward.xyz + sky.right.xyz * (ndc.x * sky.right.w) + sky.up.xyz * (ndc.y * sky.up.w);
+        float3 dE = normalize(Dn);
+        float3 fwd3 = float3(u.axes.xy, 0.0), right3 = float3(u.axes.zw, 0.0);
+        float3 d = float3(dot(dE, right3), dot(dE, fwd3), dE.z);
+        float3 o = u.eye.xyz;
+        float tm = (0.0 - o.y) / max(d.y, 1e-4);
+        if (tm <= 0.0) return float4(0.0);
+        return plume(o + d * tm, u, oct, u.glow.rgb);
     }
 
     // ---------------------------------------------------------------- embers, blobs, bombs, sparks

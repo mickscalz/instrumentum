@@ -51,6 +51,26 @@ final class VolcanoRimRenderer: ThemeRenderer {
     var skipLayers: UInt32 = 0
     private let scene: SkyPipeline
     private let sparks, bolts, columns: MTLRenderPipelineState
+    /// The lake's plates' map (`volcano_plate_map`): for each texel of the warped lake plane the 12 crust seeds of least
+    /// power there, which the lake reads instead of all 64. Made once; a sixteenth of its rows refreshed a frame (every
+    /// 16th row), the whole map when it is new or the clock jumped (previews, a world come back to). Without its kernel
+    /// (if it couldn't be made) the lake reads all 64 seeds, as before.
+    nonisolated static let plateMapSize = 256
+    nonisolated static let plateMapStrips = 16
+    private let plateKernel: MTLComputePipelineState?
+    private let plateMap: MTLTexture
+    /// The plume drawn at half size (`volcano_plume_fragment`, into `plumeTarget`) and read back by the scene.
+    private let plumeHalf: MTLRenderPipelineState
+    private let device: MTLDevice
+    private var plumeTarget: MTLTexture?
+    /// The plume's targets made so far (tests: one a size, never one a frame).
+    private(set) var plumeAllocations = 0
+    private var plateMapWhole = false
+    private var plateMapClock: Float = .nan
+    private var plateMapStrip = 0
+    /// Tests: whole refreshes of the map and single strips drawn.
+    private(set) var plateMapWholeDraws = 0
+    private(set) var plateMapStripDraws = 0
     private var volU = [SIMD4<Float>](repeating: .zero, count: VolcanoRimRenderer.uniformCount)
     private var sparkInstances: [SIMD4<Float>] = []
     private var boltInstances: [SIMD4<Float>] = []
@@ -79,6 +99,9 @@ final class VolcanoRimRenderer: ThemeRenderer {
     private(set) var lakeCentreNDC = SIMD2<Float>(0, 0)
     private(set) var rimNDC = SIMD2<Float>(0, 0)
     private(set) var keyTop: Float = -0.78
+    /// Below this line (NDC y; −2: none) the keys' white columns are opaque all the way across, so the scene there is
+    /// never seen (they are drawn over it): the scene's pass doesn't draw it.
+    private(set) var keysOpaqueBelow: Float = -2
     var flashesInLastSecond: Int { showingVeins ? veinsRenderer.flashesInLastSecond : limiter.recent }
     var flashTotal: Int { limiter.total + veinsRenderer.flashTotal }
     var keyRects: [SIMD4<Float>] { stride(from: 0, to: columnInstances.count, by: 2).map { columnInstances[$0] } }
@@ -118,8 +141,26 @@ final class VolcanoRimRenderer: ThemeRenderer {
             guard let buf = device.makeBuffer(length: bytes, options: .storageModeShared) else { return nil }
             buffers.append(buf)
         }
+        let md = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba32Float, width: Self.plateMapSize,
+                                                          height: Self.plateMapSize, mipmapped: false)
+        md.usage = [.shaderRead, .shaderWrite]
+        md.storageMode = .private
+        guard let plates = device.makeTexture(descriptor: md) else { return nil }
+        let pd = MTLRenderPipelineDescriptor()
+        pd.vertexFunction = lib.skyFunction("volcano_vertex")
+        pd.fragmentFunction = lib.skyFunction("volcano_plume_fragment")
+        pd.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
+        guard let plumePipe = try? device.makeRenderPipelineState(descriptor: pd) else { return nil }
         sky = s; weather = w; warp = gw; veinsRenderer = mv
         scene = sc; sparks = sp; bolts = bo; columns = co
+        plateMap = plates
+        plumeHalf = plumePipe
+        self.device = device
+        if let f = lib.skyFunction("volcano_plate_map") {
+            plateKernel = try? device.makeComputePipelineState(function: f)
+        } else {
+            plateKernel = nil
+        }
         ring = buffers
         bufferAllocations = buffers.count
         sparkInstances.reserveCapacity(Self.sparkCapacity * 2)
@@ -319,8 +360,9 @@ final class VolcanoRimRenderer: ThemeRenderer {
         for k in 0..<VolcanoRimModel.cellCount {
             if k < frame.cells.count {
                 let c = frame.cells[k]
-                volU[Self.cellABase + k] = SIMD4(c.position.x, c.position.y, Self.unit(c.glow), Self.unit(c.heat))
-                volU[Self.cellBBase + k] = SIMD4(Self.unit(c.birth), Float(c.twin), Self.plateWeight(k, twin: c.twin, birth: c.birth), 0)
+                // (The place and the weight in one row: the plates' search reads one row a seed, not two.)
+                volU[Self.cellABase + k] = SIMD4(c.position.x, c.position.y, Self.plateWeight(k, twin: c.twin, birth: c.birth), Self.unit(c.heat))
+                volU[Self.cellBBase + k] = SIMD4(Self.unit(c.birth), Float(c.twin), Self.unit(c.glow), 0)
             } else {
                 volU[Self.cellABase + k] = SIMD4(1e5, 1e5, 0, 0)
                 volU[Self.cellBBase + k] = SIMD4(1, -1, 0, 0)
@@ -453,12 +495,17 @@ final class VolcanoRimRenderer: ThemeRenderer {
     /// a white one (its rect just its hexagonal top).
     private func buildColumns(_ frame: VolcanoFrame, show: Bool, glow: SIMD3<Float>, sky: SIMD3<Float>, aspect: Float) {
         columnInstances.removeAll(keepingCapacity: true)
+        keysOpaqueBelow = -2
         guard show else { return }
         let bottom: Float = -1.0
         let whiteWidth = frame.keys.first(where: { !$0.key.isBlack })?.key.width ?? (1 / 52)
         let keyHeight = 2 * whiteWidth * aspect          // a white key's width, in NDC y
         let rs: Float = 0.5773503 * 0.7                    // the hexagon's corner radius, squashed (key widths)
         let backCentre = keyTop - rs * keyHeight
+        // (Each white column's front faces are opaque below its top's lowest edge, 1.465 of its widths under the keys'
+        // top: the line under which all are, if they run edge to edge without a gap.)
+        var cut: Float = 2, reach: Float = -1
+        var whole = true
         for k in frame.keys {
             if k.key.isBlack {
                 let mid = -1 + (k.key.x + 0.5 * k.key.width) * 2
@@ -467,29 +514,101 @@ final class VolcanoRimRenderer: ThemeRenderer {
             } else {
                 let x0 = -1 + k.key.x * 2, x1 = -1 + (k.key.x + k.key.width) * 2
                 columnInstances.append(SIMD4(x0, bottom, x1, keyTop))
+                if x0 > reach + 1e-4 { whole = false }
+                reach = max(reach, x1)
+                cut = min(cut, keyTop - 1.47 * (x1 - x0) * aspect)
             }
             columnInstances.append(SIMD4(k.key.isBlack ? 1 : 0, Self.unit(k.glow), k.pressed ? 1 : 0, 0))
         }
+        keysOpaqueBelow = whole && reach >= 1 - 1e-4 && cut < 1 ? cut - 2 * volU[Self.rowCam].w : -2
         let light: SIMD3<Float> = glow * 3.5 + sky
         columnLight = SIMD4(light, 1)
     }
 
     // MARK: - Render
 
+    /// This frame's share of the plates' map (before the scene's pass): every 16th row from this frame's strip, or the
+    /// whole map when it is new or the clock jumped more than half a second (a still frame has no frames after it).
+    private func encodePlateMap(_ cb: MTLCommandBuffer) {
+        guard skipLayers & 512 == 0, let kernel = plateKernel, let enc = cb.makeComputeCommandEncoder() else { return }
+        let map = plateMap
+        let clock = volU[Self.rowA].y
+        let whole = !plateMapWhole || !plateMapClock.isFinite || abs(clock - plateMapClock) > 0.5
+        plateMapClock = clock
+        let strips = whole ? 1 : Self.plateMapStrips
+        let first = whole ? 0 : plateMapStrip
+        var job = SIMD4<UInt32>(UInt32(first), UInt32(strips), 0, 0)
+        enc.setComputePipelineState(kernel)
+        volU.withUnsafeBytes { enc.setBytes($0.baseAddress!, length: $0.count, index: 0) }
+        enc.setBytes(&job, length: MemoryLayout<SIMD4<UInt32>>.size, index: 1)
+        enc.setTexture(map, index: 0)
+        let tw = max(1, kernel.threadExecutionWidth)
+        let th = max(1, min(8, kernel.maxTotalThreadsPerThreadgroup / tw))
+        let rows = (Self.plateMapSize - first + strips - 1) / strips
+        enc.dispatchThreadgroups(MTLSize(width: (Self.plateMapSize + tw - 1) / tw, height: (rows + th - 1) / th, depth: 1),
+                                 threadsPerThreadgroup: MTLSize(width: tw, height: th, depth: 1))
+        enc.endEncoding()
+        if whole {
+            plateMapWhole = true
+            plateMapStrip = 0
+            plateMapWholeDraws += 1
+        } else {
+            plateMapStrip = (plateMapStrip + 1) % Self.plateMapStrips
+            plateMapStripDraws += 1
+        }
+    }
+
+    /// The plume's half-size target for a scene `width` × `height` (made when the size changes, kept).
+    private func plumeTexture(width: Int, height: Int) -> MTLTexture? {
+        let w = max(1, (width + 1) / 2), h = max(1, (height + 1) / 2)
+        if plumeTarget?.width != w || plumeTarget?.height != h {
+            let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: RenderStack.sceneFormat, width: w, height: h, mipmapped: false)
+            d.usage = [.renderTarget, .shaderRead]
+            d.storageMode = .private
+            plumeTarget = device.makeTexture(descriptor: d)
+            plumeAllocations += 1
+        }
+        return plumeTarget
+    }
+
     func render(stack: RenderStack, commandBuffer cb: MTLCommandBuffer) {
         if showingVeins {
             veinsRenderer.render(stack: stack, commandBuffer: cb)
             return
         }
-        guard let pass = stack.scenePass(clear: MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)),
+        encodePlateMap(cb)
+        let skyRows = sky.uniforms
+        // The plume first, at half size.
+        var plumeDrawn: MTLTexture?
+        if skipLayers & 64 == 0, let hdr = stack.hdrTarget, let target = plumeTexture(width: hdr.width, height: hdr.height) {
+            let pp = MTLRenderPassDescriptor()
+            pp.colorAttachments[0].texture = target
+            pp.colorAttachments[0].loadAction = .dontCare
+            pp.colorAttachments[0].storeAction = .store
+            if let pe = cb.makeRenderCommandEncoder(descriptor: pp) {
+                pe.setRenderPipelineState(plumeHalf)
+                skyRows.withUnsafeBytes { pe.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
+                volU.withUnsafeBytes { pe.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
+                pe.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+                pe.endEncoding()
+                plumeDrawn = target
+            }
+        }
+        guard let pass = stack.scenePassOverwritten(),   // (its scene's triangle writes every pixel)
               let e = cb.makeRenderCommandEncoder(descriptor: pass) else { return }
         let skyU = sky.uniforms
         e.setRenderPipelineState(scene.state(storms: sky.storms))
         skyU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
+        volU[Self.rowSprites].x = plumeDrawn == nil ? -1 : 1
+        volU[Self.rowSprites].y = plateMapWhole ? 1 : 0
+        volU[Self.rowSprites].z = columnInstances.isEmpty || skipLayers & 8192 != 0 ? 0 : keysOpaqueBelow + 3
         volU[Self.rowSprites].w = Float(skipLayers & 0x7FF)
         volU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
-        volU[Self.rowSprites].w = 0
+        // (The row is this pass's alone: back to its resting state, so what tests read is the crater's own row.)
+        volU[Self.rowSprites] = SIMD4(-1, 0, 0, 0)
         sky.bindStars(e)
+        e.setFragmentTexture(plateMap, index: 1)
+        e.setFragmentTexture(plumeDrawn ?? plateMap, index: 2)
         e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         if showWarp { warp.draw(e) }
         let row = MemoryLayout<SIMD4<Float>>.stride

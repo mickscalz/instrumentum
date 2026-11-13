@@ -26,9 +26,54 @@ final class NeonNightDriveRenderer: ThemeRenderer {
     nonisolated static let carBase = 48, carSlots = 12
     nonisolated static let palBase = 72, palRows = 6
     nonisolated static let rowMoon = 78, rowCabin = 79, rowPillars = 80
+    /// Each car's cone (`carCone`): the direction to its lights and the cosine past which a ray misses its glow.
+    nonisolated static let carConeBase = 81
+    /// The view's tiles (`carTiles`: 16 across, 9 up, four to a row): the cars whose cones reach into each; then
+    /// (`streakTiles`) the cars whose mirror streaks on the road can show in each.
+    nonisolated static let carTileBase = 93, tileColumns = 16, tileRows = 9
+    nonisolated static let streakTileBase = 129
     /// The Sky kit's `SkyU` rows for the moon: its direction and phase, then lit fraction, earthshine, radius.
     nonisolated static let skyMoonRow = 6
-    nonisolated static let uniformCount = 81
+    nonisolated static let uniformCount = 165
+    /// A car's mirror streak on the wet road lies within this bearing (rad) of its light's, seen from the eye: the road's
+    /// `roadStreak` reads none past six of its widths sideways (at most 0.0218 rad: |sin| 0.1308).
+    nonisolated static let streakBearing: Float = 0.1312
+
+    /// A car's cone for the shader (MSL `carCone`): the unit direction from the eye to the middle of its lights (the
+    /// road's frame: x right, y up, z ahead) and the cosine of the angle within which a ray passes nearer to it than its
+    /// glow reaches (19.6 m for an oncoming car's headlights, 13.6 for taillights and spray; its face is well inside
+    /// that): a ray with |cos| under it reads none of the car. An empty slot is never read (2); a car nearer than its
+    /// reach always is (−1).
+    /// The ray (the road's frame) through a point of the view (NDC), from the sky's camera rows and the road's axes: the
+    /// shader's `driveRay`.
+    nonisolated static func tileRay(_ x: Float, _ y: Float, right rt: SIMD4<Float>, up: SIMD4<Float>, forward fw: SIMD4<Float>,
+                                    axes ax: SIMD4<Float>) -> SIMD3<Float> {
+        let f = SIMD3<Float>(fw.x, fw.y, fw.z), r = SIMD3<Float>(rt.x, rt.y, rt.z), v = SIMD3<Float>(up.x, up.y, up.z)
+        let e = simd_normalize(f + r * (x * rt.w) + v * (y * up.w))
+        return SIMD3<Float>(e.x * ax.z + e.y * ax.w, e.z, e.x * ax.x + e.y * ax.y)
+    }
+
+    private static func angle(_ a: SIMD3<Float>, _ b: SIMD3<Float>) -> Float { acos(min(1, max(-1, simd_dot(a, b)))) }
+
+    /// The half-angle (rad) of the cone round a car's axis point (as `carCone`'s) holding its face: its body, lights and
+    /// bar stand within 1.77 m of the point (2.2 m with a margin); −1 for none, 4 when the eye is that near.
+    nonisolated static func faceHalfAngle(x: Float, ahead: Float, eye: Float) -> Float {
+        guard ahead > -1e4, x.isFinite, ahead.isFinite else { return -1 }
+        let len = simd_length(SIMD3<Float>(x, 0.7 - eye, ahead))
+        let reach: Float = 2.2
+        return len > reach ? asin(reach / len) : 4
+    }
+
+    nonisolated static func carCone(x: Float, ahead: Float, oncoming: Bool, eye: Float) -> SIMD4<Float> {
+        guard ahead > -1e4, x.isFinite, ahead.isFinite else { return SIMD4(0, 0, 0, 2) }
+        let c = SIMD3<Float>(x, 0.7 - eye, ahead)
+        let len = simd_length(c)
+        let reach: Float = oncoming ? 19.6 : 13.6
+        guard len > reach else { return SIMD4(0, 0, 0, -1) }
+        let n = c / len
+        let share = reach / len
+        return SIMD4(n.x, n.y, n.z, (1 - share * share).squareRoot())
+    }
 
     // MARK: The view
     /// The way the road runs (degrees from north): the sky's moon and clouds stand where they would.
@@ -52,7 +97,25 @@ final class NeonNightDriveRenderer: ThemeRenderer {
     let reflectCopy: ViewCopy
     private let scene: SkyPipeline
     private let reflect: MTLRenderPipelineState
+    /// The wet road's mirror drawn at half resolution (`drive_mirror_fragment`, into `mirrorTarget`), added in at full
+    /// resolution (`drive_mirror_compose_fragment`), which hides it behind nearer things pixel by pixel.
+    private let mirrorHalf, mirrorCompose: MTLRenderPipelineState
+    private let device: MTLDevice
+    private var mirrorTarget: MTLTexture?
+    /// The mirror's share of the view's width and height: half on High, a quarter on Smooth (it is a blur six or more of
+    /// the view's pixels wide, streaked down the road).
+    private(set) var mirrorScale: Float = 0.5
+    /// The mirror's targets made so far (tests: one a size, never one a frame).
+    private(set) var mirrorAllocations = 0
     private var u = [SIMD4<Float>](repeating: .zero, count: NeonNightDriveRenderer.uniformCount)
+    /// The cars' cones' half-angles this frame (rad; −1 an empty slot, 4 a car nearer than its reach), and their lights'
+    /// bearings from the eye (rad, the road's frame; 100 an empty slot).
+    private var carHalf = [Float](repeating: -1, count: NeonNightDriveRenderer.carSlots)
+    /// Each car's face's cone (half-angle, rad; −1 none, 4 everywhere): its face, its lights and its bar stand within
+    /// 1.8 m of the cone's axis point.
+    private var faceHalf = [Float](repeating: -1, count: NeonNightDriveRenderer.carSlots)
+    private var faceAxis = [SIMD3<Float>](repeating: .zero, count: NeonNightDriveRenderer.carSlots)
+    private var carBearing = [Float](repeating: 100, count: NeonNightDriveRenderer.carSlots)
     private var limiter = FlashLimiter()
     private var limiterStarted = false
     private var showWarp = false
@@ -60,7 +123,9 @@ final class NeonNightDriveRenderer: ThemeRenderer {
     /// Layers a timing test skips (0 in the app: everything is drawn), so one run can price each on a slow GPU. The scene's
     /// bits: 1 the road's shading, 2 the rows of towers along the road, 4 the downtown, 8 the street below, 16 the cars,
     /// 32 the street lights' glow, 64 the cars' glow, 128 the sky; the renderer's: 256 the wet road's mirror, 512 Light
-    /// Trails, 1024 the windscreen's glass, 2048 the cabin, 4096 the weather, 8192 everything after the scene's pass.
+    /// Trails, 1024 the windscreen's glass, 2048 the cabin, 4096 the weather, 8192 everything after the scene's pass; and
+    /// the scene's again: 65536 the facades' windows and walls (a flat dark), 131072 the neon signs, 262144 the parapets
+    /// along the road, 524288 the haze over what's hit.
     var skipLayers: UInt32 = 0
 
     /// What was drawn (tests read them): the wave's and the lightning's light after the limiter, the tunnel's strobe (its
@@ -101,9 +166,20 @@ final class NeonNightDriveRenderer: ThemeRenderer {
         rd.colorAttachments[0].destinationRGBBlendFactor = .one
         rd.colorAttachments[0].sourceAlphaBlendFactor = .zero
         rd.colorAttachments[0].destinationAlphaBlendFactor = .one
-        guard let scenePipe, let reflectPipe = try? device.makeRenderPipelineState(descriptor: rd) else { return nil }
+        // The mirror at half resolution (written whole, no blending), and the pass that adds it in at full resolution
+        // (additive, as the full-resolution mirror was).
+        let md = MTLRenderPipelineDescriptor()
+        md.vertexFunction = lib.skyFunction("drive_vertex")
+        md.fragmentFunction = lib.skyFunction("drive_mirror_fragment")
+        md.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
+        rd.fragmentFunction = lib.skyFunction("drive_mirror_compose_fragment")
+        guard let composePipe = try? device.makeRenderPipelineState(descriptor: rd) else { return nil }
+        rd.fragmentFunction = lib.skyFunction("drive_reflect_fragment")
+        guard let scenePipe, let reflectPipe = try? device.makeRenderPipelineState(descriptor: rd),
+              let mirrorPipe = try? device.makeRenderPipelineState(descriptor: md) else { return nil }
         sky = s; weather = w; warp = gw; trails = tl; screen = sc; reflectCopy = rc
-        scene = scenePipe; reflect = reflectPipe
+        scene = scenePipe; reflect = reflectPipe; mirrorHalf = mirrorPipe; mirrorCompose = composePipe
+        self.device = device
         sky.verticalFOV = 47
         sky.horizonY = Self.horizonY
         sky.viewAzimuth = Self.heading
@@ -217,6 +293,7 @@ final class NeonNightDriveRenderer: ThemeRenderer {
         // The rows.
         let tanV = Float(tan(Double(fov) * .pi / 360))
         let octaves: Float = quality == .lite ? 2 : 3
+        mirrorScale = quality == .lite ? 0.25 : 0.5
         u[Self.rowA] = SIMD4(aspect, t, octaves, 2 * tanV / height)
         let hd = Float(Self.heading * .pi / 180)
         u[Self.rowAxes] = SIMD4(sin(hd), cos(hd), cos(hd), -sin(hd))
@@ -265,11 +342,15 @@ final class NeonNightDriveRenderer: ThemeRenderer {
         for i in 0..<Self.carSlots {
             u[Self.carBase + i * 2] = SIMD4(0, -Self.farAway, 0, 0)
             u[Self.carBase + i * 2 + 1] = .zero
+            u[Self.carConeBase + i] = SIMD4(0, 0, 0, 2)
         }
         for (i, c) in frame.cars.prefix(Self.carSlots).enumerated() {
-            u[Self.carBase + i * 2] = SIMD4(DriveRoad.laneCentre(c.lane), c.ahead, c.oncoming ? 1 : 0, Self.unit(c.brake))
+            let x = DriveRoad.laneCentre(c.lane)
+            u[Self.carBase + i * 2] = SIMD4(x, c.ahead, c.oncoming ? 1 : 0, Self.unit(c.brake))
             u[Self.carBase + i * 2 + 1] = SIMD4(Float(c.seed % 1000) / 1000, c.lightBar ? 1 : 0, 0, 0)
+            u[Self.carConeBase + i] = Self.carCone(x: x, ahead: c.ahead, oncoming: c.oncoming, eye: DriveRoad.eyeHeight)
         }
+        fillCarTiles()
         for i in 0..<Self.palRows { u[Self.palBase + i] = SIMD4(pal[i], 0) }
         // The moon, drawn by the drive itself as a dim glow behind the overcast (the Sky kit's disc is hidden in `render`):
         // its direction and how much of it shows (its lit part, none by day or below the horizon).
@@ -286,7 +367,10 @@ final class NeonNightDriveRenderer: ThemeRenderer {
         // The cabin's outline, so the road never mirrors what the pillars hide from you.
         let glass = WindowSpec.windscreen(aspect: aspect)
         if let w = glass.windscreen {
-            u[Self.rowCabin] = SIMD4(w.dash, w.roof, 0, 0)
+            // (Deep under the dashboard, 0.2 below its lowest point: the glass's most blurred drops look no farther
+            // down than 0.19 past the glass's foot, so nothing drawn there is seen.)
+            let hiddenBelow = w.dash + min(0, w.dashCurve) - 0.2
+            u[Self.rowCabin] = SIMD4(w.dash, w.roof, hiddenBelow + 3, 0)
             u[Self.rowPillars] = SIMD4(w.leftPillar.x, w.leftPillar.y, w.rightPillar.x, w.rightPillar.y)
         }
         screen.update(spec: glass, wipers: frame.wipers, glassRain: frame.glassRain, speed: frame.speed,
@@ -313,9 +397,89 @@ final class NeonNightDriveRenderer: ThemeRenderer {
         return p
     }
 
+    /// The cars' tiles: for each of the view's 16 × 9 tiles, the cars (bits) a ray through it can meet, face or glow. A
+    /// car whose cone (half-angle α round its axis, or its opposite) is farther from the tile's middle ray than α and the
+    /// tile's own reach (its corners' angle from the middle, with a margin) can't be met there: its bit is clear, and the
+    /// shader passes it by without reading it. Cars with a cone too wide to tell are in every tile.
+    private func fillCarTiles() {
+        let su = sky.uniforms
+        let rt = su[0], up = su[1], fw = su[2], ax = u[Self.rowAxes]
+        for c in 0..<Self.carSlots {
+            let w = u[Self.carConeBase + c].w
+            carHalf[c] = w > 1.5 ? -1 : (w < 0 ? 4 : acos(min(1, w)))
+            let car = u[Self.carBase + c * 2]
+            faceHalf[c] = Self.faceHalfAngle(x: car.x, ahead: car.y, eye: u[Self.rowRoad3].y)
+            let axis = SIMD3<Float>(car.x, 0.7 - u[Self.rowRoad3].y, car.y)
+            faceAxis[c] = faceHalf[c] >= 0 && faceHalf[c] < 1.5 ? axis / simd_length(axis) : .zero
+            carBearing[c] = car.y > -1e4 ? atan2(car.x, car.y) : 100
+        }
+        let cw = 2 / Float(Self.tileColumns), ch = 2 / Float(Self.tileRows)
+        for ty in 0..<Self.tileRows {
+            for tx in 0..<Self.tileColumns {
+                let x0 = -1 + cw * Float(tx), y0 = -1 + ch * Float(ty)
+                let mid = Self.tileRay(x0 + 0.5 * cw, y0 + 0.5 * ch, right: rt, up: up, forward: fw, axes: ax)
+                let a = Self.angle(mid, Self.tileRay(x0, y0, right: rt, up: up, forward: fw, axes: ax))
+                let b = Self.angle(mid, Self.tileRay(x0 + cw, y0, right: rt, up: up, forward: fw, axes: ax))
+                let c = Self.angle(mid, Self.tileRay(x0, y0 + ch, right: rt, up: up, forward: fw, axes: ax))
+                let d = Self.angle(mid, Self.tileRay(x0 + cw, y0 + ch, right: rt, up: up, forward: fw, axes: ax))
+                let spread = max(max(a, b), max(c, d)) * 1.05 + 0.002
+                // The glows' mask in the low 12 bits; the faces' (cones only 1.8 m round, a few tiles each) in the next 12.
+                var mask: Float = 0
+                for k in 0..<Self.carSlots where carHalf[k] >= 0 {
+                    let reach = carHalf[k] + spread
+                    let cone = u[Self.carConeBase + k]
+                    if reach >= 1.5 || abs(simd_dot(mid, SIMD3<Float>(cone.x, cone.y, cone.z))) >= cos(reach) {
+                        mask += Float(1 << k)
+                    }
+                }
+                for k in 0..<Self.carSlots where faceHalf[k] >= 0 {
+                    let reach = faceHalf[k] + spread
+                    if reach >= 1.5 || simd_dot(mid, faceAxis[k]) >= cos(reach) {
+                        mask += Float(1 << (k + 12))
+                    }
+                }
+                let i = ty * Self.tileColumns + tx
+                u[Self.carTileBase + i / 4][i % 4] = mask
+                // The streaks: the tile's bearings (its edges' and middle's, from the eye; the view looks ahead, so
+                // none wraps), widened by the streaks' reach and a margin.
+                var lo: Float = 10, hi: Float = -10
+                for (fx, fy) in Self.tileSamples {
+                    let r = Self.tileRay(x0 + fx * cw, y0 + fy * ch, right: rt, up: up, forward: fw, axes: ax)
+                    let b = atan2(r.x, r.z)
+                    lo = min(lo, b); hi = max(hi, b)
+                }
+                lo -= Self.streakBearing + 0.01
+                hi += Self.streakBearing + 0.01
+                var streaks: Float = 0
+                for k in 0..<Self.carSlots where carBearing[k] < 50 {
+                    let b = carBearing[k]
+                    if b >= lo && b <= hi { streaks += Float(1 << k) }
+                }
+                u[Self.streakTileBase + i / 4][i % 4] = streaks
+            }
+        }
+    }
+
+    /// Where a tile's bearings are sampled (shares of its width and height): its corners, its edges' middles, its middle.
+    private static let tileSamples: [(Float, Float)] = [(0, 0), (0.5, 0), (1, 0), (0, 0.5), (0.5, 0.5), (1, 0.5),
+                                                        (0, 1), (0.5, 1), (1, 1)]
+
+    /// The mirror's target for a scene `width` × `height` at `scale` (made when the size changes, kept).
+    private func mirrorTexture(width: Int, height: Int, scale: Float) -> MTLTexture? {
+        let w = max(1, Int((Float(width) * scale).rounded(.up))), h = max(1, Int((Float(height) * scale).rounded(.up)))
+        if mirrorTarget?.width != w || mirrorTarget?.height != h {
+            let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: RenderStack.sceneFormat, width: w, height: h, mipmapped: false)
+            d.usage = [.renderTarget, .shaderRead]
+            d.storageMode = .private
+            mirrorTarget = device.makeTexture(descriptor: d)
+            mirrorAllocations += 1
+        }
+        return mirrorTarget
+    }
+
     func render(stack: RenderStack, commandBuffer cb: MTLCommandBuffer) {
         sky.prepare(cb)   // the supercell's impostor, before the frame's passes
-        guard let pass = stack.scenePass(clear: MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)),
+        guard let pass = stack.scenePassOverwritten(),   // (its scene's triangle writes every pixel)
               let hdr = stack.hdrTarget, let depth = stack.depthTarget,
               let e = cb.makeRenderCommandEncoder(descriptor: pass) else { return }
         // The Sky kit's moon would be a crisp disc on the overcast: set it below the horizon here (the drive draws its own,
@@ -324,7 +488,7 @@ final class NeonNightDriveRenderer: ThemeRenderer {
         skyU[Self.skyMoonRow] = SIMD4(0, 0, -1, skyU[Self.skyMoonRow].w)
         e.setRenderPipelineState(scene.state(sky.program))
         skyU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
-        u[Self.rowRoad3].w = Float(skipLayers & 0xFF)
+        u[Self.rowRoad3].w = Float((skipLayers & 0xFF) | ((skipLayers >> 8) & 0xF00))
         u.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
         u[Self.rowRoad3].w = 0
         sky.bindStars(e)
@@ -333,18 +497,42 @@ final class NeonNightDriveRenderer: ThemeRenderer {
         if skipLayers & 4096 == 0 { weather.draw(e) }
         e.endEncoding()
         if skipLayers & 8192 != 0 { return }
-        // The wet road's and the harbour's mirror of the city, and Light Trails.
-        if let view = reflectCopy.make(from: hdr, commandBuffer: cb), let e2 = cb.makeRenderCommandEncoder(descriptor: colourPass(hdr)) {
-            if skipLayers & 256 == 0 {
-                e2.setRenderPipelineState(reflect)
-                skyU.withUnsafeBytes { e2.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
-                u.withUnsafeBytes { e2.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
-                e2.setFragmentTexture(view, index: 0)
-                e2.setFragmentTexture(depth, index: 1)
-                e2.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+        // The wet road's and the harbour's mirror of the city (drawn at half resolution first), and Light Trails.
+        if let view = reflectCopy.make(from: hdr, commandBuffer: cb) {
+            var mirror: MTLTexture?
+            if skipLayers & 256 == 0, let target = mirrorTexture(width: hdr.width, height: hdr.height, scale: mirrorScale) {
+                let mp = MTLRenderPassDescriptor()
+                mp.colorAttachments[0].texture = target
+                mp.colorAttachments[0].loadAction = .dontCare
+                mp.colorAttachments[0].storeAction = .store
+                if let em = cb.makeRenderCommandEncoder(descriptor: mp) {
+                    em.setRenderPipelineState(mirrorHalf)
+                    skyU.withUnsafeBytes { em.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
+                    u.withUnsafeBytes { em.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
+                    em.setFragmentTexture(view, index: 0)
+                    em.setFragmentTexture(depth, index: 1)
+                    em.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+                    em.endEncoding()
+                    mirror = target
+                }
             }
-            if skipLayers & 512 == 0 { trails.draw(e2, depth: depth, sky: skyU, drive: u) }
-            e2.endEncoding()
+            if let e2 = cb.makeRenderCommandEncoder(descriptor: colourPass(hdr)) {
+                if skipLayers & 256 == 0 {
+                    skyU.withUnsafeBytes { e2.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
+                    u.withUnsafeBytes { e2.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
+                    if let mirror {
+                        e2.setRenderPipelineState(mirrorCompose)
+                        e2.setFragmentTexture(mirror, index: 0)
+                    } else {
+                        e2.setRenderPipelineState(reflect)
+                        e2.setFragmentTexture(view, index: 0)
+                    }
+                    e2.setFragmentTexture(depth, index: 1)
+                    e2.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+                }
+                if skipLayers & 512 == 0 { trails.draw(e2, depth: depth, sky: skyU, drive: u) }
+                e2.endEncoding()
+            }
         }
         // The windscreen: the rain on the glass and the wipers, then the cabin round it.
         if let view = screen.makeView(from: hdr, commandBuffer: cb), let e3 = cb.makeRenderCommandEncoder(descriptor: colourPass(hdr)) {

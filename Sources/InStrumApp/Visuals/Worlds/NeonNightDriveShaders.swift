@@ -1,7 +1,7 @@
 /// Metal source for Neon Night Drive (Fire & Neon spec §9): the view through the windscreen down a wet elevated expressway
 /// into a dense neon city at night. One full-screen pass (`drive_scene_fragment`) draws the sky, the city, the road and its
-/// traffic; a second (`drive_reflect_fragment`) adds the wet road's and the harbour's mirror of the city from a blurred copy
-/// of the first, streaked down the road; Light Trails (`LightTrailsShaders`) and the windscreen (`WindscreenShaders`) go
+/// traffic; a second (`drive_mirror_fragment`, at half resolution, added in by `drive_mirror_compose_fragment`) adds the wet
+/// road's and the harbour's mirror of the city from a blurred copy of the first, streaked down the road; Light Trails (`LightTrailsShaders`) and the windscreen (`WindscreenShaders`) go
 /// over them.
 ///
 /// Everything is hit in closed form, never marched: the road deck, its parapets and the median are planes; the towers along
@@ -40,8 +40,14 @@ enum NeonNightDriveShaders {
         float4 cars[24];    // per car: (x centre, ahead, oncoming, brake), (seed 0…1, light bar, body, 0); empty: ahead −1e5
         float4 pal[6];      // the neon now: three palette colours (rgb), then three accents (rgb)
         float4 moon;        // the moon behind the overcast: its direction (east-north-up), how much shows 0…1
-        float4 cabin;       // the windscreen's outline (NDC): the dashboard's line y, the roof's line y, 0, 0
+        float4 cabin;       // the windscreen's outline (NDC): the dashboard's line y, the roof's line y, 3 + the line (NDC
+                            // y) below which the dashboard hides the view and no blur of the glass reaches (0: none), 0
         float4 pillars;     // the left pillar's inner edge x at the dashboard and at the roof, the right pillar's
+        float4 carCone[12]; // per car: the direction to its lights (the road's frame), and the cosine within which a ray
+                            // passes nearer than its glow reaches (|cos| under it: none of the car; empty 2, always −1)
+        float4 carTiles[36]; // the view in 16 × 9 tiles (four a row, row by row from the bottom left): the cars (bits) whose
+                             // cones reach into each
+        float4 streakTiles[36]; // the same tiles: the cars whose mirror streaks on the road can show in each
     };
     struct DriveOut { float4 pos [[position]]; float2 ndc; };
 
@@ -324,31 +330,39 @@ enum NeonNightDriveShaders {
         float cover = cu * cv;
         float col = floor(u / colW), fl = floor(v / floorH);
         float lit;
-        float3 wc;
-        float bright;
         if (glass) {
             float floorLit = hash12(float2(fl * 1.3 + seed, seed * 31.0 + floor(col / 7.0)));
             lit = step(floorLit, litShare * 1.4) * step(hash12(float2(col * 1.7 + seed, fl * 3.1)), 0.88);
-            float tint = hash12(float2(fl * 0.7 + seed, floor(col / 7.0)));
-            wc = h5 < 0.7 ? (tint < 0.6 ? float3(0.74, 0.9, 1.0) : float3(0.95, 0.96, 0.9)) : float3(1.0, 0.84, 0.62);
-            // Desks and partitions break the floor's light up; its ceiling panels are the brightest.
-            bright = (0.48 + 0.5 * hash12(float2(fl, seed))) * (0.3 + 1.2 * hash12(float2(floor(u / 0.9), fl + seed)));
         } else {
             float winLit = hash12(float2(col * 1.7 + seed * 5.0, fl * 3.1 + seed));
             lit = step(winLit, litShare);
-            float temp = hash12(float2(col + seed, fl * 0.37));
-            wc = temp < 0.08 ? float3(0.55, 0.7, 1.0) : mix(float3(1.0, 0.5, 0.18), float3(1.0, 0.72, 0.42), temp);
-            bright = 0.35 + 0.7 * hash12(float2(col * 3.3 + seed, fl));
         }
-        // Under its ceiling a window is brighter (the room's lights), towards its sill darker.
-        float vin = clamp((fract((v + floorH * (1.0 - winH) * 0.5) / floorH) * floorH) / (floorH * winH), 0.0, 1.0);
-        // An office's ceiling panels in rows; below them, the desks' dark shapes against the far wall's light.
-        float panels = glass ? smoothstep(0.84, 0.93, vin) * step(fract(u / 1.2 + seed), 0.55) : 0.0;
-        float desks = glass ? 1.0 - 0.55 * step(vin, 0.32) * step(0.4, hash12(float2(floor(u / 1.6), fl * 1.9 + seed))) : 1.0;
-        float inner = glass ? (0.5 + 0.45 * vin) * desks + 2.2 * panels : 0.7 + 0.55 * vin;
+        // (An unlit window has no light of its own: its tint, its brightness and the room inside aren't worked out. Most
+        // windows.)
+        float3 sharp = float3(0.0);
+        if (lit > 0.0) {
+            float3 wc;
+            float bright;
+            if (glass) {
+                float tint = hash12(float2(fl * 0.7 + seed, floor(col / 7.0)));
+                wc = h5 < 0.7 ? (tint < 0.6 ? float3(0.74, 0.9, 1.0) : float3(0.95, 0.96, 0.9)) : float3(1.0, 0.84, 0.62);
+                // Desks and partitions break the floor's light up; its ceiling panels are the brightest.
+                bright = (0.48 + 0.5 * hash12(float2(fl, seed))) * (0.3 + 1.2 * hash12(float2(floor(u / 0.9), fl + seed)));
+            } else {
+                float temp = hash12(float2(col + seed, fl * 0.37));
+                wc = temp < 0.08 ? float3(0.55, 0.7, 1.0) : mix(float3(1.0, 0.5, 0.18), float3(1.0, 0.72, 0.42), temp);
+                bright = 0.35 + 0.7 * hash12(float2(col * 3.3 + seed, fl));
+            }
+            // Under its ceiling a window is brighter (the room's lights), towards its sill darker.
+            float vin = clamp((fract((v + floorH * (1.0 - winH) * 0.5) / floorH) * floorH) / (floorH * winH), 0.0, 1.0);
+            // An office's ceiling panels in rows; below them, the desks' dark shapes against the far wall's light.
+            float panels = glass ? smoothstep(0.84, 0.93, vin) * step(fract(u / 1.2 + seed), 0.55) : 0.0;
+            float desks = glass ? 1.0 - 0.55 * step(vin, 0.32) * step(0.4, hash12(float2(floor(u / 1.6), fl * 1.9 + seed))) : 1.0;
+            float inner = glass ? (0.5 + 0.45 * vin) * desks + 2.2 * panels : 0.7 + 0.55 * vin;
+            sharp = wc * (lit * bright * inner);
+        }
         // Recessed windows hide behind their reveals when seen at a grazing angle; flush glass mirrors instead.
         float reveal = glass ? 0.35 + 0.65 * smoothstep(0.02, 0.4, cosI) : smoothstep(0.04, 0.45, cosI);
-        float3 sharp = wc * (lit * bright * inner);
         float far = smoothstep(0.45, 1.5, max(fu / colW, fv / floorH));
         float3 avgCol = (glass ? (h5 < 0.7 ? float3(0.78, 0.9, 1.0) : float3(1.0, 0.84, 0.62)) * 0.41 * 1.4
                                : float3(1.0, 0.6, 0.3) * 0.7) * litShare;
@@ -359,20 +373,27 @@ enum NeonNightDriveShaders {
         float3 dayWall = (glass ? float3(0.12, 0.13, 0.15) : float3(0.2, 0.19, 0.18)) * u0.amb.rgb * 8.0;
         float3 nightWall = wall * (u0.haze.rgb * 2.2 + u0.glow.rgb * u0.glow.w * 0.6 * (glass ? up : 0.2) + float3(0.002));
         float3 base = mix(dayWall, nightWall, night) * (1.0 - 0.6 * cover * (1.0 - far));
-        // The street's light washing the lowest floors; a lit crown on some towers.
-        float pools = 0.35 + 0.65 * sq(0.5 + 0.5 * cos(u * 0.157 + seed * 6.0));
-        float wash = exp(-max(v - 3.0, 0.0) / 7.0) * 0.016 * pools * night * (1.0 - near);
+        // The street's light washing the lowest floors (not the rows beside the road: `near` 1); a lit crown on some towers.
+        // (Where either is none its light isn't worked out: the same sum.)
+        float wash = 0.0;
+        if (near < 1.0) {
+            float pools = 0.35 + 0.65 * sq(0.5 + 0.5 * cos(u * 0.157 + seed * 6.0));
+            wash = exp(-max(v - 3.0, 0.0) / 7.0) * 0.016 * pools * night * (1.0 - near);
+        }
         // Tall towers' crowns are washed by uplights: cones of light fanning up from a ledge, brightest at their feet.
         float crownOn = step(0.62, h2) * step(45.0, height) * night * u0.neon.z * (1.0 - 0.6 * near);
+        float3 crown = float3(0.0);
         float cz = v - (height - 9.0);
-        float crownV = step(0.0, cz) * step(v, height) * exp(-max(cz, 0.0) / 5.0);
-        float spacing = 3.2;
-        float across = (fract(u / spacing) - 0.5) * spacing;
-        float spread = 0.35 + 0.22 * max(cz, 0.0);
-        float cone = exp(-across * across / (spread * spread)) * (0.35 / spread + 0.15);
-        float coneAvg = 0.2 + 0.05 * spread;
-        cone = mix(cone, coneAvg, smoothstep(0.5, 1.5, fu / spacing));
-        float3 crown = mix(float3(1.0, 0.72, 0.45), float3(0.65, 0.82, 1.0), step(0.75, h1)) * (0.22 * crownOn * crownV * cone);
+        if (crownOn > 0.0 && cz >= 0.0 && v <= height) {
+            float crownV = step(0.0, cz) * step(v, height) * exp(-max(cz, 0.0) / 5.0);
+            float spacing = 3.2;
+            float across = (fract(u / spacing) - 0.5) * spacing;
+            float spread = 0.35 + 0.22 * max(cz, 0.0);
+            float cone = exp(-across * across / (spread * spread)) * (0.35 / spread + 0.15);
+            float coneAvg = 0.2 + 0.05 * spread;
+            cone = mix(cone, coneAvg, smoothstep(0.5, 1.5, fu / spacing));
+            crown = mix(float3(1.0, 0.72, 0.45), float3(0.65, 0.82, 1.0), step(0.75, h1)) * (0.22 * crownOn * crownV * cone);
+        }
         return base + windowLight * 0.95 + float3(1.0, 0.8, 0.6) * wash + crown;
     }
 
@@ -383,6 +404,7 @@ enum NeonNightDriveShaders {
     float3 neonSign(float2 uv, float width, float height, int mode, int slot, float seed, float fp, float screenX, bool hero,
                     constant DriveU& u, thread float& cover) {
         cover = 0.0;
+        if ((uint(u.road3.w + 0.5) & 512u) != 0u) return float3(0);   // (the timing test's mask: no signs)
         float night = u.move.w;
         float w, h;
         float2 c;
@@ -487,6 +509,10 @@ enum NeonNightDriveShaders {
         float close = u.play.w;
         float xr = x * (1.0 - 0.32 * close);
         float hScale = 1.0 + 0.4 * close;
+        // (Everything of the row (its blade signs, facades, roof signs, end walls) stands where the ray has come within 7 m
+        // of its facades' line or past it, and none higher than its tallest building and a roof sign over it (34 m at
+        // most): a ray already above that there, climbing, meets none of it.)
+        if (d.y > 0.0 && eye + d.y * ((abs(xr) - 7.0) / abs(d.x)) > ground + maxH * hScale + 36.0) return r;
         // Blade signs: panels standing out from the facades towards the road, their neon facing the traffic (and you).
         // The ray is within their reach only between where it comes within 7 m of the facade and where it meets it.
         {
@@ -551,7 +577,7 @@ enum NeonNightDriveShaders {
             float facing = smoothstep(0.1, 0.35, abs(d.x) / max(length(d), 1e-4));
             if (local >= start && local <= start + len && y >= ground && y <= ground + height) {
                 float2 uv = float2(side < 0.0 ? local - start : start + len - local, y - ground);
-                float3 c = facade(uv.x, uv.y, height, seed, fu, fv, 1.0, abs(d.x), u);
+                float3 c = (uint(u.road3.w + 0.5) & 256u) != 0u ? float3(0.01) : facade(uv.x, uv.y, height, seed, fu, fv, 1.0, abs(d.x), u);
                 if (hasSign && mode > 0 && facing > 0.0) {
                     float cover = 0.0;
                     float3 sg = neonSign(uv, len, height, mode, slot, seed, fu, sx, false, u, cover);
@@ -587,7 +613,7 @@ enum NeonNightDriveShaders {
         if (into >= 0.0 && into <= depthB && ye >= ground && ye <= ground + hJ && slideJ < 0.99) {
             float seedJ = cj * 0.731 + rowSeed * 17.0 + 0.37;
             float fe = te * pa / max(abs(d.z), 0.03);
-            float3 c = facade(into, ye - ground, hJ, seedJ, fe, te * pa, 1.0, abs(d.z), u);
+            float3 c = (uint(u.road3.w + 0.5) & 256u) != 0u ? float3(0.01) : facade(into, ye - ground, hJ, seedJ, fe, te * pa, 1.0, abs(d.z), u);
             r.t = te * (1.0 + 6.0 * slideJ);
             r.col = c * (1.0 - slideJ) * 0.8;
         }
@@ -639,7 +665,7 @@ enum NeonNightDriveShaders {
         bool roofSign = (hero || hash11(seed * 5.7) < 0.1 + 0.35 * u.neon.y) && shape != 2;
         if (local >= start && local <= start + width && y >= ground && y <= ground + topH) {
             float2 uv = float2(local - start, y - ground);
-            float3 c = facade(uv.x, uv.y, topH, seed, fp, fp, 0.0, d.z, u);
+            float3 c = (uint(u.road3.w + 0.5) & 256u) != 0u ? float3(0.01) : facade(uv.x, uv.y, topH, seed, fp, fp, 0.0, d.z, u);
             if (wallSign) {
                 float cover = 0.0;
                 int mode = 1 + int(hash11(seed * 6.1) * 1.99);
@@ -674,18 +700,25 @@ enum NeonNightDriveShaders {
 
     /// A street light seen along `d`: its head (a lens under its housing, with a shape near and a point of the same light
     /// far off), a tight glow round the lens, and its halo in the rain (no wider than a few degrees however near the lamp).
-    float3 lampGlow(float3 d, float3 v, float tHit, float strength, float3 colour, float rain, float pa) {
+    /// `hazeL` > 0 dims it with distance through the haze (exp(-dist / hazeL)); worked out only for a lamp that shows.
+    float3 lampGlow(float3 d, float3 v, float tHit, float strength, float3 colour, float rain, float pa, float hazeL) {
         float dist = length(v);
         if (dist > tHit || v.z < 1.0) return float3(0);
+        float att = hazeL > 0.0 ? exp(-dist / hazeL) : 1.0;
         float3 o = d * dot(d, v) - v;
         float off = length(o);
+        float fw = dist * pa;
+        float r = min(2.2 + 3.5 * rain, dist * 0.03);
+        float halo = exp(-off / r) * (0.03 + 0.07 * rain) + exp(-off / min(r * 4.0, dist * 0.2)) * 0.0035;
+        // (The lens and the tight glow round it add under a millionth of the light farther than 4.5 m from the lens
+        // (and 4.4 widths of its blur, far off): there only the halo is read. Most of the view, for most lamps.)
+        if (off * off > max(20.25, 19.4 * (0.09 + fw * fw))) return colour * strength * halo * att;
         float3 h = float3(d.z, 0.0, -d.x) / max(length(d.xz), 1e-4);
         float3 w = cross(d, h);
         float ox = dot(o, h), oy = dot(o, w);
         // The lens: 0.6 m across, as tall as it shows from here (more of its underside as you near it).
         float hw = 0.3;
         float hh = 0.14 * saturate(v.y / dist) + 0.05;
-        float fw = dist * pa;
         float sx2 = hw * hw + fw * fw, sy2 = hh * hh + fw * fw;
         float soft = fw / hh;
         float point = exp(-ox * ox / sx2 - oy * oy / sy2) * (hw * hh / sqrt(sx2 * sy2)) * (1.0 + 2.0 * smoothstep(0.5, 3.0, soft));
@@ -694,9 +727,7 @@ enum NeonNightDriveShaders {
         float core = mix(point, crisp, smoothstep(0.7, 0.3, soft)) * 6.0;
         float edgeOff = max(off - hw, 0.0);
         float tight = exp(-edgeOff / min(0.3, dist * 0.006)) * 0.1;
-        float r = min(2.2 + 3.5 * rain, dist * 0.03);
-        float halo = exp(-off / r) * (0.03 + 0.07 * rain) + exp(-off / min(r * 4.0, dist * 0.2)) * 0.0035;
-        return colour * strength * (core + tight + halo);
+        return colour * strength * (core + tight + halo) * att;
     }
 
     /// A light's mirror on the wet road at `p`, seen along `d`: a streak below its mirror image, narrow sideways and long
@@ -709,9 +740,11 @@ enum NeonNightDriveShaders {
         float2 lh = toL.xz / hd;
         float daz = dh.x * lh.y - dh.y * lh.x;
         if (dot(dh, lh) < 0.0) return 0.0;
+        float sa = 0.005 + 0.012 * rough;
+        // (More than six of its widths to the side the streak is under e^-36 of its light: not read.)
+        if (abs(daz) > 6.0 * sa) return 0.0;
         float elL = toL.y / hd;
         float elR = -d.y / max(length(d.xz), 1e-4);
-        float sa = 0.005 + 0.012 * rough;
         float se = 0.04 + 0.32 * rough;
         float del = elL - elR;
         float lobe = exp(-daz * daz / (sa * sa) - del * del / (se * se));
@@ -741,7 +774,7 @@ enum NeonNightDriveShaders {
     // ---------------------------------------------------------------- the road
     /// The deck at `p` seen along `d` from `t` away: wet asphalt, its paint and studs, lit by your headlights and the
     /// street lights, the street lights' and the traffic's mirror streaks, the arp's pulses racing down the studs.
-    float3 shadeRoad(float3 p, float3 d, float t, constant DriveU& u, float pa, bool inTunnel) {
+    float3 shadeRoad(float3 p, float3 d, float t, constant DriveU& u, float pa, bool inTunnel, uint streakCars) {
         float dist = u.move.x;
         float zw = p.z + dist;
         float fx = t * pa;
@@ -749,7 +782,8 @@ enum NeonNightDriveShaders {
         float wet = inTunnel ? 0.1 : u.rain.z;
         int oct = int(u.a.z + 0.5);
         float grainVis = 1.0 - smoothstep(0.03, 0.25, max(fx, fz * 0.3));
-        float grain = vn2(float2(p.x * 4.1, zw * 4.1)) * grainVis + 0.5 * (1.0 - grainVis);
+        // (Past where the grain averages away (most of the road) its noise isn't read: the same 0.5.)
+        float grain = grainVis > 0.0 ? vn2(float2(p.x * 4.1, zw * 4.1)) * grainVis + 0.5 * (1.0 - grainVis) : 0.5;
         float puddle = smoothstep(0.56, 0.74, fbm2(float2(p.x * 0.21, zw * 0.07), oct)) * wet;
         float lw = u.road2.w;
         float track = 0.0;
@@ -761,11 +795,13 @@ enum NeonNightDriveShaders {
         float rough = clamp(0.75 - 0.35 * track - 0.45 * puddle, 0.12, 1.0);
         float3 albedo = float3(0.045, 0.045, 0.05) * (0.8 + 0.4 * grain) * (1.0 - 0.5 * wet) * (1.0 - 0.5 * puddle);
         // Paint: the edge lines and the dashed lane lines, your way and theirs.
+        // (A line's dashes are read only where the pixel is on its line.)
         float paint = 0.0;
         float le = u.road1.y;
         for (int i = 0; i <= 4; i++) {
             float xl = le + lw * float(i);
             float across = boxCover(p.x, xl - 0.07, xl + 0.07, fx);
+            if (across <= 0.0) continue;
             float dash = (i == 0 || i == 4) ? 1.0 : pulseTrain(zw, 12.0, 3.0, fz);
             paint = max(paint, across * dash);
         }
@@ -773,6 +809,7 @@ enum NeonNightDriveShaders {
         for (int i = 0; i <= 3; i++) {
             float xl = of0 + lw * float(i);
             float across = boxCover(p.x, xl - 0.07, xl + 0.07, fx);
+            if (across <= 0.0) continue;
             float dash = (i == 0 || i == 3) ? 1.0 : pulseTrain(zw + 6.0, 12.0, 3.0, fz);
             paint = max(paint, across * dash);
         }
@@ -800,12 +837,17 @@ enum NeonNightDriveShaders {
         float studLight = 0.0;
         float pulseSum = 0.0;
         float studZ = zw - (round((zw - 7.5) / 12.0) * 12.0 + 7.5);
+        float r2 = 0.0025;
+        float wx = r2 + fx * fx, wz = r2 + fz * fz;
+        float studNorm = r2 / sqrt(wx * wz);
+        float studAlong = studZ * studZ / wz;
+        // (Thirty of its widths along from the nearest row of studs a glint is under e^-30 of its light, far below the
+        // 1e-4 it must pass to be drawn: not read. Most of the near road, between the rows.)
         for (int i = 0; i <= 4; i++) {
+            if (studAlong >= 30.0) break;
             float xl = le + lw * float(i);
             float dx = p.x - xl;
-            float r2 = 0.0025;
-            float wx = r2 + fx * fx, wz = r2 + fz * fz;
-            float g = exp(-dx * dx / wx - studZ * studZ / wz) * r2 / sqrt(wx * wz);
+            float g = exp(-dx * dx / wx - studAlong) * studNorm;
             studLight = max(studLight, g);
         }
         if (studLight > 1e-4) {
@@ -838,6 +880,9 @@ enum NeonNightDriveShaders {
             }
         }
         for (int c = 0; c < 12; c++) {
+            // (Only the cars whose streaks can show in this pixel's tile: a streak lies within 0.131 rad of its light's
+            // bearing, and the others are passed by unread.)
+            if (((streakCars >> uint(c)) & 1u) == 0u) continue;
             float4 a = u.cars[c * 2];
             if (a.y < -1e4 || a.y < p.z - 2.0 || a.y > 420.0) continue;
             float oncoming = a.z;
@@ -848,14 +893,18 @@ enum NeonNightDriveShaders {
         // Rain ringing the puddles: tiny rings that come and go (they average away into a sheen far off).
         float ripple = 0.0;
         if (!inTunnel && u.rain.x > 0.02) {
-            float2 cell = floor(float2(p.x, zw) / 0.45);
-            float2 f = fract(float2(p.x, zw) / 0.45) - 0.5;
-            float h = hash12(cell);
-            float ph = fract(u.a.y * 1.6 + h);
-            float2 o = float2(hash12(cell + 3.1), hash12(cell + 7.7)) - 0.5;
-            float rr = length(f - o * 0.5) * 0.45;
-            float ring = exp(-sq((rr - ph * 0.12) / 0.006)) * (1.0 - ph) * step(h, u.rain.x * 0.6);
             float near = 1.0 - smoothstep(0.004, 0.02, max(fx, fz * 0.1));
+            float ring = 0.0;
+            // (The rings are drawn only a few metres out, under the dashboard's edge: elsewhere they aren't worked out.)
+            if (near > 0.0) {
+                float2 cell = floor(float2(p.x, zw) / 0.45);
+                float2 f = fract(float2(p.x, zw) / 0.45) - 0.5;
+                float h = hash12(cell);
+                float ph = fract(u.a.y * 1.6 + h);
+                float2 o = float2(hash12(cell + 3.1), hash12(cell + 7.7)) - 0.5;
+                float rr = length(f - o * 0.5) * 0.45;
+                ring = exp(-sq((rr - ph * 0.12) / 0.006)) * (1.0 - ph) * step(h, u.rain.x * 0.6);
+            }
             ripple = ring * near * 0.15 + 0.01 * u.rain.x;
         }
         col += spec * F + u.glow.rgb * (ripple * 0.6 * u.move.w);
@@ -917,9 +966,13 @@ enum NeonNightDriveShaders {
 
     /// A car's lights glowing in the rainy air: red taillights and the spray behind its wheels, or white headlights; each
     /// a point at least a pixel wide with a halo some tens of centimetres round it.
-    float3 carGlow(float3 d, float4 a, float tHit, float eye, float rain, float pa) {
+    float3 carGlow(float3 d, float4 a, float4 cone, float tHit, float eye, float rain, float pa) {
         if (a.y < -1e4 || a.y < 1.0) return float3(0);
         bool oncoming = a.z > 0.5;
+        // (Its lights and its spray all stand within 1.6 m of the cone's axis point, and none adds a millionth of its
+        // light farther than 18 m from where the ray passes it (12 m for a taillight or the spray): a ray outside its
+        // cone (19.6 m, 13.6 m) reads none of them. Most cars, for most of the view.)
+        if (abs(dot(d, cone.xyz)) < cone.w) return float3(0);
         float3 glow = float3(0);
         for (int s = -1; s <= 1; s += 2) {
             float3 v = float3(a.x + float(s) * (oncoming ? 0.64 : 0.7), (oncoming ? 0.64 : 0.84) - eye, a.y);
@@ -973,7 +1026,7 @@ enum NeonNightDriveShaders {
             float fix = boxCover(p.x, 1.35, 1.85, fx) * boxCover(zl, -1.2, 1.2, fz);
             col = float3(0.03, 0.03, 0.032) * E + lampC * fix * 9.0;
         } else if (kind == 4) {
-            col = shadeRoad(p, d, t, u, pa, true) + float3(0.03, 0.03, 0.03) * E;
+            col = shadeRoad(p, d, t, u, pa, true, 4095u) + float3(0.03, 0.03, 0.03) * E;
             float2 dh = normalize(d.xz);
             float s = abs(dh.x) > 1e-4 ? (1.6 - p.x) / dh.x : 1e9;
             if (s > 0.0 && s < 1e8) {
@@ -1027,6 +1080,14 @@ enum NeonNightDriveShaders {
     fragment ColorDepth drive_scene_fragment(DriveOut in [[stage_in]], constant SkyU& sky [[buffer(0)]],
                                              constant DriveU& u [[buffer(1)]], texture2d<float> stars [[texture(0)]],
                                              texture2d<float> cell [[texture(9)]]) {
+        // Deep under the dashboard (opaque, drawn over the view, and below where the glass's blurred drops look) nothing
+        // of the scene is ever seen: not drawn.
+        if (in.ndc.y < u.cabin.z - 3.0) {
+            ColorDepth hidden;
+            hidden.color = float4(0.0, 0.0, 0.0, 1.0);
+            hidden.depth = float4(0.0, 0, 0, 1);
+            return hidden;
+        }
         float3 dE;
         float3 d = driveRay(in.ndc, sky, u, dE);
         float pa = u.a.w;
@@ -1094,11 +1155,17 @@ enum NeonNightDriveShaders {
                     } else {
                         kind = 1;
                         col = float3(0.02);
-                        if ((skip & 1u) == 0u) col = shadeRoad(p, d, tr, u, pa, false);
+                        if ((skip & 1u) == 0u) {
+                            int sx = clamp(int((in.ndc.x + 1.0) * 8.0), 0, 15), sy = clamp(int((in.ndc.y + 1.0) * 4.5), 0, 8);
+                            int st = sy * 16 + sx;
+                            uint streakCars = uint(u.streakTiles[st >> 2][st & 3] + 0.5);
+                            col = shadeRoad(p, d, tr, u, pa, false, streakCars);
+                        }
                     }
                 }
             }
             for (int side = 0; side < 3; side++) {
+                if ((skip & 1024u) != 0u) break;
                 float xw = side == 0 ? lp : (side == 1 ? mn : fpx);
                 if ((side == 0 && d.x >= 0.0) || (side > 0 && d.x <= 0.0)) continue;
                 float tw = xw / d.x;
@@ -1245,6 +1312,9 @@ enum NeonNightDriveShaders {
                 float2 gap = i == 0 ? float2(-24.0, 40.0) : (i == 1 ? float2(-34.0, 52.0)
                            : (i == 2 ? float2(-48.0, 66.0) : float2(0.0, 0.0)));
                 if (lay.x < zMin) continue;
+                // (Higher than its tallest tower's spire (1.17 of its height) and a roof sign over it (34 m at most) a
+                // layer has nothing: it isn't looked at. The sky over the skyline.)
+                if (d.z > 1e-4 && u.road3.y + d.y * (lay.x / d.z) > lay.w * 1.17 * (1.0 + 0.25 * u.play.w) + 24.0) continue;
                 Tower r = downtown(d, lay.x, lay.y, lay.z, lay.w, gap.x, gap.y, float(i), u, pa);
                 if (r.addT < 1e8) add += r.add * exp(-r.addT / max(u.haze.w, 1.0));
                 if (r.t < 1e8) { tHit = r.t; col = r.col; kind = 30; break; }
@@ -1267,11 +1337,22 @@ enum NeonNightDriveShaders {
             }
         }
 
-        // The traffic: the cars' faces where the ray meets them, nearer than what it hit.
+        // The traffic: the cars' faces where the ray meets them, nearer than what it hit. (Only the cars whose cones reach
+        // this pixel's tile of the view are looked at: the rest can't be met here.)
+        int tileX = clamp(int((in.ndc.x + 1.0) * 8.0), 0, 15), tileY = clamp(int((in.ndc.y + 1.0) * 4.5), 0, 8);
+        int tile = tileY * 16 + tileX;
+        // (The tile's masks: the cars whose glow can reach it in the low 12 bits, whose face can in the next 12; whole
+        // numbers under 2^24, exact in a float.)
+        uint tileMasks = uint(u.carTiles[tile >> 2][tile & 3]);
+        uint carMask = tileMasks & 4095u, faceMask = tileMasks >> 12;
         float carT = 1e9;
         for (int c = 0; c < 12; c++) {
-            float4 a = u.cars[c * 2];
             if ((skip & 16u) != 0u) break;
+            if (((faceMask >> uint(c)) & 1u) == 0u) continue;
+            float4 a = u.cars[c * 2];
+            // (A ray outside the car's cone passes more than 13.6 m from it: its face, 1.8 m round, can't be met.)
+            float4 cone = u.carCone[c];
+            if (abs(dot(d, cone.xyz)) < cone.w) continue;
             if (a.y < 1.0 || a.y > 700.0 || a.y < zMin || d.z <= 0.0) continue;
             float tc = a.y / d.z;
             if (tc >= tHit) continue;
@@ -1289,7 +1370,7 @@ enum NeonNightDriveShaders {
         if (kind == 0) {
             col = float3(0.01);
             if ((skip & 128u) == 0u) col = driveSky(dE, d, sky, u, stars, cell);
-        } else {
+        } else if ((skip & 2048u) == 0u) {
             col = applyHaze(col, tHit, d, u);
         }
         col += add;
@@ -1301,7 +1382,7 @@ enum NeonNightDriveShaders {
             for (int j = -1; j <= 1; j++) {
                 float3 v = lamp + float3(0.0, 0.0, float(j) * kLampSpacing);
                 if (v.z < zMin || (v.z > ts - 2.0 && v.z < te + 2.0)) continue;
-                col += lampGlow(d, v, tHit, u.neon.z * 1.4, kLampColour, rain, pa) * exp(-length(v) / max(u.haze.w * 1.5, 1.0));
+                col += lampGlow(d, v, tHit, u.neon.z * 1.4, kLampColour, rain, pa, max(u.haze.w * 1.5, 1.0));
             }
         }
         if (ts < 1e4 && te > 0.0) {
@@ -1310,14 +1391,15 @@ enum NeonNightDriveShaders {
             for (int j = -1; j <= 1; j++) {
                 float3 v = lamp + float3(0.0, 0.0, float(j) * max(u.route2.y, 4.0));
                 if (v.z < max(ts, 0.0) || v.z > te) continue;
-                col += lampGlow(d, v, tHit + 1.0, 0.6, float3(1.0, 0.5, 0.14), 0.15, pa);
+                col += lampGlow(d, v, tHit + 1.0, 0.6, float3(1.0, 0.5, 0.14), 0.15, pa, 0.0);
             }
         }
         for (int c = 0; c < 12; c++) {
-            float4 a = u.cars[c * 2];
             if ((skip & 64u) != 0u) break;
+            if (((carMask >> uint(c)) & 1u) == 0u) continue;
+            float4 a = u.cars[c * 2];
             if (a.y < zMin) continue;
-            col += carGlow(d, a, tHit, eye, rain, pa);
+            col += carGlow(d, a, u.carCone[c], tHit, eye, rain, pa);
         }
         ColorDepth out;
         out.color = float4(max(col, 0.0), 1.0);
@@ -1331,25 +1413,30 @@ enum NeonNightDriveShaders {
     /// mirrored direction's screen place, streaked down towards you by the rain-roughened surface, rippled by the rain;
     /// the Fresnel of water at that angle. Added over the scene (the analytic streaks of the street lights and the traffic
     /// are the scene's own).
-    fragment float4 drive_reflect_fragment(DriveOut in [[stage_in]], constant SkyU& sky [[buffer(0)]],
-                                           constant DriveU& u [[buffer(1)]], texture2d<float> view [[texture(0)]],
-                                           texture2d<float> depth [[texture(1)]]) {
+    /// The mirror's light at a pixel (`ndc`; `pix` its place in the target, for the taps' jitter), and 1 where the road or
+    /// the water is seen there (0 elsewhere); `testDepth` false leaves out the test for nearer things in front of the
+    /// surface (the half-resolution pass: the full-resolution one that adds it in does that test, so their outlines stay
+    /// sharp).
+    float4 driveMirror(float2 ndc, float2 pix, constant SkyU& sky, constant DriveU& u, texture2d<float> view,
+                       texture2d<float> depth, bool testDepth) {
         constexpr sampler s(filter::linear, mip_filter::linear, address::clamp_to_edge);
         float3 dE;
-        float3 d = driveRay(in.ndc, sky, u, dE);
+        float3 d = driveRay(ndc, sky, u, dE);
         float3 p;
         float kind = driveSurface(d, u, p);
         if (kind < 0.5) return float4(0);
         // Nearer things (the cars, the parapets, a tunnel's portal) stand in front of the surface: the scene's depth says.
         float eye = u.road3.y;
         float t = kind > 1.5 ? (eye + 22.0) / -d.y : eye / -d.y;
-        float2 here = float2(in.ndc.x * 0.5 + 0.5, 0.5 - in.ndc.y * 0.5);
-        float dep = depth.sample(s, here).r;
-        float sceneT = 60.0 * dep / max(1.0 - dep, 1e-4);
-        if (sceneT < t * 0.97 - 0.5) return float4(0);
+        if (testDepth) {
+            float2 here = float2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
+            float dep = depth.sample(s, here).r;
+            float sceneT = 60.0 * dep / max(1.0 - dep, 1e-4);
+            if (sceneT < t * 0.97 - 0.5) return float4(0);
+        }
         float3 m = float3(d.x, -d.y, d.z);
         float3 sp = driveProject(m, sky, u);
-        if (sp.z <= 0.0) return float4(0);
+        if (sp.z <= 0.0) return float4(0, 0, 0, 1);
         float2 uv = float2(sp.x * 0.5 + 0.5, 0.5 - sp.y * 0.5);
         float water = kind > 1.5 ? 1.0 : 0.0;
         float zw = p.z + u.move.x;
@@ -1380,7 +1467,7 @@ enum NeonNightDriveShaders {
         float3 acc = float3(0);
         float wsum = 0.0;
         float reach = 0.05 + 0.22 * rough;
-        float jit = fract(52.9829189 * fract(dot(in.pos.xy, float2(0.06711056, 0.00583715))));
+        float jit = fract(52.9829189 * fract(dot(pix, float2(0.06711056, 0.00583715))));
         int taps = oct > 2 ? 12 : 8;
         float stepK = 9.0 / float(taps);
         for (int i = 0; i < taps; i++) {
@@ -1406,7 +1493,47 @@ enum NeonNightDriveShaders {
         float F = fresnelWet(-d.y);
         float strength = F * wet * (water > 0.5 ? 0.9 : 0.55 + 0.6 * puddle) * aboveH * edges * fade * patches;
         float k = 1.0 - exp(-t / max(u.haze.w, 1.0));
-        return float4(refl * strength * (1.0 - k), 0.0);
+        return float4(refl * strength * (1.0 - k), 1.0);
+    }
+
+    fragment float4 drive_reflect_fragment(DriveOut in [[stage_in]], constant SkyU& sky [[buffer(0)]],
+                                           constant DriveU& u [[buffer(1)]], texture2d<float> view [[texture(0)]],
+                                           texture2d<float> depth [[texture(1)]]) {
+        return float4(driveMirror(in.ndc, in.pos.xy, sky, u, view, depth, true).rgb, 0.0);
+    }
+
+    // The mirror at half resolution: it is a blur (the copy's mips, streaked), so drawn into a half-size target (a
+    // quarter of its taps a frame) and added in at full resolution, where the scene's depth hides it behind the cars,
+    // the parapets and a portal pixel by pixel.
+    fragment float4 drive_mirror_fragment(DriveOut in [[stage_in]], constant SkyU& sky [[buffer(0)]],
+                                          constant DriveU& u [[buffer(1)]], texture2d<float> view [[texture(0)]],
+                                          texture2d<float> depth [[texture(1)]]) {
+        if (in.ndc.y < u.cabin.z - 3.2) return float4(0.0);   // (deep under the dashboard, a texel's margin below its cut)
+        return driveMirror(in.ndc, in.pos.xy, sky, u, view, depth, false);
+    }
+
+    fragment float4 drive_mirror_compose_fragment(DriveOut in [[stage_in]], constant SkyU& sky [[buffer(0)]],
+                                                  constant DriveU& u [[buffer(1)]], texture2d<float> mirror [[texture(0)]],
+                                                  texture2d<float> depth [[texture(1)]]) {
+        constexpr sampler s(filter::linear, address::clamp_to_edge);
+        // (Where it adds nothing the pixel is let go (additive: the same frame), so the scene there isn't read and written
+        // back: most of the view.)
+        float3 dE;
+        float3 d = driveRay(in.ndc, sky, u, dE);
+        float3 p;
+        float kind = driveSurface(d, u, p);
+        if (kind < 0.5) { discard_fragment(); return float4(0); }
+        float eye = u.road3.y;
+        float t = kind > 1.5 ? (eye + 22.0) / -d.y : eye / -d.y;
+        float2 here = float2(in.ndc.x * 0.5 + 0.5, 0.5 - in.ndc.y * 0.5);
+        float dep = depth.sample(s, here).r;
+        float sceneT = 60.0 * dep / max(1.0 - dep, 1e-4);
+        if (sceneT < t * 0.97 - 0.5) { discard_fragment(); return float4(0); }
+        // (Filtered over the texels that saw the surface only (alpha 1), so its edges at a parapet's foot or the median
+        // don't darken by mixing in texels that saw neither.)
+        float4 m = mirror.sample(s, here);
+        if (m.a <= 1e-3) { discard_fragment(); return float4(0); }
+        return float4(m.rgb / m.a, 0.0);
     }
     """
 }
