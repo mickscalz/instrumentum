@@ -256,14 +256,14 @@ public struct CoastRoadModel: ThemeModel, MoodAware, SkyAware, ExcitementAware, 
         meteors.prune(at: now)
         // A big moment: the lighthouse's beam sweeps round toward you, swelling. The drop: the road opens onto the sea.
         if let m = x.moment {
-            // Turn the nearer beam (they are half a turn apart) round to 1.1 rad short of facing you, quickly while it is
-            // still dim, then sweep it across you.
+            // Turn the nearer beam (they are half a turn apart) round to 0.6 rad short of facing you, quickly while it is
+            // still dim (it then lies across the sea in front of you, rising toward you), then sweep it across you.
             // Never two at once: a moment while a beam sweeps only swells it.
             let strength = ExcitementStep.strength(m)
             if let playing = sweep, playing.age < 4 {
                 sweep = (playing.age, playing.from, playing.by, max(playing.strength, strength))
             } else {
-                var by = (-1.1 - beam).truncatingRemainder(dividingBy: .pi)
+                var by = (-0.6 - beam).truncatingRemainder(dividingBy: .pi)
                 if by < 0 { by += .pi }
                 sweep = (0, beam, by, strength)
             }
@@ -271,8 +271,8 @@ public struct CoastRoadModel: ThemeModel, MoodAware, SkyAware, ExcitementAware, 
         }
         if var s = sweep {
             s.age += fd
-            if s.age < 0.6 {
-                let k = s.age / 0.6
+            if s.age < 0.45 {
+                let k = s.age / 0.45
                 beam = s.from + s.by * k * k * (3 - 2 * k)
                 turn = Self.sweepTurn
             } else {

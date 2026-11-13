@@ -487,7 +487,7 @@ enum AuroraFjordShaders {
         }
         float dd = min(back, finD);
         dd = max(dd, -q.y);                              // the water's surface
-        edge = exp(-max(-dd, 0.0) / 0.1);
+        edge = exp(-max(-dd, 0.0) / 0.05);
         return 1.0 - smoothstep(-aa, aa, dd);
     }
 
@@ -513,7 +513,7 @@ enum AuroraFjordShaders {
             if (body > 0.0) {
                 float tip = saturate((q.y - 0.3) / 1.6);
                 float saddle = exp(-((q.x + 0.75) * (q.x + 0.75)) / 0.12) * exp(-((q.y - 0.12) * (q.y - 0.12)) / 0.03);
-                bodyCol = float3(0.006, 0.007, 0.008) + light * (0.08 + 0.9 * edge + 0.35 * tip) + float3(0.05) * lum * saddle * 4.0;
+                bodyCol = float3(0.006, 0.007, 0.008) + light * (0.05 + 0.4 * edge + 0.15 * tip) + float3(0.05) * lum * saddle * 4.0;
                 float wl = exp(-q.y / 0.035);
                 bodyCol += light * (2.0 * wl);
             }
@@ -529,7 +529,7 @@ enum AuroraFjordShaders {
             float H = 3.8 * (1.0 - exp(-age / 0.3));
             float up = saturate(y / max(H, 0.1));
             float shift = 0.75 + (0.35 + 0.9 * wind) * age * up;
-            float w = 0.12 + 0.45 * up + 0.35 * age;
+            float w = 0.18 + 0.6 * up + 0.4 * age;
             float x = q.x - shift;
             float column = exp(-(x * x) / (w * w)) * smoothstep(0.0, 0.25, y) * (1.0 - smoothstep(H - 0.5, H + 0.4, y));
             float2 hq = float2(x, y - (H - 0.35)) / float2(0.55 + 0.35 * age, 0.45 + 0.25 * age);
@@ -540,7 +540,7 @@ enum AuroraFjordShaders {
             breath = saturate(max(column, head) * (0.25 + 0.95 * n) * strength * fade * 0.55);
             if (q.y < 0.0) breath *= 0.3 * (1.0 - smoothstep(0.3, 1.5, -q.y));
         }
-        float3 breathCol = mix(light, float3(0.85, 0.95, 1.0) * lum, 0.5) * 4.0;
+        float3 breathCol = mix(light, float3(0.85, 0.95, 1.0) * lum, 0.7) * 4.0;
         float a = breath + (body + refl) * (1.0 - breath);
         if (a < 0.002) discard_fragment();
         float3 col = breathCol * breath + bodyCol * (body * (1.0 - breath)) + float3(0.002, 0.003, 0.004) * (refl * (1.0 - breath));

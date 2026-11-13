@@ -524,7 +524,7 @@ enum GoldenHourBeachShaders {
             float n = 0.6 * vnoise3(float3(in.uv * 2.2, 0.35 * t)) + 0.4 * vnoise3(float3(in.uv * 5.0 + 3.0, 0.6 * t + 7.0));
             float ball = 1.0 - smoothstep(0.25, 1.0, r + 0.3 * (n - 0.5));
             a = ball * (0.35 + 0.8 * n) * in.info.z;
-            col = in.tint.rgb * (0.85 + 0.3 * n);
+            col = in.tint.rgb * (0.85 + 0.3 * n) * (0.8 + 0.25 * in.uv.y);
         } else {
             float side;
             float ct = cos(in.info.z), st = sin(in.info.z);   // its tilt

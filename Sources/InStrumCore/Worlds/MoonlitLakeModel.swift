@@ -288,7 +288,7 @@ public struct MoonlitLakeModel: ThemeModel, MoodAware, SkyAware, ExcitementAware
             let bright = !adding && k < 2 && s >= 0.6
             let length = rng.range(14, 28) * (0.8 + 0.4 * s) * (bright ? 1.3 : 1)
             let pace = rng.range(22, 36)
-            let magnitude: Float = bright ? -1.9 + 0.4 * Float(k) : -0.5 - 0.9 * s + rng.range(-0.6, 0.6)
+            let magnitude: Float = bright ? -1.7 + 0.3 * Float(k) : -0.4 - 0.8 * s + rng.range(-0.5, 0.5)
             let m = WorldMeteors.meteor(radiant: radiant, distance: rng.range(5, 22), angle: rng.range(-1.35, 1.35), length: length,
                                         born: now + offset, duration: length / pace, magnitude: magnitude + fainter,
                                         speed: Double(bright ? rng.range(60, 70) : rng.range(38, 54)), flare: bright && !gentle)

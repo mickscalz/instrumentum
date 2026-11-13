@@ -168,7 +168,8 @@ enum SnowboundCabinShaders {
         float rx = 0.26 * (1.0 - 0.3 * smoothstep(0.42, 0.02, q.y));
         float2 bq = float2(q.x / rx, (q.y - 0.4) / 0.4);
         float2 hc = float2(0.02 * turn, 0.79);
-        float2 hq = (q - hc) / float2(0.235, 0.2);
+        float2 hq = (q - hc) / float2(0.23, 0.185);
+        hq.y *= hq.y > 0.0 ? 1.0 + 0.25 * hq.y : 1.0;            // its crown a little flattened
         float db = (length(bq) - 1.0) * rx, dh = (length(hq) - 1.0) * 0.2;
         float k = 0.06;
         float hm = saturate(0.5 + 0.5 * (dh - db) / k);
@@ -199,12 +200,12 @@ enum SnowboundCabinShaders {
         float fl = length(fd);
         float disc = 1.0 - smoothstep(0.82, 1.0, fl);
         float ruff = exp(-((fl - 1.0) * (fl - 1.0)) / 0.02);
-        float3 face = float3(1.0, 0.9, 0.8) * 0.3 * (0.85 + 0.3 * mottle) * (ambient * 0.8 + window * 1.4);
-        col = mix(col, face, disc * 0.85);
-        col *= 1.0 - 0.45 * ruff;
+        float3 face = float3(1.0, 0.9, 0.8) * 0.22 * (0.85 + 0.3 * mottle) * (ambient * 0.8 + window * 1.4);
+        col = mix(col, face, disc * 0.55);
+        col *= 1.0 - 0.3 * ruff;
         for (int e = -1; e <= 1; e += 2) {
             float2 eye = fc + float2(float(e) * 0.075 * (1.0 - 0.25 * abs(turn)), 0.025);
-            float2 ed = (q - eye) / float2(0.042, 0.042 * (1.0 - 0.92 * blink) + 1e-3);
+            float2 ed = (q - eye) / float2(0.034, 0.034 * (1.0 - 0.92 * blink) + 1e-3);
             float inEye = 1.0 - smoothstep(0.7, 1.0, length(ed));
             float2 gd = (q - eye - float2(0.012, 0.014)) / 0.01;
             float glint = exp(-dot(gd, gd)) * (1.0 - blink);
