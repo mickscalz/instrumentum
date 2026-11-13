@@ -209,11 +209,13 @@ enum VolcanoRimShaders {
         float b5 = a + 2.05; b5 -= 6.2831853 * floor((b5 + 3.14159265) / 6.2831853);
         e += 60.0 * exp(-b1 * b1 / 0.06) + 40.0 * exp(-b2 * b2 / 0.03) + 35.0 * exp(-b4 * b4 / 0.05);
         // The ledge: a tongue of crust from the right shore, narrow and blunt-ended; a spit of old spatter near the left.
-        e -= 95.0 * exp(-b3 * b3 / 0.01) * (0.8 + 0.4 * vn2(float2(arc * 0.05, 3.0)));
+        // (Each shelf's noise is read only within its reach: farther round it takes off under 2e-7 m, which an edge of
+        // a few hundred metres doesn't hold in a float, so the edge is the same.)
+        if (b3 * b3 < 0.2) e -= 95.0 * exp(-b3 * b3 / 0.01) * (0.8 + 0.4 * vn2(float2(arc * 0.05, 3.0)));
         e -= 50.0 * exp(-b5 * b5 / 0.02);
         // A second, broader shelf of crust from the far shore, its end ragged.
         float b6 = a - 1.72; b6 -= 6.2831853 * floor((b6 + 3.14159265) / 6.2831853);
-        e -= 75.0 * exp(-b6 * b6 / 0.018) * (0.75 + 0.5 * vn2(float2(arc * 0.06, 9.0)));
+        if (b6 * b6 < 0.36) e -= 75.0 * exp(-b6 * b6 / 0.018) * (0.75 + 0.5 * vn2(float2(arc * 0.06, 9.0)));
         return e;
     }
 
