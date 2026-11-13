@@ -33,10 +33,11 @@ enum VolcanoRimShaders {
         float4 bolt;     // lightning's light in the plume 0…1 (limited), its place (plume m x, z), gentle 0/1
         float4 fireball; // progress 0…1 (< 0 none), start bearing (deg from the view), start altitude (deg), light
         float4 rockfall; // progress (< 0 none), angle round the wall centre (rad), seed, 0
-        float4 steam;    // progress (< 0 none), angle round the wall centre (rad), seed, 0
+        float4 steam;    // progress (< 0 none), angle round the wall centre (rad), seed, the eruption's age for its ash
+                         // (s; kept counting after it ends, so its ash rises away; < 0 none)
         float4 sprites;  // the plume drawn at half size (1; else drawn here), the plates' map is whole 0/1, 3 + the line
                          // (NDC y) below which the keys' columns hide the scene (0: none), layers a timing test skips (0)
-        float4 tree;     // progress (< 0 none), share along the river, seed, 0
+        float4 tree;     // progress (< 0 none), share along the river, seed, the eruption's strength (for its ash)
         float4 dims;     // foot radius, bench height, bench radius, top radius (m)
         float4 dims2;    // wall centre (m xy), rim height (m), breach angle (rad)
         float4 dims3;    // breach halfW-width (rad), fountain pool scale, foreground top (NDC), keys shown 0/1
@@ -106,13 +107,27 @@ enum VolcanoRimShaders {
         return (w / we) * exp(-max(d, 0.0) / we);
     }
 
-    /// The eruption's fountain's head (m over the lake; 0: none): 130–230 m with its strength (within the frame; the
-    /// column the model raises is far taller), up as its column is.
+    /// The eruption's clots fly this many times fast (a 230 m fountain's clots climb for 6.8 s; here in under 2).
+    constant float kPace = 3.6;
+
+    /// The eruption's vent: its share of the fountain's full height for clots thrown `s` seconds into it (as the renderer's
+    /// `ventShare`): up in 0.3 s, held, falling over its last 3 s, none after 6 s.
+    float ventShare(float s) {
+        if (s < 0.0 || s > 6.0) return 0.0;
+        float up = smoothstep(0.0, 0.3, s);
+        float f = saturate((s - 3.0) / 3.0);
+        return up * (1.0 - f * f);
+    }
+
+    /// The eruption's fountain's head now (m over the lake; 0: none): as high as its first clots have climbed (130–230 m
+    /// with its strength), lower as the vent weakens.
     float fountainTop(constant VolcanoU& u) {
-        if (u.erupt.z < 0.0 || u.erupt.z > 9.0) return 0.0;
+        float age = u.erupt.z;
+        if (age < 0.0 || age > 6.0) return 0.0;
         float sp = clamp(u.erupt.w, 0.3, 1.0);
-        float peak = (3.0 + 3.0 * (sp - 0.3) / 0.7) * 2.0 * u.lake.x;
-        return (130.0 + 100.0 * sp) * saturate(u.erupt.x / peak);
+        float w0 = sqrt(19.62 * (130.0 + 100.0 * sp) * ventShare(age));
+        float reach = min(age * kPace, w0 / 9.81);
+        return w0 * reach - 4.905 * reach * reach;
     }
 
     /// The lake's light falling on a point with normal N (crater metres): the lake as a disc light below (irradiance
@@ -148,7 +163,7 @@ enum VolcanoRimShaders {
             float3 toF = float3(-P.x, -P.y, lakeZ + 0.45 * Hj - P.z);
             float df = length(toF);
             float Rf = 60.0 + 0.3 * Hj;
-            fount = blackbody(1240.0) * (u.erupt.y * 4.0 * Rf * Rf / (Rf * Rf + df * df)
+            fount = blackbody(1240.0) * (u.erupt.y * 5.0 * Rf * Rf / (Rf * Rf + df * df)
                                          * saturate(0.25 + 0.75 * dot(N, toF / max(df, 1e-3))));
         }
         return lake + margin + plume + fount;
@@ -500,6 +515,72 @@ enum VolcanoRimShaders {
         return blackbody(Tcore - 330.0 * max(d, 0.0) / we) * (w / we);
     }
 
+    /// A net of blocks `scale` m across at p: the distance (m) to the nearest block's edge, and in `id` that block's
+    /// own random number (0…1).
+    float blockNet(float2 p, float scale, thread float& id) {
+        float2 g = p / scale;
+        float2 gi = floor(g), gf = fract(g);
+        float f1 = 9.0;
+        float2 mr = float2(0), mg = float2(0);
+        for (int y = -1; y <= 1; y++) {
+            for (int x = -1; x <= 1; x++) {
+                float2 cell = float2(float(x), float(y));
+                float2 r = cell + hash22(gi + cell) * 0.85 - gf;
+                float dd = dot(r, r);
+                if (dd < f1) { f1 = dd; mr = r; mg = cell; }
+            }
+        }
+        float edge = 9.0;
+        for (int y = -1; y <= 1; y++) {
+            for (int x = -1; x <= 1; x++) {
+                float2 cell = mg + float2(float(x), float(y));
+                float2 r = cell + hash22(gi + cell) * 0.85 - gf;
+                float2 dr = r - mr;
+                if (dot(dr, dr) > 1e-5) edge = min(edge, dot(0.5 * (mr + r), normalize(dr)));
+            }
+        }
+        id = hash12(gi + mg + float2(0.37, 1.91));
+        return edge * scale;
+    }
+
+    /// The lake's shore, either side of its edge (`toEdge` m inside it; < 0 on the floor): crust piled against it and
+    /// broken into blocks, chilled spatter and rubble on the floor beside it; incandescent lava in the gaps between the
+    /// blocks, hotter toward the lake and here and there foundering into it; the blocks' lake-facing faces and lips lit by
+    /// its glow, which bleeds a few metres into the rock. Both sides read the same shore, so the edge itself is never a
+    /// line. Returns its colour and how much of it covers the surface there: all of it near the edge, fading away on each
+    /// side over a reach that wanders along the shore (a broad pile-up here, a narrow rim there).
+    float4 shoreRubble(float2 p, float toEdge, float foot, constant VolcanoU& u) {
+        float arc = atan2(p.y, p.x) * u.lake.x;
+        float wIn = 5.0 + 11.0 * vn2(float2(arc * 0.03, 2.0));
+        float wOut = 7.0 + 15.0 * vn2(float2(arc * 0.025, 5.0));
+        float wgt = toEdge >= 0.0 ? 1.0 - smoothstep(0.35 * wIn, wIn, toEdge) : 1.0 - smoothstep(0.25 * wOut, wOut, -toEdge);
+        if (wgt <= 0.0) return float4(0);
+        // Blocks a few metres across, smaller where the crust is piled and broken on the lake's side.
+        float scale = 2.6 + 1.8 * smoothstep(-2.0, -14.0, toEdge);
+        float id;
+        float gap = blockNet(p + float2(31.0, 17.0), scale, id);
+        // The gaps' lava: hot by the lake, dulling onto the floor; brighter where the crust founders (stretches of the
+        // shore that drift slowly), the lake's activity and Energy livening it.
+        float founder = smoothstep(0.55, 0.85, vn2(float2(arc * 0.05, u.a.y * 0.07 + 3.0)));
+        float lakeSide = smoothstep(-8.0, 5.0, toEdge);
+        float Tg = 930.0 + 230.0 * lakeSide + 130.0 * founder * lakeSide + 60.0 * (id - 0.5) + 40.0 * u.play.x + 30.0 * u.lake.w;
+        float gw = mix(0.1, 0.42, lakeSide) * (0.6 + 0.8 * founder) * (0.6 + 0.8 * vn2(p * 0.4 + 7.0));
+        float3 lava = crackGlow(gap, gw, foot, Tg);
+        // The blocks: dark chilled crust, tilted every way; the faces and lips turned to the lake lit by it, more near it;
+        // their own heat a dull red on the lake's side.
+        float tilt = id * 6.2831853;
+        float2 slope = float2(cos(tilt), sin(tilt)) * (0.25 + 0.5 * fract(id * 7.13));
+        float2 toLake = -p / max(length(p), 1e-3);
+        float lip = 1.0 - smoothstep(0.0, 0.45 * scale, gap);
+        float facing = saturate(0.3 + dot(slope, toLake) + 0.45 * lip);
+        float near = exp(-max(-toEdge, 0.0) / 8.0);
+        float3 rock = float3(0.045, 0.04, 0.037) * (0.65 + 0.7 * fract(id * 13.7));
+        float3 lit = u.glow.rgb * float3(1.0, 0.85, 0.72) * (1.3 * near * facing) + u.skyL.rgb;
+        float Tb = 650.0 + 170.0 * lakeSide + 60.0 * id + 50.0 * founder * lakeSide;
+        float3 c = rock * lit + blackbody(Tb) * 0.5 + lava;
+        return float4(c, wgt);
+    }
+
     /// The lake's own light at a point of its surface (crater metres), seen along d; J is the pixel's footprint (lake
     /// metres per pixel across x and y).
     float3 lakeSurface(float3 P, float3 d, float2 Jx, float2 Jy, constant VolcanoU& u, int oct, float edgeR,
@@ -592,16 +673,25 @@ enum VolcanoRimShaders {
             float Tp = 1150.0 + 110.0 * f.w + 90.0 * churn - 220.0 * skinOver;
             col = mix(col, blackbody(Tp), pool);
         }
-        // The margin: old crust jammed against the shore (darker), a splash of fresh lava here and there.
-        float r = length(p);
-        float toEdge = edgeR - r;
-        float arc = atan2(p.y, p.x) * u.lake.x;
-        float jam = exp(-max(toEdge, 0.0) / 6.0);
-        col *= 1.0 - 0.45 * jam;
-        float splash = smoothstep(0.72, 0.9, vn2(float2(arc * 0.05, u.a.y * 0.35)) * 0.75 + vn2(float2(arc * 0.3, 2.0)) * 0.35);
-        if (splash > 0.0) {
-            col += crackGlow(abs(toEdge - 0.6), 0.5 + 1.2 * splash, foot, 1120.0 + 120.0 * splash + 60.0 * u.glow.w) * splash;
+        // The eruption's vent: a boiling pool of fresh lava at the fountain's foot, crusting over once it dies.
+        if (u.steam.w >= 0.0 && u.steam.w < 12.0) {
+            float va = u.steam.w;
+            float live = smoothstep(0.0, 0.3, va) * (1.0 - smoothstep(6.0, 11.0, va));
+            float rp = (22.0 + 18.0 * clamp(u.tree.w, 0.3, 1.0)) * (0.6 + 0.4 * smoothstep(0.0, 1.5, va));
+            float dv = length(p);
+            if (dv - 2.0 < rp * 1.25 && live > 0.0) {
+                dv += 4.0 * (vn2(p * 0.12 + u.a.y * 0.4) - 0.5);
+                float pool = (1.0 - smoothstep(rp * 0.55, rp * 1.25, dv)) * live;
+                float churn = vn2(p * 0.35 + float2(u.a.y * 1.3, -u.a.y * 0.9));
+                float Tp = 1180.0 + 200.0 * ventShare(va) + 90.0 * churn - 140.0 * smoothstep(0.5, 1.0, dv / rp);
+                col = mix(col, blackbody(Tp), pool);
+            }
         }
+        // The shore: crust piled against it and broken into blocks, the lava in their gaps (the floor reads the same shore
+        // across the edge).
+        float toEdge = edgeR - length(p);
+        float4 shore = shoreRubble(p, toEdge, foot, u);
+        col = mix(col, shore.rgb, shore.a);
         // The breach's new river leaves the lake here: the lake's own crust torn open toward it.
         if (u.river.z > 0.0) {
             float toMouth = length(p - u.riverA.xy);
@@ -663,16 +753,12 @@ enum VolcanoRimShaders {
             }
             col += blackbody(1060.0 + 120.0 * breach) * (exp(-max(rd.x - halfW, 0.0) / 8.0) * (0.05 + 0.1 * flow + 0.35 * breach) * 0.3);
         }
-        // The lake's shore: a black ledge of chilled spatter, lumpy, its lake-facing lips lit by the lake (they fade by
-        // e^-20 within 50 m of the shore: farther off their noise isn't read).
+        // The lake's shore: the rubble and chilled spatter beside it, the lava in the gaps glowing toward the lake (the same
+        // shore the lake's margin reads, so the edge between them is never a line); none 30 m off.
         float shore = length(p) - edgeR;
-        float ledge = exp(-max(shore, 0.0) / 5.0);
-        col *= 1.0 - 0.5 * ledge;
-        if (shore < 50.0) {
-            float lumpy = vn2(p * 0.5) * 0.6 + vn2(p * 1.7) * 0.4;
-            col += u.glow.rgb * float3(1.0, 0.85, 0.7) * (0.05 * smoothstep(0.45, 0.8, lumpy) * exp(-max(shore, 0.0) / 2.5));
-            float drip = smoothstep(0.8, 0.95, vn2(p * 0.9 + 4.0)) * exp(-max(shore, 0.0) / 1.5);
-            col += blackbody(1060.0 + 60.0 * u.play.x) * (0.25 * drip);
+        if (shore < 30.0) {
+            float4 sr = shoreRubble(p, -shore, foot, u);
+            col = mix(col, sr.rgb, sr.a);
         }
         return col;
     }
@@ -974,59 +1060,47 @@ enum VolcanoRimShaders {
         return tree * stand;
     }
 
-    /// The eruption's lava fountain on the middle plane, as a long exposure of Hawaiian fountaining shows one: a dense,
-    /// continuous incandescent jet from the vent, its core narrow and hottest low down, broadening as it climbs and
-    /// tearing into clots at its head; streaks of clots racing up it; and fewer, larger clots thrown from it on
-    /// parabolic arcs, most falling back into the lake, each the curved stretch of its arc it swept during the exposure,
-    /// cooling from yellow to red. The jet stands within the frame (its head 150–260 m up; the column the model raises
-    /// is far taller), and up in under a second.
+    /// The eruption's jet on the middle plane: the dense incandescent body of its fountain over the vent (the clots it
+    /// throws up and lets fall, and its bombs, are drawn over the scene by the renderer as soft volumes,
+    /// `volcano_clot_*`). Narrow at the vent and broadening as it climbs; clumps of lava rise through it, slowing as they
+    /// climb (its texture is read at each height's launch time, so it rises as they do); it cools from 1470 K at the vent
+    /// and thins out two-thirds of the way up, where the clots take over; the gas round it glows with its light.
     float4 column(float3 P, constant VolcanoU& u, float fp, int oct) {
-        float H = u.erupt.x;
         float age = u.erupt.z;
-        if (age < 0.0 || age > 9.0) return float4(0);
+        float sh = ventShare(age);
+        if (sh <= 0.0) return float4(0);
         float sp = clamp(u.erupt.w, 0.3, 1.0);
-        float peak = (3.0 + 3.0 * (sp - 0.3) / 0.7) * 2.0 * u.lake.x;   // Eruption.peak
-        float standing = saturate(H / peak);
+        float Hmax = 130.0 + 100.0 * sp;
+        float head = max(fountainTop(u), 1.0);
+        float top = max(0.72 * head, 1.0);
         float z = P.z - u.eye.w;
         float x = P.x;
-        float Hj = fountainTop(u);
-        if (z < -4.0 || z > Hj * 1.7 + 60.0 || abs(x) > 60.0 + 1.6 * Hj) return float4(0);
-        float tt = u.a.y;
-        float zn = saturate(z / max(Hj, 1.0));
-        // The jet: a little bent by the wind, its half-width narrow at the vent and broadening as it climbs.
-        float xj = x - 0.05 * z - 6.0 * zn * zn;
-        float w = (11.0 + 9.0 * sp) * (1.0 + 2.2 * zn * zn) + 0.6 * fp;
-        float q = xj / w;
-        // Inside it, long-exposure threads (clots racing up smeared into lines) and clumps rising through it.
-        float threads = vn2(float2(q * 3.2 + 7.0, z * 0.01 - tt * 0.8));
-        float clumps = vn2(float2(xj * 0.13, (z - tt * 95.0) * 0.08)) * 0.75 + 0.25 * vn2(float2(xj * 0.31, (z - tt * 95.0) * 0.2));
-        float body = exp(-q * q * 1.4) * (0.85 + 0.25 * threads);
-        // Its head tears into clots: from two-thirds of the way up the jet thins into clumps, and above its head only
-        // clots remain.
-        float tear = smoothstep(0.55, 1.05, zn + 0.25 * (clumps - 0.5));
-        float dens = body * mix(1.0, smoothstep(0.42, 0.72, clumps + 0.15 * threads), tear)
-                   * (1.0 - smoothstep(1.0, 1.35, z / max(Hj, 1.0) - 0.15 * clumps)) * smoothstep(-3.0, 2.0, z) * standing;
-        float Tj = 1370.0 - 190.0 * zn - 170.0 * q * q + 45.0 * (threads - 0.5) + 30.0 * sp - 120.0 * tear;
-        float3 light = blackbody(Tj) * (dens * (1.1 + 0.25 * threads));
-        float cover = saturate(dens * 1.4);
-        // Clots from its head, fewer and larger, on tall narrow arcs (the flights 6 times fast, a long exposure's
-        // streaks); most fall back into the lake round the vent, a few flung wider.
-        int n = oct >= 3 ? 13 : 8;
-        float4 cl = clotArcs(x, z, fp, 0.5 * Hj, 1.0 * Hj, 1.2 * Hj, 0.4, 1.4 + 0.9 * sp, n, 0.08, 6.0, age, 3.0,
-                             7.0, 1290.0, 200.0, 0.22);
-        light += cl.rgb * (0.85 + 0.3 * sp);
-        cover = max(cover, cl.a);
-        // Its light in the gas and the spray round the vent.
-        float haze = exp(-length(float2(xj * 0.8, (z - 0.4 * Hj) * 0.5)) / (30.0 + 25.0 * sp)) * standing;
-        light += blackbody(1150.0) * (0.06 * haze * u.erupt.y);
-        return float4(light, saturate(cover));
+        if (z < -4.0 || z > head + 150.0 || abs(x) > 250.0) return float4(0);
+        float w0 = sqrt(19.62 * Hmax * sh);
+        float zn = saturate(z / Hmax);
+        float wj = (7.0 + 4.0 * sp) * (1.0 + 1.6 * zn) + 0.6 * fp;
+        float q = (x - 0.03 * z) / wj;
+        // Each height's lava left the vent tau ago (rising, slowing as it climbs): its clumps are read at that time.
+        float tau = (w0 - sqrt(max(w0 * w0 - 19.62 * max(z, 0.0), 1.0))) / 9.81;
+        float sl = (age * kPace - tau) * 1.6;
+        float cl = vn2(float2(q * 1.8 + 3.0, sl * 2.0)) * 0.6 + vn2(float2(q * 4.1 + 7.0, sl * 4.3)) * 0.4;
+        float fade = 1.0 - smoothstep(0.35 * top, top, z + 25.0 * (cl - 0.5));
+        float body = exp(-q * q * 1.5) * fade * smoothstep(-2.0, 4.0, z) * (0.55 + 0.9 * cl);
+        float T = 1470.0 - 280.0 * saturate(z / top) - 150.0 * q * q + 60.0 * (cl - 0.5);
+        float3 light = blackbody(T) * (body * 0.9);
+        float cover = saturate(body * 1.2);
+        // Its light in the gas and the spray round it.
+        float2 hd = float2(x * 0.7, (z - 0.45 * head) * 0.45);
+        float hz = exp(-dot(hd, hd) / (2.0 * sq(35.0 + 20.0 * sp))) * saturate(2.0 * sh);
+        light += blackbody(1150.0) * (0.09 * hz * (0.5 + 0.5 * u.erupt.y));
+        return float4(light, cover);
     }
 
     /// The plume on its plane through the lake's middle: translucent gas rising off the lake, widening and leaning with
     /// the wind. Its density is domain-warped fbm scrolling up with the gas (curling, torn wisps, holes the far wall and
     /// the stars show through); it is lit from below by the lake (brightest at its foot, falling off with height, the
     /// undersides of its billows catching more), and higher up and toward its back it is a dark brown-grey.
-    float4 plume(float3 P, constant VolcanoU& u, int oct, float3 lightCol) {
+    float4 gasPlume(float3 P, constant VolcanoU& u, int oct, float3 lightCol) {
         float z = P.z - u.eye.w;
         float amount = u.plume.x;
         if (amount <= 0.01 || z < -5.0) return float4(0);
@@ -1075,6 +1149,88 @@ enum VolcanoRimShaders {
             lit += blackbody(1210.0) * (u.erupt.y * 0.16 * Rf * Rf / (Rf * Rf + df2) * (0.3 + 0.7 * under) * (0.5 + 0.5 * depthIn));
         }
         return float4(lit * alpha, alpha);
+    }
+
+    /// Rounded lumps of ash at p (lump units): a sum of overlapping bumps of jittered places and sizes, each a smooth
+    /// kernel that ends within the 3×3 cells read (its centre 0.2–0.8 into its cell, its reach under 1.2: nothing steps at
+    /// the cells' edges); returns the sum and its slope.
+    float3 ashLumps(float2 p) {
+        float2 i = floor(p), f = p - i;
+        float S = 0.0;
+        float2 g = float2(0.0);
+        for (int y = -1; y <= 1; y++) {
+            for (int x = -1; x <= 1; x++) {
+                float2 cell = float2(float(x), float(y));
+                float2 h = hash22(i + cell);
+                float rad = 0.75 + 0.35 * fract(h.x * 7.31 + h.y * 3.17);
+                float2 r = f - (cell + 0.2 + 0.6 * h);
+                float k = 1.0 - dot(r, r) / (rad * rad);
+                if (k <= 0.0) continue;
+                S += k * k;
+                g -= (4.0 * k / (rad * rad)) * r;
+            }
+        }
+        return float3(S, g);
+    }
+
+    /// The eruption's ash column on the plume's plane: dark ash boiling up out of the fountain's head in rounded lumps,
+    /// widening and bending downwind as it climbs, lit from below by the fountain (the lumps' undersides turned to it
+    /// orange, their tops in shadow, the light failing deeper into the ash) and by the lake; it rises on after the
+    /// fountain dies and thins away. Its age (`u.steam.w`, < 0 none) counts on past the eruption's end.
+    float4 ashColumn(float3 P, constant VolcanoU& u, int oct) {
+        float age = u.steam.w;
+        if (age < 0.0) return float4(0);
+        float grow = smoothstep(0.0, 1.6, age) * (1.0 - smoothstep(8.0, 14.0, age));
+        if (grow <= 0.0) return float4(0);
+        float sp = clamp(u.tree.w, 0.3, 1.0);
+        float Hmax = 130.0 + 100.0 * sp;
+        float z = P.z - u.eye.w;
+        float zb = 0.45 * Hmax;
+        float topZ = zb + 30.0 + 90.0 * age;
+        // (The lumps move its edges 0.35 × their sum across and 45–60 m × it up and down; their sum stays under 3.5: past
+        // these bounds there is no ash whatever they do, and they are not read.)
+        if (z < zb - 130.0 || z > topZ + 160.0) return float4(0);
+        float h = max(z - zb, 0.0);
+        float W = (55.0 + 0.85 * h + 25.0 * sp) * (0.5 + 0.5 * grow);
+        float xc = P.x - u.plume.z * h * h;
+        float s = xc / W;
+        if (abs(s) > 2.0) return float4(0);
+        float rise = 26.0 * age;
+        float3 A = ashLumps(float2(xc / 48.0 + 3.0, (z - rise) / 48.0));
+        float3 B = oct >= 3 ? ashLumps(float2(xc / 20.0 + 11.0, (z - 1.3 * rise) / 20.0 + 5.0)) : float3(0.45, 0.0, 0.0);
+        float lumps = 0.7 * A.x + 0.3 * B.x;
+        float env = (1.0 - smoothstep(0.55, 1.0, abs(s) + 0.35 * (0.9 - lumps)))
+                  * smoothstep(zb - 10.0, zb + 25.0, z + 45.0 * (lumps - 0.9))
+                  * (1.0 - smoothstep(topZ - 50.0, topZ, z - 60.0 * (lumps - 0.9)));
+        float dens = env * smoothstep(0.1, 0.7, lumps) * grow;
+        if (dens <= 0.003) return float4(0);
+        float alpha = 1.0 - exp(-dens * 3.5);
+        // The lumps' faces (across, up, toward the camera): a relief standing out of the plane.
+        float2 slope = A.yz * (0.7 * 34.0 / 48.0) + B.yz * (0.3 * 34.0 / 20.0);
+        float3 N = normalize(float3(-slope, 1.0));
+        // The fountain's head below lights them.
+        float headZ = 0.6 * max(fountainTop(u), 0.3 * Hmax);
+        float3 toF = float3(-xc, headZ - z, 40.0);
+        float dl = length(toF);
+        float ndl = saturate(dot(N, toF / max(dl, 1e-3)));
+        float Rf = 70.0 + 0.3 * Hmax;
+        float irr = Rf * Rf / (Rf * Rf + dl * dl);
+        float fl = (0.3 + 0.7 * ventShare(age)) * (0.4 + 0.6 * u.erupt.y);
+        float3 lit = blackbody(1230.0) * (5.0 * irr * (0.08 + 0.92 * ndl * ndl) * exp(-h / 120.0) * fl);
+        lit += u.glow.rgb * float3(1.0, 0.75, 0.55) * (0.12 * exp(-h / 200.0) * (0.4 + 0.6 * ndl));
+        float3 albedo = float3(0.09, 0.085, 0.08) * (0.8 + 0.3 * saturate(B.x));
+        float3 col = albedo * lit + float3(0.012, 0.011, 0.012) * (0.5 + 0.5 * N.z) + u.skyL.rgb * 0.3;
+        // Lightning in it: a violet-white glow round the stroke.
+        float2 b = float2(P.x - u.bolt.y, z - u.bolt.z);
+        col += float3(0.72, 0.7, 1.0) * (u.bolt.x * 0.5 * exp(-dot(b, b) / (2.0 * 45.0 * 45.0)) * (0.3 + 0.7 * ndl));
+        return float4(col * alpha, alpha);
+    }
+
+    /// The plume on its plane: the eruption's ash in front of the lake's own gas.
+    float4 plume(float3 P, constant VolcanoU& u, int oct, float3 lightCol) {
+        float4 ash = ashColumn(P, u, oct);
+        float4 gas = gasPlume(P, u, oct, lightCol);
+        return ash + gas * (1.0 - ash.a);
     }
 
     /// The fume over the lake: a haze glowing with the lake's light, thickest just above it, churning; returns its light
@@ -1167,7 +1323,10 @@ enum VolcanoRimShaders {
         float depth = edge - ndc.y;
         float3 rock = float3(0.045, 0.04, 0.038) * (0.6 + 0.8 * fbm2(float2(x * 14.0, ndc.y * 14.0), oct));
         float rim = exp(-depth / (0.012 + 0.02 * vn2(float2(x * 6.0, 2.0))));
-        float3 light = u.glow.rgb * float3(1.0, 0.8, 0.65) * (4.0 * rim + 0.35) + u.skyL.rgb;
+        // The lake's glow and, in an eruption, its fountain's light on the rocks' lips.
+        float Hj = fountainTop(u);
+        float3 fl = Hj > 1.0 ? blackbody(1240.0) * (u.erupt.y * (0.25 + 0.0012 * Hj)) : float3(0.0);
+        float3 light = (u.glow.rgb * float3(1.0, 0.8, 0.65) + fl) * (4.0 * rim + 0.35) + u.skyL.rgb;
         return float4(rock * light * cover, cover);
     }
 
@@ -1336,11 +1495,55 @@ enum VolcanoRimShaders {
         // A comet, not a dash: brightest at its head (ahead, along its motion), its trail fading and thinning behind.
         float along = in.len > 0.05 ? saturate((p.y + in.len + 1.0) / (2.0 * in.len + 2.0)) : 1.0;
         float thin = 0.45 + 0.55 * along;
-        float sharp = exp(-(p.x * p.x / (thin * thin) + dy * dy) * 3.0) * (0.12 + 0.88 * along * along);
+        float sharp = exp(-(p.x * p.x / (thin * thin) + dy * dy) * 2.2) * (0.2 + 0.8 * along * along);
         float disc = (1.0 - smoothstep(0.75, 1.0, sqrt(r2))) * (0.55 + 0.45 * smoothstep(0.9, 0.5, sqrt(r2)));
         float a = mix(sharp, 0.5 * disc, in.soft);
         if (a < 0.002) discard_fragment();
         return float4(in.col * a, 0.0);
+    }
+
+    // ---------------------------------------------------------------- the eruption's clots, bombs and splashes
+    // Soft, ragged volumes of lava (Volcano look job, 13 Nov): the fountain's clots, the bombs and their glowing trails,
+    // the spits, the splashes where they land. Each is a gaussian capsule along its motion on screen (as a spark's), its
+    // edge torn by noise in its own frame (`seed`), lit by its temperature; a cooled clot (`cover`) hides what is behind
+    // it. Premultiplied over the scene. The row: centre (NDC xy), travel (NDC xy); half width (NDC y), temperature (K),
+    // light, seed (whole part, 0…63) + cover (fraction).
+    struct ClotOut { float4 pos [[position]]; float2 uv; float3 col; float len; float cover; float seed; };
+    vertex ClotOut volcano_clot_vertex(uint vid [[vertex_id]], uint iid [[instance_id]], constant Spark* clots [[buffer(0)]],
+                                       constant float4& view [[buffer(1)]]) {
+        float2 c[6] = { float2(-1, -1), float2(1, -1), float2(-1, 1), float2(1, -1), float2(1, 1), float2(-1, 1) };
+        Spark s = clots[iid];
+        float2 v = float2(s.at.z * view.x, s.at.w);
+        float speed = length(v);
+        float2 dir = speed > 1e-6 ? v / speed : float2(0, 1);
+        float2 side = float2(-dir.y, dir.x);
+        float halfW = max(s.info.x, 1e-5);
+        float L = 0.5 * speed / halfW;
+        float2 q = c[vid] * 2.2;
+        float2 off = dir * (q.y * halfW * (1.0 + L)) + side * (q.x * halfW);
+        ClotOut o;
+        o.pos = float4(s.at.xy + float2(off.x / view.x, off.y) + view.yz, 0, 1);
+        o.uv = float2(q.x, q.y * (1.0 + L));
+        float t = clamp(s.info.y, 450.0, 2200.0);
+        float inv = 1.0 / t;
+        float3 bb = float3(1.0, exp(0.38 - 1848.0 * inv), exp(2.036 - 8727.0 * inv)) * exp((t - 1150.0) * 0.0086957);
+        o.col = bb * (s.info.z / (1.0 + 0.5 * L));
+        o.len = L;
+        o.seed = floor(s.info.w);
+        o.cover = s.info.w - o.seed;
+        return o;
+    }
+    fragment float4 volcano_clot_fragment(ClotOut in [[stage_in]]) {
+        float2 p = in.uv;
+        float dy = max(abs(p.y) - in.len, 0.0);
+        float2 e = float2(p.x, dy);
+        // Torn: its edge wanders with noise fixed in its own frame.
+        float n = vn2(float2(p.x * 1.7 + in.seed * 1.37, p.y * 1.7 / (1.0 + 0.4 * in.len) + in.seed * 0.53));
+        float d2 = dot(e, e) * (0.7 + 0.8 * n);
+        float head = in.len > 0.05 ? saturate((p.y + in.len + 1.0) / (2.0 * in.len + 2.0)) : 1.0;
+        float a = exp(-d2 * 1.4) * (0.6 + 0.4 * head);
+        if (a < 0.003) discard_fragment();
+        return float4(in.col * a, saturate(a * in.cover * 1.3));
     }
 
     // ---------------------------------------------------------------- the plume's lightning

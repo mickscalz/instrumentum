@@ -34,7 +34,8 @@ final class LookVSPPreviewTests: XCTestCase {
             }
             let bombs = shot.frame.bombs.filter { $0.alive }.count
             let sparks = shot.renderer.sparkCount
-            print("VOLCANO_LOOK \(name): eruption age \(age), height \(height) m, bombs \(bombs), sparks \(sparks)")
+            let clots = shot.renderer.clotCount
+            print("VOLCANO_LOOK \(name): eruption age \(age), height \(height) m, bombs \(bombs), sparks \(sparks), clots \(clots)")
         }
         for age in [0.4, 1.0, 2.0, 3.5, 5.5, 7.5] {
             let shot = try T.renderVolcano(at: 2 + age, energy: 0.8, moments: [120: T.chord(1)], notes: T.playing,

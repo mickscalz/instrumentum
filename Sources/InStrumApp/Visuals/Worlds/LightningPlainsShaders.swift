@@ -423,29 +423,55 @@ enum LightningPlainsShaders {
         return float4(col, cover);
     }
 
-    /// The rain shafts hanging from the storm's base to the plain (to half way under virga): grey curtains in a few
-    /// folds, streaked, slanting with the wind and spreading a little toward the ground.
-    float pl_shafts(float th, float alt, constant PlainsU& p, float time) {
+    /// The rain shafts hanging from the storm's base to the plain (to half way under virga), as far storms show them
+    /// (Lightning Plains look job, 13 Nov): under each raining tower two or three shafts of their own places, widths and
+    /// weights, soft-edged (no edge anywhere: each a gaussian across), slanting downwind and bending further as they near
+    /// the ground (the rain's foot swept out by the outflow), spreading as they fall, denser in their cores; their texture a
+    /// slow drift of heavier and lighter rain down the slant, long and soft (never fine stripes or a repeat); they fade up
+    /// into the base and down into the haze at their feet. Returns their density; `lit` gathers the storm's flashes that
+    /// light them from within (the lights inside the storm near them: a fork's at its base, the towers' own flashes).
+    float pl_shafts(float th, float alt, constant PlainsU& p, float time, thread float3& lit) {
+        lit = float3(0.0);
         float front = p.storm.w;
-        if (alt < -0.4 || alt > 1.05 * front) return 0.0;
-        float down = 1.0 - saturate(alt / max(front, 1e-3));
+        if (alt < -0.4 || alt > 1.02 * front) return 0.0;
+        float down = 1.0 - saturate(alt / max(front, 1e-3));         // 0 at the base … 1 at the plain
+        float bend = p.shafts.y * front * (down + 0.9 * down * down);
         float v = 0.0;
         for (int i = 0; i < 5; i++) {
             float4 a = p.towerA[i];
             float w = p.towerB[i].w;
             if (w <= 0.0 || a.z <= 0.0) continue;
-            float slanted = th - a.x + p.shafts.y * (front - alt);
-            float wide = a.y * (0.8 + 0.35 * down);
-            v = max(v, w * (1.0 - smoothstep(0.2, 0.95, abs(slanted) / max(wide, 1e-3))));
+            float seed = p.towerB[i].z;
+            // (Past the farthest any of its shafts reaches (its place, width and spread), none: not read.)
+            float rel = th - a.x + bend;
+            if (abs(rel) > 2.6 * a.y) continue;
+            for (int k = 0; k < 3; k++) {
+                float3 h = hash33(float3(seed, float(k) * 7.31, 2.9));
+                float off = (h.x - 0.5) * 1.5 * a.y;
+                float wide = a.y * (0.22 + 0.3 * h.y) * (1.0 + 0.7 * down);
+                float x = (rel - off) / max(wide, 1e-3);
+                float core = exp(-x * x * 1.8);
+                float weight = w * (0.4 + 0.6 * h.z) * (k == 0 ? 1.0 : 0.85);
+                v = 1.0 - (1.0 - v) * (1.0 - weight * core);
+            }
         }
-        if (v <= 0.0) return 0.0;
+        if (v <= 0.002) return 0.0;
         float s = max(p.view.w, 0.05);
-        float along = th + p.shafts.y * alt;
-        float folds = vnoise3(float3(along / (0.45 * s), 0.5, 4.4));
-        float streak = vnoise3(float3(along / s * 5.0, alt / s * 0.35 + time * 0.6, 2.3));
-        float hang = smoothstep(1.05 * front, 0.82 * front, alt);
+        float along = th + bend;
+        // Heavier and lighter rain drifting down the slant (broad), and soft long streaks in it (low contrast).
+        float drift = vnoise3(float3(along / (0.9 * s), alt / (2.2 * s) + time * 0.05, 4.4));
+        float streak = vnoise3(float3(along / s * 2.3, alt / s * 0.14 + time * 0.35, 2.3));
+        float hang = smoothstep(1.02 * front, 0.78 * front, alt);
         float reach = mix(1.0, smoothstep(0.3 * front, 0.65 * front, alt), p.shafts.z);
-        return v * p.shafts.x * (0.3 + 0.7 * folds) * (0.6 + 0.4 * streak) * hang * reach;
+        float feet = smoothstep(-0.4, 0.12 * front, alt);
+        // The storm's own lights near them (within a few of their radii) light the rain from within.
+        for (int i = 0; i < 8; i++) {
+            float4 l = p.lightA[i];
+            if (l.w <= 0.0) continue;
+            float2 dd = float2(pl_wrap(th - l.x), alt - l.y) / max(l.z * 1.6, 0.3);
+            lit += p.lightC[i].rgb * (l.w * exp(-dot(dd, dd)));
+        }
+        return v * p.shafts.x * (0.55 + 0.6 * drift) * (0.85 + 0.15 * streak) * hang * reach * feet;
     }
 
     /// The far ridge's top (altitude, deg) at offset th: a mesa rising off the plain on the right, its flat top gently
@@ -554,13 +580,19 @@ enum LightningPlainsShaders {
         PlStorm st = pl_storm(th, alt, p, octaves, time);
         float4 o = float4(0.0);
         if (st.a > 0.001) o = float4(pl_stormLight(d, th, alt, st, u, p, octaves, time) * st.a, st.a);
-        // The rain hanging from the base's near edge, over its underside and the low sky beyond; lit by the flashes.
-        float shaft = pl_shafts(th, alt, p, time);
+        // The rain hanging from the base's near edge, over its underside and the low sky beyond: grey, darker in its
+        // heavy cores, the low sky's glow coming through where it thins; lit from within by the storm's flashes near it;
+        // blued and faded by the air between, the more the farther the storm.
+        float3 shaftLit;
+        float shaft = pl_shafts(th, alt, p, time, shaftLit);
         if (shaft > 0.001) {
             float3 front = pl_frontLight(u, p);
-            float3 rain = p.ambient.rgb * 0.42 + p.glow.rgb * 0.18 + front * 0.3 + p.flash.rgb * 0.3;
-            rain = mix(pl_air(d, alt, u), rain, 0.4 + 0.6 * exp(-p.shake.w / 60.0));
-            shaft = min(0.9, 2.0 * shaft);
+            float thick = saturate(shaft * 1.7);
+            float3 rain = p.ambient.rgb * 0.36 + front * 0.24 + p.glow.rgb * (0.3 * (1.0 - thick)) + p.flash.rgb * 0.3
+                        + shaftLit * 0.35;
+            float far = 1.0 - exp(-p.shake.w / 55.0);
+            rain = mix(rain, pl_air(d, alt, u), 0.5 * far);
+            shaft = min(0.88, 1.9 * shaft) * (1.0 - 0.25 * far);
             o = float4(rain * shaft, shaft) + o * (1.0 - shaft);
         }
         if (ridgeOver && p.ridge.w < p.shake.w) o *= 1.0 - pl_ridge(th, alt, p);

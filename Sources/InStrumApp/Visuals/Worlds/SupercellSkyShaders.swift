@@ -98,6 +98,13 @@ enum SupercellSkyShaders {
         return mix(c, u.haze.rgb, k);
     }
 
+    /// The same for something seen through the air under the storm, which lies in its shade: the haze there scatters
+    /// `shade` of the open air's light (the base seen far off and low was a pale band in the horizon's colour, 13 Nov).
+    float3 aerialShaded(float3 c, float t, float shade, constant CellU& u) {
+        float k = 1.0 - exp(-max(t, 0.0) / max(u.haze.w, 1.0));
+        return mix(c, u.haze.rgb * shade, k);
+    }
+
     /// Lightning's light on the cloud near a point on screen: the strikes' and the crawlers', cool blue-white. The scene
     /// reads it once a pixel and hands it to each layer as `flash` (read in each, it was up to nine loops of exp a pixel).
     float3 flashOnCloud(float2 ndc, constant CellU& u) {
@@ -494,9 +501,11 @@ enum SupercellSkyShaders {
         float fr = fbm2(rel * float2(0.9, 0.2) + float2(4.0, 1.0), octaves);
         cover *= 1.0 - past * (1.0 - smoothstep(0.2, 1.4, edge)) * (1.0 - 0.6 * smoothstep(0.35, 0.65, fr));
         float behind = r > foot ? 40.0 : 0.0;
-        // Beyond the storm's middle, on the rain's side, the base is lost in the rain.
-        float rainSide = 1.0 - smoothstep(u.wall.x - 3.0, u.wall.x + 1.0, P.x);
-        cover *= 1.0 - 0.85 * rainSide * smoothstep(C.y - 2.0, C.y + 2.0, P.y);
+        // Beyond the storm's middle, on the rain's side, the base is lost in the rain: darker, and a little thinner where the
+        // rain hangs from it (it used to thin to almost nothing there, and the bright sky behind showed through as a pale
+        // stripe between the rain's top and the cloud above it).
+        float rainSide = (1.0 - smoothstep(u.wall.x - 3.0, u.wall.x + 1.0, P.x)) * smoothstep(C.y - 2.0, C.y + 2.0, P.y);
+        cover *= 1.0 - 0.3 * rainSide;
         if (cover <= 0.002) return L;
         // Mottled, with a faint spiral turning with the storm, inward to the wall cloud.
         float2 sp = rot2(pr, 0.8 * u.spin.y * log(max(r, 0.4)));
@@ -506,21 +515,28 @@ enum SupercellSkyShaders {
         under += u.amb.rgb * (0.05 * (0.6 + 0.8 * swirl));
         under += float3(0.55, 0.36, 0.18) * u.sunCol.rgb * 0.035;          // the field's warm bounce
         under *= (1.1 - 0.65 * dark) * (1.0 - 0.35 * u.gust.y);           // darker still in the drop
+        // Seen far off and low the base is its deepest shade (the light under it comes from the bright gap below, at a
+        // grazing angle to its underside): darker toward the horizon, and darker still over the rain.
+        float rise = d.z / max(length(d), 1e-4);
+        float graze = smoothstep(0.035, 0.17, rise);
+        under *= (0.55 + 0.45 * graze) * (1.0 - 0.3 * rainSide);
         // Green under the core, over the hail shaft.
         float core = exp(-length(P.xy - u.shaft.xy) / 5.0);
         float l = dot(under, float3(0.2126, 0.7152, 0.0722));
         under = mix(under, l * float3(0.72, 1.2, 1.0), saturate(u.look.y * 8.0 * core));
-        // A chord's pulse: a ring of light spreading out over the base from the wall cloud.
+        // A chord's pulse: a ring of light spreading out over the base from the wall cloud (seen near overhead; toward the
+        // horizon, foreshortened, a ring would draw a bright line along the base, so it fades there).
         if (u.glowL.z > 0.0) {
             float dw = length(P.xy - u.wall.xy) - u.wall.z;
             float ringR = u.glowL.w * (Rb * 0.8);
             float ringD = (dw - ringR) / (0.7 + 1.1 * u.glowL.w);
             float fadeOut = 1.0 - 0.6 * u.glowL.w;                     // dimmer as it spreads
-            under += float3(1.0, 0.8, 0.55) * (u.glowL.z * fadeOut * (0.16 * exp(-ringD * ringD) + 0.12 * exp(-max(dw, 0.0) / 1.0)));
+            float ringLight = 0.16 * exp(-ringD * ringD) * graze + 0.12 * exp(-max(dw, 0.0) / 1.0) * (0.5 + 0.5 * graze);
+            under += float3(1.0, 0.8, 0.55) * (u.glowL.z * fadeOut * ringLight);
         }
-        under += flash * 0.5;
+        under += flash * (0.2 + 0.3 * graze);
         L.a = cover;
-        L.c = aerial(under, t * 0.6, u);
+        L.c = aerialShaded(under, t * 0.6, 0.35, u);
         tHit = t + behind;
         return L;
     }
@@ -609,7 +625,7 @@ enum SupercellSkyShaders {
         cover *= 1.0 - 0.6 * (1.0 - smoothstep(0.0, 0.5, R - bm)) * (1.0 - smoothstep(0.35, 0.7, scud));
         cover *= 1.0 - 0.7 * (1.0 - smoothstep(0.0, 0.3, zc - bottomZ)) * (1.0 - smoothstep(0.3, 0.65, scud));
         L.a = cover;
-        L.c = aerial(c, t * 0.6, u);
+        L.c = aerialShaded(c, t * 0.6, 0.6, u);
         tHit = t;
         return L;
     }
@@ -781,8 +797,8 @@ enum SupercellSkyShaders {
         float dens = (1.0 - smoothstep(-3.0, 0.8, x)) * (0.4 + 0.35 * st + 0.35 * shafts) * (0.35 + 0.65 * u.play.w);
         // It hangs from the storm: none beyond the base's far side, softly into the base above.
         dens *= 1.0 - smoothstep(0.85 + 0.2 * st, 1.3, reach);
-        float hang = hb - 0.05 - 0.35 * fbm2(float2(s * 0.8 + 2.0, 5.0), 2);
-        float top = 1.0 - smoothstep(hang - 0.12, hb + 0.05, P.z);
+        float hang = hb - 0.02 - 0.2 * fbm2(float2(s * 0.8 + 2.0, 5.0), 2);
+        float top = 1.0 - smoothstep(hang - 0.1, hb + 0.08, P.z);
         float a = saturate(dens * 2.1) * 0.94 * top;
         if (a <= 0.002) return L;
         // Translucent at its foot, where the bright horizon behind it shows through and lights the falling rain.

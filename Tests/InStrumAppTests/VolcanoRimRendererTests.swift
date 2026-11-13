@@ -204,7 +204,10 @@ final class VolcanoRimRendererTests: XCTestCase {
         let share = Self.changed(a, b)
         XCTAssertGreaterThan(share, 0.02, "the eruption changes the frame")
         XCTAssertNotNil(erupting.frame.eruption)
-        XCTAssertGreaterThan(erupting.renderer.sparkCount, calm.renderer.sparkCount, "bombs in the air")
+        // (The look job, 13 Nov: the fountain's clots, the bombs and their trails are soft volumes now, counted apart from
+        // the embers' sparks.)
+        XCTAssertGreaterThan(erupting.renderer.clotCount, calm.renderer.clotCount, "the fountain and bombs in the air")
+        XCTAssertGreaterThan(erupting.renderer.fountainAge, 0)
     }
 
     func testBreachChangesTheFrame() throws {
@@ -281,7 +284,7 @@ final class VolcanoRimRendererTests: XCTestCase {
     func testNoBuffersMadePerFrameAndPoolsHold() throws {
         var allocations: Set<Int> = []
         var veinAllocations: Set<Int> = []
-        var sparks = 0, bolts = 0, uniforms: Set<Int> = []
+        var sparks = 0, bolts = 0, clots = 0, uniforms: Set<Int> = []
         for visual in VolcanoRimModel.visuals {
             _ = try Self.renderVolcano(at: 3, values: ["visual": .choice(visual)], energy: 1, tension: 1,
                                        moments: [20: Self.chord(1, drop: true), 100: Self.chord(1)],
@@ -291,6 +294,7 @@ final class VolcanoRimRendererTests: XCTestCase {
                 veinAllocations.insert(r.veinsRenderer.bufferAllocations)
                 sparks = max(sparks, r.sparkCount)
                 bolts = max(bolts, r.boltCount)
+                clots = max(clots, r.clotCount)
                 uniforms.insert(r.uniforms.count)
             })
         }
@@ -298,6 +302,7 @@ final class VolcanoRimRendererTests: XCTestCase {
         XCTAssertEqual(veinAllocations, [3])
         XCTAssertLessThanOrEqual(sparks, VolcanoRimRenderer.sparkCapacity)
         XCTAssertLessThanOrEqual(bolts, VolcanoRimRenderer.boltCapacity)
+        XCTAssertLessThanOrEqual(clots, VolcanoRimRenderer.clotCapacity)
         XCTAssertEqual(uniforms, [VolcanoRimRenderer.uniformCount])
     }
 

@@ -79,8 +79,8 @@ enum MagmaVeinsShaders {
             }
         }
         float edge = 9.0;
-        for (int y = -2; y <= 2; y++) {
-            for (int x = -2; x <= 2; x++) {
+        for (int y = -1; y <= 1; y++) {
+            for (int x = -1; x <= 1; x++) {
                 float2 cell = mg + float2(float(x), float(y));
                 float2 r = cell + hash22(gi + cell) * 0.85 - gf;
                 float2 dr = r - mr;
@@ -109,18 +109,20 @@ enum MagmaVeinsShaders {
             if (dd < best) { best = dd; i1 = k; }
         }
         float2 c1 = u.plates[i1].xy;
-        // The three nearest cracks (a junction's third crack never drops out, so its halo never shows a wedge).
-        float bd[3] = { 1e9, 1e9, 1e9 };
-        int bj[3] = { i1, i1, i1 };
+        // The three nearest cracks (a junction's third crack never drops out, so its halo never shows a wedge). Held in
+        // named registers, not an array (Intel and AMD GPUs put a run-time-indexed array in scratch memory: this pass
+        // took 80 ms on CI's Intel Mac).
+        float bd0 = 1e9, bd1 = 1e9, bd2 = 1e9;
+        int bj0 = i1, bj1 = i1, bj2 = i1;
         for (int k = 0; k < 24; k++) {
             if (k == i1) continue;
             float2 n = u.plates[k].xy - c1;
             float ln = length(n);
             if (ln < 1e-4) continue;
             float dist = dot(0.5 * (c1 + u.plates[k].xy) - q, n / ln);
-            if (dist < bd[0]) { bd[2] = bd[1]; bj[2] = bj[1]; bd[1] = bd[0]; bj[1] = bj[0]; bd[0] = dist; bj[0] = k; }
-            else if (dist < bd[1]) { bd[2] = bd[1]; bj[2] = bj[1]; bd[1] = dist; bj[1] = k; }
-            else if (dist < bd[2]) { bd[2] = dist; bj[2] = k; }
+            if (dist < bd0) { bd2 = bd1; bj2 = bj1; bd1 = bd0; bj1 = bj0; bd0 = dist; bj0 = k; }
+            else if (dist < bd1) { bd2 = bd1; bj2 = bj1; bd1 = dist; bj1 = k; }
+            else if (dist < bd2) { bd2 = dist; bj2 = k; }
         }
         float split = u.b.x;
         float energy = u.b.y;
@@ -128,20 +130,20 @@ enum MagmaVeinsShaders {
         // with white-hot cores (more of them, and all wider and hotter, as the plates split apart); the brightest shows.
         float3 col = float3(0);
         float3 spill = float3(0);
-        float dm = max(bd[0], 0.0) * m;
+        float dm = max(bd0, 0.0) * m;
         for (int c = 0; c < 3; c++) {
-            int j = bj[c];
-            float bdm = max(bd[c], 0.0) * m;
+            int j = c == 0 ? bj0 : (c == 1 ? bj1 : bj2);
+            float bdm = max(c == 0 ? bd0 : (c == 1 ? bd1 : bd2), 0.0) * m;
             float heat = 0.5 * (u.plates[i1].z + u.plates[j].z);
             float pair = hash12(float2(float(min(i1, j)) * 7.13, float(max(i1, j)) * 3.71));
             float wide = smoothstep(0.82 - 0.15 * energy, 0.97, pair);
             float along = vn2(q * 9.0 + pair * 31.0);
             float pinch = smoothstep(0.12, 0.55, along) * (0.5 + vn2(q * 30.0 + pair * 7.0));
-            float w = (0.05 + 0.4 * wide) * pinch * (0.7 + 0.6 * heat) + split * (0.8 + 1.6 * along);
+            float w = (0.05 + 0.4 * wide) * pinch * (0.7 + 0.6 * heat) + split * (0.16 + 0.42 * along);
             float bdt = max(bdm + (vn2(q * 60.0 + pair * 13.0) - 0.5) * 0.5 * (0.3 + w), 0.0);
-            float T = u.c.x - 50.0 + 60.0 * pair + 220.0 * wide + 40.0 * energy + 200.0 * split + 60.0 * heat + 60.0 * (along - 0.5);
+            float T = u.c.x - 50.0 + 60.0 * pair + 220.0 * wide + 40.0 * energy + 130.0 * split + 60.0 * heat + 60.0 * (along - 0.5);
             col = max(col, crackGlow(bdt, w, pix * m, T));
-            spill = max(spill, blackbody(T - 180.0) * exp(-bdm / (0.35 + 1.2 * w)));
+            spill = max(spill, blackbody(T - 180.0) * exp(-bdm / (0.35 + 0.8 * w)));
         }
         // The plate: a dark grey skin with ropy wrinkles and glassy patches, lit by the cracks beside it and with a faint
         // sheen; young plates a little red with heat; dim hairlines in it, some glowing.
@@ -198,28 +200,40 @@ enum MagmaVeinsShaders {
         float dist = length(p - (a + ab * s));
         float width = mix(in.info.x, in.tail.x, s);
         float Tcore = mix(in.info.y, in.tail.y, s);
-        // A channel of magma burst through the crust, lens-shaped along its length: its banks torn, a hot core whose
-        // light varies along it (fresher here, rafts of skin there, drifting up the channel), cooling across to its
-        // banks; outside them, wide levees of dark chilled crust (the noise is in view space, so it runs on unbroken
-        // across the strokes' joints).
-        float wv = vn2(p * 30.0 + 3.0);
-        float w = max(width * (0.8 + 0.4 * wv), view.w * 1.2);
+        // A channel of magma burst through the crust, lens-shaped along its length and swelling and pinching along it: its
+        // banks torn, a hot core whose light varies along it (fresher here, rafts of skin there, drifting up the channel),
+        // cooling across to its banks; as it cools a skin forms over it, dark crust broken into plates with the magma
+        // glowing in the seams between them (yellow through red to black as it dies). Outside it, narrow banks of chilled
+        // crust, soft-edged, and the channel's glow bleeding onto the crust beside it (the noise is in view space, so it
+        // runs on unbroken across the strokes' joints).
+        float wv = vn2(p * 30.0 + 3.0) * 0.7 + vn2(p * 7.0 + 11.0) * 0.3;
+        float w = max(width * (0.7 + 0.6 * wv), view.w * 1.2);
         float torn = (vn2(p * 60.0) - 0.5) * 0.25 * w;
         float x = max(dist + torn, 0.0) / w;
         float2 flow = p - float2(0.0, view.z * 0.03);
         float pulse = vn2(flow * 7.0 + 9.0);
         float raft = smoothstep(0.72, 0.9, vn2(flow * 13.0 + float2(5.0, 1.0)) * 0.8 + 0.25 * vn2(flow * 37.0));
-        float T = Tcore - 140.0 * (1.0 - pulse) - 240.0 * raft * (1.0 - 0.5 * x) - 430.0 * smoothstep(0.4, 1.0, x);
+        float crust = smoothstep(1060.0, 860.0, Tcore);
+        float seam = 1.0 - smoothstep(0.0, 0.22, abs(vn2(flow * 26.0 + 3.0) - 0.5));
+        float T = Tcore - 140.0 * (1.0 - pulse) - 240.0 * raft * (1.0 - 0.5 * x) - 430.0 * smoothstep(0.35, 1.0, x)
+                - 300.0 * crust * (1.0 - seam);
         float inChan = 1.0 - smoothstep(0.9, 1.05, x);
-        float cover = 1.0 - smoothstep(1.4, 1.85, x + 0.3 * (vn2(p * 40.0) - 0.5));
-        float3 levee = float3(0.02, 0.016, 0.013) * (0.5 + 0.9 * vn2(p * 110.0)) * (0.7 + 0.5 * vn2(p * 23.0))
-                     + blackbody(Tcore - 420.0) * (0.3 * exp(-max(x - 1.0, 0.0) / 0.15));
-        // Two passes (view.y): first every channel's levees (so one stroke's levee never covers the next one's core at a
-        // joint), then the channels' molten cores over them.
-        float3 c = view.y < 0.5 ? levee : blackbody(T) * 0.4;
-        float a2 = (view.y < 0.5 ? cover : inChan) * in.info.z;
-        if (a2 < 0.003) discard_fragment();
-        return float4(c * a2, a2);
+        // Two passes (view.y): first every channel's banks (so one stroke's bank never covers the next one's core at a
+        // joint), then the molten cores and their glow over them (the brighter of theirs and what's there).
+        if (view.y < 0.5) {
+            float bank = (1.0 - smoothstep(1.0, 1.45, x + 0.3 * (vn2(p * 40.0) - 0.5))) * 0.7;
+            float3 levee = float3(0.02, 0.016, 0.013) * (0.5 + 0.9 * vn2(p * 110.0)) * (0.7 + 0.5 * vn2(p * 23.0))
+                         + blackbody(Tcore - 420.0) * (0.3 * exp(-max(x - 1.0, 0.0) / 0.15));
+            float a2 = bank * in.info.z;
+            if (a2 < 0.003) discard_fragment();
+            return float4(levee * a2, a2);
+        }
+        float3 core = blackbody(T) * (0.4 * inChan);
+        float3 glow = blackbody(Tcore - 330.0) * (0.2 * in.info.w * exp(-max(x - 0.9, 0.0) / 0.55) * (1.0 - inChan));
+        float3 c = (core + glow) * in.info.z;
+        float a2 = inChan * in.info.z;
+        if (a2 < 0.003 && max(c.r, max(c.g, c.b)) < 0.002) discard_fragment();
+        return float4(c, a2);
     }
     """
 }
