@@ -47,6 +47,7 @@ enum NeonNightDriveShaders {
                             // passes nearer than its glow reaches (|cos| under it: none of the car; empty 2, always −1)
         float4 carTiles[36]; // the view in 16 × 9 tiles (four a row, row by row from the bottom left): the cars (bits) whose
                              // cones reach into each
+        float4 streakTiles[36]; // the same tiles: the cars whose mirror streaks on the road can show in each
     };
     struct DriveOut { float4 pos [[position]]; float2 ndc; };
 
@@ -751,7 +752,7 @@ enum NeonNightDriveShaders {
     // ---------------------------------------------------------------- the road
     /// The deck at `p` seen along `d` from `t` away: wet asphalt, its paint and studs, lit by your headlights and the
     /// street lights, the street lights' and the traffic's mirror streaks, the arp's pulses racing down the studs.
-    float3 shadeRoad(float3 p, float3 d, float t, constant DriveU& u, float pa, bool inTunnel) {
+    float3 shadeRoad(float3 p, float3 d, float t, constant DriveU& u, float pa, bool inTunnel, uint streakCars) {
         float dist = u.move.x;
         float zw = p.z + dist;
         float fx = t * pa;
@@ -853,6 +854,9 @@ enum NeonNightDriveShaders {
             }
         }
         for (int c = 0; c < 12; c++) {
+            // (Only the cars whose streaks can show in this pixel's tile: a streak lies within 0.131 rad of its light's
+            // bearing, and the others are passed by unread.)
+            if (((streakCars >> uint(c)) & 1u) == 0u) continue;
             float4 a = u.cars[c * 2];
             if (a.y < -1e4 || a.y < p.z - 2.0 || a.y > 420.0) continue;
             float oncoming = a.z;
@@ -992,7 +996,7 @@ enum NeonNightDriveShaders {
             float fix = boxCover(p.x, 1.35, 1.85, fx) * boxCover(zl, -1.2, 1.2, fz);
             col = float3(0.03, 0.03, 0.032) * E + lampC * fix * 9.0;
         } else if (kind == 4) {
-            col = shadeRoad(p, d, t, u, pa, true) + float3(0.03, 0.03, 0.03) * E;
+            col = shadeRoad(p, d, t, u, pa, true, 4095u) + float3(0.03, 0.03, 0.03) * E;
             float2 dh = normalize(d.xz);
             float s = abs(dh.x) > 1e-4 ? (1.6 - p.x) / dh.x : 1e9;
             if (s > 0.0 && s < 1e8) {
@@ -1121,7 +1125,12 @@ enum NeonNightDriveShaders {
                     } else {
                         kind = 1;
                         col = float3(0.02);
-                        if ((skip & 1u) == 0u) col = shadeRoad(p, d, tr, u, pa, false);
+                        if ((skip & 1u) == 0u) {
+                            int sx = clamp(int((in.ndc.x + 1.0) * 8.0), 0, 15), sy = clamp(int((in.ndc.y + 1.0) * 4.5), 0, 8);
+                            int st = sy * 16 + sx;
+                            uint streakCars = uint(u.streakTiles[st >> 2][st & 3] + 0.5);
+                            col = shadeRoad(p, d, tr, u, pa, false, streakCars);
+                        }
                     }
                 }
             }

@@ -28,11 +28,16 @@ final class NeonNightDriveRenderer: ThemeRenderer {
     nonisolated static let rowMoon = 78, rowCabin = 79, rowPillars = 80
     /// Each car's cone (`carCone`): the direction to its lights and the cosine past which a ray misses its glow.
     nonisolated static let carConeBase = 81
-    /// The view's tiles (`carTiles`: 16 across, 9 up, four to a row): the cars whose cones reach into each.
+    /// The view's tiles (`carTiles`: 16 across, 9 up, four to a row): the cars whose cones reach into each; then
+    /// (`streakTiles`) the cars whose mirror streaks on the road can show in each.
     nonisolated static let carTileBase = 93, tileColumns = 16, tileRows = 9
+    nonisolated static let streakTileBase = 129
     /// The Sky kit's `SkyU` rows for the moon: its direction and phase, then lit fraction, earthshine, radius.
     nonisolated static let skyMoonRow = 6
-    nonisolated static let uniformCount = 129
+    nonisolated static let uniformCount = 165
+    /// A car's mirror streak on the wet road lies within this bearing (rad) of its light's, seen from the eye: the road's
+    /// `roadStreak` reads none past six of its widths sideways (at most 0.0218 rad: |sin| 0.1308).
+    nonisolated static let streakBearing: Float = 0.1312
 
     /// A car's cone for the shader (MSL `carCone`): the unit direction from the eye to the middle of its lights (the
     /// road's frame: x right, y up, z ahead) and the cosine of the angle within which a ray passes nearer to it than its
@@ -91,8 +96,10 @@ final class NeonNightDriveRenderer: ThemeRenderer {
     /// The mirror's targets made so far (tests: one a size, never one a frame).
     private(set) var mirrorAllocations = 0
     private var u = [SIMD4<Float>](repeating: .zero, count: NeonNightDriveRenderer.uniformCount)
-    /// The cars' cones' half-angles this frame (rad; −1 an empty slot, 4 a car nearer than its reach).
+    /// The cars' cones' half-angles this frame (rad; −1 an empty slot, 4 a car nearer than its reach), and their lights'
+    /// bearings from the eye (rad, the road's frame; 100 an empty slot).
     private var carHalf = [Float](repeating: -1, count: NeonNightDriveRenderer.carSlots)
+    private var carBearing = [Float](repeating: 100, count: NeonNightDriveRenderer.carSlots)
     private var limiter = FlashLimiter()
     private var limiterStarted = false
     private var showWarp = false
@@ -381,6 +388,8 @@ final class NeonNightDriveRenderer: ThemeRenderer {
         for c in 0..<Self.carSlots {
             let w = u[Self.carConeBase + c].w
             carHalf[c] = w > 1.5 ? -1 : (w < 0 ? 4 : acos(min(1, w)))
+            let car = u[Self.carBase + c * 2]
+            carBearing[c] = car.y > -1e4 ? atan2(car.x, car.y) : 100
         }
         let cw = 2 / Float(Self.tileColumns), ch = 2 / Float(Self.tileRows)
         for ty in 0..<Self.tileRows {
@@ -402,9 +411,29 @@ final class NeonNightDriveRenderer: ThemeRenderer {
                 }
                 let i = ty * Self.tileColumns + tx
                 u[Self.carTileBase + i / 4][i % 4] = mask
+                // The streaks: the tile's bearings (its edges' and middle's, from the eye; the view looks ahead, so
+                // none wraps), widened by the streaks' reach and a margin.
+                var lo: Float = 10, hi: Float = -10
+                for (fx, fy) in Self.tileSamples {
+                    let r = Self.tileRay(x0 + fx * cw, y0 + fy * ch, right: rt, up: up, forward: fw, axes: ax)
+                    let b = atan2(r.x, r.z)
+                    lo = min(lo, b); hi = max(hi, b)
+                }
+                lo -= Self.streakBearing + 0.01
+                hi += Self.streakBearing + 0.01
+                var streaks: Float = 0
+                for k in 0..<Self.carSlots where carBearing[k] < 50 {
+                    let b = carBearing[k]
+                    if b >= lo && b <= hi { streaks += Float(1 << k) }
+                }
+                u[Self.streakTileBase + i / 4][i % 4] = streaks
             }
         }
     }
+
+    /// Where a tile's bearings are sampled (shares of its width and height): its corners, its edges' middles, its middle.
+    private static let tileSamples: [(Float, Float)] = [(0, 0), (0.5, 0), (1, 0), (0, 0.5), (0.5, 0.5), (1, 0.5),
+                                                        (0, 1), (0.5, 1), (1, 1)]
 
     /// The mirror's half-resolution target for a scene `width` × `height` (made when the size changes, kept).
     private func mirrorTexture(width: Int, height: Int) -> MTLTexture? {
