@@ -1,7 +1,7 @@
 /// Metal source for Neon Night Drive (Fire & Neon spec §9): the view through the windscreen down a wet elevated expressway
 /// into a dense neon city at night. One full-screen pass (`drive_scene_fragment`) draws the sky, the city, the road and its
-/// traffic; a second (`drive_reflect_fragment`) adds the wet road's and the harbour's mirror of the city from a blurred copy
-/// of the first, streaked down the road; Light Trails (`LightTrailsShaders`) and the windscreen (`WindscreenShaders`) go
+/// traffic; a second (`drive_mirror_fragment`, at half resolution, added in by `drive_mirror_compose_fragment`) adds the wet
+/// road's and the harbour's mirror of the city from a blurred copy of the first, streaked down the road; Light Trails (`LightTrailsShaders`) and the windscreen (`WindscreenShaders`) go
 /// over them.
 ///
 /// Everything is hit in closed form, never marched: the road deck, its parapets and the median are planes; the towers along
@@ -679,13 +679,18 @@ enum NeonNightDriveShaders {
         if (dist > tHit || v.z < 1.0) return float3(0);
         float3 o = d * dot(d, v) - v;
         float off = length(o);
+        float fw = dist * pa;
+        float r = min(2.2 + 3.5 * rain, dist * 0.03);
+        float halo = exp(-off / r) * (0.03 + 0.07 * rain) + exp(-off / min(r * 4.0, dist * 0.2)) * 0.0035;
+        // (The lens and the tight glow round it add under a millionth of the light farther than 4.5 m from the lens
+        // (and 4.4 widths of its blur, far off): there only the halo is read. Most of the view, for most lamps.)
+        if (off * off > max(20.25, 19.4 * (0.09 + fw * fw))) return colour * strength * halo;
         float3 h = float3(d.z, 0.0, -d.x) / max(length(d.xz), 1e-4);
         float3 w = cross(d, h);
         float ox = dot(o, h), oy = dot(o, w);
         // The lens: 0.6 m across, as tall as it shows from here (more of its underside as you near it).
         float hw = 0.3;
         float hh = 0.14 * saturate(v.y / dist) + 0.05;
-        float fw = dist * pa;
         float sx2 = hw * hw + fw * fw, sy2 = hh * hh + fw * fw;
         float soft = fw / hh;
         float point = exp(-ox * ox / sx2 - oy * oy / sy2) * (hw * hh / sqrt(sx2 * sy2)) * (1.0 + 2.0 * smoothstep(0.5, 3.0, soft));
@@ -694,8 +699,6 @@ enum NeonNightDriveShaders {
         float core = mix(point, crisp, smoothstep(0.7, 0.3, soft)) * 6.0;
         float edgeOff = max(off - hw, 0.0);
         float tight = exp(-edgeOff / min(0.3, dist * 0.006)) * 0.1;
-        float r = min(2.2 + 3.5 * rain, dist * 0.03);
-        float halo = exp(-off / r) * (0.03 + 0.07 * rain) + exp(-off / min(r * 4.0, dist * 0.2)) * 0.0035;
         return colour * strength * (core + tight + halo);
     }
 
@@ -709,9 +712,11 @@ enum NeonNightDriveShaders {
         float2 lh = toL.xz / hd;
         float daz = dh.x * lh.y - dh.y * lh.x;
         if (dot(dh, lh) < 0.0) return 0.0;
+        float sa = 0.005 + 0.012 * rough;
+        // (More than six of its widths to the side the streak is under e^-36 of its light: not read.)
+        if (abs(daz) > 6.0 * sa) return 0.0;
         float elL = toL.y / hd;
         float elR = -d.y / max(length(d.xz), 1e-4);
-        float sa = 0.005 + 0.012 * rough;
         float se = 0.04 + 0.32 * rough;
         float del = elL - elR;
         float lobe = exp(-daz * daz / (sa * sa) - del * del / (se * se));
@@ -920,6 +925,13 @@ enum NeonNightDriveShaders {
     float3 carGlow(float3 d, float4 a, float tHit, float eye, float rain, float pa) {
         if (a.y < -1e4 || a.y < 1.0) return float3(0);
         bool oncoming = a.z > 0.5;
+        // (Its lights and its spray all stand within 1.6 m of this point, and none adds a millionth of its light farther
+        // than 18 m from where the ray passes it (12 m for a taillight or the spray): a ray passing farther off reads
+        // none of them. Most cars, for most of the view.)
+        float3 c0 = float3(a.x, 0.7 - eye, a.y);
+        float3 perp = c0 - d * dot(d, c0);
+        float reach = oncoming ? 19.6 : 13.6;
+        if (dot(perp, perp) > reach * reach) return float3(0);
         float3 glow = float3(0);
         for (int s = -1; s <= 1; s += 2) {
             float3 v = float3(a.x + float(s) * (oncoming ? 0.64 : 0.7), (oncoming ? 0.64 : 0.84) - eye, a.y);
@@ -1331,25 +1343,30 @@ enum NeonNightDriveShaders {
     /// mirrored direction's screen place, streaked down towards you by the rain-roughened surface, rippled by the rain;
     /// the Fresnel of water at that angle. Added over the scene (the analytic streaks of the street lights and the traffic
     /// are the scene's own).
-    fragment float4 drive_reflect_fragment(DriveOut in [[stage_in]], constant SkyU& sky [[buffer(0)]],
-                                           constant DriveU& u [[buffer(1)]], texture2d<float> view [[texture(0)]],
-                                           texture2d<float> depth [[texture(1)]]) {
+    /// The mirror's light at a pixel (`ndc`; `pix` its place in the target, for the taps' jitter), and 1 where the road or
+    /// the water is seen there (0 elsewhere); `testDepth` false leaves out the test for nearer things in front of the
+    /// surface (the half-resolution pass: the full-resolution one that adds it in does that test, so their outlines stay
+    /// sharp).
+    float4 driveMirror(float2 ndc, float2 pix, constant SkyU& sky, constant DriveU& u, texture2d<float> view,
+                       texture2d<float> depth, bool testDepth) {
         constexpr sampler s(filter::linear, mip_filter::linear, address::clamp_to_edge);
         float3 dE;
-        float3 d = driveRay(in.ndc, sky, u, dE);
+        float3 d = driveRay(ndc, sky, u, dE);
         float3 p;
         float kind = driveSurface(d, u, p);
         if (kind < 0.5) return float4(0);
         // Nearer things (the cars, the parapets, a tunnel's portal) stand in front of the surface: the scene's depth says.
         float eye = u.road3.y;
         float t = kind > 1.5 ? (eye + 22.0) / -d.y : eye / -d.y;
-        float2 here = float2(in.ndc.x * 0.5 + 0.5, 0.5 - in.ndc.y * 0.5);
-        float dep = depth.sample(s, here).r;
-        float sceneT = 60.0 * dep / max(1.0 - dep, 1e-4);
-        if (sceneT < t * 0.97 - 0.5) return float4(0);
+        if (testDepth) {
+            float2 here = float2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
+            float dep = depth.sample(s, here).r;
+            float sceneT = 60.0 * dep / max(1.0 - dep, 1e-4);
+            if (sceneT < t * 0.97 - 0.5) return float4(0);
+        }
         float3 m = float3(d.x, -d.y, d.z);
         float3 sp = driveProject(m, sky, u);
-        if (sp.z <= 0.0) return float4(0);
+        if (sp.z <= 0.0) return float4(0, 0, 0, 1);
         float2 uv = float2(sp.x * 0.5 + 0.5, 0.5 - sp.y * 0.5);
         float water = kind > 1.5 ? 1.0 : 0.0;
         float zw = p.z + u.move.x;
@@ -1380,7 +1397,7 @@ enum NeonNightDriveShaders {
         float3 acc = float3(0);
         float wsum = 0.0;
         float reach = 0.05 + 0.22 * rough;
-        float jit = fract(52.9829189 * fract(dot(in.pos.xy, float2(0.06711056, 0.00583715))));
+        float jit = fract(52.9829189 * fract(dot(pix, float2(0.06711056, 0.00583715))));
         int taps = oct > 2 ? 12 : 8;
         float stepK = 9.0 / float(taps);
         for (int i = 0; i < taps; i++) {
@@ -1406,7 +1423,43 @@ enum NeonNightDriveShaders {
         float F = fresnelWet(-d.y);
         float strength = F * wet * (water > 0.5 ? 0.9 : 0.55 + 0.6 * puddle) * aboveH * edges * fade * patches;
         float k = 1.0 - exp(-t / max(u.haze.w, 1.0));
-        return float4(refl * strength * (1.0 - k), 0.0);
+        return float4(refl * strength * (1.0 - k), 1.0);
+    }
+
+    fragment float4 drive_reflect_fragment(DriveOut in [[stage_in]], constant SkyU& sky [[buffer(0)]],
+                                           constant DriveU& u [[buffer(1)]], texture2d<float> view [[texture(0)]],
+                                           texture2d<float> depth [[texture(1)]]) {
+        return float4(driveMirror(in.ndc, in.pos.xy, sky, u, view, depth, true).rgb, 0.0);
+    }
+
+    // The mirror at half resolution: it is a blur (the copy's mips, streaked), so drawn into a half-size target (a
+    // quarter of its taps a frame) and added in at full resolution, where the scene's depth hides it behind the cars,
+    // the parapets and a portal pixel by pixel.
+    fragment float4 drive_mirror_fragment(DriveOut in [[stage_in]], constant SkyU& sky [[buffer(0)]],
+                                          constant DriveU& u [[buffer(1)]], texture2d<float> view [[texture(0)]],
+                                          texture2d<float> depth [[texture(1)]]) {
+        return driveMirror(in.ndc, in.pos.xy, sky, u, view, depth, false);
+    }
+
+    fragment float4 drive_mirror_compose_fragment(DriveOut in [[stage_in]], constant SkyU& sky [[buffer(0)]],
+                                                  constant DriveU& u [[buffer(1)]], texture2d<float> mirror [[texture(0)]],
+                                                  texture2d<float> depth [[texture(1)]]) {
+        constexpr sampler s(filter::linear, address::clamp_to_edge);
+        float3 dE;
+        float3 d = driveRay(in.ndc, sky, u, dE);
+        float3 p;
+        float kind = driveSurface(d, u, p);
+        if (kind < 0.5) return float4(0);
+        float eye = u.road3.y;
+        float t = kind > 1.5 ? (eye + 22.0) / -d.y : eye / -d.y;
+        float2 here = float2(in.ndc.x * 0.5 + 0.5, 0.5 - in.ndc.y * 0.5);
+        float dep = depth.sample(s, here).r;
+        float sceneT = 60.0 * dep / max(1.0 - dep, 1e-4);
+        if (sceneT < t * 0.97 - 0.5) return float4(0);
+        // (Filtered over the texels that saw the surface only (alpha 1), so its edges at a parapet's foot or the median
+        // don't darken by mixing in texels that saw neither.)
+        float4 m = mirror.sample(s, here);
+        return float4(m.a > 1e-3 ? m.rgb / m.a : float3(0), 0.0);
     }
     """
 }

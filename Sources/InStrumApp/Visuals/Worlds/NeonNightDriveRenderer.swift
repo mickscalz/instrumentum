@@ -52,6 +52,13 @@ final class NeonNightDriveRenderer: ThemeRenderer {
     let reflectCopy: ViewCopy
     private let scene: SkyPipeline
     private let reflect: MTLRenderPipelineState
+    /// The wet road's mirror drawn at half resolution (`drive_mirror_fragment`, into `mirrorTarget`), added in at full
+    /// resolution (`drive_mirror_compose_fragment`), which hides it behind nearer things pixel by pixel.
+    private let mirrorHalf, mirrorCompose: MTLRenderPipelineState
+    private let device: MTLDevice
+    private var mirrorTarget: MTLTexture?
+    /// The mirror's targets made so far (tests: one a size, never one a frame).
+    private(set) var mirrorAllocations = 0
     private var u = [SIMD4<Float>](repeating: .zero, count: NeonNightDriveRenderer.uniformCount)
     private var limiter = FlashLimiter()
     private var limiterStarted = false
@@ -101,9 +108,20 @@ final class NeonNightDriveRenderer: ThemeRenderer {
         rd.colorAttachments[0].destinationRGBBlendFactor = .one
         rd.colorAttachments[0].sourceAlphaBlendFactor = .zero
         rd.colorAttachments[0].destinationAlphaBlendFactor = .one
-        guard let scenePipe, let reflectPipe = try? device.makeRenderPipelineState(descriptor: rd) else { return nil }
+        // The mirror at half resolution (written whole, no blending), and the pass that adds it in at full resolution
+        // (additive, as the full-resolution mirror was).
+        let md = MTLRenderPipelineDescriptor()
+        md.vertexFunction = lib.skyFunction("drive_vertex")
+        md.fragmentFunction = lib.skyFunction("drive_mirror_fragment")
+        md.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
+        rd.fragmentFunction = lib.skyFunction("drive_mirror_compose_fragment")
+        guard let composePipe = try? device.makeRenderPipelineState(descriptor: rd) else { return nil }
+        rd.fragmentFunction = lib.skyFunction("drive_reflect_fragment")
+        guard let scenePipe, let reflectPipe = try? device.makeRenderPipelineState(descriptor: rd),
+              let mirrorPipe = try? device.makeRenderPipelineState(descriptor: md) else { return nil }
         sky = s; weather = w; warp = gw; trails = tl; screen = sc; reflectCopy = rc
-        scene = scenePipe; reflect = reflectPipe
+        scene = scenePipe; reflect = reflectPipe; mirrorHalf = mirrorPipe; mirrorCompose = composePipe
+        self.device = device
         sky.verticalFOV = 47
         sky.horizonY = Self.horizonY
         sky.viewAzimuth = Self.heading
@@ -313,6 +331,19 @@ final class NeonNightDriveRenderer: ThemeRenderer {
         return p
     }
 
+    /// The mirror's half-resolution target for a scene `width` × `height` (made when the size changes, kept).
+    private func mirrorTexture(width: Int, height: Int) -> MTLTexture? {
+        let w = max(1, (width + 1) / 2), h = max(1, (height + 1) / 2)
+        if mirrorTarget?.width != w || mirrorTarget?.height != h {
+            let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: RenderStack.sceneFormat, width: w, height: h, mipmapped: false)
+            d.usage = [.renderTarget, .shaderRead]
+            d.storageMode = .private
+            mirrorTarget = device.makeTexture(descriptor: d)
+            mirrorAllocations += 1
+        }
+        return mirrorTarget
+    }
+
     func render(stack: RenderStack, commandBuffer cb: MTLCommandBuffer) {
         sky.prepare(cb)   // the supercell's impostor, before the frame's passes
         guard let pass = stack.scenePass(clear: MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)),
@@ -333,18 +364,42 @@ final class NeonNightDriveRenderer: ThemeRenderer {
         if skipLayers & 4096 == 0 { weather.draw(e) }
         e.endEncoding()
         if skipLayers & 8192 != 0 { return }
-        // The wet road's and the harbour's mirror of the city, and Light Trails.
-        if let view = reflectCopy.make(from: hdr, commandBuffer: cb), let e2 = cb.makeRenderCommandEncoder(descriptor: colourPass(hdr)) {
-            if skipLayers & 256 == 0 {
-                e2.setRenderPipelineState(reflect)
-                skyU.withUnsafeBytes { e2.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
-                u.withUnsafeBytes { e2.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
-                e2.setFragmentTexture(view, index: 0)
-                e2.setFragmentTexture(depth, index: 1)
-                e2.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+        // The wet road's and the harbour's mirror of the city (drawn at half resolution first), and Light Trails.
+        if let view = reflectCopy.make(from: hdr, commandBuffer: cb) {
+            var mirror: MTLTexture?
+            if skipLayers & 256 == 0, let target = mirrorTexture(width: hdr.width, height: hdr.height) {
+                let mp = MTLRenderPassDescriptor()
+                mp.colorAttachments[0].texture = target
+                mp.colorAttachments[0].loadAction = .dontCare
+                mp.colorAttachments[0].storeAction = .store
+                if let em = cb.makeRenderCommandEncoder(descriptor: mp) {
+                    em.setRenderPipelineState(mirrorHalf)
+                    skyU.withUnsafeBytes { em.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
+                    u.withUnsafeBytes { em.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
+                    em.setFragmentTexture(view, index: 0)
+                    em.setFragmentTexture(depth, index: 1)
+                    em.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+                    em.endEncoding()
+                    mirror = target
+                }
             }
-            if skipLayers & 512 == 0 { trails.draw(e2, depth: depth, sky: skyU, drive: u) }
-            e2.endEncoding()
+            if let e2 = cb.makeRenderCommandEncoder(descriptor: colourPass(hdr)) {
+                if skipLayers & 256 == 0 {
+                    skyU.withUnsafeBytes { e2.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
+                    u.withUnsafeBytes { e2.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
+                    if let mirror {
+                        e2.setRenderPipelineState(mirrorCompose)
+                        e2.setFragmentTexture(mirror, index: 0)
+                    } else {
+                        e2.setRenderPipelineState(reflect)
+                        e2.setFragmentTexture(view, index: 0)
+                    }
+                    e2.setFragmentTexture(depth, index: 1)
+                    e2.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+                }
+                if skipLayers & 512 == 0 { trails.draw(e2, depth: depth, sky: skyU, drive: u) }
+                e2.endEncoding()
+            }
         }
         // The windscreen: the rain on the glass and the wipers, then the cabin round it.
         if let view = screen.makeView(from: hdr, commandBuffer: cb), let e3 = cb.makeRenderCommandEncoder(descriptor: colourPass(hdr)) {
