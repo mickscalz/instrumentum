@@ -187,7 +187,9 @@ enum WindscreenShaders {
         constexpr sampler s(filter::linear, mip_filter::linear, address::clamp_to_edge);
         float2 p = in.ndc;
         float inside = glassInside(p, u);
-        if (inside < -0.01) return float4(0);
+        // (Where the glass adds nothing (blended over: the same frame) the pixel is let go, so the view there isn't read
+        // and written back: off the glass, and on it between the drops.)
+        if (inside < -0.01) { discard_fragment(); return float4(0); }
         float aspect = u.a.x;
         float2 q = float2(p.x * aspect, p.y);
         float2 uv = float2(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5);
@@ -257,6 +259,7 @@ enum WindscreenShaders {
                 C += kr * (0.12 * exp(-max(above, 0.0) / 0.05) * smoothstep(-0.04, 0.0, above));
             }
         }
+        if (A == 0.0 && C.x == 0.0 && C.y == 0.0 && C.z == 0.0) discard_fragment();
         return float4(C, A);
     }
 

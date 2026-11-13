@@ -1516,21 +1516,24 @@ enum NeonNightDriveShaders {
                                                   constant DriveU& u [[buffer(1)]], texture2d<float> mirror [[texture(0)]],
                                                   texture2d<float> depth [[texture(1)]]) {
         constexpr sampler s(filter::linear, address::clamp_to_edge);
+        // (Where it adds nothing the pixel is let go (additive: the same frame), so the scene there isn't read and written
+        // back: most of the view.)
         float3 dE;
         float3 d = driveRay(in.ndc, sky, u, dE);
         float3 p;
         float kind = driveSurface(d, u, p);
-        if (kind < 0.5) return float4(0);
+        if (kind < 0.5) { discard_fragment(); return float4(0); }
         float eye = u.road3.y;
         float t = kind > 1.5 ? (eye + 22.0) / -d.y : eye / -d.y;
         float2 here = float2(in.ndc.x * 0.5 + 0.5, 0.5 - in.ndc.y * 0.5);
         float dep = depth.sample(s, here).r;
         float sceneT = 60.0 * dep / max(1.0 - dep, 1e-4);
-        if (sceneT < t * 0.97 - 0.5) return float4(0);
+        if (sceneT < t * 0.97 - 0.5) { discard_fragment(); return float4(0); }
         // (Filtered over the texels that saw the surface only (alpha 1), so its edges at a parapet's foot or the median
         // don't darken by mixing in texels that saw neither.)
         float4 m = mirror.sample(s, here);
-        return float4(m.a > 1e-3 ? m.rgb / m.a : float3(0), 0.0);
+        if (m.a <= 1e-3) { discard_fragment(); return float4(0); }
+        return float4(m.rgb / m.a, 0.0);
     }
     """
 }

@@ -58,7 +58,7 @@ enum LightTrailsShaders {
             float4 mband = passLine(d, L.z, -0.3, eye);
             any = (band.w > 0.0 && abs(band.x) < 2.4 && abs(band.y) < 1.2) || (mband.w > 0.0 && abs(mband.x) < 2.4 && abs(mband.y) < 3.0);
         }
-        if (!any) return float4(0.0);
+        if (!any) { discard_fragment(); return float4(0.0); }   // (additive: nothing to add, the pixel is let go)
         float2 here = float2(in.ndc.x * 0.5 + 0.5, 0.5 - in.ndc.y * 0.5);
         float dep = depth.sample(s, here).r;
         float sceneT = 60.0 * dep / max(1.0 - dep, 1e-4);
@@ -127,6 +127,7 @@ enum LightTrailsShaders {
                 col += u.pal[slot].rgb * (core * 2.0 + exp(-dist / 1.2) * 0.04) * flow * fade * tu.bloomA.y;
             }
         }
+        if (col.x == 0.0 && col.y == 0.0 && col.z == 0.0) discard_fragment();   // (nothing added: let go, as above)
         return float4(col, 0.0);
     }
     """
