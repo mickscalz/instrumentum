@@ -603,7 +603,8 @@ final class VolcanoRimRenderer: ThemeRenderer {
         volU[Self.rowSprites].z = columnInstances.isEmpty || skipLayers & 8192 != 0 ? 0 : keysOpaqueBelow + 3
         volU[Self.rowSprites].w = Float(skipLayers & 0x7FF)
         volU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
-        volU[Self.rowSprites].w = 0
+        // (The row is this pass's alone: back to its resting state, so what tests read is the crater's own row.)
+        volU[Self.rowSprites] = SIMD4(-1, 0, 0, 0)
         sky.bindStars(e)
         e.setFragmentTexture(plateMap, index: 1)
         e.setFragmentTexture(plumeDrawn ?? plateMap, index: 2)
