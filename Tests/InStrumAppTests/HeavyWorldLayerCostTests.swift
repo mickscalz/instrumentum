@@ -117,7 +117,8 @@ final class HeavyWorldLayerCostTests: XCTestCase {
         guard MTLCreateSystemDefaultDevice() != nil else { throw XCTSkip("No Metal device") }
         let v = Self.variants([("road", 1), ("rows", 2), ("downtown", 4), ("street", 8), ("cars", 16), ("lamp-glow", 32),
                                ("car-glow", 64), ("sky", 128), ("mirror", 256), ("trails", 512), ("glass", 1024),
-                               ("cabin", 2048), ("weather", 4096), ("after-scene", 8192)], allOff: 0x30FF)
+                               ("cabin", 2048), ("weather", 4096), ("after-scene", 8192), ("facades", 65536),
+                               ("signs", 131072), ("parapets", 262144), ("haze", 524288)], allOff: 0x30FF)
         for q in [QualityLevel.lite, .high] {
             let ms = try price(world: NeonNightDriveModel.id, quality: q, variants: v) { r, m in
                 (r as? NeonNightDriveRenderer)?.skipLayers = m

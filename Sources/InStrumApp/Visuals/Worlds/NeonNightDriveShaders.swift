@@ -389,6 +389,7 @@ enum NeonNightDriveShaders {
     float3 neonSign(float2 uv, float width, float height, int mode, int slot, float seed, float fp, float screenX, bool hero,
                     constant DriveU& u, thread float& cover) {
         cover = 0.0;
+        if ((uint(u.road3.w + 0.5) & 512u) != 0u) return float3(0);   // (the timing test's mask: no signs)
         float night = u.move.w;
         float w, h;
         float2 c;
@@ -557,7 +558,7 @@ enum NeonNightDriveShaders {
             float facing = smoothstep(0.1, 0.35, abs(d.x) / max(length(d), 1e-4));
             if (local >= start && local <= start + len && y >= ground && y <= ground + height) {
                 float2 uv = float2(side < 0.0 ? local - start : start + len - local, y - ground);
-                float3 c = facade(uv.x, uv.y, height, seed, fu, fv, 1.0, abs(d.x), u);
+                float3 c = (uint(u.road3.w + 0.5) & 256u) != 0u ? float3(0.01) : facade(uv.x, uv.y, height, seed, fu, fv, 1.0, abs(d.x), u);
                 if (hasSign && mode > 0 && facing > 0.0) {
                     float cover = 0.0;
                     float3 sg = neonSign(uv, len, height, mode, slot, seed, fu, sx, false, u, cover);
@@ -593,7 +594,7 @@ enum NeonNightDriveShaders {
         if (into >= 0.0 && into <= depthB && ye >= ground && ye <= ground + hJ && slideJ < 0.99) {
             float seedJ = cj * 0.731 + rowSeed * 17.0 + 0.37;
             float fe = te * pa / max(abs(d.z), 0.03);
-            float3 c = facade(into, ye - ground, hJ, seedJ, fe, te * pa, 1.0, abs(d.z), u);
+            float3 c = (uint(u.road3.w + 0.5) & 256u) != 0u ? float3(0.01) : facade(into, ye - ground, hJ, seedJ, fe, te * pa, 1.0, abs(d.z), u);
             r.t = te * (1.0 + 6.0 * slideJ);
             r.col = c * (1.0 - slideJ) * 0.8;
         }
@@ -645,7 +646,7 @@ enum NeonNightDriveShaders {
         bool roofSign = (hero || hash11(seed * 5.7) < 0.1 + 0.35 * u.neon.y) && shape != 2;
         if (local >= start && local <= start + width && y >= ground && y <= ground + topH) {
             float2 uv = float2(local - start, y - ground);
-            float3 c = facade(uv.x, uv.y, topH, seed, fp, fp, 0.0, d.z, u);
+            float3 c = (uint(u.road3.w + 0.5) & 256u) != 0u ? float3(0.01) : facade(uv.x, uv.y, topH, seed, fp, fp, 0.0, d.z, u);
             if (wallSign) {
                 float cover = 0.0;
                 int mode = 1 + int(hash11(seed * 6.1) * 1.99);
@@ -680,9 +681,11 @@ enum NeonNightDriveShaders {
 
     /// A street light seen along `d`: its head (a lens under its housing, with a shape near and a point of the same light
     /// far off), a tight glow round the lens, and its halo in the rain (no wider than a few degrees however near the lamp).
-    float3 lampGlow(float3 d, float3 v, float tHit, float strength, float3 colour, float rain, float pa) {
+    /// `hazeL` > 0 dims it with distance through the haze (exp(-dist / hazeL)); worked out only for a lamp that shows.
+    float3 lampGlow(float3 d, float3 v, float tHit, float strength, float3 colour, float rain, float pa, float hazeL) {
         float dist = length(v);
         if (dist > tHit || v.z < 1.0) return float3(0);
+        float att = hazeL > 0.0 ? exp(-dist / hazeL) : 1.0;
         float3 o = d * dot(d, v) - v;
         float off = length(o);
         float fw = dist * pa;
@@ -690,7 +693,7 @@ enum NeonNightDriveShaders {
         float halo = exp(-off / r) * (0.03 + 0.07 * rain) + exp(-off / min(r * 4.0, dist * 0.2)) * 0.0035;
         // (The lens and the tight glow round it add under a millionth of the light farther than 4.5 m from the lens
         // (and 4.4 widths of its blur, far off): there only the halo is read. Most of the view, for most lamps.)
-        if (off * off > max(20.25, 19.4 * (0.09 + fw * fw))) return colour * strength * halo;
+        if (off * off > max(20.25, 19.4 * (0.09 + fw * fw))) return colour * strength * halo * att;
         float3 h = float3(d.z, 0.0, -d.x) / max(length(d.xz), 1e-4);
         float3 w = cross(d, h);
         float ox = dot(o, h), oy = dot(o, w);
@@ -705,7 +708,7 @@ enum NeonNightDriveShaders {
         float core = mix(point, crisp, smoothstep(0.7, 0.3, soft)) * 6.0;
         float edgeOff = max(off - hw, 0.0);
         float tight = exp(-edgeOff / min(0.3, dist * 0.006)) * 0.1;
-        return colour * strength * (core + tight + halo);
+        return colour * strength * (core + tight + halo) * att;
     }
 
     /// A light's mirror on the wet road at `p`, seen along `d`: a streak below its mirror image, narrow sideways and long
@@ -760,7 +763,8 @@ enum NeonNightDriveShaders {
         float wet = inTunnel ? 0.1 : u.rain.z;
         int oct = int(u.a.z + 0.5);
         float grainVis = 1.0 - smoothstep(0.03, 0.25, max(fx, fz * 0.3));
-        float grain = vn2(float2(p.x * 4.1, zw * 4.1)) * grainVis + 0.5 * (1.0 - grainVis);
+        // (Past where the grain averages away (most of the road) its noise isn't read: the same 0.5.)
+        float grain = grainVis > 0.0 ? vn2(float2(p.x * 4.1, zw * 4.1)) * grainVis + 0.5 * (1.0 - grainVis) : 0.5;
         float puddle = smoothstep(0.56, 0.74, fbm2(float2(p.x * 0.21, zw * 0.07), oct)) * wet;
         float lw = u.road2.w;
         float track = 0.0;
@@ -818,7 +822,10 @@ enum NeonNightDriveShaders {
         float wx = r2 + fx * fx, wz = r2 + fz * fz;
         float studNorm = r2 / sqrt(wx * wz);
         float studAlong = studZ * studZ / wz;
+        // (Thirty of its widths along from the nearest row of studs a glint is under e^-30 of its light, far below the
+        // 1e-4 it must pass to be drawn: not read. Most of the near road, between the rows.)
         for (int i = 0; i <= 4; i++) {
+            if (studAlong >= 30.0) break;
             float xl = le + lw * float(i);
             float dx = p.x - xl;
             float g = exp(-dx * dx / wx - studAlong) * studNorm;
@@ -867,14 +874,18 @@ enum NeonNightDriveShaders {
         // Rain ringing the puddles: tiny rings that come and go (they average away into a sheen far off).
         float ripple = 0.0;
         if (!inTunnel && u.rain.x > 0.02) {
-            float2 cell = floor(float2(p.x, zw) / 0.45);
-            float2 f = fract(float2(p.x, zw) / 0.45) - 0.5;
-            float h = hash12(cell);
-            float ph = fract(u.a.y * 1.6 + h);
-            float2 o = float2(hash12(cell + 3.1), hash12(cell + 7.7)) - 0.5;
-            float rr = length(f - o * 0.5) * 0.45;
-            float ring = exp(-sq((rr - ph * 0.12) / 0.006)) * (1.0 - ph) * step(h, u.rain.x * 0.6);
             float near = 1.0 - smoothstep(0.004, 0.02, max(fx, fz * 0.1));
+            float ring = 0.0;
+            // (The rings are drawn only a few metres out, under the dashboard's edge: elsewhere they aren't worked out.)
+            if (near > 0.0) {
+                float2 cell = floor(float2(p.x, zw) / 0.45);
+                float2 f = fract(float2(p.x, zw) / 0.45) - 0.5;
+                float h = hash12(cell);
+                float ph = fract(u.a.y * 1.6 + h);
+                float2 o = float2(hash12(cell + 3.1), hash12(cell + 7.7)) - 0.5;
+                float rr = length(f - o * 0.5) * 0.45;
+                ring = exp(-sq((rr - ph * 0.12) / 0.006)) * (1.0 - ph) * step(h, u.rain.x * 0.6);
+            }
             ripple = ring * near * 0.15 + 0.01 * u.rain.x;
         }
         col += spec * F + u.glow.rgb * (ripple * 0.6 * u.move.w);
@@ -1135,6 +1146,7 @@ enum NeonNightDriveShaders {
                 }
             }
             for (int side = 0; side < 3; side++) {
+                if ((skip & 1024u) != 0u) break;
                 float xw = side == 0 ? lp : (side == 1 ? mn : fpx);
                 if ((side == 0 && d.x >= 0.0) || (side > 0 && d.x <= 0.0)) continue;
                 float tw = xw / d.x;
@@ -1333,7 +1345,7 @@ enum NeonNightDriveShaders {
         if (kind == 0) {
             col = float3(0.01);
             if ((skip & 128u) == 0u) col = driveSky(dE, d, sky, u, stars, cell);
-        } else {
+        } else if ((skip & 2048u) == 0u) {
             col = applyHaze(col, tHit, d, u);
         }
         col += add;
@@ -1345,7 +1357,7 @@ enum NeonNightDriveShaders {
             for (int j = -1; j <= 1; j++) {
                 float3 v = lamp + float3(0.0, 0.0, float(j) * kLampSpacing);
                 if (v.z < zMin || (v.z > ts - 2.0 && v.z < te + 2.0)) continue;
-                col += lampGlow(d, v, tHit, u.neon.z * 1.4, kLampColour, rain, pa) * exp(-length(v) / max(u.haze.w * 1.5, 1.0));
+                col += lampGlow(d, v, tHit, u.neon.z * 1.4, kLampColour, rain, pa, max(u.haze.w * 1.5, 1.0));
             }
         }
         if (ts < 1e4 && te > 0.0) {
@@ -1354,7 +1366,7 @@ enum NeonNightDriveShaders {
             for (int j = -1; j <= 1; j++) {
                 float3 v = lamp + float3(0.0, 0.0, float(j) * max(u.route2.y, 4.0));
                 if (v.z < max(ts, 0.0) || v.z > te) continue;
-                col += lampGlow(d, v, tHit + 1.0, 0.6, float3(1.0, 0.5, 0.14), 0.15, pa);
+                col += lampGlow(d, v, tHit + 1.0, 0.6, float3(1.0, 0.5, 0.14), 0.15, pa, 0.0);
             }
         }
         for (int c = 0; c < 12; c++) {

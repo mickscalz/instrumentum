@@ -48,6 +48,17 @@ enum LightTrailsShaders {
         float3 d = driveRay(in.ndc, sky, u, dE);
         float eye = u.road3.y;
         float pa = u.a.w;
+        // (A ray that passes near no lane's band, nor its mirror's, and no bloom: nothing here, and the scene's depth and
+        // the road under it aren't read. Most of the view above the road.)
+        bool any = tu.bloomA.x > 0.0 && tu.bloomA.y > 0.0;
+        for (int lane = 0; lane < 4; lane++) {
+            float4 L = tu.lanes[lane];
+            if (any || int(L.y + 0.5) <= 0) continue;
+            float4 band = passLine(d, L.z, 0.3, eye);
+            float4 mband = passLine(d, L.z, -0.3, eye);
+            any = (band.w > 0.0 && abs(band.x) < 2.4 && abs(band.y) < 1.2) || (mband.w > 0.0 && abs(mband.x) < 2.4 && abs(mband.y) < 3.0);
+        }
+        if (!any) return float4(0.0);
         float2 here = float2(in.ndc.x * 0.5 + 0.5, 0.5 - in.ndc.y * 0.5);
         float dep = depth.sample(s, here).r;
         float sceneT = 60.0 * dep / max(1.0 - dep, 1e-4);
