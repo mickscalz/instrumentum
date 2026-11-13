@@ -290,7 +290,7 @@ public struct CoralSpawning {
         // A burst's later puffs, when they are due.
         if !pulses.isEmpty {
             for i in pulses.indices { pulses[i].wait -= fdt }
-            for p in pulses where p.wait <= 0 { release(p.count, quality: quality) }
+            for p in pulses where p.wait <= 0 { puff(p.count, quality: quality) }
             pulses.removeAll { $0.wait <= 0 }
         }
 
@@ -350,12 +350,12 @@ public struct CoralSpawning {
         pulses.removeAll(keepingCapacity: true)
         for (k, p) in Self.burstPulses.enumerated() {
             let count = Int((Float(total) * p.share).rounded())
-            if k == 0 { release(count, quality: quality) } else { pulses.append((p.at, count)) }
+            if k == 0 { puff(count, quality: quality) } else { pulses.append((p.at, count)) }
         }
     }
 
     /// One puff of a burst: `count` bundles let go at once (the oldest beads go into the slick when the water is full).
-    private mutating func release(_ wanted: Int, quality: QualityLevel) {
+    private mutating func puff(_ wanted: Int, quality: QualityLevel) {
         let cap = Self.cap(quality)
         let count = min(cap, max(0, wanted))
         if beads.count + count > cap {
