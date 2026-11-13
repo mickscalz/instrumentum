@@ -66,6 +66,7 @@ final class WorldCPUTimeSweepTests: XCTestCase {
                 let script = ScriptedPerformance.demo
                 var next = 0
                 var steps: [Double] = [], updates: [Double] = [], encodes: [Double] = [], frames: [Double] = []
+                var slowestAt = 0
                 for i in 3...302 {
                     let time = Double(i) / 60
                     var events: [PerformanceEvent] = []
@@ -92,6 +93,7 @@ final class WorldCPUTimeSweepTests: XCTestCase {
                     let t3 = CACurrentMediaTime()
                     cb.waitUntilCompleted()
                     if i > 62 {
+                        if ms(t3 - t0) > (frames.max() ?? 0) { slowestAt = i }
                         steps.append(ms(t1 - t0))
                         updates.append(ms(t2 - t1))
                         encodes.append(ms(t3 - t2))
@@ -100,9 +102,10 @@ final class WorldCPUTimeSweepTests: XCTestCase {
                 }
                 XCTAssertFalse(frames.isEmpty, "\(world.id) \(label): no frames")
                 timed += frames.isEmpty ? 0 : 1
-                print(String(format: "CPU TIME sweep %@ %@ Smooth %ldx%ld (medians of %ld, ms): step %.2f, update %.2f, encode %.2f, frame %.2f; slowest frame %.2f; switch %.2f, first step %.2f",
+                print(String(format: "CPU TIME sweep %@ %@ Smooth %ldx%ld (medians of %ld, ms): step %.2f, update %.2f, encode %.2f, frame %.2f; slowest frame %.2f (frame %ld; slowest step %.2f, update %.2f, encode %.2f); switch %.2f, first step %.2f",
                              world.id, label, Self.width, Self.height, frames.count, median(steps), median(updates),
-                             median(encodes), median(frames), frames.max() ?? 0, ms(s1 - s0), ms(s2 - s1)))
+                             median(encodes), median(frames), frames.max() ?? 0, slowestAt, steps.max() ?? 0,
+                             updates.max() ?? 0, encodes.max() ?? 0, ms(s1 - s0), ms(s2 - s1)))
             }
         }
         XCTAssertEqual(timed, ThemeRegistry.all.count * 2)

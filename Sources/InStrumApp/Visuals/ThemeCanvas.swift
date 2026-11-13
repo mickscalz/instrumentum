@@ -26,6 +26,15 @@ final class GPUClock: @unchecked Sendable {
     }
 }
 
+/// What happened since the canvas's last drawn frame: its window was hidden, or the app went to the background (set by
+/// notifications on the main thread, read and cleared by the next frame).
+@MainActor
+private final class GapMarks {
+    var hidden = false
+    var background = false
+    weak var view: MTKView?
+}
+
 /// Runs the active theme every frame: events → director → theme renderer → finishing → screen.
 ///
 /// Frame pacing keeps the graphics chip from ever being swamped (an Intel Mac's GPU kept saturated can freeze the whole
@@ -59,9 +68,8 @@ final class ThemeCanvas: NSObject, MTKViewDelegate {
     /// The world on screen and when it was entered (its first frame), for the report's entry frames.
     private var visitWorld = ""
     private var visitStart: CFTimeInterval = 0
-    /// What happened since the last drawn frame: the window was hidden, or the app went to the background.
-    private var hiddenSinceFrame = false, backgroundSinceFrame = false
-    private weak var view: MTKView?
+    /// What happened since the last drawn frame (for a stall's cause in the report).
+    private let marks: GapMarks
     private var observers: [NSObjectProtocol] = []
 
     @MainActor
@@ -77,7 +85,9 @@ final class ThemeCanvas: NSObject, MTKViewDelegate {
                                       reaction: model.reaction)
         self.autoQuality = AutoQuality(setting: model.quality)
         self.appleGPU = device.supportsFamily(.apple7)
-        self.view = view
+        let marks = GapMarks()
+        marks.view = view
+        self.marks = marks
         super.init()
         director.sky.reset(settings: model.skySettings.holdingBack())   // launch with the chosen weather, not a blend into it
         // The app never builds a pipeline inside a frame: what a frame finds missing is made off the main thread.
@@ -85,16 +95,16 @@ final class ThemeCanvas: NSObject, MTKViewDelegate {
         worlds.warmUp(first: model.themeID)
         let center = NotificationCenter.default
         observers.append(center.addObserver(forName: NSWindow.didChangeOcclusionStateNotification, object: nil,
-                                            queue: .main) { [weak self] note in
+                                            queue: .main) { note in
             MainActor.assumeIsolated { () -> Void in
-                guard let self, let window = note.object as? NSWindow, window === self.view?.window,
+                guard let window = note.object as? NSWindow, window === marks.view?.window,
                       !window.occlusionState.contains(.visible) else { return }
-                self.hiddenSinceFrame = true
+                marks.hidden = true
             }
         })
         observers.append(center.addObserver(forName: NSApplication.didResignActiveNotification, object: nil,
-                                            queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { () -> Void in self?.backgroundSinceFrame = true }
+                                            queue: .main) { _ in
+            MainActor.assumeIsolated { () -> Void in marks.background = true }
         })
     }
 
@@ -134,15 +144,15 @@ final class ThemeCanvas: NSObject, MTKViewDelegate {
         let visible = view.window.map { $0.occlusionState.contains(.visible) } ?? true
         let active = NSApp?.isActive ?? true
         let cause: PerformanceLog.StallCause
-        if hiddenSinceFrame || !visible {
+        if marks.hidden || !visible {
             cause = .hidden
-        } else if backgroundSinceFrame || !active {
+        } else if marks.background || !active {
             cause = .background
         } else {
             cause = .active
         }
-        hiddenSinceFrame = false
-        backgroundSinceFrame = false
+        marks.hidden = false
+        marks.background = false
         return cause
     }
 
