@@ -28,15 +28,28 @@ final class NeonNightDriveRenderer: ThemeRenderer {
     nonisolated static let rowMoon = 78, rowCabin = 79, rowPillars = 80
     /// Each car's cone (`carCone`): the direction to its lights and the cosine past which a ray misses its glow.
     nonisolated static let carConeBase = 81
+    /// The view's tiles (`carTiles`: 16 across, 9 up, four to a row): the cars whose cones reach into each.
+    nonisolated static let carTileBase = 93, tileColumns = 16, tileRows = 9
     /// The Sky kit's `SkyU` rows for the moon: its direction and phase, then lit fraction, earthshine, radius.
     nonisolated static let skyMoonRow = 6
-    nonisolated static let uniformCount = 93
+    nonisolated static let uniformCount = 129
 
     /// A car's cone for the shader (MSL `carCone`): the unit direction from the eye to the middle of its lights (the
     /// road's frame: x right, y up, z ahead) and the cosine of the angle within which a ray passes nearer to it than its
     /// glow reaches (19.6 m for an oncoming car's headlights, 13.6 for taillights and spray; its face is well inside
     /// that): a ray with |cos| under it reads none of the car. An empty slot is never read (2); a car nearer than its
     /// reach always is (−1).
+    /// The ray (the road's frame) through a point of the view (NDC), from the sky's camera rows and the road's axes: the
+    /// shader's `driveRay`.
+    nonisolated static func tileRay(_ x: Float, _ y: Float, right rt: SIMD4<Float>, up: SIMD4<Float>, forward fw: SIMD4<Float>,
+                                    axes ax: SIMD4<Float>) -> SIMD3<Float> {
+        let f = SIMD3<Float>(fw.x, fw.y, fw.z), r = SIMD3<Float>(rt.x, rt.y, rt.z), v = SIMD3<Float>(up.x, up.y, up.z)
+        let e = simd_normalize(f + r * (x * rt.w) + v * (y * up.w))
+        return SIMD3<Float>(e.x * ax.z + e.y * ax.w, e.z, e.x * ax.x + e.y * ax.y)
+    }
+
+    private static func angle(_ a: SIMD3<Float>, _ b: SIMD3<Float>) -> Float { acos(min(1, max(-1, simd_dot(a, b)))) }
+
     nonisolated static func carCone(x: Float, ahead: Float, oncoming: Bool, eye: Float) -> SIMD4<Float> {
         guard ahead > -1e4, x.isFinite, ahead.isFinite else { return SIMD4(0, 0, 0, 2) }
         let c = SIMD3<Float>(x, 0.7 - eye, ahead)
@@ -78,6 +91,8 @@ final class NeonNightDriveRenderer: ThemeRenderer {
     /// The mirror's targets made so far (tests: one a size, never one a frame).
     private(set) var mirrorAllocations = 0
     private var u = [SIMD4<Float>](repeating: .zero, count: NeonNightDriveRenderer.uniformCount)
+    /// The cars' cones' half-angles this frame (rad; −1 an empty slot, 4 a car nearer than its reach).
+    private var carHalf = [Float](repeating: -1, count: NeonNightDriveRenderer.carSlots)
     private var limiter = FlashLimiter()
     private var limiterStarted = false
     private var showWarp = false
@@ -309,6 +324,7 @@ final class NeonNightDriveRenderer: ThemeRenderer {
             u[Self.carBase + i * 2 + 1] = SIMD4(Float(c.seed % 1000) / 1000, c.lightBar ? 1 : 0, 0, 0)
             u[Self.carConeBase + i] = Self.carCone(x: x, ahead: c.ahead, oncoming: c.oncoming, eye: DriveRoad.eyeHeight)
         }
+        fillCarTiles()
         for i in 0..<Self.palRows { u[Self.palBase + i] = SIMD4(pal[i], 0) }
         // The moon, drawn by the drive itself as a dim glow behind the overcast (the Sky kit's disc is hidden in `render`):
         // its direction and how much of it shows (its lit part, none by day or below the horizon).
@@ -353,6 +369,41 @@ final class NeonNightDriveRenderer: ThemeRenderer {
         p.colorAttachments[0].loadAction = .load
         p.colorAttachments[0].storeAction = .store
         return p
+    }
+
+    /// The cars' tiles: for each of the view's 16 × 9 tiles, the cars (bits) a ray through it can meet, face or glow. A
+    /// car whose cone (half-angle α round its axis, or its opposite) is farther from the tile's middle ray than α and the
+    /// tile's own reach (its corners' angle from the middle, with a margin) can't be met there: its bit is clear, and the
+    /// shader passes it by without reading it. Cars with a cone too wide to tell are in every tile.
+    private func fillCarTiles() {
+        let su = sky.uniforms
+        let rt = su[0], up = su[1], fw = su[2], ax = u[Self.rowAxes]
+        for c in 0..<Self.carSlots {
+            let w = u[Self.carConeBase + c].w
+            carHalf[c] = w > 1.5 ? -1 : (w < 0 ? 4 : acos(min(1, w)))
+        }
+        let cw = 2 / Float(Self.tileColumns), ch = 2 / Float(Self.tileRows)
+        for ty in 0..<Self.tileRows {
+            for tx in 0..<Self.tileColumns {
+                let x0 = -1 + cw * Float(tx), y0 = -1 + ch * Float(ty)
+                let mid = Self.tileRay(x0 + 0.5 * cw, y0 + 0.5 * ch, right: rt, up: up, forward: fw, axes: ax)
+                let a = Self.angle(mid, Self.tileRay(x0, y0, right: rt, up: up, forward: fw, axes: ax))
+                let b = Self.angle(mid, Self.tileRay(x0 + cw, y0, right: rt, up: up, forward: fw, axes: ax))
+                let c = Self.angle(mid, Self.tileRay(x0, y0 + ch, right: rt, up: up, forward: fw, axes: ax))
+                let d = Self.angle(mid, Self.tileRay(x0 + cw, y0 + ch, right: rt, up: up, forward: fw, axes: ax))
+                let spread = max(max(a, b), max(c, d)) * 1.05 + 0.002
+                var mask: Float = 0
+                for k in 0..<Self.carSlots where carHalf[k] >= 0 {
+                    let reach = carHalf[k] + spread
+                    let cone = u[Self.carConeBase + k]
+                    if reach >= 1.5 || abs(simd_dot(mid, SIMD3<Float>(cone.x, cone.y, cone.z))) >= cos(reach) {
+                        mask += Float(1 << k)
+                    }
+                }
+                let i = ty * Self.tileColumns + tx
+                u[Self.carTileBase + i / 4][i % 4] = mask
+            }
+        }
     }
 
     /// The mirror's half-resolution target for a scene `width` × `height` (made when the size changes, kept).

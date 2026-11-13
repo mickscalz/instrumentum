@@ -45,6 +45,8 @@ enum NeonNightDriveShaders {
         float4 pillars;     // the left pillar's inner edge x at the dashboard and at the roof, the right pillar's
         float4 carCone[12]; // per car: the direction to its lights (the road's frame), and the cosine within which a ray
                             // passes nearer than its glow reaches (|cos| under it: none of the car; empty 2, always −1)
+        float4 carTiles[36]; // the view in 16 × 9 tiles (four a row, row by row from the bottom left): the cars (bits) whose
+                             // cones reach into each
     };
     struct DriveOut { float4 pos [[position]]; float2 ndc; };
 
@@ -1292,11 +1294,16 @@ enum NeonNightDriveShaders {
             }
         }
 
-        // The traffic: the cars' faces where the ray meets them, nearer than what it hit.
+        // The traffic: the cars' faces where the ray meets them, nearer than what it hit. (Only the cars whose cones reach
+        // this pixel's tile of the view are looked at: the rest can't be met here.)
+        int tileX = clamp(int((in.ndc.x + 1.0) * 8.0), 0, 15), tileY = clamp(int((in.ndc.y + 1.0) * 4.5), 0, 8);
+        int tile = tileY * 16 + tileX;
+        uint carMask = uint(u.carTiles[tile >> 2][tile & 3] + 0.5);
         float carT = 1e9;
         for (int c = 0; c < 12; c++) {
-            float4 a = u.cars[c * 2];
             if ((skip & 16u) != 0u) break;
+            if (((carMask >> uint(c)) & 1u) == 0u) continue;
+            float4 a = u.cars[c * 2];
             // (A ray outside the car's cone passes more than 13.6 m from it: its face, 1.8 m round, can't be met.)
             float4 cone = u.carCone[c];
             if (abs(dot(d, cone.xyz)) < cone.w) continue;
@@ -1342,8 +1349,9 @@ enum NeonNightDriveShaders {
             }
         }
         for (int c = 0; c < 12; c++) {
-            float4 a = u.cars[c * 2];
             if ((skip & 64u) != 0u) break;
+            if (((carMask >> uint(c)) & 1u) == 0u) continue;
+            float4 a = u.cars[c * 2];
             if (a.y < zMin) continue;
             col += carGlow(d, a, u.carCone[c], tHit, eye, rain, pa);
         }
