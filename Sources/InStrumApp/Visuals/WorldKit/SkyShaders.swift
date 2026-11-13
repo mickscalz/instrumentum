@@ -855,11 +855,11 @@ enum SkyShaders {
 
         // Scud: ragged low fragments torn off the base's front, 0.7 km up, racing in under it as it arrives (the
         // impostor's detail): dark against the bright low sky, greyer against the base, lit a little from beneath.
-        if (T > 0.01 && fine > 0.5 && k > 0.07 && D < 16.0) {
+        if (T > 0.12 && fine > 0.5 && k > 0.07 && D < 16.0 && D > 3.0) {
             float ts = 0.7 / k;
             float2 Ps = hv * ts;
             float es = (1.0 - length((Ps - float2(D + 1.5, -2.5)) / float2(5.6, 11.5))) * 5.6;   // km in from the base's rim
-            float zone = smoothstep(-2.5, 0.0, es) * (1.0 - smoothstep(2.0, 5.0, es)) * (1.0 - smoothstep(12.0, 16.0, D))
+            float zone = smoothstep(-2.5, 0.0, es) * (1.0 - smoothstep(2.0, 5.0, es)) * (1.0 - smoothstep(12.0, 16.0, D)) * smoothstep(3.0, 6.0, D)
                        * smoothstep(0.07, 0.14, k) * smoothstep(1.5, 3.5, ts);   // (far off, low down, it would be threads)
             if (zone > 0.0) {
                 float2 ws = Ps * 1.1 + float2(time * 0.02, time * 0.008);
@@ -991,9 +991,10 @@ enum SkyShaders {
             float a = 0.0;
             // Overhead and arriving (its front within 12 km), its underside turbulent: three octaves from a km down,
             // drifting with the inflow (the impostor's detail).
+            // (Not where the rain in front hides it.)
             float closeB = 1.0 - smoothstep(6.0, 12.0, D - 4.0);
             float tb = 0.5;
-            if (closeB > 0.0 && fine > 0.5 && rr < 1.4) tb = skyFbm2(P * 0.8 + float2(time * 0.004, 0.0) + 7.0, 3);
+            if (closeB > 0.0 && fine > 0.5 && rr < 1.4 && T > 0.3) tb = skyFbm2(P * 0.8 + float2(time * 0.004, 0.0) + 7.0, 3);
             if (rr < 1.25 + pxb * 0.2 + 0.15 * closeB) {
                 float rag = cloudRagged(atan2(qc.y, qc.x), oct);
                 float edge = (1.0 - rr) * 5.6 + 1.1 * (rag - 0.3) + 1.4 * closeB * (tb - 0.5);
@@ -1059,13 +1060,10 @@ enum SkyShaders {
                                                 0.55, 0.4, 1.8, gB);
                 float lobe = smoothstep(0.08, 0.9, Hb) - 0.5;      // −0.5 … 0.5
                 float turret = smoothstep(0.1, 1.15, HB) - 0.5;
-                // Close, its turbulence: three octaves from a km to 250 m, drifting, warped by the big noise; and the same a
-                // little higher, so each puff's underside (the field rising into it) can take the light from below.
-                float turb = 0.5, turbRise = 0.0;
-                if (close > 0.0 && fine > 0.5) {
-                    float2 pt = float2(x - 0.15 * turn, z) * 1.1 + 1.4 * float2(en, e1) + float2(time * 0.006, 0.0);
-                    turb = skyFbm2(pt, 3);
-                    turbRise = skyFbm2(pt + float2(0.0, 0.2), 3) - turb;
+                // Close, its turbulence: three octaves from a km to 250 m, drifting, warped by the big noise.
+                float turb = 0.5;
+                if (close > 0.02 && fine > 0.5) {
+                    turb = skyFbm2(float2(x - 0.15 * turn, z) * 1.1 + 1.4 * float2(en, e1) + float2(time * 0.006, 0.0), 3);
                 }
                 // The updraft: the striated skirt flaring over the base (smooth, laminar), the cauliflower tower above it
                 // rising in turrets, widening as it goes up into the anvil.
@@ -1179,9 +1177,9 @@ enum SkyShaders {
                     float3 c = (body3 * (1.0 - 0.3 * direct) + warm) * bandShade;
                     c += Lc * (lightAmt * 0.07 * strLip * saturate(ndl + 0.5));
                     // Close, its cloud lit from beneath by the bright sky low under the storm: each puff's rounded underside
-                    // (the lumps' own slope, and the turbulence rising into it), the lowest most.
+                    // (the lumps' own slope), the lowest most.
                     float underL = close * (1.0 - 0.75 * smoothstep(0.0, 3.5, hz)) * (0.4 + 0.6 * turb);
-                    c += u.horizon.rgb * (underL * (0.03 + 0.35 * saturate(-N.z) + 0.6 * saturate(turbRise)));
+                    c += u.horizon.rgb * (underL * (0.03 + 0.45 * saturate(-N.z)));
                     // Backlit: the low light comes through where it thins, a gold rim on every turret's outline and a
                     // softer glow a little inside it; the lips of the skirt's bands catch a thread of it too, and its body
                     // takes a faint warm translucence near the light, so the storm stands in the sun's light, not before it.
