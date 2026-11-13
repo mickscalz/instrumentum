@@ -964,6 +964,25 @@ public final class AppModel: ObservableObject {
         if toast?.id == id { toast = nil }
     }
 
+    // MARK: - Help: Copy Performance Report
+
+    /// How every drawn frame ran, by world and quality, since the app started: the canvas records into it each frame.
+    /// A plain stored property, not `@Published`: it changes every frame and no view may redraw for it.
+    var performanceLog = PerformanceLog()
+    /// When the app started (system uptime), for the report's "Running for".
+    let performanceStart = ProcessInfo.processInfo.systemUptime
+
+    /// Help > Copy Performance Report: puts the report (the build, the Mac and its graphics chips, the quality setting,
+    /// then a table of how each world ran) on the clipboard as plain text, for pasting into a chat.
+    public func copyPerformanceReport() {
+        let header = PerformanceReport.header(quality: quality, gentleVisuals: gentleVisuals,
+                                              runningSeconds: ProcessInfo.processInfo.systemUptime - performanceStart)
+        let board = NSPasteboard.general
+        board.clearContents()
+        board.setString(performanceLog.report(header: header), forType: .string)
+        showToast("Performance report copied", symbol: "doc.on.clipboard")
+    }
+
     // MARK: - Small Wins: activity
 
     /// When a key was last pressed, a pedal moved or the app clicked (system uptime; -∞ before any): what wakes the

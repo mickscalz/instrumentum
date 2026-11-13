@@ -1,5 +1,16 @@
-<!-- title: Small Wins and Big Moments -->
+<!-- title: A performance report from your Mac -->
 **Install:** click the round-arrows button in the app's top bar (left of Keep); when it turns into an orange **Update**, click it and choose **Install Update**. Your settings, presets and keeps stay as they are. (No app yet on this Mac? Download the **.dmg** below, drag *In Strum Meants* onto *Applications*, then right-click the app → **Open** → **Open**.)
+
+**One new thing: Help → Copy Performance Report.** The visuals are tuned on a test machine that is not your MacBook. This puts a short plain-text report on the clipboard so the tuning can aim at your Mac instead of a guess.
+
+- **What to do:** play for a few minutes in the worlds you care about (Supercell Sky, Volcano Rim and Neon Night Drive most of all), then choose **Help → Copy Performance Report** and paste it into our chat. A toast says "Performance report copied".
+- **What it holds:** the app's build, the macOS version, the Mac's model, processor and memory, its graphics chips (and which one is in use), your quality setting, and one line for each world you visited: how long you watched it, its typical and worst frame time, the time the graphics chip itself took, the picture size, whether the safety net stepped in, and any gaps of more than a second between frames.
+- **What it leaves out:** your name, any file or folder name, the Mac's serial number and its network name. Nothing is sent anywhere; it only goes where you paste it.
+- It counts from when the app starts.
+
+<!-- older -->
+
+**Small Wins and Big Moments** (build 182).
 
 **Three things in this update:** six small wins that make every world better to live with, an **Excitement** section that gives eleven older worlds big moments and surprises of their own, and Supercell Sky made many times lighter on Intel graphics. No new set this time, so the app opens where you left it.
 
@@ -54,7 +65,6 @@
 - Play in a key in the **Spaceship Lounge** and listen to the chime.
 - **Smoothness** on Smooth, holding the moment and with the sleep fade dimming.
 
-<!-- older -->
 
 **Fire & Neon: Volcano Rim and Neon Night Drive** (build 159).
 
