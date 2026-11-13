@@ -723,7 +723,9 @@ enum VolcanoRimShaders {
         float rubbly = max(smoothstep(0.55, 0.8, f), 1.0 - colonnade);
         // A ledge only here and there: where a unit's top stands out and holds, catching the lake's light; it breaks off,
         // and the gullies cut it.
-        float holds = smoothstep(0.4, 0.62, vn2(float2(arc * 0.012, Li * 2.3))) * step(0.25, seedL) * (1.0 - gully);
+        // (Its noise is read only on a unit that can hold a ledge, outside a gully's floor: elsewhere none holds.)
+        float holdsOn = step(0.25, seedL) * (1.0 - gully);
+        float holds = holdsOn > 0.0 ? smoothstep(0.4, 0.62, vn2(float2(arc * 0.012, Li * 2.3))) * step(0.25, seedL) * (1.0 - gully) : 0.0;
         // Its lit edge thickens and thins along the wall and fades in and out (a broken edge, never a drawn line).
         // (None where nothing holds, or below the lowest the lip reaches (f under 0.95 − 1.6 × 0.27): its noise isn't read.)
         float lip = 0.0;
