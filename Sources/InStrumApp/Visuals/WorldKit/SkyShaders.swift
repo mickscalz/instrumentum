@@ -932,15 +932,22 @@ enum SkyShaders {
                 float s = clamp(x / 2.1, -1.0, 1.0);
                 float n = skyNoise2(float2((s * 1.4 + turn) * 2.2, z * 3.0));
                 float tags = skyNoise2(float2(x * 3.1 + turn, 7.0));
+                // Near (within 10 km), torn and soft: ragged at its foot and sides over a couple of hundred metres,
+                // mottled (the impostor's detail), never a cut-out hanging from the base.
+                float nearW = 1.0 - smoothstep(6.0, 10.0, Dw);
+                float rag = 0.5;
+                if (nearW > 0.0 && fine > 0.5) rag = skyFbm2(float2(x * 2.4 + turn, z * 3.5 - time * 0.02), 3);
                 float foot = kCellBase - 0.85 + 0.55 * s * s + 0.16 * (n - 0.5) + 0.12 * (tags - 0.5);
                 float edge = min(2.05 - 0.45 * saturate((kCellBase - z) / 0.8) + 0.25 * (n - 0.5) - abs(x),
-                                 3.0 * (z - foot));
+                                 3.0 * (z - foot)) + nearW * 0.5 * (rag - 0.5);
+                float sw = max(px, 0.03) + 0.2 * nearW;
                 // (Its top melts into the base it hangs from: the base nearer than it there, a hard top drew a line.)
-                float a = smoothstep(-max(px, 0.03), max(px, 0.03) + 0.06, edge) * smoothstep(2.5, 6.0, Dw)
+                float a = smoothstep(-sw, sw + 0.06, edge) * smoothstep(2.5, 6.0, Dw)
                         * (1.0 - smoothstep(kCellBase - 0.2, kCellBase + 0.1, z));
                 if (a > 0.002) {
                     float ndl = saturate(dot(float3(-sqrt(1.0 - s * s), s, 0.0), Lu) * 0.7 + 0.3);
-                    float3 c = grey * (0.1 + 0.07 * n) + Lc * (lightAmt * 0.2 * ndl * (0.6 + 0.4 * n));
+                    float3 c = (grey * (0.1 + 0.07 * n) + Lc * (lightAmt * 0.2 * ndl * (0.6 + 0.4 * n)))
+                             * mix(1.0, 0.75 + 0.5 * rag, nearW);
                     // Its rim, backlit, from afar only (near, its thin rim drew a bright hook across the view).
                     c += Lc * (lightAmt * 0.3 * back * (1.0 - smoothstep(0.0, 0.25, edge)) * smoothstep(8.0, 14.0, Dw));
                     c = mix(c, haze, 1.0 - exp(-rho / 80.0));
