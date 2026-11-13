@@ -55,7 +55,7 @@ final class VolcanoRimRenderer: ThemeRenderer {
     /// power there, which the lake reads instead of all 64. Made once; a sixteenth of its rows refreshed a frame (every
     /// 16th row), the whole map when it is new or the clock jumped (previews, a world come back to). Without its kernel
     /// (if it couldn't be made) the lake reads all 64 seeds, as before.
-    nonisolated static let plateMapSize = 512
+    nonisolated static let plateMapSize = 256
     nonisolated static let plateMapStrips = 16
     private let plateKernel: MTLComputePipelineState?
     private let plateMap: MTLTexture
