@@ -76,15 +76,28 @@ enum WindscreenShaders {
     }
 
     /// Where a point lies in a blade's sweep: (0…1 through it, or < 0 outside it) and its radius (NDC y units).
-    float2 bladePlace(float2 q, float4 blade, constant ScreenU& u) {
-        float2 rel = q - blade.xy;
-        float r = length(rel);
-        if (r < blade.z || r > blade.w) return float2(-1.0, r);
-        float ang = atan2(rel.y, rel.x);
+    float2 sweepPlace(float ang, float r, constant ScreenU& u) {
         float rest = u.sweep.x, sweep = u.sweep.y;
         float f = (ang - rest) / sweep;
         if (f < -0.02 || f > 1.02) return float2(-1.0, r);
         return float2(clamp(f, 0.0, 1.0), r);
+    }
+    float2 bladePlace(float2 q, float4 blade, constant ScreenU& u) {
+        float2 rel = q - blade.xy;
+        float r = length(rel);
+        if (r < blade.z || r > blade.w) return float2(-1.0, r);
+        return sweepPlace(atan2(rel.y, rel.x), r, u);
+    }
+    /// A pixel's place round a blade's pivot (radius, angle), worked out once for both the film's and the blade's
+    /// tests (the angle only within the blade's reach, where either reads it).
+    float2 bladePolar(float2 q, float4 blade) {
+        float2 rel = q - blade.xy;
+        float r = length(rel);
+        return float2(r, (r >= blade.z * 0.3 && r <= blade.w + 0.01) ? atan2(rel.y, rel.x) : 0.0);
+    }
+    float2 bladePlaceAt(float2 pol, float4 blade, constant ScreenU& u) {
+        if (pol.x < blade.z || pol.x > blade.w) return float2(-1.0, pol.x);
+        return sweepPlace(pol.y, pol.x, u);
     }
 
     /// Seconds since the glass at `q` (aspect units) was last wiped, by either blade.
@@ -96,13 +109,21 @@ enum WindscreenShaders {
         if (b.x >= 0.0) since = min(since, sinceWiped(b.x, u));
         return since;
     }
+    /// The same from a pixel's places round the two pivots (`bladePolar`).
+    float wipedAgoAt(float2 polA, float2 polB, constant ScreenU& u) {
+        float since = 1000.0;
+        float2 a = bladePlaceAt(polA, u.bladeA, u);
+        if (a.x >= 0.0) since = min(since, sinceWiped(a.x, u));
+        float2 b = bladePlaceAt(polB, u.bladeB, u);
+        if (b.x >= 0.0) since = min(since, sinceWiped(b.x, u));
+        return since;
+    }
 
     /// The blades: dark rubber on a thin arm, smeared across the arc they swept in the last frame.
-    float bladeCover(float2 q, float4 blade, constant ScreenU& u, float px) {
-        float2 rel = q - blade.xy;
-        float r = length(rel);
+    float bladeCover(float2 pol, float4 blade, constant ScreenU& u, float px) {
+        float r = pol.x;
         if (r < blade.z * 0.3 || r > blade.w + 0.01) return 0.0;
-        float ang = atan2(rel.y, rel.x);
+        float ang = pol.y;
         float now = u.sweep.x + u.sweep.y * u.sweep.z;
         float was = u.sweep.x + u.sweep.y * u.sweep.w;
         float lo = min(now, was), hi = max(now, was);
@@ -201,7 +222,9 @@ enum WindscreenShaders {
         // Composed back to front, premultiplied: the film a blade leaves, the drops, the blades.
         float3 C = float3(0);
         float A = 0.0;
-        float since = wipedAgo(q, u);
+        // (Each pivot's radius and angle once, for the film's test and the blade's.)
+        float2 polA = bladePolar(q, u.bladeA), polB = bladePolar(q, u.bladeB);
+        float since = wipedAgoAt(polA, polB, u);
         float film = exp(-since / 0.18) * step(since, 0.9) * min(1.0, rain * 3.0);
         if (film > 0.003) {
             float streak = 0.6 + 0.4 * sh12(float2(floor(length(q - u.bladeA.xy) * 260.0), 1.0));
@@ -235,7 +258,7 @@ enum WindscreenShaders {
             A = ad + A * (1.0 - ad);
         }
         // The blades.
-        float blade = max(bladeCover(q, u.bladeA, u, px), bladeCover(q, u.bladeB, u, px));
+        float blade = max(bladeCover(polA, u.bladeA, u, px), bladeCover(polB, u.bladeB, u, px));
         if (blade > 0.0) {
             float3 rubber = float3(0.006, 0.006, 0.007) + u.light.rgb * 0.05;
             C = rubber * blade + C * (1.0 - blade);
