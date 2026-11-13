@@ -1,11 +1,66 @@
-<!-- title: Fire & Neon: Volcano Rim and Neon Night Drive -->
-**Install:** download the **.dmg** below and open it, drag *In Strum Meants* onto *Applications* (choose **Replace** if asked), then right-click the app → **Open** → **Open** (first time only). The .zip is a fallback.
+<!-- title: Small Wins and Big Moments -->
+**Install:** click the round-arrows button in the app's top bar (left of Keep); when it turns into an orange **Update**, click it and choose **Install Update**. Your settings, presets and keeps stay as they are. (No app yet on this Mac? Download the **.dmg** below, drag *In Strum Meants* onto *Applications*, then right-click the app → **Open** → **Open**.)
+
+**Three things in this update:** six small wins that make every world better to live with, an **Excitement** section that gives eleven older worlds big moments and surprises of their own, and Supercell Sky made many times lighter on Intel graphics. No new set this time, so the app opens where you left it.
+
+**Faster and safer on Intel Macs.**
+- **Supercell Sky** is the world that froze your Mac. On GitHub's Intel test Mac one of its frames took **221 ms**. It now takes about **10 ms** on Smooth and 29 on High. Two causes: a sort the shader ran for every pixel, which Intel and AMD graphics chips handle very badly (gone, same picture), and the storm's soft cloud layers being drawn at full size (on Smooth they are now drawn at half size under a full-size sky, field and lightning; the picture is all but identical).
+- **Butterfly Garden on High** took 41 ms there; it now takes 20. The sun's shafts through the leaves are drawn at half size.
+- **Neon Night Drive** and **Bioluminescent Bay** were slimmed with identical frames (now about 23 ms and 13 ms there).
+- **Every world is now timed on an Intel machine on every build**, so a world that is heavy there is seen before it reaches you. Today's times at 1280x720 on Smooth: Volcano Rim 24 ms, Neon Night Drive 23, Lightning Plains 17, Great Barrier Reef 14, Bioluminescent Bay 13, Aurora Fjord 13, and every other world 11 or less. (That test Mac is not your MacBook, so read these as a comparison between worlds, not as your frame times.) Volcano Rim and Neon Night Drive are being brought under 16 ms for the next update.
+- The safety net from build 136 is unchanged: a frame that keeps the graphics chip busy for a tenth of a second still drops the visuals to Smooth at once.
+
+**Small wins: six things for every world.**
+- **Keep that.** The app quietly remembers what you play (the last two hours, in memory only; nothing is written until you ask). Click the **bookmark** in the top bar or press **⌘K** and your last take is saved as a MIDI file in *Music → In Strum Meants → Takes*, named for the set (or world) and the time, with a small note beside it of the world, the instrument and its dials, the sky and the key you were in. A take starts at the first note after your last silence of 8 seconds or more and is at most 30 minutes long; the file uses the set's tempo (else 120). Right-click the bookmark, or choose **Play → Keep the Last 10 Minutes**, to keep the last ten minutes whatever the silences. On the keyboard itself, tap its **top three black keys together, twice**, and the take before the taps is kept (the taps aren't in it). Set your keyboard's size in **Sound & MIDI → Keyboard layout** so the gesture finds them. A toast says "Kept · 4:12".
+- **Sleep timer.** Click the **moon** in the top bar and choose 15, 30, 45, 60 or 90 minutes; the time left shows beside it. Over the last ten minutes (or all of a shorter timer) the sound fades to silence and the world drifts toward a deep blue night, a stop darker, its movement slowing to half speed while the weather carries on. At the end it rests there, silent and dim, with the timer off. Any key, pedal or click while it fades wakes it: sound and light come back over 3 seconds ("You're awake."). Your volume settings are never changed, and the timer is never saved.
+- **Hold the moment.** Press the **soft pedal** and the sky, the weather and the world stand still while you keep playing: your notes still appear, at full brightness, and pile up in the frozen scene. Let go and time eases back in over about half a second (in real-time skies the sun glides back to the true time). The **hourglass** in the top bar holds the moment while you press it, a double-click keeps it held, and so does **Play → Hold the Moment (⌘⇧H)**; it glows while time is held. No lightning or other flash goes off while it's held. **Sound & MIDI → Hold the moment with** switches it to the sostenuto pedal, or off.
+- **Breathing ambience.** Rain, wind, surf, waterfalls, crickets, fire, the kettle, the street, the ship's hum and the other steady sounds now swell and recede on their own in long, slow arcs (each on its own, over about a minute or two), so a world never sounds like a loop. One-off sounds (the owl, gulls, thunder, waves, bells, the chime, the sonar) are untouched. **Visuals → World → Ambience breathes** turns it off, and **Breathing depth** sets how far they swing (0–150%). Applying a set leaves both alone.
+- **Follows the Mac's Reduce Motion.** With **System Settings → Accessibility → Display → Reduce motion** on, the app moves gently without being asked: Gentle visuals, slower camera pans and particles, and Galaxy Warp's streaks a slow drift however hard you play. **Visuals → Display → Follow the Mac's Reduce Motion** turns it off; your own Gentle visuals setting is never changed.
+- **The lounge's chime plays in your key.** Once the app hears what key you're playing in, the Spaceship Lounge's chime rings notes of that key's pentatonic (major or minor), like the temple bell and the sonar; a ringing chime never changes pitch.
+
+**Excitement: big moments and surprises in eleven more worlds.** The newer worlds (the storms, the volcano, the drive) already answered a hard chord with something big. Now the older ones do too, and you choose how much.
+- **The controls** are a new **Excitement** section in ✦ Visuals and in All settings, and they are saved with your settings:
+  - **Energy**: Auto follows how hard and fast you play; Manual is a dial you set.
+  - **Big moments**: Off, Some or Lots. A hard chord, or the top of a crescendo, sets one off.
+  - **Surprises**: Off, Rare or Often. Small things that happen on their own now and then.
+  - **Build and drop**: climb for a few bars and the world draws in; land a hard chord and it lets go.
+  - With **Gentle visuals** on, moments are capped at Some, surprises at Rare, and every flash becomes a slow glow. With Reduce Motion, moments are half as strong and Energy's effect on the picture is capped at half.
+- **What each world now does** (a big moment; then its surprises; then its build and drop where it has one):
+  - **Moonlit Lake:** a burst of meteors, mirrored in the water. A fireball, an owl crossing the moon, a fish rising. The mist gathers as you build, then lifts at once.
+  - **Golden Hour Beach:** fireworks from down the beach, mirrored on the sea and the wet sand. A dolphin pod, a kite, a green flash on the sun's last sliver. The swell builds, then the next wave rolls in big.
+  - **Coast Road:** after dusk the lighthouse on the far point swings its beam round to face you (by day the road has no big moment yet). A fox in the scrub, a lit train along the far shore, a shooting star. Headlights gather round the bend, then the road opens onto the sea.
+  - **Aurora Fjord:** the aurora surges, with a corona overhead. A fireball, an orca's blow off the jetty, a satellite flare.
+  - **Spaceship Lounge:** a warp jump. A comet, a far ship, a pulsar.
+  - **Snowbound Cabin:** the fire roars and the snow whirls. An owl on the sill, the aurora's edge, a star through the cloud.
+  - **Bedroom at Dawn:** the sun breaks through. A robin, a paper plane, a rainbow.
+  - **Butterfly Garden:** the swarm takes off. A hummingbird, rain on the glass.
+  - **Midnight Steinway:** the spotlight blooms. Dust motes in the light, the curtain stirring.
+  - **Submarine Window:** a whale passes the porthole. An anglerfish's lure, a squid's cloud of light, a far sub's lights.
+  - **Great Barrier Reef:** the coral spawns in a burst and the school scatters. A manta, a green turtle, a blacktip reef shark.
+- Bioluminescent Bay, Tea House Snow and Zen Rock Garden are unchanged.
+
+**Still held back: the Supercell weather.** It has been rebuilt so it costs almost nothing extra (about half a millisecond a frame on the Intel test Mac), and its approach, its rain and its clearing sky now look right over the beach and the lake. The minutes when the storm is directly overhead still don't (hard-edged bands in the cloud), so it waits for the next update. Supercell Sky's own storm is in, and much lighter.
+
+**Things to try:**
+- Open **Supercell Sky** and play hard. It should stay smooth; if the Mac ever stutters there, tell me which quality you were on.
+- **Butterfly Garden** on High: the sun's shafts should look as soft as before.
+- Play a phrase, then press **⌘K**, or tap the top three black keys twice; open the take in GarageBand.
+- Set a **15-minute** sleep timer and let it run out; then press a key.
+- In **Moonlit Lake** in the rain, hold the **soft pedal** and play: the rain stops mid-fall and your ripples stay.
+- Leave a rainy world playing for **ten minutes** and listen to the rain rise and fall.
+- In **Coast Road** after dusk (Sky → Time), land one hard chord and watch the far point.
+- In **Aurora Fjord**, climb for a few bars, then land a hard chord.
+- Set **Big moments** to Lots and **Surprises** to Often for an evening, then to Off, and tell me where you'd leave them.
+- Play in a key in the **Spaceship Lounge** and listen to the chime.
+- **Smoothness** on Smooth, holding the moment and with the sleep fade dimming.
+
+<!-- older -->
+
+**Fire & Neon: Volcano Rim and Neon Night Drive** (build 159).
 
 **Sets 13 & 14, Fire & Neon: Volcano Rim and Neon Night Drive.** Two new sets at the end of the gallery, each a world, a visual, an instrument and a soundscape that belong together. These are the loud ones: play hard and the world answers.
 
 **Safer on Intel Macs** (from build 136): the app times every frame on the graphics chip itself. One frame that keeps it busy for a tenth of a second drops the visuals to Smooth straight away and halves the picture. Frames are never queued behind unfinished work, and Smooth shrinks further while it is still too heavy. On Intel and AMD graphics every quality draws a capped number of pixels, and Ultra is High. The heaviest worlds (Supercell Sky, Volcano Rim, Neon Night Drive) can no longer swamp the Mac.
-
-**This build opens on Neon Night Drive the first time you start it** (the newest set, with its world and instrument loaded), instead of the set you last used; from the next start it reopens on your last set as before.
 
 - **Volcano Rim** (after Kanye West's "Hold My Liquor"; mood: molten). You stand on the rim of a crater at night. Below is a lava lake: black crust plates drifting on slow currents, broken by glowing cracks, two spattering fountains, and a lava river running out through a breach in the far wall. A plume climbs over the lake, lit from beneath and flickering with lightning; beyond lie a dark plain and the stars, and embers drift up past you. The keys are a row of basalt columns along the rim, lit from inside where you play.
   - **What your playing does:** each note lights the cracks where its key falls across the lake (low notes on the left, high on the right); notes below C3 spit lava; chords stir the lake faster; playing harder and faster raises the fountains, speeds the river, sends up more embers and brings more lightning into the plume; building up swells the lake and makes its cracks beat in time.
@@ -22,7 +77,7 @@
   - **Replicant Brass:** a huge film-score synth brass that swells open on every note (**Swell** sets how slowly) and blares at full velocity, in a big hall. Pressing into the keys brightens it and fades in a vibrato, and the pitch wheel is a blade, bending up to seven semitones. Below the split (C3) plays **Chrome Bass**, a punchy, bright bass played by an arpeggiator: hold a few notes and it plays them on the sixteenths in the order you pressed them. Presets: Replicant, Tears in Rain (a slow swell in a deep hall, the arp in eighths), Chrome Rush (the arp going up, punchier, at 132), Night Brass (no split and no arp: brass all the way down).
   - **The Arp row:** in the instrument's window, Replicant Brass now gathers its arp's dials in one **Arp** row: the mode (Off, Up, Down, Up-down, Played, Random), the rate (a quarter down to a thirty-second, with triplets), the tempo and the split. Blue Depth's arp has its row too (Blink and Tempo).
 - **New skies everywhere:** **red sprites**, faint red flashes high over far storms at night: now and then on a clear night a storm stands far off on the horizon, flickering from inside, and sprites stand over it (and over any storm at night). **Satellites** cross the dark sky after dusk and before dawn as steady points among the stars, fading out as they enter the Earth's shadow, now and then flaring for a few seconds (never brighter than Venus); a bright station once or twice an evening, and rarely a train of them. Both are in **All settings → Sky extras**: **Red sprites** and **Satellites** (Off, Natural, Often).
-- **A new weather: Ashfall.** Fine grey ash drifts down, slower than snow and tumbling, with a brown-grey haze, the sun and moon reddened through it and a faint dry hiss. At the volcano it falls through the crater's own rising embers. Pick it in Sky → Weather in any world with a sky; random weather brings it only at the volcano. The **Supercell** weather, a staged storm you'll be able to pick in any sky, is held back for the next update: its drawing over the beach and the lake isn't good enough yet, and it's too heavy. Supercell Sky's own storm is unchanged.
+- **A new weather: Ashfall.** Fine grey ash drifts down, slower than snow and tumbling, with a brown-grey haze, the sun and moon reddened through it and a faint dry hiss. At the volcano it falls through the crater's own rising embers. Pick it in Sky → Weather in any world with a sky; random weather brings it only at the volcano. The **Supercell** weather, a staged storm you'll be able to pick in any sky, is still held back (see the top of these notes).
 - **New sounds:** at the volcano, the vent's deep rumble surging with the lake, the lava's crackling hiss, steam vents, rockfalls down the wall, the eruption's boom and the plume's sharp thunder, each heard as late as it is far. On the drive, wet tyres and spray that get louder and brighter with speed, the wipers' swish, squeak and thunk with each sweep, a warm engine whose automatic shifts up as you speed up, cars passing with their Doppler and whoosh, rain on the roof and glass, and now and then a far, wordless siren rising and falling **in the key you are playing in** (never close, and never with Gentle visuals or in the tunnel).
 
 **Play along:**
@@ -43,7 +98,6 @@
 - **The two new cards** in the gallery: the lava lake throbbing at 104, and the drive's place card blinking at 120.
 - **A credit for the drive?** "Gassed Up" (Wombat) is the candidate: the drive stays born from its place until you've listened.
 
-<!-- older -->
 
 **An update button.** A small round-arrows button sits in the top bar, left of Keep: click it to check for a new build, and when one is out it turns into an orange **Update** button that shows what's new and installs it in place, keeping your settings, presets and keeps. It also checks when the app starts and then hourly.
 

@@ -23,19 +23,45 @@ def inline(text):
     return text
 
 
+def list_html(lines):
+    """A bullet list; bullets indented by two spaces or more nest under the bullet above them."""
+    out, nested_open, item_open = ["<ul>"], False, False
+    for line in lines:
+        text = inline(re.sub(r"^\s*- ", "", line))
+        if re.match(r"\s{2,}- ", line) and item_open:
+            if not nested_open:
+                out.append("<ul>")
+                nested_open = True
+            out.append(f"<li>{text}</li>")
+            continue
+        if nested_open:
+            out.append("</ul>")
+            nested_open = False
+        if item_open:
+            out.append("</li>")
+        out.append(f"<li>{text}")
+        item_open = True
+    if nested_open:
+        out.append("</ul>")
+    if item_open:
+        out.append("</li>")
+    out.append("</ul>")
+    return "".join(out)
+
+
 def markdown_to_html(md):
-    out, in_list = [], False
+    out = []
     for block in re.split(r"\n\s*\n", md.strip()):
         lines = [l for l in block.split("\n") if l.strip()]
         if not lines:
             continue
         if all(re.match(r"\s*- ", l) for l in lines):
-            out.append("<ul>" + "".join(f"<li>{inline(re.sub(r'^\s*- ', '', l))}</li>" for l in lines) + "</ul>")
+            out.append(list_html(lines))
         elif re.match(r"\s*- ", lines[0]) is None and any(re.match(r"\s*- ", l) for l in lines):
             head = [l for l in lines if not re.match(r"\s*- ", l)]
             items = [l for l in lines if re.match(r"\s*- ", l)]
             out.append("<p>" + inline(" ".join(head)) + "</p>")
-            out.append("<ul>" + "".join(f"<li>{inline(re.sub(r'^\s*- ', '', l))}</li>" for l in items) + "</ul>")
+            out.append(list_html(items))
         else:
             out.append("<p>" + inline(" ".join(l.strip() for l in lines)) + "</p>")
     return "\n".join(out)
@@ -55,7 +81,7 @@ def main():
         headline = title.group(1)
         notes = notes.replace(title.group(0), "")
     # The install paragraph is for the release page, not the update window.
-    notes = "\n\n".join(b for b in re.split(r"\n\s*\n", notes) if not b.startswith("**Install:**"))
+    notes = "\n\n".join(b for b in re.split(r"\n\s*\n", notes) if not b.strip().startswith("**Install:**"))
     body = f"<h3>{inline(headline)}</h3>\n" + markdown_to_html(notes)
     url = f"https://github.com/mickscalz/instrumentum/releases/download/build-{build}/{os.path.basename(zip_path)}"
     item = f"""<?xml version="1.0" encoding="utf-8"?>
