@@ -66,8 +66,14 @@ final class ExcitementBayModelTests: XCTestCase {
         XCTAssertGreaterThan(frames[180 + Int(BioluminescentBayModel.dropRun * 60) + 6].wave?.shore ?? 0, 0.6)
     }
 
+    func testTheHeldBackMantaPlaysTheTurtle() {
+        let frames = Self.bay(10 + 9 * 60 + 30, W.Plan(surprises: [10: WorldSurprise(index: 0, seed: 11)]))
+        XCTAssertEqual(frames[40].surprises.map(\.index), [1], "the manta's pick plays the turtle")
+        XCTAssertTrue(frames.last?.surprises.isEmpty ?? false)
+    }
+
     func testSurprisesAllPlay() {
-        for i in 0..<3 {
+        for i in 0..<3 where !BioluminescentBayModel.heldBackSurprises.contains(i) {
             let seconds = BioluminescentBayModel.surpriseSeconds[i]
             let n = 10 + Int(seconds * 60) + 30
             let frames = Self.bay(n, W.Plan(surprises: [10: WorldSurprise(index: i, seed: 11)]))

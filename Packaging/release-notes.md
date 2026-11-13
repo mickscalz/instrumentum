@@ -1,5 +1,28 @@
-<!-- title: The Supercell weather, and four heavy worlds made lighter -->
+<!-- title: Bigger Bay, Coast Road and Reef, and every sound at the same loudness -->
 **Install:** click the round-arrows button in the app's top bar (left of Keep); when it turns into an orange **Update**, click it and choose **Install Update**. Your settings, presets and keeps stay as they are. (No app yet on this Mac? Download the **.dmg** below, drag *In Strum Meants* onto *Applications*, then right-click the app → **Open** → **Open**.)
+
+**Three things in this update:** the Bioluminescent Bay gets big moments of its own, Coast Road gets a daytime moment and the Great Barrier Reef a much bigger one, and every instrument preset and every world's ambience now plays at the same loudness.
+
+**Excitement: three more worlds.**
+- **Bioluminescent Bay:** play a hard chord and a wave of blue-green plankton light runs in from the bay's mouth to the shore, lighting the water as it passes and the wash on the sand as it arrives. Climb for a few bars and the glow gathers under the surface; land a hard chord and it breaks into a brighter wave with sparkles. Energy lifts the glow and lights points of plankton near the shore. Surprises: a turtle surfacing for a breath, and a golden fireball across the sky that the water mirrors. (A manta is not in yet; it isn't good enough.)
+- **Coast Road by day:** the sun's glare widens, a broad field of glints races in from the horizon, and gulls rise past the window. At dusk you get a little of both the day and night moments; at night it's still the lighthouse beam.
+- **Great Barrier Reef:** the spawning burst is much bigger (up to 540 eggs, in four puffs over eight seconds), with a pink haze that billows up and corals that flare with each puff. The visitors (a manta, a blacktip reef shark and a green turtle) are about twice as large, nearer and redrawn.
+- With **Gentle visuals** on, flashes become slow glows as always.
+
+**Bay sand under a night storm.** The white sand no longer glows under heavy cloud: the sun's and moon's light on it fades as the sky closes in, so it matches the dark scene.
+
+**Every sound at one loudness.** Every one of the 64 instrument presets and the ambience of all 16 worlds were measured (to the broadcast loudness standard) and levelled, so switching preset or world never jumps in volume. Presets sit within a decibel of each other; the quietest and loudest used to differ by about 19. Ambience follows the same rule, with the balance between instrument and ambience kept as it was.
+- **Known gaps:** Bedroom Dawn's ambience is still a little quiet in the test scene (the correction is capped at 6 dB), and Snowbound Cabin's fire crackle could clip if the ambience volume is above about 73%.
+
+**Things to try:**
+- In **Bioluminescent Bay**, play a hard chord, then climb for a few bars and land one.
+- In **Coast Road** by day, play hard and watch the sun's glitter.
+- In the **Great Barrier Reef**, play a big chord and wait for the spawning.
+- Switch between presets and worlds at a steady volume, and tell me if any still jump out.
+
+<!-- older -->
+
+<!-- title: The Supercell weather, and four heavy worlds made lighter -->
 
 **A new weather for any sky: Supercell.** It was held back from the last three updates until it looked right. Pick it in **Sky → Weather → Supercell** in any world with a sky.
 - **It is a storm in three acts, about eight minutes long.** The Approach: a towering storm stands on the horizon and comes toward you. The arrival and the Core: its dark shelf passes overhead and the light goes dim and grey, then rain and hail, wind, and lightning. The Clearing: it moves off and the low sun comes out under its anvil, with mammatus pouches overhead. A picked Supercell plays once and then rests in its Clearing.
@@ -18,7 +41,6 @@
 - **Moonlit Lake** or **Golden Hour Beach**: Sky → Weather → **Supercell**, then play through it for eight minutes. Try it again at night.
 - **Volcano Rim** and **Neon Night Drive** on Smooth and on High: they should feel smoother than before. Then **Help → Copy Performance Report** and paste it into our chat, so the next round aims at your Mac.
 
-<!-- older -->
 
 **A performance report from your Mac** (build 188).
 

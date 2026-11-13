@@ -49,7 +49,7 @@ final class ExcitementBayRendererTests: XCTestCase {
     }
 
     func testBaySurprisesAllPlay() throws {
-        for i in 0..<3 {
+        for i in 0..<3 where !BioluminescentBayModel.heldBackSurprises.contains(i) {
             let seconds = Double(BioluminescentBayModel.surpriseSeconds[i]) + 0.6
             var drew = false
             let shot = try Self.bay(seconds, T.Plan(surprises: [10: WorldSurprise(index: i, seed: 11)], width: 160, height: 90,
@@ -198,7 +198,6 @@ final class ExcitementBayPreviewTests: XCTestCase {
         // Build and drop: 4 s gathered, then 0.6 s after the drop.
         try write(try B.bay(4.6, big(T.Plan(energy: 0.6, tension: { $0 < 240 ? 0.9 : 0 }, moments: [240: T.chord(1, drop: true)]))).image,
                   "excite-bay-drop", to: url)
-        try write(try B.bay(5.6, big(T.Plan(surprises: [10: WorldSurprise(index: 0, seed: 11)]))).image, "excite-bay-surprise-manta", to: url)
         try write(try B.bay(3.0, big(T.Plan(surprises: [10: WorldSurprise(index: 1, seed: 11)]))).image, "excite-bay-surprise-turtle", to: url)
         try write(try B.bay(1.7, big(T.Plan(surprises: [10: WorldSurprise(index: 2, seed: 11)]))).image, "excite-bay-surprise-fireball", to: url)
     }

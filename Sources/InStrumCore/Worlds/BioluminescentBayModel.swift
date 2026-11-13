@@ -72,6 +72,9 @@ public struct BioluminescentBayModel: ThemeModel, MoodAware, SkyAware, Excitemen
     /// A manta's glow, a turtle surfacing, a fireball (Fire & Neon spec §5.5), and how long each plays (s).
     public static let surpriseCount = 3
     public static let surpriseSeconds: [Float] = [13, 9, 3.8]
+    /// Surprises held back until they are good enough: the manta (0) is drawn as a glowing outline that doesn't read as
+    /// a manta and costs a millisecond a frame, so the director's pick of it plays the turtle instead.
+    public static let heldBackSurprises: Set<Int> = [0]
     /// The wave of light plays this long (a drop's a little longer); it runs to the shore in `waveRun` s (a drop's,
     /// setting off from the gathered glow at `dropStart` of the way, in `dropRun`).
     public static let momentSeconds: Float = 7, dropSeconds: Float = 8
@@ -241,7 +244,8 @@ public struct BioluminescentBayModel: ThemeModel, MoodAware, SkyAware, Excitemen
     /// Energy lifts the plankton's glow; a big moment sends a wave of light across the whole bay; tension gathers the glow
     /// under the surface and a drop breaks it into a brighter wave; the surprises play (the fireball in the shared sky).
     private mutating func stepExcitement(dt fd: Float) {
-        let e = excite
+        var e = excite
+        if var sp = e.surprise, Self.heldBackSurprises.contains(sp.index) { sp.index = 1; e.surprise = sp }
         excite.moment = nil
         excite.surprise = nil
         play.step(dt: Double(fd), frame: e, momentSeconds: Self.momentSeconds, dropSeconds: Self.dropSeconds,
