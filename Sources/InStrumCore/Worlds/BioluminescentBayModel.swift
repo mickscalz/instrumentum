@@ -27,16 +27,55 @@ public struct BayFrame: AmbienceProviding {
     public var time: Double
     /// Galaxy Warp over the bay's sky, when it's the chosen visual (notes then streak instead of glowing).
     public var warp: WarpFrame?
+
+    // Excitement as the bay draws it (Fire & Neon spec §5.5). A fireball is already in `sky` (the shared sky draws it, and
+    // the water mirrors it).
+    /// The drawn Energy (Reduce Motion's cap included), eased: it lifts the plankton's glow (0…1).
+    public var energy: Float = 0
+    /// The big moment: a wave of plankton light running in from the bay's mouth to the shore (nil while none runs).
+    public var wave: BayWave? = nil
+    /// Tension: the glow gathering under the surface (0…1). The drop breaks it into a wave (`wave.drop`).
+    public var gather: Float = 0
+    /// A drop's sparkles scattering over the water behind its wave (0…1 × the moment's strength).
+    public var sparkle: Float = 0
+    /// The surprises playing (0 a manta gliding in, 1 a turtle surfacing for a breath, 2 a fireball).
+    public var surprises: [PlayingSurprise] = []
+    /// A fireball's light on the bay (0…1, before the renderer's flash limiter).
+    public var flashRequest: Float = 0
+    /// How many of the bay's own meteors (a fireball's) are showing.
+    public var worldMeteors: Int = 0
+    public var reduceMotion = false
+}
+
+/// The bay's big moment (Fire & Neon spec §5.5): a band of blue-green plankton light that sets off from the bay's mouth
+/// and runs in to the shore, lighting the water as it passes and the wash on the sand as it arrives, then fading.
+public struct BayWave: Equatable {
+    /// How far it has run: 0 at the bay's mouth … 1 at the waterline (a drop's sets off from the gathered glow, 0.3).
+    public var front: Float
+    /// Its light (0…1 × the moment's strength, before the flash limiter): up as it sets off, held while it runs, fading
+    /// over the seconds after it reaches the shore.
+    public var light: Float
+    /// Its arrival: the waterline and the wash on the sand lit (0…1 × the strength), flaring and dying away.
+    public var shore: Float
+    /// A drop's wave: brighter, quicker, from the gathered glow, with sparkles scattering behind it.
+    public var drop: Bool
 }
 
 /// Set 8's world: a sheltered cove at night, headlands with palms and mangroves, a still bay mirroring the real
 /// stars, a moored boat's lantern, a lighthouse blinking on the far point, and plankton glowing along the
 /// waterline. Its visual, Glow Wake, lights the water where your notes fall.
-public struct BioluminescentBayModel: ThemeModel, MoodAware, SkyAware {
+public struct BioluminescentBayModel: ThemeModel, MoodAware, SkyAware, ExcitementAware, SurpriseListing {
     public typealias Frame = BayFrame
     public static let id = "bioluminescent-bay"
     public static let displayName = "Bioluminescent Bay"
     public static let visuals = ["Glow Wake", "Galaxy Warp"]
+    /// A manta's glow, a turtle surfacing, a fireball (Fire & Neon spec §5.5), and how long each plays (s).
+    public static let surpriseCount = 3
+    public static let surpriseSeconds: [Float] = [13, 9, 3.8]
+    /// The wave of light plays this long (a drop's a little longer); it runs to the shore in `waveRun` s (a drop's,
+    /// setting off from the gathered glow at `dropStart` of the way, in `dropRun`).
+    public static let momentSeconds: Float = 7, dropSeconds: Float = 8
+    public static let waveRun: Float = 3, dropRun: Float = 2.2, dropStart: Float = 0.3
 
     /// The lighthouse's period and flash length (seconds).
     public static let lighthousePeriod = 6.0, lighthouseFlashLength = 0.4
@@ -56,6 +95,14 @@ public struct BioluminescentBayModel: ThemeModel, MoodAware, SkyAware {
     private var lastLightning: Float = 0
     private var thunderRng = SeededRandom(seed: 0xB1A7)
 
+    // Excitement (Fire & Neon spec §5.5): fixed pools throughout.
+    private var excite = ExcitementFrame()
+    private var play = ExcitementPlay()
+    private var meteors = WorldMeteors()
+    private var energyEased: Float = 0
+    /// The playing moment set off as a drop (its wave runs from the gathered glow).
+    private var dropWave = false
+
     private static let layout = KeyboardLayout.keys()
 
     public init() {}
@@ -63,6 +110,25 @@ public struct BioluminescentBayModel: ThemeModel, MoodAware, SkyAware {
     public mutating func handle(_ e: PerformanceEvent) { pending.append(e) }
 
     public mutating func setSky(_ s: SkyState) { sky = s }
+
+    /// Excitement's frame for the next step; its moment and surprise are taken once.
+    public mutating func setExcitement(_ e: ExcitementFrame) { excite = e }
+
+    /// Where the bay looks (degrees from north): toward the pole, as the renderer's camera (south from the southern
+    /// hemisphere).
+    public static func viewAzimuth(_ s: SkyState) -> Double { s.latitude < 0 ? 180 : 0 }
+
+    /// The wave of light `age` seconds into a moment of `life` seconds and `strength` (a drop's: `drop`).
+    public static func wave(age: Float, life: Float, strength: Float, drop: Bool) -> BayWave {
+        let run = drop ? dropRun : waveRun
+        let start: Float = drop ? dropStart : 0
+        let k = min(1, max(0, age.isFinite ? age / run : 0))
+        let eased = 0.5 * k + 0.5 * k * k * (3 - 2 * k)
+        let light = ExcitementPlay.envelope(age: age, life: life, rise: drop ? 0.15 : 0.35, fall: max(1, life - run))
+        let arrived = ExcitementPlay.smooth(run - 0.3, run + 0.15, age) * exp(-max(0, age - run) / 1.7)
+        let s = ExcitementPlay.unit(strength)
+        return BayWave(front: start + (1 - start) * eased, light: light * s, shore: arrived * s, drop: drop)
+    }
 
     /// 0 with the sun above −2° … 1 below −8°.
     public static func night(_ s: SkyState) -> Double { MoonlitLakeModel.smooth(-2, -8, s.sun.altitude) }
@@ -129,6 +195,8 @@ public struct BioluminescentBayModel: ThemeModel, MoodAware, SkyAware {
 
         glow.step(dt: dt, roles: roles)
         let warpFrame = warp.step(dt: dt, roles: roles, inputs: inputs)
+        let fd = Float(dt.isFinite ? min(max(dt, 0), 0.25) : 0)
+        stepExcitement(dt: fd)
         swell.scale = Self.swellScale(sky)
         _ = swell.step(dt: dt)
         let front = swell.washFront(at: swell.time)
@@ -144,12 +212,58 @@ public struct BioluminescentBayModel: ThemeModel, MoodAware, SkyAware {
         let down = sky.sun.altitude < -3
         let flash = down && p.number("lighthouse") > 0.02 ? Self.lighthouse(at: time) : 0
 
-        return BayFrame(sky: sky, patches: warping ? [] : glow.patches, wakes: warping ? [] : glow.wakes,
-                        darts: warping ? [] : glow.darts, pool: warping ? GlowPool.still : glow.pool, glowScale: glowScale,
-                        lighthouseFlash: flash, lanternLit: down && p.number("lantern") > 0.02,
-                        swellPhases: swell.phases(at: swell.time), swellScale: swell.scale, swellTime: swell.time,
-                        washFront: front, keys: keys, ambience: ambience(roles: roles), mood: mood, time: time,
-                        warp: warping ? warpFrame : nil)
+        var shown = sky
+        meteors.inject(into: &shown)
+        var frame = BayFrame(sky: shown, patches: warping ? [] : glow.patches, wakes: warping ? [] : glow.wakes,
+                             darts: warping ? [] : glow.darts, pool: warping ? GlowPool.still : glow.pool, glowScale: glowScale,
+                             lighthouseFlash: flash, lanternLit: down && p.number("lantern") > 0.02,
+                             swellPhases: swell.phases(at: swell.time), swellScale: swell.scale, swellTime: swell.time,
+                             washFront: front, keys: keys, ambience: ambience(roles: roles), mood: mood, time: time,
+                             warp: warping ? warpFrame : nil)
+        frame.energy = energyEased
+        if let m = play.moment {
+            frame.wave = Self.wave(age: m.age, life: m.duration, strength: m.strength, drop: dropWave)
+            // A drop scatters sparkles over the water behind its wave, dying away.
+            if m.isDrop { frame.sparkle = m.strength * ExcitementPlay.smooth(0, 0.25, m.age) * exp(-m.age / 2.6) }
+        }
+        frame.gather = play.tension
+        frame.surprises = play.surprises
+        frame.flashRequest = 0.35 * meteors.fireballLight(at: sky.meteorTime)
+        frame.worldMeteors = meteors.live(at: sky.meteorTime).count
+        frame.reduceMotion = play.reduceMotion
+        return frame
+    }
+
+    // MARK: - Excitement (Fire & Neon spec §5.5)
+
+    /// Energy lifts the plankton's glow; a big moment sends a wave of light across the whole bay; tension gathers the glow
+    /// under the surface and a drop breaks it into a brighter wave; the surprises play (the fireball in the shared sky).
+    private mutating func stepExcitement(dt fd: Float) {
+        let e = excite
+        excite.moment = nil
+        excite.surprise = nil
+        play.step(dt: Double(fd), frame: e, momentSeconds: Self.momentSeconds, dropSeconds: Self.dropSeconds,
+                  surpriseSeconds: Self.surpriseSeconds)
+        energyEased = ExcitementStep.ease(energyEased, to: play.energy, tau: play.energy > energyEased ? 0.8 : 3, dt: fd)
+        if let m = play.momentBegan { dropWave = m.isDrop }
+        let now = sky.meteorTime
+        meteors.prune(at: now)
+        if let sp = play.surpriseBegan, sp.index == 2 { fireball(seed: sp.seed, gentle: play.gentle, now: now) }
+    }
+
+    /// A slow golden fireball across the view, high to low, ending in a flare (fainter and no flare under gentle
+    /// visuals); the bay mirrors it.
+    private mutating func fireball(seed: UInt64, gentle: Bool, now: Double) {
+        var r = SeededRandom(seed: seed)
+        let view = Self.viewAzimuth(sky)
+        let leftToRight = r.unit() < 0.5
+        let a = view + (leftToRight ? -1 : 1) * Double(r.range(18, 28))
+        let b = view + (leftToRight ? 1 : -1) * Double(r.range(10, 20))
+        let start = WorldMeteors.direction(azimuth: a, altitude: Double(r.range(24, 30)))
+        let end = WorldMeteors.direction(azimuth: b, altitude: Double(r.range(5, 9)))
+        let run = r.range(2.8, 3.3)
+        meteors.add(WorldMeteors.meteor(from: start, to: end, born: now, duration: run, magnitude: gentle ? -6 : -8,
+                                        speed: 24, flare: !gentle))
     }
 
     /// The bay's soundscape: small waves lapping the hull and rocks, crickets and an owl on the headlands at
