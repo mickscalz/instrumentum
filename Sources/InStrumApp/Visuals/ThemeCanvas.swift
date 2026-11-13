@@ -116,7 +116,8 @@ final class ThemeCanvas: NSObject, MTKViewDelegate {
         let frameTime = lastTime == 0 ? 0 : max(0, now - lastTime)
         let frameDt = min(0.1, frameTime)
         lastTime = now
-        level = autoQuality.record(frameTime: frameTime, gpuTime: gpuClock.take())
+        let gpuTime = gpuClock.take()   // read once: the safety net and the performance log both see this frame's number
+        level = autoQuality.record(frameTime: frameTime, gpuTime: gpuTime)
         if !appleGPU && level == .ultra { level = .high }
         let backing = view.window?.backingScaleFactor ?? 2
         let px = RenderScale.pixels(points: (Double(view.bounds.width), Double(view.bounds.height)),
@@ -125,6 +126,10 @@ final class ThemeCanvas: NSObject, MTKViewDelegate {
         let wanted = CGSize(width: px.width, height: px.height)
         if view.drawableSize != wanted { view.drawableSize = wanted }
         let size = view.drawableSize
+        // Help > Copy Performance Report: this frame, by world and quality (no allocation after a key's first frame).
+        model.performanceLog.record(world: director.themeID, quality: level, frameTime: frameTime, gpuTime: gpuTime,
+                                    pixelScale: autoQuality.pixelScale, rescued: autoQuality.rescued,
+                                    pixels: (Int(size.width), Int(size.height)))
         stack.resize(width: Int(size.width), height: Int(size.height))
         var controls = model.frameSceneControls   // hold, the sleep dim, Reduce Motion and breathing, before the events
         controls.gentle = model.effectiveGentleVisuals   // and gentle visuals: the drive's far siren rests

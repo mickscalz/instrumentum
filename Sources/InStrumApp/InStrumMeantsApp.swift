@@ -47,6 +47,7 @@ public struct InStrumMeantsApp: App {
         .commands {
             UpdateCommands()
             PlayMenu(model: container.model)
+            PerformanceCommands(model: container.model)
         }
     }
 }
