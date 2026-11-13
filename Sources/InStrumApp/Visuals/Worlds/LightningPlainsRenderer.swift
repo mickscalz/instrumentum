@@ -511,7 +511,8 @@ final class LightningPlainsRenderer: ThemeRenderer {
         for k in 0..<rows {
             let f = Float(k) / Float(max(1, rows - 1))
             let z = Self.grassNear * exp(f * log(Self.grassFar / Self.grassNear))
-            guard let foot = ground(0, z, 0), let top = ground(0, z, 1.4 * grassH + 0.05) else { continue }
+            // (Its top: the tallest blade, 1.1875 of the grass's height, a little over; a pixel's margin below.)
+            guard let foot = ground(0, z, 0), let top = ground(0, z, 1.2 * grassH + 0.02) else { continue }
             // The nearer row's solid band (at least 0.45 of the grass's height) hides this row below its top.
             var y0 = max(-1.05, foot.y - 2 * pixel)
             if k > 0 {

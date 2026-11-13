@@ -699,8 +699,10 @@ enum LightningPlainsShaders {
         float X = t * dot(ray.xy, p.ahead.zw);
         float Y = p.view.x + t * ray.z;
         float H = b.z;
-        if (Y < -0.05 || Y > 1.5 * H + 0.05) return float4(0.0);
         float aa = max(t * p.view.y, 1e-4);           // a pixel's size there (m)
+        // (Nothing of the row stands higher than its tallest blade, 1.1875 H, or its tussocks' top, 0.61 H, and half a
+        // pixel: above that nothing is drawn, so nothing is worked out.)
+        if (Y < -0.05 || Y > max(1.1875 * H, 0.61 * H + 0.5 * aa) + 0.02) return float4(0.0);
         float sx = saturate(ndc.x * 0.5 + 0.5) * 3.0;
         int i0 = min(int(sx), 2);
         float f = sx - float(i0);
