@@ -768,11 +768,13 @@ enum NeonNightDriveShaders {
         float rough = clamp(0.75 - 0.35 * track - 0.45 * puddle, 0.12, 1.0);
         float3 albedo = float3(0.045, 0.045, 0.05) * (0.8 + 0.4 * grain) * (1.0 - 0.5 * wet) * (1.0 - 0.5 * puddle);
         // Paint: the edge lines and the dashed lane lines, your way and theirs.
+        // (A line's dashes are read only where the pixel is on its line.)
         float paint = 0.0;
         float le = u.road1.y;
         for (int i = 0; i <= 4; i++) {
             float xl = le + lw * float(i);
             float across = boxCover(p.x, xl - 0.07, xl + 0.07, fx);
+            if (across <= 0.0) continue;
             float dash = (i == 0 || i == 4) ? 1.0 : pulseTrain(zw, 12.0, 3.0, fz);
             paint = max(paint, across * dash);
         }
@@ -780,6 +782,7 @@ enum NeonNightDriveShaders {
         for (int i = 0; i <= 3; i++) {
             float xl = of0 + lw * float(i);
             float across = boxCover(p.x, xl - 0.07, xl + 0.07, fx);
+            if (across <= 0.0) continue;
             float dash = (i == 0 || i == 3) ? 1.0 : pulseTrain(zw + 6.0, 12.0, 3.0, fz);
             paint = max(paint, across * dash);
         }
@@ -807,12 +810,14 @@ enum NeonNightDriveShaders {
         float studLight = 0.0;
         float pulseSum = 0.0;
         float studZ = zw - (round((zw - 7.5) / 12.0) * 12.0 + 7.5);
+        float r2 = 0.0025;
+        float wx = r2 + fx * fx, wz = r2 + fz * fz;
+        float studNorm = r2 / sqrt(wx * wz);
+        float studAlong = studZ * studZ / wz;
         for (int i = 0; i <= 4; i++) {
             float xl = le + lw * float(i);
             float dx = p.x - xl;
-            float r2 = 0.0025;
-            float wx = r2 + fx * fx, wz = r2 + fz * fz;
-            float g = exp(-dx * dx / wx - studZ * studZ / wz) * r2 / sqrt(wx * wz);
+            float g = exp(-dx * dx / wx - studAlong) * studNorm;
             studLight = max(studLight, g);
         }
         if (studLight > 1e-4) {
