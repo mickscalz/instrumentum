@@ -479,7 +479,7 @@ final class NeonNightDriveRenderer: ThemeRenderer {
 
     func render(stack: RenderStack, commandBuffer cb: MTLCommandBuffer) {
         sky.prepare(cb)   // the supercell's impostor, before the frame's passes
-        guard let pass = stack.scenePass(clear: MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)),
+        guard let pass = stack.scenePassOverwritten(),   // (its scene's triangle writes every pixel)
               let hdr = stack.hdrTarget, let depth = stack.depthTarget,
               let e = cb.makeRenderCommandEncoder(descriptor: pass) else { return }
         // The Sky kit's moon would be a crisp disc on the overcast: set it below the horizon here (the drive draws its own,

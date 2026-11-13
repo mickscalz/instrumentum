@@ -578,7 +578,7 @@ final class SupercellSkyRenderer: ThemeRenderer {
                 halfRes = targets
             }
         }
-        guard let pass = stack.scenePass(clear: MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)),
+        guard let pass = stack.scenePassOverwritten(),   // (its scene's triangle writes every pixel)
               let e = cb.makeRenderCommandEncoder(descriptor: pass) else { return }
         if let targets = halfRes {
             e.setRenderPipelineState(compose.state(storms: sky.storms))

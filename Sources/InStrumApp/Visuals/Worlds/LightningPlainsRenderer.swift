@@ -670,7 +670,8 @@ final class LightningPlainsRenderer: ThemeRenderer {
                 stormDrawn = target
             }
         }
-        guard let pass = stack.scenePass(clear: MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)),
+        // (The scene's triangle writes every pixel, uncleared; the timing test's skipped scene keeps the clear.)
+        guard let pass = skipLayers & 1 == 0 ? stack.scenePassOverwritten() : stack.scenePass(clear: MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)),
               let e = cb.makeRenderCommandEncoder(descriptor: pass) else { return }
         e.setRenderPipelineState(scene.state(storms: sky.storms))
         skyU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }

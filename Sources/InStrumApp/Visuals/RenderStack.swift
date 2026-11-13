@@ -99,6 +99,15 @@ final class RenderStack {
         return p
     }
 
+    /// Like `scenePass`, for a scene whose first draw writes every pixel's colour and depth (a full-view triangle whose
+    /// fragment never discards): nothing of a clear would ever be seen, so the targets aren't cleared first.
+    func scenePassOverwritten() -> MTLRenderPassDescriptor? {
+        guard let p = scenePass(clear: MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)) else { return nil }
+        p.colorAttachments[0].loadAction = .dontCare
+        p.colorAttachments[1].loadAction = .dontCare
+        return p
+    }
+
     /// Like `scenePass`, but keeps what is already drawn (to continue a scene after a mid-frame copy, e.g. glass blur).
     func scenePassContinuing() -> MTLRenderPassDescriptor? {
         guard let hdr = hdrTarget, let depth = depthTarget else { return nil }
