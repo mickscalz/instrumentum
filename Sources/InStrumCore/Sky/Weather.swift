@@ -266,9 +266,10 @@ struct WeatherMachine {
 
 public extension WeatherKind {
     /// Weathers that are built but held back from this release: not in the picker or the random list, and never chosen
-    /// at random. The Supercell (Fire & Neon §7.2) waits until its shared-sky drawing is at the bar and within budget
-    /// (12 Nov: Fire & Neon went out without it). Empty this set to release them.
-    static let heldBack: Set<WeatherKind> = [.supercell]
+    /// at random. Empty now: the Supercell (Fire & Neon §7.2) was held back from 12 Nov (Fire & Neon went out without
+    /// it) until 13 Nov, when its shared-sky drawing was rebuilt within budget and its storm overhead and its glow by
+    /// night passed by eye. Put a weather here to hold it back.
+    static let heldBack: Set<WeatherKind> = []
     /// The weathers the app offers, in order.
     static var offered: [WeatherKind] { allCases.filter { !heldBack.contains($0) } }
 }
