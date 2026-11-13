@@ -34,7 +34,8 @@ enum VolcanoRimShaders {
         float4 fireball; // progress 0…1 (< 0 none), start bearing (deg from the view), start altitude (deg), light
         float4 rockfall; // progress (< 0 none), angle round the wall centre (rad), seed, 0
         float4 steam;    // progress (< 0 none), angle round the wall centre (rad), seed, 0
-        float4 sprites;  // unused (a far storm and its sprites are SkyKit's): −1, 0, 0, layers a timing test skips (0)
+        float4 sprites;  // −1 (a far storm and its sprites are SkyKit's), the plates' map is whole 0/1, 0, layers a timing
+                         // test skips (0)
         float4 tree;     // progress (< 0 none), share along the river, seed, 0
         float4 dims;     // foot radius, bench height, bench radius, top radius (m)
         float4 dims2;    // wall centre (m xy), rim height (m), breach angle (rad)
@@ -343,6 +344,119 @@ enum VolcanoRimShaders {
         return r;
     }
 
+    // The plates' candidates. Every lake pixel looked for its plate among all 64 seeds, twice (its plate, then its two
+    // nearest cracks): on Intel and AMD GPUs that was a quarter of the frame. The seeds drift a few metres a second at
+    // most, so a map of the warped plane (q, ±kPlateSpan m each way, `volcano_plate_map`) holds for each texel the 12 seeds
+    // of least power at its middle (three to a channel, a + 64 b + 4096 c, exact in a float), refreshed a sixteenth of its
+    // rows a frame (every 16th row, so nothing tears; the whole map when it is new or the clock jumped), and the lake
+    // reads only those 12 (`platesNear`: the same sums on the same seeds, so the same plates and cracks; on the CPU, at
+    // 235,000 points of the lake in six layouts of the seeds, every plate and every crack within 25 m is the same as
+    // with all 64 but at 28 points, where a second crack 14 m or more off is another one at nearly its distance).
+    constant float kPlateSpan = 420.0;
+
+    void plateOrder(thread float& a, thread float& b, thread int& i, thread int& j) {
+        if (b < a) { float t = a; a = b; b = t; int s = i; i = j; j = s; }
+    }
+
+    /// The 12 seeds of least power at q (in the drift's frame there, as `plates` measures), packed for the map.
+    float4 plateCandidates(float2 q, constant VolcanoU& u) {
+        float2 off = q - float2(-40.0, 30.0);
+        float lo = length(off);
+        float2 dir = lo > 1e-3 ? off / lo : float2(1, 0);
+        float2 perp = float2(-dir.y, dir.x);
+        const float squeeze = 0.6;
+        float p0 = 1e30, p1 = 1e30, p2 = 1e30, p3 = 1e30, p4 = 1e30, p5 = 1e30;
+        float p6 = 1e30, p7 = 1e30, p8 = 1e30, p9 = 1e30, p10 = 1e30, p11 = 1e30;
+        int k0 = 0, k1 = 0, k2 = 0, k3 = 0, k4 = 0, k5 = 0, k6 = 0, k7 = 0, k8 = 0, k9 = 0, k10 = 0, k11 = 0;
+        for (int k = 0; k < 64; k++) {
+            float2 dl = u.cellA[k].xy - q;
+            float2 t = float2(dot(dl, dir) * squeeze, dot(dl, perp));
+            float P = dot(t, t) - u.cellB[k].z;
+            if (P >= p11) continue;
+            // In at the end, then down the sorted twelve to its place (no array: they stay in registers).
+            p11 = P; k11 = k;
+            plateOrder(p10, p11, k10, k11); plateOrder(p9, p10, k9, k10); plateOrder(p8, p9, k8, k9);
+            plateOrder(p7, p8, k7, k8); plateOrder(p6, p7, k6, k7); plateOrder(p5, p6, k5, k6); plateOrder(p4, p5, k4, k5);
+            plateOrder(p3, p4, k3, k4); plateOrder(p2, p3, k2, k3); plateOrder(p1, p2, k1, k2); plateOrder(p0, p1, k0, k1);
+        }
+        return float4(float(k0 + 64 * k1 + 4096 * k2), float(k3 + 64 * k4 + 4096 * k5), float(k6 + 64 * k7 + 4096 * k8),
+                      float(k9 + 64 * k10 + 4096 * k11));
+    }
+
+    kernel void volcano_plate_map(texture2d<float, access::write> map [[texture(0)]], constant VolcanoU& u [[buffer(0)]],
+                                  constant uint4& job [[buffer(1)]], uint2 gid [[thread_position_in_grid]]) {
+        uint w = map.get_width(), h = map.get_height();
+        uint y = job.x + gid.y * job.y;           // rows first, first + strips, …
+        if (gid.x >= w || y >= h) return;
+        float2 q = ((float2(float(gid.x), float(y)) + 0.5) / float2(float(w), float(h)) * 2.0 - 1.0) * kPlateSpan;
+        map.write(plateCandidates(q, u), uint2(gid.x, y));
+    }
+
+    /// The map's candidate `n` (0…11) from its texel.
+    int plateCandidate(float4 c, int n) {
+        int code = int(n < 3 ? c.x : (n < 6 ? c.y : (n < 9 ? c.z : c.w)));
+        int slot = n - 3 * (n / 3);
+        return (code >> (6 * slot)) & 63;
+    }
+
+    /// `plates`, among the map's 12 candidates at q instead of all 64 seeds.
+    Plates platesNear(float2 p, constant VolcanoU& u, texture2d<float> map) {
+        float2 q0 = p * 0.028;
+        float2 w1 = float2(vn2(q0 + float2(3.1, 7.7)), vn2(q0 + float2(11.3, 1.9))) - 0.5;
+        float2 q1 = p * 0.14;
+        float2 w2 = float2(vn2(q1 + float2(5.2, 3.3)), vn2(q1 + float2(9.4, 6.1))) - 0.5;
+        float2 q = p + w1 * 26.0 + w2 * 5.0;
+        float2 off = q - float2(-40.0, 30.0);
+        float lo = length(off);
+        float2 dir = lo > 1e-3 ? off / lo : float2(1, 0);
+        float2 perp = float2(-dir.y, dir.x);
+        const float squeeze = 0.6;
+        Plates r;
+        r.q = q;
+        float mw = float(map.get_width()), mh = float(map.get_height());
+        float2 g = (q / kPlateSpan * 0.5 + 0.5) * float2(mw, mh);
+        uint2 tx = uint2(clamp(floor(g), float2(0.0), float2(mw - 1.0, mh - 1.0)));
+        float4 c = map.read(tx);
+        int i1 = 0;
+        float best = 1e12;
+        float2 t1 = float2(0);
+        for (int n = 0; n < 12; n++) {
+            int k = plateCandidate(c, n);
+            float2 dl = u.cellA[k].xy - q;
+            float2 t = float2(dot(dl, dir) * squeeze, dot(dl, perp));
+            float P = dot(t, t) - u.cellB[k].z;
+            if (P < best) { best = P; i1 = k; t1 = t; }
+        }
+        float lt1 = length(t1);
+        float border = 1e9, border2 = 1e9;
+        int i2 = i1, i3 = i1;
+        float2 nrm = float2(1, 0), nrm2 = float2(0, 1);
+        for (int n = 0; n < 12; n++) {
+            int k = plateCandidate(c, n);
+            if (k == i1) continue;
+            float2 dl = u.cellA[k].xy - q;
+            float2 t = float2(dot(dl, dir) * squeeze, dot(dl, perp));
+            float lt = length(t);
+            float Pk = dot(t, t) - u.cellB[k].z;
+            if ((lt * lt - 1400.0 - best) / (2.0 * (lt + lt1) + 1e-3) > border2 * 1.0) continue;
+            float2 dt = t - t1;
+            float L = length(dt);
+            if (L < 1e-3) continue;
+            float2 nt = dt / L;
+            float2 gr = dir * (nt.x * squeeze) + perp * nt.y;
+            float gl = max(length(gr), 1e-3);
+            float dist = (Pk - best) / (2.0 * L * gl);
+            if (dist < border) {
+                border2 = border; i3 = i2; nrm2 = nrm;
+                border = dist; i2 = k; nrm = gr / gl;
+            } else if (dist < border2) {
+                border2 = dist; i3 = k; nrm2 = gr / gl;
+            }
+        }
+        r.i1 = i1; r.i2 = i2; r.i3 = i3; r.border = max(border, 0.0); r.border2 = max(border2, 0.0); r.n = nrm; r.n2 = nrm2;
+        return r;
+    }
+
     /// The fine cracks inside a plate: a smaller cellular net fixed to the plate (so it rides with it), the distance to
     /// its nearest crack (m).
     float fineCracks(float2 local, float scale) {
@@ -380,12 +494,14 @@ enum VolcanoRimShaders {
 
     /// The lake's own light at a point of its surface (crater metres), seen along d; J is the pixel's footprint (lake
     /// metres per pixel across x and y).
-    float3 lakeSurface(float3 P, float3 d, float2 Jx, float2 Jy, constant VolcanoU& u, int oct, float edgeR) {
+    float3 lakeSurface(float3 P, float3 d, float2 Jx, float2 Jy, constant VolcanoU& u, int oct, float edgeR,
+                       texture2d<float> plateMap) {
         float2 p = P.xy;
         float energy = u.play.x;
         uint skipL = uint(u.sprites.w + 0.5);
         Plates pl;
-        if ((skipL & 512u) == 0u) pl = plates(p, u);
+        // (The map's 12 candidates once it is whole; all 64 seeds without it.)
+        if ((skipL & 512u) == 0u) pl = u.sprites.y > 0.5 ? platesNear(p, u, plateMap) : plates(p, u);
         else { pl.i1 = 0; pl.i2 = 1; pl.i3 = 2; pl.border = 9.0; pl.border2 = 12.0; pl.n = float2(1, 0); pl.n2 = float2(0, 1); pl.q = p; }
         float4 A = u.cellA[pl.i1];
         float4 Ab = u.cellB[pl.i1];
@@ -1008,7 +1124,8 @@ enum VolcanoRimShaders {
 
     // ---------------------------------------------------------------- the scene
     fragment ColorDepth volcano_scene_fragment(VolOut in [[stage_in]], constant SkyU& sky [[buffer(0)]],
-                                               constant VolcanoU& u [[buffer(1)]], texture2d<float> stars [[texture(0)]]) {
+                                               constant VolcanoU& u [[buffer(1)]], texture2d<float> stars [[texture(0)]],
+                                               texture2d<float> plateMap [[texture(1)]]) {
         float2 ndc = in.ndc - u.cam.xy;
         int oct = int(u.a.z + 0.5);
         float3 Dn = sky.forward.xyz + sky.right.xyz * (ndc.x * sky.right.w) + sky.up.xyz * (ndc.y * sky.up.w);
@@ -1030,7 +1147,7 @@ enum VolcanoRimShaders {
             float tp = (u.eye.w - o.z) / min(Dc.z, -1e-6);
             float2 Jx = tp * (dx.xy - Dc.xy * (dx.z / Dc.z));
             float2 Jy = tp * (dy.xy - Dc.xy * (dy.z / Dc.z));
-            if (h.kind == 1) { if ((skip & 1u) == 0u) col = lakeSurface(h.p, d, Jx, Jy, u, oct, h.edge); }
+            if (h.kind == 1) { if ((skip & 1u) == 0u) col = lakeSurface(h.p, d, Jx, Jy, u, oct, h.edge, plateMap); }
             else if ((skip & 2u) == 0u) col = floorColour(h.p, d, max(length(Jx), length(Jy)), u, oct, h.edge);
             depth = 0.6;
         } else if (h.kind >= 3) {

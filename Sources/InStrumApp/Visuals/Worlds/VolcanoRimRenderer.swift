@@ -51,6 +51,20 @@ final class VolcanoRimRenderer: ThemeRenderer {
     var skipLayers: UInt32 = 0
     private let scene: SkyPipeline
     private let sparks, bolts, columns: MTLRenderPipelineState
+    /// The lake's plates' map (`volcano_plate_map`): for each texel of the warped lake plane the 12 crust seeds of least
+    /// power there, which the lake reads instead of all 64. Made once; a sixteenth of its rows refreshed a frame (every
+    /// 16th row), the whole map when it is new or the clock jumped (previews, a world come back to). Without its kernel
+    /// (if it couldn't be made) the lake reads all 64 seeds, as before.
+    nonisolated static let plateMapSize = 512
+    nonisolated static let plateMapStrips = 16
+    private let plateKernel: MTLComputePipelineState?
+    private let plateMap: MTLTexture
+    private var plateMapWhole = false
+    private var plateMapClock: Float = .nan
+    private var plateMapStrip = 0
+    /// Tests: whole refreshes of the map and single strips drawn.
+    private(set) var plateMapWholeDraws = 0
+    private(set) var plateMapStripDraws = 0
     private var volU = [SIMD4<Float>](repeating: .zero, count: VolcanoRimRenderer.uniformCount)
     private var sparkInstances: [SIMD4<Float>] = []
     private var boltInstances: [SIMD4<Float>] = []
@@ -118,8 +132,19 @@ final class VolcanoRimRenderer: ThemeRenderer {
             guard let buf = device.makeBuffer(length: bytes, options: .storageModeShared) else { return nil }
             buffers.append(buf)
         }
+        let md = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba32Float, width: Self.plateMapSize,
+                                                          height: Self.plateMapSize, mipmapped: false)
+        md.usage = [.shaderRead, .shaderWrite]
+        md.storageMode = .private
+        guard let plates = device.makeTexture(descriptor: md) else { return nil }
         sky = s; weather = w; warp = gw; veinsRenderer = mv
         scene = sc; sparks = sp; bolts = bo; columns = co
+        plateMap = plates
+        if let f = lib.skyFunction("volcano_plate_map") {
+            plateKernel = try? device.makeComputePipelineState(function: f)
+        } else {
+            plateKernel = nil
+        }
         ring = buffers
         bufferAllocations = buffers.count
         sparkInstances.reserveCapacity(Self.sparkCapacity * 2)
@@ -476,20 +501,54 @@ final class VolcanoRimRenderer: ThemeRenderer {
 
     // MARK: - Render
 
+    /// This frame's share of the plates' map (before the scene's pass): every 16th row from this frame's strip, or the
+    /// whole map when it is new or the clock jumped more than half a second (a still frame has no frames after it).
+    private func encodePlateMap(_ cb: MTLCommandBuffer) {
+        guard skipLayers & 512 == 0, let kernel = plateKernel, let enc = cb.makeComputeCommandEncoder() else { return }
+        let map = plateMap
+        let clock = volU[Self.rowA].y
+        let whole = !plateMapWhole || !plateMapClock.isFinite || abs(clock - plateMapClock) > 0.5
+        plateMapClock = clock
+        let strips = whole ? 1 : Self.plateMapStrips
+        let first = whole ? 0 : plateMapStrip
+        var job = SIMD4<UInt32>(UInt32(first), UInt32(strips), 0, 0)
+        enc.setComputePipelineState(kernel)
+        volU.withUnsafeBytes { enc.setBytes($0.baseAddress!, length: $0.count, index: 0) }
+        enc.setBytes(&job, length: MemoryLayout<SIMD4<UInt32>>.size, index: 1)
+        enc.setTexture(map, index: 0)
+        let tw = max(1, kernel.threadExecutionWidth)
+        let th = max(1, min(8, kernel.maxTotalThreadsPerThreadgroup / tw))
+        let rows = (Self.plateMapSize - first + strips - 1) / strips
+        enc.dispatchThreadgroups(MTLSize(width: (Self.plateMapSize + tw - 1) / tw, height: (rows + th - 1) / th, depth: 1),
+                                 threadsPerThreadgroup: MTLSize(width: tw, height: th, depth: 1))
+        enc.endEncoding()
+        if whole {
+            plateMapWhole = true
+            plateMapStrip = 0
+            plateMapWholeDraws += 1
+        } else {
+            plateMapStrip = (plateMapStrip + 1) % Self.plateMapStrips
+            plateMapStripDraws += 1
+        }
+    }
+
     func render(stack: RenderStack, commandBuffer cb: MTLCommandBuffer) {
         if showingVeins {
             veinsRenderer.render(stack: stack, commandBuffer: cb)
             return
         }
+        encodePlateMap(cb)
         guard let pass = stack.scenePass(clear: MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)),
               let e = cb.makeRenderCommandEncoder(descriptor: pass) else { return }
         let skyU = sky.uniforms
         e.setRenderPipelineState(scene.state(storms: sky.storms))
         skyU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
+        volU[Self.rowSprites].y = plateMapWhole ? 1 : 0
         volU[Self.rowSprites].w = Float(skipLayers & 0x7FF)
         volU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
         volU[Self.rowSprites].w = 0
         sky.bindStars(e)
+        e.setFragmentTexture(plateMap, index: 1)
         e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         if showWarp { warp.draw(e) }
         let row = MemoryLayout<SIMD4<Float>>.stride
