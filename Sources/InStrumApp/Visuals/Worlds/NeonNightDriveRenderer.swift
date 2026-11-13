@@ -93,6 +93,9 @@ final class NeonNightDriveRenderer: ThemeRenderer {
     private let mirrorHalf, mirrorCompose: MTLRenderPipelineState
     private let device: MTLDevice
     private var mirrorTarget: MTLTexture?
+    /// The mirror's share of the view's width and height: half on High, a quarter on Smooth (it is a blur six or more of
+    /// the view's pixels wide, streaked down the road).
+    private(set) var mirrorScale: Float = 0.5
     /// The mirror's targets made so far (tests: one a size, never one a frame).
     private(set) var mirrorAllocations = 0
     private var u = [SIMD4<Float>](repeating: .zero, count: NeonNightDriveRenderer.uniformCount)
@@ -275,6 +278,7 @@ final class NeonNightDriveRenderer: ThemeRenderer {
         // The rows.
         let tanV = Float(tan(Double(fov) * .pi / 360))
         let octaves: Float = quality == .lite ? 2 : 3
+        mirrorScale = quality == .lite ? 0.25 : 0.5
         u[Self.rowA] = SIMD4(aspect, t, octaves, 2 * tanV / height)
         let hd = Float(Self.heading * .pi / 180)
         u[Self.rowAxes] = SIMD4(sin(hd), cos(hd), cos(hd), -sin(hd))
@@ -435,9 +439,9 @@ final class NeonNightDriveRenderer: ThemeRenderer {
     private static let tileSamples: [(Float, Float)] = [(0, 0), (0.5, 0), (1, 0), (0, 0.5), (0.5, 0.5), (1, 0.5),
                                                         (0, 1), (0.5, 1), (1, 1)]
 
-    /// The mirror's half-resolution target for a scene `width` × `height` (made when the size changes, kept).
-    private func mirrorTexture(width: Int, height: Int) -> MTLTexture? {
-        let w = max(1, (width + 1) / 2), h = max(1, (height + 1) / 2)
+    /// The mirror's target for a scene `width` × `height` at `scale` (made when the size changes, kept).
+    private func mirrorTexture(width: Int, height: Int, scale: Float) -> MTLTexture? {
+        let w = max(1, Int((Float(width) * scale).rounded(.up))), h = max(1, Int((Float(height) * scale).rounded(.up)))
         if mirrorTarget?.width != w || mirrorTarget?.height != h {
             let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: RenderStack.sceneFormat, width: w, height: h, mipmapped: false)
             d.usage = [.renderTarget, .shaderRead]
@@ -471,7 +475,7 @@ final class NeonNightDriveRenderer: ThemeRenderer {
         // The wet road's and the harbour's mirror of the city (drawn at half resolution first), and Light Trails.
         if let view = reflectCopy.make(from: hdr, commandBuffer: cb) {
             var mirror: MTLTexture?
-            if skipLayers & 256 == 0, let target = mirrorTexture(width: hdr.width, height: hdr.height) {
+            if skipLayers & 256 == 0, let target = mirrorTexture(width: hdr.width, height: hdr.height, scale: mirrorScale) {
                 let mp = MTLRenderPassDescriptor()
                 mp.colorAttachments[0].texture = target
                 mp.colorAttachments[0].loadAction = .dontCare
