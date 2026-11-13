@@ -12,7 +12,7 @@ final class ExcitementBayModelTests: XCTestCase {
     /// The bay's night: the lake's sky, facing the pole (the moon up behind the camera's back doesn't matter here).
     static func night() -> SkyState { W.night() }
 
-    static func bay(_ frames: Int, _ plan: W.Plan = W.Plan(), sky: SkyState = night()) -> [BayFrame] {
+    static func bay(_ frames: Int, _ plan: W.Plan = W.Plan(), sky: SkyState = ExcitementBayModelTests.night()) -> [BayFrame] {
         var m = BioluminescentBayModel()
         return W.run(&m, sky: sky, frames: frames, plan: plan)
     }
