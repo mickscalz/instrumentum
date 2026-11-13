@@ -67,6 +67,17 @@ final class SupercellSkyRenderer: ThemeRenderer {
     private var showWarp = false
     private let scene: SkyPipeline
     private let birds, posts: MTLRenderPipelineState
+    /// Smooth: the storm's layers drawn at half resolution (`cell_cloud_fragment`, into `cloudLight` and `cloudCover`),
+    /// read back by the scene pass (`cell_compose_fragment`) under what it draws at full resolution.
+    private let compose: SkyPipeline
+    private let clouds: MTLRenderPipelineState
+    private let device: MTLDevice
+    private var cloudLight: MTLTexture?
+    private var cloudCover: MTLTexture?
+    /// Whether this frame's storm is drawn at half resolution (Smooth), and the targets made so far (tests: one pair a
+    /// size, never one a frame).
+    private(set) var halfResStorm = false
+    private(set) var cloudAllocations = 0
     private var cellU = [SIMD4<Float>](repeating: .zero, count: SupercellSkyRenderer.uniformCount)
     private var birdInstances: [SIMD4<Float>] = []
     private var postInstances: [SIMD4<Float>] = []
@@ -79,7 +90,8 @@ final class SupercellSkyRenderer: ThemeRenderer {
     /// Layers a timing test skips (0 in the app: everything is drawn), so one run can price each on a slow GPU. The scene's
     /// bits: 1 the tower, 2 the flanking line, 4 the anvil, 8 the wall cloud, 16 the base, 32 the hail and the rain core,
     /// 64 the inflow, the funnel and the dust, 128 the sky, 256 the field, 8192 the wheat, 512 the trees, the silo and the
-    /// light after the storm, 1024 the lightning; the renderer's: 2048 the weather, 4096 the flock and the posts.
+    /// light after the storm, 1024 the lightning; the renderer's: 2048 the weather, 4096 the flock and the posts, 16384 the
+    /// storm at full resolution on Smooth (as before its half-resolution pass).
     var skipLayers: UInt32 = 0
 
     /// What was drawn (tests read them): the rows of wheat (distance m, lean across at the tip m, height kept, sheen),
@@ -121,10 +133,18 @@ final class SupercellSkyRenderer: ThemeRenderer {
             if keepDepth { d.colorAttachments[1].writeMask = [] }
             return try? device.makeRenderPipelineState(descriptor: d)
         }
+        let cd = MTLRenderPipelineDescriptor()
+        cd.vertexFunction = lib.skyFunction("cell_vertex")
+        cd.fragmentFunction = lib.skyFunction("cell_cloud_fragment")
+        cd.colorAttachments[0].pixelFormat = RenderStack.sceneFormat
+        cd.colorAttachments[1].pixelFormat = RenderStack.sceneFormat
         guard let sc = SkyPipeline(build: { make("cell_vertex", "cell_scene_fragment", blend: false, keepDepth: false, storms: $0) }),
+              let co = SkyPipeline(build: { make("cell_vertex", "cell_compose_fragment", blend: false, keepDepth: false, storms: $0) }),
+              let cl = try? device.makeRenderPipelineState(descriptor: cd),
               let bd = make("cell_bird_vertex", "cell_bird_fragment", blend: true, keepDepth: true),
               let ps = make("cell_post_vertex", "cell_post_fragment", blend: true, keepDepth: false) else { return nil }
         sky = s; weather = w; warp = gw; scene = sc; birds = bd; posts = ps
+        compose = co; clouds = cl; self.device = device
         sky.verticalFOV = Self.verticalFOV
         sky.horizonY = Self.horizonY
         birdInstances.reserveCapacity(StormFlock.count(.high) * 2)
@@ -276,6 +296,7 @@ final class SupercellSkyRenderer: ThemeRenderer {
         if flow > 1000 { flow -= 1000 }
 
         // The rows.
+        halfResStorm = quality == .lite
         let octaves: Float = quality == .lite ? 2 : 3
         let tanV = Float(tan(Self.verticalFOV * .pi / 360))
         cellU[Self.rowA] = SIMD4(aspect, t, octaves, 2 * tanV / height)
@@ -514,15 +535,55 @@ final class SupercellSkyRenderer: ThemeRenderer {
 
     // MARK: - Render
 
+    /// The half-resolution targets for a scene `width` × `height` (made when the size changes, kept).
+    private func cloudTargets(width: Int, height: Int) -> (MTLTexture, MTLTexture)? {
+        let w = max(1, (width + 1) / 2), h = max(1, (height + 1) / 2)
+        if cloudLight?.width != w || cloudLight?.height != h {
+            let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: RenderStack.sceneFormat, width: w, height: h, mipmapped: false)
+            d.usage = [.renderTarget, .shaderRead]
+            d.storageMode = .private
+            cloudLight = device.makeTexture(descriptor: d)
+            cloudCover = device.makeTexture(descriptor: d)
+            cloudAllocations += 1
+        }
+        guard let a = cloudLight, let b = cloudCover else { return nil }
+        return (a, b)
+    }
+
     func render(stack: RenderStack, commandBuffer cb: MTLCommandBuffer) {
+        let skyU = sky.uniforms
+        cellU[Self.crawlInfoBase].w = Float(skipLayers & 0x3FFF)
+        defer { cellU[Self.crawlInfoBase].w = 0 }
+        // Smooth: the storm's layers first, at half resolution.
+        var halfRes: (MTLTexture, MTLTexture)?
+        if halfResStorm, skipLayers & 16384 == 0, let hdr = stack.hdrTarget, let targets = cloudTargets(width: hdr.width, height: hdr.height) {
+            let p = MTLRenderPassDescriptor()
+            p.colorAttachments[0].texture = targets.0
+            p.colorAttachments[0].loadAction = .dontCare
+            p.colorAttachments[0].storeAction = .store
+            p.colorAttachments[1].texture = targets.1
+            p.colorAttachments[1].loadAction = .dontCare
+            p.colorAttachments[1].storeAction = .store
+            if let ce = cb.makeRenderCommandEncoder(descriptor: p) {
+                ce.setRenderPipelineState(clouds)
+                skyU.withUnsafeBytes { ce.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
+                cellU.withUnsafeBytes { ce.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
+                ce.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+                ce.endEncoding()
+                halfRes = targets
+            }
+        }
         guard let pass = stack.scenePass(clear: MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)),
               let e = cb.makeRenderCommandEncoder(descriptor: pass) else { return }
-        let skyU = sky.uniforms
-        e.setRenderPipelineState(scene.state(storms: sky.storms))
+        if let targets = halfRes {
+            e.setRenderPipelineState(compose.state(storms: sky.storms))
+            e.setFragmentTexture(targets.0, index: 1)
+            e.setFragmentTexture(targets.1, index: 2)
+        } else {
+            e.setRenderPipelineState(scene.state(storms: sky.storms))
+        }
         skyU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
-        cellU[Self.crawlInfoBase].w = Float(skipLayers & 0x3FFF)
         cellU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
-        cellU[Self.crawlInfoBase].w = 0
         sky.bindStars(e)
         e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         if showWarp { warp.draw(e) }

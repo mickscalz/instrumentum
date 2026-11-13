@@ -74,7 +74,8 @@ final class HeavyWorldLayerCostTests: XCTestCase {
         guard MTLCreateSystemDefaultDevice() != nil else { throw XCTSkip("No Metal device") }
         let v = Self.variants([("tower", 1), ("flank", 2), ("anvil", 4), ("wall", 8), ("base", 16), ("rain", 32),
                                ("inflow+dust", 64), ("sky", 128), ("field", 256), ("wheat", 8192), ("horizon+after", 512),
-                               ("lightning", 1024), ("weather", 2048), ("birds+posts", 4096)], allOff: 0x3FFF)
+                               ("lightning", 1024), ("weather", 2048), ("birds+posts", 4096),
+                               ("+full-res-storm", 16384)], allOff: 0x3FFF)
         for q in [QualityLevel.lite, .high] {
             let ms = try price(world: SupercellSkyModel.id, quality: q, variants: v) { r, m in
                 (r as? SupercellSkyRenderer)?.skipLayers = m

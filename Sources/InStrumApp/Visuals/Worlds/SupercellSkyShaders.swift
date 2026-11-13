@@ -1074,21 +1074,21 @@ enum SupercellSkyShaders {
     }
 
     // ---------------------------------------------------------------- the scene
-    fragment ColorDepth cell_scene_fragment(CellOut in [[stage_in]], constant SkyU& sky [[buffer(0)]],
-                                            constant CellU& u [[buffer(1)]], texture2d<float> stars [[texture(0)]]) {
-        float2 ndc = in.ndc - u.cam.xy;
-        int octaves = int(u.a.z + 0.5);
-        float3 dE = normalize(sky.forward.xyz + sky.right.xyz * (ndc.x * sky.right.w) + sky.up.xyz * (ndc.y * sky.up.w));
-        float3 d = float3(dot(dE, float3(u.axes.zw, 0.0)), dot(dE, float3(u.axes.xy, 0.0)), dE.z);
-        float3 o = float3(0.0, -u.place.w, u.place.z);
+    /// What the storm's layers give a pixel: their light (each through the layers in front of it), what they let through
+    /// to the sky or the field behind them all, how much storm cloud covers it (the crawlers live on it) and the anvil.
+    struct CloudSum { float3 col; float T; float cloudy; float anvilCover; };
 
+    /// The view's ray for a pixel (east-north-up `dE`, the storm's frame `d`) and the eye `o`.
+    void cellRay(float2 ndc, constant SkyU& sky, constant CellU& u, thread float3& dE, thread float3& d, thread float3& o) {
+        dE = normalize(sky.forward.xyz + sky.right.xyz * (ndc.x * sky.right.w) + sky.up.xyz * (ndc.y * sky.up.w));
+        d = float3(dot(dE, float3(u.axes.zw, 0.0)), dot(dE, float3(u.axes.xy, 0.0)), dE.z);
+        o = float3(0.0, -u.place.w, u.place.z);
+    }
+
+    CloudSum stormClouds(float2 ndc, float3 dE, float3 d, float3 o, float3 flash, constant CellU& u, int octaves, uint skip) {
         float3 col = float3(0);
         float cloudy = 0.0;      // how much storm cloud covers the pixel (crawlers live on it)
         float anvilCover = 0.0;
-        // Lightning's light on the cloud here, read once for every layer.
-        float3 flash = flashOnCloud(ndc, u);
-        // (The timing test's mask: a set bit skips a layer, so one run can price each. Always 0 in the app.)
-        uint skip = uint(u.crawlInfo[0].w + 0.5);
 
         // Every layer the ray meets, each into its own named variable (L0…L10, its depth t0…t10, in the order they were
         // listed when an insertion sort composited them): the dust wall, the funnel, the inflow bands, the wall cloud,
@@ -1179,6 +1179,17 @@ enum SupercellSkyShaders {
         col += layerLight(L3, T3, T); col += layerLight(L4, T4, T); col += layerLight(L5, T5, T);
         col += layerLight(L6, T6, T); col += layerLight(L7, T7, T); col += layerLight(L8, T8, T);
         col += layerLight(L9, T9, T); col += layerLight(L10, T10, T);
+        CloudSum cs;
+        cs.col = col; cs.T = T; cs.cloudy = cloudy; cs.anvilCover = anvilCover;
+        return cs;
+    }
+
+    /// Everything behind and over the storm's layers: the sky or the field (through what the layers let through), the
+    /// light after the storm, the lightning.
+    ColorDepth cellFinish(float2 ndc, float3 dE, float3 d, float3 o, float3 flash, CloudSum cs, constant SkyU& sky,
+                          constant CellU& u, int octaves, uint skip, texture2d<float> stars) {
+        float3 col = cs.col;
+        float T = cs.T, cloudy = cs.cloudy, anvilCover = cs.anvilCover;
         float depth = dE.z >= 0.0 ? 1.0 : 0.6;
         // Behind cloud that lets no light through at all (T exactly 0, under the storm's dark body) the sky and the
         // field add nothing, so they are not drawn there.
@@ -1246,6 +1257,59 @@ enum SupercellSkyShaders {
         out.color = float4(col, 1.0);
         out.depth = float4(depth, 0, 0, 1);
         return out;
+    }
+
+    fragment ColorDepth cell_scene_fragment(CellOut in [[stage_in]], constant SkyU& sky [[buffer(0)]],
+                                            constant CellU& u [[buffer(1)]], texture2d<float> stars [[texture(0)]]) {
+        float2 ndc = in.ndc - u.cam.xy;
+        int octaves = int(u.a.z + 0.5);
+        float3 dE, d, o;
+        cellRay(ndc, sky, u, dE, d, o);
+        // Lightning's light on the cloud here, read once for every layer.
+        float3 flash = flashOnCloud(ndc, u);
+        // (The timing test's mask: a set bit skips a layer, so one run can price each. Always 0 in the app.)
+        uint skip = uint(u.crawlInfo[0].w + 0.5);
+        CloudSum cs = stormClouds(ndc, dE, d, o, flash, u, octaves, skip);
+        return cellFinish(ndc, dE, d, o, flash, cs, sky, u, octaves, skip, stars);
+    }
+
+    // ---------------------------------------------------------------- Smooth: the storm at half resolution
+    // On Smooth the storm's layers (soft cloud, rain and dust, a few hundred metres to kilometres across) are drawn into
+    // two half-resolution targets, and the scene pass reads them back (filtered) under the sky, the field and the wheat
+    // and the lightning, which it draws at full resolution: a quarter of the storm's noise a frame.
+    struct CloudTargets { float4 light [[color(0)]]; float4 cover [[color(1)]]; };
+
+    fragment CloudTargets cell_cloud_fragment(CellOut in [[stage_in]], constant SkyU& sky [[buffer(0)]],
+                                              constant CellU& u [[buffer(1)]]) {
+        float2 ndc = in.ndc - u.cam.xy;
+        int octaves = int(u.a.z + 0.5);
+        float3 dE, d, o;
+        cellRay(ndc, sky, u, dE, d, o);
+        float3 flash = flashOnCloud(ndc, u);
+        uint skip = uint(u.crawlInfo[0].w + 0.5);
+        CloudSum cs = stormClouds(ndc, dE, d, o, flash, u, octaves, skip);
+        CloudTargets out;
+        out.light = float4(cs.col, cs.T);
+        out.cover = float4(cs.cloudy, cs.anvilCover, 0.0, 1.0);
+        return out;
+    }
+
+    fragment ColorDepth cell_compose_fragment(CellOut in [[stage_in]], constant SkyU& sky [[buffer(0)]],
+                                              constant CellU& u [[buffer(1)]], texture2d<float> stars [[texture(0)]],
+                                              texture2d<float> light [[texture(1)]], texture2d<float> cover [[texture(2)]]) {
+        constexpr sampler s(filter::linear, address::clamp_to_edge);
+        float2 ndc = in.ndc - u.cam.xy;
+        int octaves = int(u.a.z + 0.5);
+        float3 dE, d, o;
+        cellRay(ndc, sky, u, dE, d, o);
+        float3 flash = flashOnCloud(ndc, u);
+        uint skip = uint(u.crawlInfo[0].w + 0.5);
+        float2 uv = float2(0.5 + 0.5 * in.ndc.x, 0.5 - 0.5 * in.ndc.y);
+        float4 L = light.sample(s, uv);
+        float2 C = cover.sample(s, uv).xy;
+        CloudSum cs;
+        cs.col = L.rgb; cs.T = L.a; cs.cloudy = C.x; cs.anvilCover = C.y;
+        return cellFinish(ndc, dE, d, o, flash, cs, sky, u, octaves, skip, stars);
     }
 
     // ---------------------------------------------------------------- the birds
