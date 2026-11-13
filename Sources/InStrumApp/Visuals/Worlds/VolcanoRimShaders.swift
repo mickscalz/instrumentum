@@ -270,8 +270,9 @@ enum VolcanoRimShaders {
         // The upper cliff to the rim.
         float rB = 0.5 * (u.dims.z + u.dims.w);
         float tB = cylinderFar(o, d, C, rB);
-        // (Over the rim's highest reach nothing is hit here whatever the notch: its angle isn't worked out there.)
-        if (tB < h.t && o.z + d.z * tB < rimH + 36.3) {
+        // (Over the rim's highest reach nothing is hit here whatever the notch: its angle isn't worked out there. A
+        // metre's margin, so the test below decides every point near it, rounded as it is there.)
+        if (tB < h.t && o.z + d.z * tB < rimH + 37.3) {
             float3 p = o + d * tB;
             float2 q = p.xy - C;
             float th = atan2(q.x, q.y);
