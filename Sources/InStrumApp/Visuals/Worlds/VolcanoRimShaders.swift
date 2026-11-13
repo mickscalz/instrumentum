@@ -613,39 +613,50 @@ enum VolcanoRimShaders {
         float3 albedo = float3(0.04, 0.036, 0.034) * (0.55 + 0.5 * rope + 0.2 * block);
         float3 N = normalize(float3((rope - 0.5) * 0.5, (block - 0.5) * 0.5, 1.0));
         float3 col = albedo * (craterLight(P, N, u) + u.skyL.rgb);
-        float sky = smoothstep(0.86, 0.93, vn2(p * 0.03 + float2(7.0, 2.0))) * smoothstep(0.5, 0.8, vn2(p * 0.12));
-        col += blackbody(980.0 + 120.0 * u.play.x) * (0.25 * sky);
+        // (A skylight's second noise is read only where its first opens one.)
+        float sky = smoothstep(0.86, 0.93, vn2(p * 0.03 + float2(7.0, 2.0)));
+        if (sky > 0.0) {
+            sky *= smoothstep(0.5, 0.8, vn2(p * 0.12));
+            col += blackbody(980.0 + 120.0 * u.play.x) * (0.25 * sky);
+        }
         // The river: from a bright lip where the lake spills over its ledge, a channel running to the breach, rafts of
         // crust riding on it (moving with the flow, more of them and darker downstream), incandescent lava in the gaps
         // between them, its banks' inner edges glowing.
         float2 rd = riverDistance(p, u);
         float flow = u.river.x, breach = u.river.z;
-        float lenR = length(u.riverA.zw - u.riverA.xy);
-        float halfW = (3.0 + 3.0 * flow + 7.0 * breach) * (0.75 + 0.5 * vn2(float2(rd.y * 7.0, 3.0)) + 0.2 * (vn2(p * 0.15) - 0.5));
-        float inside = 1.0 - smoothstep(halfW - max(1.0, foot), halfW + max(1.0, foot), rd.x);
-        if (inside > 0.0) {
-            float alongM = rd.y * lenR - u.river.y;
-            float2 rp = float2(alongM * 0.8, rd.x * 1.1 + 3.0);
-            float edgeR = oct >= 3 ? fineCracks(rp + float2(13.0, 5.0), 6.0) : 6.0 * abs(vn2(rp * 0.17) - 0.5);
-            float gapW = mix(1.4, 0.2, rd.y) * (0.45 + 0.6 * breach + 0.25 * flow);
-            float Tlava = 1160.0 + 130.0 * breach + 50.0 * flow - 260.0 * rd.y;
-            float3 raft = blackbody(760.0 + 120.0 * breach - 140.0 * rd.y)
-                        + float3(0.06, 0.055, 0.05) * (0.5 + 0.6 * vn2(rp * 0.9)) * (u.glow.rgb * 0.6 + u.skyL.rgb);
-            float3 river = raft + crackGlow(edgeR, gapW, foot, Tlava);
-            float lip = exp(-sq((rd.y - 0.05) / 0.035));
-            river = mix(river, blackbody(1220.0 + 110.0 * breach + 40.0 * (vn2(p * 0.6 + u.a.y) - 0.5)), lip * (0.35 + 0.65 * breach));
-            river += blackbody(1080.0 + 100.0 * breach) * (exp(-abs(rd.x - halfW * 0.9) / 1.0) * (0.12 + 0.35 * breach) * (1.0 - 0.6 * rd.y));
-            col = mix(col, river, inside);
+        // (The river is 17.6 m wide at most and its glow beside it fades by e^-20 over 160 m: farther off neither is
+        // drawn, and the river's noise isn't read.)
+        if (rd.x < 180.0) {
+            float lenR = length(u.riverA.zw - u.riverA.xy);
+            float halfW = (3.0 + 3.0 * flow + 7.0 * breach) * (0.75 + 0.5 * vn2(float2(rd.y * 7.0, 3.0)) + 0.2 * (vn2(p * 0.15) - 0.5));
+            float inside = 1.0 - smoothstep(halfW - max(1.0, foot), halfW + max(1.0, foot), rd.x);
+            if (inside > 0.0) {
+                float alongM = rd.y * lenR - u.river.y;
+                float2 rp = float2(alongM * 0.8, rd.x * 1.1 + 3.0);
+                float edgeR = oct >= 3 ? fineCracks(rp + float2(13.0, 5.0), 6.0) : 6.0 * abs(vn2(rp * 0.17) - 0.5);
+                float gapW = mix(1.4, 0.2, rd.y) * (0.45 + 0.6 * breach + 0.25 * flow);
+                float Tlava = 1160.0 + 130.0 * breach + 50.0 * flow - 260.0 * rd.y;
+                float3 raft = blackbody(760.0 + 120.0 * breach - 140.0 * rd.y)
+                            + float3(0.06, 0.055, 0.05) * (0.5 + 0.6 * vn2(rp * 0.9)) * (u.glow.rgb * 0.6 + u.skyL.rgb);
+                float3 river = raft + crackGlow(edgeR, gapW, foot, Tlava);
+                float lip = exp(-sq((rd.y - 0.05) / 0.035));
+                river = mix(river, blackbody(1220.0 + 110.0 * breach + 40.0 * (vn2(p * 0.6 + u.a.y) - 0.5)), lip * (0.35 + 0.65 * breach));
+                river += blackbody(1080.0 + 100.0 * breach) * (exp(-abs(rd.x - halfW * 0.9) / 1.0) * (0.12 + 0.35 * breach) * (1.0 - 0.6 * rd.y));
+                col = mix(col, river, inside);
+            }
+            col += blackbody(1060.0 + 120.0 * breach) * (exp(-max(rd.x - halfW, 0.0) / 8.0) * (0.05 + 0.1 * flow + 0.35 * breach) * 0.3);
         }
-        col += blackbody(1060.0 + 120.0 * breach) * (exp(-max(rd.x - halfW, 0.0) / 8.0) * (0.05 + 0.1 * flow + 0.35 * breach) * 0.3);
-        // The lake's shore: a black ledge of chilled spatter, lumpy, its lake-facing lips lit by the lake.
+        // The lake's shore: a black ledge of chilled spatter, lumpy, its lake-facing lips lit by the lake (they fade by
+        // e^-20 within 50 m of the shore: farther off their noise isn't read).
         float shore = length(p) - edgeR;
-        float lumpy = vn2(p * 0.5) * 0.6 + vn2(p * 1.7) * 0.4;
         float ledge = exp(-max(shore, 0.0) / 5.0);
         col *= 1.0 - 0.5 * ledge;
-        col += u.glow.rgb * float3(1.0, 0.85, 0.7) * (0.05 * smoothstep(0.45, 0.8, lumpy) * exp(-max(shore, 0.0) / 2.5));
-        float drip = smoothstep(0.8, 0.95, vn2(p * 0.9 + 4.0)) * exp(-max(shore, 0.0) / 1.5);
-        col += blackbody(1060.0 + 60.0 * u.play.x) * (0.25 * drip);
+        if (shore < 50.0) {
+            float lumpy = vn2(p * 0.5) * 0.6 + vn2(p * 1.7) * 0.4;
+            col += u.glow.rgb * float3(1.0, 0.85, 0.7) * (0.05 * smoothstep(0.45, 0.8, lumpy) * exp(-max(shore, 0.0) / 2.5));
+            float drip = smoothstep(0.8, 0.95, vn2(p * 0.9 + 4.0)) * exp(-max(shore, 0.0) / 1.5);
+            col += blackbody(1060.0 + 60.0 * u.play.x) * (0.25 * drip);
+        }
         return col;
     }
 
@@ -1083,12 +1094,15 @@ enum VolcanoRimShaders {
             col = sky.horizon.rgb * 0.3 * exp(dE.z * 30.0);
         }
         // Far volcanoes on the plain's horizon: low dark ranges and a broad cone, hazed by distance, hiding the stars.
-        float range = 0.006 + 0.012 * vn2(float2(az * 9.0, 2.0)) + 0.006 * vn2(float2(az * 31.0, 5.0));
-        float cone = 0.034 * smoothstep(0.32, 0.0, abs(az - 0.55)) * (1.0 - 0.15 * vn2(float2(az * 60.0, 1.0)));
-        float ridge = max(range, cone);
-        if (el < ridge) {
-            float haze = exp(-(ridge - el) / 0.01);
-            col = mix(sky.horizon.rgb * 0.18, sky.horizon.rgb * 0.45, haze * 0.5);
+        // (They stand 0.034 rad at most: above that their noise isn't read.)
+        if (el < 0.034) {
+            float range = 0.006 + 0.012 * vn2(float2(az * 9.0, 2.0)) + 0.006 * vn2(float2(az * 31.0, 5.0));
+            float cone = 0.034 * smoothstep(0.32, 0.0, abs(az - 0.55)) * (1.0 - 0.15 * vn2(float2(az * 60.0, 1.0)));
+            float ridge = max(range, cone);
+            if (el < ridge) {
+                float haze = exp(-(ridge - el) / 0.01);
+                col = mix(sky.horizon.rgb * 0.18, sky.horizon.rgb * 0.45, haze * 0.5);
+            }
         }
         // The plume's glow on the low sky round it (the air scatters the lit plume).
         float bendX = u.plume.z * 200.0 * 200.0;
