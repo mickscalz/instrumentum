@@ -54,13 +54,13 @@ public struct PerformanceLog: Sendable {
         public var pixels: (Int, Int) { (pixelsWide, pixelsHigh) }
     }
 
-    private struct Key: Hashable {
+    fileprivate struct Key: Hashable {
         let world: String
         let quality: QualityLevel
     }
 
     /// Everything kept for one key. The two histograms are allocated once, with the key's first frame.
-    private struct Entry {
+    fileprivate struct Entry {
         let key: Key
         var frames = 0
         var seconds = 0.0
