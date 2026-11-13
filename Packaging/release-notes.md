@@ -1,5 +1,26 @@
-<!-- title: A performance report from your Mac -->
+<!-- title: The Supercell weather, and four heavy worlds made lighter -->
 **Install:** click the round-arrows button in the app's top bar (left of Keep); when it turns into an orange **Update**, click it and choose **Install Update**. Your settings, presets and keeps stay as they are. (No app yet on this Mac? Download the **.dmg** below, drag *In Strum Meants* onto *Applications*, then right-click the app → **Open** → **Open**.)
+
+**A new weather for any sky: Supercell.** It was held back from the last three updates until it looked right. Pick it in **Sky → Weather → Supercell** in any world with a sky.
+- **It is a storm in three acts, about eight minutes long.** The Approach: a towering storm stands on the horizon and comes toward you. The arrival and the Core: its dark shelf passes overhead and the light goes dim and grey, then rain and hail, wind, and lightning. The Clearing: it moves off and the low sun comes out under its anvil, with mammatus pouches overhead. A picked Supercell plays once and then rests in its Clearing.
+- **By night it glows from inside**, one soft glow after another in different parts of the cloud, so its shape is seen even on a moonless night. These are glows, not flashes; with Gentle visuals they are slower and dimmer.
+- **Random weather can bring it** on its own at Moonlit Lake, Golden Hour Beach, Coast Road and Neon Night Drive, now and then. It never comes with **Calm random weather** on.
+- It costs under a millisecond a frame on the Intel test Mac.
+- **One flaw I know of:** at Bioluminescent Bay on a bright moonlit night, the white sand stays too bright under the storm. It is on the list.
+
+**Four heavy worlds drawn faster on Intel Macs**, with the picture the same at a glance (each was compared with its frames from before). The test Mac's speed varies from run to run, so these are compared against untouched worlds in the same run, in milliseconds a frame (16.7 is sixty frames a second):
+- **Volcano Rim:** Smooth about 23 → 14, High 25 → 16.5.
+- **Neon Night Drive:** Smooth about 23 → 16, High 24 → 20. Smooth is still above the goal of 14; more to come.
+- **Lightning Plains:** Smooth about 16.5 → 12, High 22 → 17.5.
+- **Supercell Sky on High:** about 28 → 15.5. On Smooth the slightly stepped edge of its rain shaft (from the last update's speed-up) is fixed.
+
+**Things to try:**
+- **Moonlit Lake** or **Golden Hour Beach**: Sky → Weather → **Supercell**, then play through it for eight minutes. Try it again at night.
+- **Volcano Rim** and **Neon Night Drive** on Smooth and on High: they should feel smoother than before. Then **Help → Copy Performance Report** and paste it into our chat, so the next round aims at your Mac.
+
+<!-- older -->
+
+**A performance report from your Mac** (build 188).
 
 **One new thing: Help → Copy Performance Report.** The visuals are tuned on a test machine that is not your MacBook. This puts a short plain-text report on the clipboard so the tuning can aim at your Mac instead of a guess.
 
@@ -8,7 +29,6 @@
 - **What it leaves out:** your name, any file or folder name, the Mac's serial number and its network name. Nothing is sent anywhere; it only goes where you paste it.
 - It counts from when the app starts.
 
-<!-- older -->
 
 **Small Wins and Big Moments** (build 182).
 
