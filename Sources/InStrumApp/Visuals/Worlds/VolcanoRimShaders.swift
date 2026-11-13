@@ -34,8 +34,8 @@ enum VolcanoRimShaders {
         float4 fireball; // progress 0…1 (< 0 none), start bearing (deg from the view), start altitude (deg), light
         float4 rockfall; // progress (< 0 none), angle round the wall centre (rad), seed, 0
         float4 steam;    // progress (< 0 none), angle round the wall centre (rad), seed, 0
-        float4 sprites;  // −1 (a far storm and its sprites are SkyKit's), the plates' map is whole 0/1, 0, layers a timing
-                         // test skips (0)
+        float4 sprites;  // −1 (a far storm and its sprites are SkyKit's), the plates' map is whole 0/1, 3 + the line (NDC
+                         // y) below which the keys' columns hide the scene (0: none), layers a timing test skips (0)
         float4 tree;     // progress (< 0 none), share along the river, seed, 0
         float4 dims;     // foot radius, bench height, bench radius, top radius (m)
         float4 dims2;    // wall centre (m xy), rim height (m), breach angle (rad)
@@ -1164,6 +1164,13 @@ enum VolcanoRimShaders {
     fragment ColorDepth volcano_scene_fragment(VolOut in [[stage_in]], constant SkyU& sky [[buffer(0)]],
                                                constant VolcanoU& u [[buffer(1)]], texture2d<float> stars [[texture(0)]],
                                                texture2d<float> plateMap [[texture(1)]]) {
+        // Under the keys' white columns, opaque there and drawn over the scene, nothing of it is seen: not drawn.
+        if (in.ndc.y < u.sprites.z - 3.0) {
+            ColorDepth hidden;
+            hidden.color = float4(0.0, 0.0, 0.0, 1.0);
+            hidden.depth = float4(0.6, 0, 0, 1);
+            return hidden;
+        }
         float2 ndc = in.ndc - u.cam.xy;
         int oct = int(u.a.z + 0.5);
         float3 Dn = sky.forward.xyz + sky.right.xyz * (ndc.x * sky.right.w) + sky.up.xyz * (ndc.y * sky.up.w);

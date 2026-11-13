@@ -93,6 +93,9 @@ final class VolcanoRimRenderer: ThemeRenderer {
     private(set) var lakeCentreNDC = SIMD2<Float>(0, 0)
     private(set) var rimNDC = SIMD2<Float>(0, 0)
     private(set) var keyTop: Float = -0.78
+    /// Below this line (NDC y; −2: none) the keys' white columns are opaque all the way across, so the scene there is
+    /// never seen (they are drawn over it): the scene's pass doesn't draw it.
+    private(set) var keysOpaqueBelow: Float = -2
     var flashesInLastSecond: Int { showingVeins ? veinsRenderer.flashesInLastSecond : limiter.recent }
     var flashTotal: Int { limiter.total + veinsRenderer.flashTotal }
     var keyRects: [SIMD4<Float>] { stride(from: 0, to: columnInstances.count, by: 2).map { columnInstances[$0] } }
@@ -478,12 +481,17 @@ final class VolcanoRimRenderer: ThemeRenderer {
     /// a white one (its rect just its hexagonal top).
     private func buildColumns(_ frame: VolcanoFrame, show: Bool, glow: SIMD3<Float>, sky: SIMD3<Float>, aspect: Float) {
         columnInstances.removeAll(keepingCapacity: true)
+        keysOpaqueBelow = -2
         guard show else { return }
         let bottom: Float = -1.0
         let whiteWidth = frame.keys.first(where: { !$0.key.isBlack })?.key.width ?? (1 / 52)
         let keyHeight = 2 * whiteWidth * aspect          // a white key's width, in NDC y
         let rs: Float = 0.5773503 * 0.7                    // the hexagon's corner radius, squashed (key widths)
         let backCentre = keyTop - rs * keyHeight
+        // (Each white column's front faces are opaque below its top's lowest edge, 1.465 of its widths under the keys'
+        // top: the line under which all are, if they run edge to edge without a gap.)
+        var cut: Float = 2, reach: Float = -1
+        var whole = true
         for k in frame.keys {
             if k.key.isBlack {
                 let mid = -1 + (k.key.x + 0.5 * k.key.width) * 2
@@ -492,9 +500,13 @@ final class VolcanoRimRenderer: ThemeRenderer {
             } else {
                 let x0 = -1 + k.key.x * 2, x1 = -1 + (k.key.x + k.key.width) * 2
                 columnInstances.append(SIMD4(x0, bottom, x1, keyTop))
+                if x0 > reach + 1e-4 { whole = false }
+                reach = max(reach, x1)
+                cut = min(cut, keyTop - 1.47 * (x1 - x0) * aspect)
             }
             columnInstances.append(SIMD4(k.key.isBlack ? 1 : 0, Self.unit(k.glow), k.pressed ? 1 : 0, 0))
         }
+        keysOpaqueBelow = whole && reach >= 1 - 1e-4 && cut < 1 ? cut - 2 * volU[Self.rowCam].w : -2
         let light: SIMD3<Float> = glow * 3.5 + sky
         columnLight = SIMD4(light, 1)
     }
@@ -544,6 +556,7 @@ final class VolcanoRimRenderer: ThemeRenderer {
         e.setRenderPipelineState(scene.state(storms: sky.storms))
         skyU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
         volU[Self.rowSprites].y = plateMapWhole ? 1 : 0
+        volU[Self.rowSprites].z = columnInstances.isEmpty || skipLayers & 8192 != 0 ? 0 : keysOpaqueBelow + 3
         volU[Self.rowSprites].w = Float(skipLayers & 0x7FF)
         volU.withUnsafeBytes { e.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
         volU[Self.rowSprites].w = 0
