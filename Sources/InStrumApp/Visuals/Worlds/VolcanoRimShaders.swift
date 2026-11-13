@@ -1084,14 +1084,15 @@ enum VolcanoRimShaders {
         float z0 = o.z - lakeZ, z1 = o.z + d.z * min(t, 4000.0) - lakeZ;
         float dz = z0 - z1;
         float len = min(t, 4000.0);
-        float integral;
-        if (dz > 0.5) integral = len * hs * (exp(-max(z1, 0.0) / hs) - exp(-z0 / hs)) / dz;
-        else integral = len * exp(-max(z1, 0.0) / hs);
         // Over the lake only (the far end of the ray decides), and churning.
         float3 end = o + d * len;
         float overLake = 1.0 - smoothstep(u.lake.x * 0.8, u.lake.x * 1.6, length(end.xy));
-        // (Where the ray ends off the lake the fume is none whatever its churn: exactly what the sum below gives.)
+        // (Where the ray ends off the lake the fume is none whatever its churn or its depth: exactly what the sum below
+        // gives, and neither is worked out.)
         if (overLake <= 0.0) return float4(0, 0, 0, 1);
+        float integral;
+        if (dz > 0.5) integral = len * hs * (exp(-max(z1, 0.0) / hs) - exp(-z0 / hs)) / dz;
+        else integral = len * exp(-max(z1, 0.0) / hs);
         float churn = fbm2(end.xy * 0.012 + float2(u.a.y * 0.05, -u.a.y * 0.035), oct);
         float tau = integral * 0.0024 * overLake * (0.35 + 1.3 * churn) * (0.6 + 0.6 * u.plume.x);
         float T = exp(-tau);
