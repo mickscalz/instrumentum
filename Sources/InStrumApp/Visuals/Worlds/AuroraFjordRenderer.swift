@@ -18,6 +18,9 @@ final class AuroraFjordRenderer: ThemeRenderer {
     static let eyeHeight: Float = 2.7
     /// A tense chord's purple-fringe pulse flares the curtain through the sky's storm value (times the sparkle).
     static let tenseFlare: Float = 0.55
+    /// A satellite's flare drawn at most as bright as a magnitude −2.5 point (the sky's own scale): past that its bloom
+    /// grows into a ball in this lens. The flare itself (the frame's magnitude) still peaks at Venus's.
+    static let flareLightMost: Float = SatelliteSlot.light(magnitude: -2.5)
     static let maxVillageLights = 10
     /// The walls' feet either side of the jetty and their spread down the fjord (the shader's kWallFoot, kWallSpread).
     static let wallFoot: Float = 250, wallSpread: Float = 0.08
@@ -41,6 +44,8 @@ final class AuroraFjordRenderer: ThemeRenderer {
     private var coronaRect: SIMD4<Float>?
     private var orcaInstances: [OrcaInstance] = []
     private var primed = false
+    /// Under gentle visuals the exposure only ever eases up (never a flash).
+    private var gentleExposure = GentleExposure()
     private var fireballGlow: Float = 0
     private var villageInstances: [VillageInstance] = []
     private var floeInstances: [SIMD4<Float>] = []
@@ -221,7 +226,7 @@ final class AuroraFjordRenderer: ThemeRenderer {
             primed = true
             for _ in 0..<16 { _ = limiter.limit(exposure: exposure, sparkle: 1, dt: 1) }
         }
-        let limited = limiter.limit(exposure: exposure * (1 + fireballGlow), sparkle: 1, dt: dt)
+        let limited = limiter.limit(exposure: gentleExposure.step(exposure * (1 + fireballGlow), gentle: gentle, dt: dt), sparkle: 1, dt: dt)
         exposureOut = limited.exposure
         let sparkle = limited.sparkle
         // Excitement (Fire & Neon spec §5.5): the surge, the curtains gathering, Energy's pace and lift.
@@ -257,21 +262,30 @@ final class AuroraFjordRenderer: ThemeRenderer {
         // The surge sends its own pulse out both ways from the band's middle (in the last slot when the notes fill them).
         if surge > 0.01, frame.surgeAge >= 0 {
             let slot = min(sent.count, SkyLayer.rippleCount - 1)
-            ripples[slot] = SIMD4(0.5, frame.surgeAge * 1.6, 0.9 * surge * sparkle, 0.08)
+            ripples[slot] = SIMD4(0.5, frame.surgeAge * 1.6, 0.6 * surge * sparkle, 0.08)
         }
         shaderRipples = ripples
         sky.ripples = ripples
         let glow = frame.glow.isFinite ? min(max(frame.glow, 0), 1) : 0
-        glowOut = min(1, glow * glow + 0.7 * surge + 0.3 * gather) * sparkle
+        // The surge's own brightening, fine rays and pink fringe are drawn in the corona pass (soft, never the sky's hard
+        // storm rays); here it lifts the glow and the storm only a little, so the curtain keeps its soft green rays.
+        glowOut = min(1, glow * glow + 0.25 * surge + 0.15 * gather) * sparkle
         let hue = frame.hueShift.isFinite ? min(max(frame.hueShift, -1), 1) : 0
         sky.auroraTint = SIMD2(hue, glowOut)
         var shown = s
         // Energy lifts the curtain higher in the V; gathering draws it down into a tight arc; the surge throws it up.
-        let lift = (frame.auroraLift.isFinite ? min(max(frame.auroraLift, 0), 12) : 0) + 12 * surge - 3 * gather
+        let lift = (frame.auroraLift.isFinite ? min(max(frame.auroraLift, 0), 12) : 0) + 6 * surge - 3 * gather
         liftOut = lift
         shown.auroraAltitude = max(1, Self.framedAltitude(s.auroraAltitude) + lift)
         let tense = frame.tensePulse.isFinite ? min(max(frame.tensePulse, 0), 1) : 0
-        shown.auroraStorm = max(s.auroraStorm, Self.tenseFlare * tense * sparkle, min(1, 0.85 * surge + 0.35 * gather) * sparkle)
+        shown.auroraStorm = max(s.auroraStorm, Self.tenseFlare * tense * sparkle, min(1, 0.2 * surge + 0.25 * gather) * sparkle)
+        // A satellite's flare is a point among the stars, as bright as Venus at most but never a disc: the sky draws a
+        // point's footprint by its magnitude (a bright star's spreads), so a flaring one keeps its light and takes a faint
+        // star's footprint, and its glow is the bloom's alone.
+        for i in shown.satellites.indices where shown.satellites[i].flare > 0.001 {
+            shown.satellites[i].magnitude = max(shown.satellites[i].magnitude, 2.5)
+            shown.satellites[i].light = min(shown.satellites[i].light, Self.flareLightMost)
+        }
         sky.gentle = gentle
         sky.update(shown, quality: quality, size: size, time: skyTime)
         let cam = sky.camera(latitude: s.latitude, aspect: aspect)
@@ -296,7 +310,7 @@ final class AuroraFjordRenderer: ThemeRenderer {
         let topColour = SIMD3<Float>(0.95, 0.25, 0.4) + (SIMD3<Float>(0.55, 0.35, 1.0) - SIMD3<Float>(0.95, 0.25, 0.4)) * cool
         let aurora = min(max(s.aurora, 0), 1)
         let topWeight: Float = 0.4 * (shown.auroraStorm + 0.7 * warm + 0.5 * cool)
-        let auroraGain: Float = aurora * (1 + 0.6 * glowOut) * (1 + (1.4 * surge + 0.4 * gather) * sparkle) * 0.05
+        let auroraGain: Float = aurora * (1 + 0.3 * glowOut) * (1 + (0.2 * surge + 0.1 * gather) * sparkle) * 0.05
         let auroraLight: SIMD3<Float> = (green + topColour * topWeight) * auroraGain
         let mist = min(1, max(0, s.mist) * (0.6 + 0.4 * MoodLook.hazeScale(mood)))
         let swell = Float(min(max(p.number("swell"), 0), 1))
@@ -316,7 +330,10 @@ final class AuroraFjordRenderer: ThemeRenderer {
         fjordU[8] = SIMD4(phase1, phase2, 0, 0)
         let corona = Self.unit(frame.corona) * sparkle
         coronaOut = corona
-        fjordU[Self.coronaRow] = SIMD4(corona, 0, 0, 0)
+        // The magnetic zenith the corona's rays converge on: straight ahead, a little above the frame's top.
+        let topDir = simd_normalize(cam.forward + cam.up * cam.tanV)
+        let zenithAlt = min(asin(min(max(topDir.z, -1), 1)) + 0.12, 1.5)
+        fjordU[Self.coronaRow] = SIMD4(corona, surgeOut, zenithAlt, 0)
 
         // The view's frame (level ahead and across, as the shader takes them) and projection.
         let ahead2 = simd_normalize(SIMD2(cam.forward.x, cam.forward.y))
@@ -415,10 +432,8 @@ final class AuroraFjordRenderer: ThemeRenderer {
         }
 
         // The corona's quad: from 26° up, straight ahead, to the frame's top (the shader keeps it clear of the walls).
-        coronaRect = nil
-        if corona > 0.001, let foot = project(direction(phi: 0, alt: 26 * .pi / 180)), foot.y < 1 {
-            coronaRect = SIMD4(-1, max(-1, foot.y), 1, 1)
-        }
+        // The surge's and the corona's quad: the sky from the horizon up (the shader keeps it off the walls).
+        coronaRect = corona > 0.001 || surgeOut > 0.001 ? SIMD4(-1, max(-1, horizonY), 1, 1) : nil
 
         // The orca: its fin out of the still water and its blow, a few metres high, lit by the night (the aurora, the
         // moon, the sky).
@@ -430,11 +445,11 @@ final class AuroraFjordRenderer: ThemeRenderer {
                 let flat: SIMD3<Float> = across * (pt.s + x) + ahead * pt.f
                 return project(flat + SIMD3<Float>(0, 0, y - eye))
             }
-            let lo = SIMD2<Float>(-4.5, -0.4), hi = SIMD2<Float>(4.5, 6)
+            let lo = SIMD2<Float>(-4.5, -2.2), hi = SIMD2<Float>(7, 6)
             if let a = at(lo.x, lo.y), let b = at(hi.x, hi.y), b.x > -1.2, a.x < 1.2 {
                 let skyLight: SIMD3<Float> = s.zenith * 0.5 + s.horizon * 0.3
                 let moonLight: SIMD3<Float> = SIMD3<Float>(0.55, 0.63, 0.82) * (0.3 * moonUp)
-                let light: SIMD3<Float> = skyLight + auroraLight * 6 + moonLight
+                let light: SIMD3<Float> = skyLight + auroraLight * 2 + moonLight
                 let wind = s.wind.isFinite ? min(max(s.wind, 0), 1) : 0
                 orcaInstances.append(OrcaInstance(rect: SIMD4(a.x, a.y, b.x, b.y), local: SIMD4(lo.x, lo.y, hi.x, hi.y),
                                                   info: SIMD4(Self.unit(o.fin), o.blowAge, Self.unit(o.blow), wind),

@@ -68,8 +68,11 @@ enum MidnightSteinwayShaders {
             float2 dd = f - off;
             float tw = 0.5 + 0.5 * sin(t * (2.0 + 3.0 * hs) + hs * 40.0);
             float beam = exp(-(p.x * p.x) / 0.25) * (0.4 + 0.6 * max(bloomSpot, ambience));
-            float mote = exp(-dot(dd, dd) * 900.0) * step(0.55, hs) * tw * tw;
-            col += float3(1.0, 0.9, 0.75) * (mote * motes * beam * 1.2);
+            // Each mote a soft point about two pixels across at 720p; together they make the light's shaft faintly
+            // visible in the air (the dust catching it), which is most of what shows at a small size.
+            float mote = exp(-dot(dd, dd) * 160.0) * step(0.55, hs) * tw * tw;
+            col += float3(1.0, 0.9, 0.75) * (mote * motes * beam * 0.9);
+            col += float3(1.0, 0.86, 0.66) * (motes * beam * 0.025 * saturate(1.2 - 0.6 * h));
         }
         // The stage curtains stirring at the sides (a surprise): their velvet folds catch a little of the light as they move.
         float stir = u.moment.w;

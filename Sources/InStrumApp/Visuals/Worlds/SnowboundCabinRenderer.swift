@@ -303,15 +303,18 @@ final class SnowboundCabinRenderer: ThemeRenderer {
                 let arrive = 1 - ExcitementPlay.smooth(0, 0.9, age)
                 let leave = ExcitementPlay.smooth(s.duration - 1.2, s.duration, age)
                 let perchX: Float = spec.rect.x + glassW * (0.22 + 0.56 * s.unit(1))
-                let x: Float = perchX + side * (0.25 * leave - 0.12 * arrive)
+                // It settles out of the dark onto the drift (a short drop as it comes in, fading up), and at the end
+                // lifts off and is gone into the night the same way: no sliding across the glass.
+                let x: Float = perchX + side * (0.04 * leave - 0.03 * arrive)
                 let perchY: Float = spec.rect.y + glassH * 0.028
-                let y: Float = perchY + glassH * (0.5 * arrive - 0.15 * leave)
-                let height = 0.16 * glassH
+                let y: Float = perchY + glassH * (0.06 * arrive + 0.05 * leave)
+                let shown = (1 - arrive) * (1 - leave)
+                let height = 0.19 * glassH
                 let turn = 0.8 * sin(age * 0.9 + 6.28 * s.unit(2)) * ExcitementPlay.smooth(1.4, 2.2, age)
                 func bump(_ at: Float) -> Float { max(0, 1 - abs(age - at) / 0.09) }
                 let blink = max(bump(3.1), bump(6.3))
                 cabinU[Self.rowOwl] = SIMD4(x, y, height, 1)
-                cabinU[Self.rowOwl2] = SIMD4(turn, blink, 0, 0)
+                cabinU[Self.rowOwl2] = SIMD4(turn, blink, shown, 0)
                 owlShown = true
             case 2:
                 let env = ExcitementPlay.envelope(age: age, life: s.duration, rise: 2, fall: 3)
