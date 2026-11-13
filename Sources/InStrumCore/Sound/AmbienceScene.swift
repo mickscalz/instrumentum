@@ -126,12 +126,15 @@ public struct AmbienceScene: Equatable {
     /// The volcano's lake, 0…1 each: how hard it surges (the vent rumble) and how brightly its cracks glow (the lava hiss).
     public var lakeSurge: Double
     public var lakeGlow: Double
+    /// The world's trim in decibels (`AmbienceTrim`): a plain gain on the whole ambience, so every world's sits at one
+    /// loudness. The app sets it where it hands the scene to the engine; the engine glides to it over 0.5 s.
+    public var trimDB: Double
 
     public init(levels: [AmbienceSource: Double] = [:], nightCool: Double = 0, activity: Double = 0, thunder: Double? = nil,
                 closeness: Double = 0.5, density: Double = 1, wave: Double? = nil, speed: Double = 0, surfDistance: Double = 0,
                 indoors: Double = 0, wetness: Double = 0, snowOnGlass: Double = 0, key: AmbienceKey? = nil,
                 bubbleBurst: Double? = nil, thunderQueue: [QueuedThunder] = [], events: [AmbienceEvent] = [],
-                lakeSurge: Double = 0, lakeGlow: Double = 0) {
+                lakeSurge: Double = 0, lakeGlow: Double = 0, trimDB: Double = 0) {
         self.levels = levels
         self.nightCool = nightCool
         self.activity = activity
@@ -150,6 +153,7 @@ public struct AmbienceScene: Equatable {
         self.events = events
         self.lakeSurge = lakeSurge
         self.lakeGlow = lakeGlow
+        self.trimDB = trimDB
     }
 
     public static let silent = AmbienceScene()

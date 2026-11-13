@@ -135,7 +135,8 @@ public final class AppModel: ObservableObject {
             l.keeper.setRange(low: loaded.keyboardRange.low, high: loaded.keyboardRange.high)
         }
         let closeness = loaded.ambience.closeness
-        ambienceLive.withLockUnchecked { $0.closeness = closeness }
+        let trim = AmbienceTrim.db(for: ThemeRegistry.resolve(loaded.themeID))
+        ambienceLive.withLockUnchecked { $0.closeness = closeness; $0.trimDB = trim }
         activeSetID = loaded.activeSetID.flatMap { SetLibrary.set(id: $0) }?.id
         mood = activeSetID.flatMap { SetLibrary.set(id: $0) }?.mood ?? .neutral
         sceneControls = SceneControls(holdPedal: loaded.holdPedal, breath: loaded.breath)
@@ -517,7 +518,9 @@ public final class AppModel: ObservableObject {
         guard resolved != themeID else { return }
         stopTheArp()
         // Storms Review focus 4: no thunder queued in the last world arrives in this one, whatever this one plays.
-        ambienceLive.withLockUnchecked { $0.pendingThunderQueue.removeAll(); $0.pendingEvents.removeAll() }   // nor any one-shot
+        // The new world's ambience trim goes with its scenes from now on (the engine glides to it over 0.5 s).
+        let trim = AmbienceTrim.db(for: resolved)
+        ambienceLive.withLockUnchecked { $0.pendingThunderQueue.removeAll(); $0.pendingEvents.removeAll(); $0.trimDB = trim }   // nor any one-shot
         engine.clearAmbienceThunder()
         themeID = resolved
         settings.themeID = resolved
@@ -654,6 +657,8 @@ public final class AppModel: ObservableObject {
         /// The world's one-shots (Fire & Neon), held the same way.
         var pendingEvents: [(event: AmbienceEvent, at: Double)] = []
         var closeness = 0.5
+        /// The world's ambience trim (dB, `AmbienceTrim`), set as the world changes.
+        var trimDB = 0.0
     }
     /// The engine's thunder queue holds 16: so does the throttle's.
     nonisolated static let thunderQueueLimit = 16
@@ -672,11 +677,13 @@ public final class AppModel: ObservableObject {
     /// thunder held back goes next time too, every roll of it (16 at most, the oldest giving way), its delay shortened by
     /// the time it waited, so it still arrives when the strike's distance says; it stays behind when the next scene has
     /// no thunder roll. The world's one-shots (Fire & Neon: a boom, a crack, a rockfall, a car passing, a wiper's sweep)
-    /// go the same way (32 at most), each staying behind when the next scene has its source silent.
+    /// go the same way (32 at most), each staying behind when the next scene has its source silent. Every scene carries
+    /// the world's ambience trim (`AmbienceTrim`), so each world's ambience sits at one loudness.
     public nonisolated func updateAmbience(_ s: AmbienceScene, at t: Double = ProcessInfo.processInfo.systemUptime) {
         let out: AmbienceScene? = ambienceLive.withLockUnchecked { a in
             var scene = s
             scene.closeness = min(1, max(0, s.closeness + (a.closeness - 0.5)))
+            scene.trimDB = a.trimDB
             if let thunder = s.thunder { a.pendingThunder = thunder }
             if let wave = s.wave { a.pendingWave = max(wave, a.pendingWave ?? 0) }
             if s.level(.surf) <= 0 { a.pendingWave = nil }   // the world changed: its waves stay behind
@@ -728,6 +735,7 @@ public final class AppModel: ObservableObject {
         if abs(a.indoors - b.indoors) > 0.01 || abs(a.wetness - b.wetness) > 0.01 || abs(a.snowOnGlass - b.snowOnGlass) > 0.01 { return true }
         if abs(a.lakeSurge - b.lakeSurge) > 0.02 || abs(a.lakeGlow - b.lakeGlow) > 0.02 { return true }   // the volcano's lake
         if a.key != b.key { return true }   // the temple bell and the sonar retune at their next strike or ping
+        if abs(a.trimDB - b.trimDB) > 0.01 { return true }   // a new world's trim
         return abs(a.nightCool - b.nightCool) > 0.01 || abs(a.closeness - b.closeness) > 0.01 || abs(a.density - b.density) > 0.01
     }
 

@@ -249,4 +249,45 @@ final class BuiltInAUTests: XCTestCase {
         XCTAssertEqual(felt, expected, accuracy: 1e-5)
         XCTAssertEqual(id, "lullaby")
     }
+
+    /// A preset's trim reaches the engine with the preset, as a plain gain; it is saved with the instrument's state and
+    /// comes back with it, and a state saved before trims existed takes its built-in preset's trim.
+    func testPatchesCarryTheirTrim() async throws {
+        let e = try await makeEngine()
+        let found = PatchLibrary.all.first { $0.id == "lullaby" }
+        var patch = try XCTUnwrap(found)
+        patch.trimDB = -6
+        let unit = try XCTUnwrap(e.loadedBuiltIn)
+        unit.apply(patch)
+        let trim = unit.trimDB, gain = Double(unit.trimInUse)
+        XCTAssertEqual(trim, -6)
+        XCTAssertEqual(gain, pow(10, -6.0 / 20), accuracy: 1e-6)
+        let state = try XCTUnwrap(unit.fullState)
+        let saved = (state["trimDB"] as? NSNumber)?.doubleValue
+        XCTAssertEqual(saved, -6)
+
+        let other = try BuiltInInstrumentAU(componentDescription: BuiltInCatalog.description(for: .feltGlass), options: [])
+        other.fullState = state
+        let restored = other.trimDB, restoredGain = Double(other.trimInUse)
+        XCTAssertEqual(restored, -6)
+        XCTAssertEqual(restoredGain, pow(10, -6.0 / 20), accuracy: 1e-6)
+        var old = state
+        old["trimDB"] = nil
+        old["patchID"] = "bare-felt"
+        other.fullState = old
+        let bare = Patch.builtIn(id: "bare-felt", engine: .feltGlass)?.trimDB
+        let taken = other.trimDB
+        XCTAssertEqual(taken, bare)
+    }
+
+    /// The world's trim reaches the ambience with its scene, as a plain gain.
+    func testTheWorldsTrimReachesTheAmbience() throws {
+        let au = try AmbienceAU(componentDescription: BuiltInCatalog.ambienceDescription, options: [])
+        au.setScene(AmbienceScene(levels: [.water: 0.5], trimDB: -6))
+        let trimmed = Double(au.trimInUse)
+        XCTAssertEqual(trimmed, pow(10, -6.0 / 20), accuracy: 1e-6)
+        au.setScene(AmbienceScene(levels: [.water: 0.5]))
+        let plain = au.trimInUse
+        XCTAssertEqual(plain, 1)
+    }
 }
