@@ -535,7 +535,7 @@ enum SupercellSkyShaders {
             float ringLight = (0.12 * exp(-ringD * ringD) + 0.08 * exp(-max(dw, 0.0) / 0.6)) * graze * (1.0 - 0.5 * u.amb.w);
             under += float3(1.0, 0.8, 0.55) * (u.glowL.z * fadeOut * ringLight);
         }
-        under += flash * (0.2 + 0.3 * graze);
+        under += flash * (0.08 + 0.4 * graze);
         L.a = cover;
         L.c = aerialShaded(under, t * 0.6, 0.35, u);
         tHit = t + behind;

@@ -476,7 +476,7 @@ enum LightningPlainsShaders {
             float2 dd = float2(pl_wrap(th - l.x), alt - l.y) / max(l.z * 1.6, 0.3);
             lit += p.lightC[i].rgb * (l.w * exp(-dot(dd, dd)));
         }
-        return v * p.shafts.x * 1.5 * (0.6 + 0.6 * drift) * (0.85 + 0.15 * streak) * hang * reach * feet;
+        return v * p.shafts.x * 1.8 * (0.6 + 0.6 * drift) * (0.85 + 0.15 * streak) * hang * reach * feet;
     }
 
     /// The far ridge's top (altitude, deg) at offset th: a mesa rising off the plain on the right, its flat top gently

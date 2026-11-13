@@ -1527,7 +1527,8 @@ enum VolcanoRimShaders {
         float n = vn2(float2(p.x * 1.7 + in.seed * 1.37, p.y * 1.7 / (1.0 + 0.4 * in.len) + in.seed * 0.53));
         float d2 = dot(e, e) * (0.7 + 0.8 * n);
         float head = in.len > 0.05 ? saturate((p.y + in.len + 1.0) / (2.0 * in.len + 2.0)) : 1.0;
-        float a = exp(-d2 * 1.4) * (0.6 + 0.4 * head);
+        // (Brought to nothing before its quad's edge, so a big bright one near the camera never shows a square.)
+        float a = exp(-d2 * 1.4) * (0.6 + 0.4 * head) * (1.0 - smoothstep(1.5, 2.15, length(e)));
         if (a < 0.003) discard_fragment();
         return float4(in.col * a, saturate(a * in.cover * 1.3));
     }
