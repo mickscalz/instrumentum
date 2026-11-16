@@ -50,6 +50,12 @@ public protocol InstrumentEngine: AnyObject {
     /// Built-in instruments only (Single Note Grand; false otherwise): the same key struck four or more times at 2 a
     /// second or faster.
     var isRepeating: Bool { get }
+    /// The Record button: starts writing the instrument (before the volume slider and the sleep fade) to a WAV file.
+    func beginInstrumentRecording(to url: URL) throws
+    /// Stops the Record button's recording and closes its file: the frames written (0 when nothing was recording).
+    func endInstrumentRecording() -> Int
+    /// How long the current (or last) recording has run, in seconds.
+    var recordingSeconds: Double { get }
 }
 
 public extension InstrumentEngine {
@@ -72,6 +78,9 @@ public extension InstrumentEngine {
     func setForcedMorph(_ morph: Float?) {}
     var morphInUse: Float { 0 }
     var isRepeating: Bool { false }
+    func beginInstrumentRecording(to url: URL) throws {}
+    func endInstrumentRecording() -> Int { 0 }
+    var recordingSeconds: Double { 0 }
 }
 
 /// What the app model needs from the MIDI input (lets tests use a fake).
@@ -97,4 +106,11 @@ extension AudioEngine {
     public func setForcedMorph(_ morph: Float?) { loadedBuiltIn?.setForcedMorph(morph) }
     public var morphInUse: Float { loadedBuiltIn?.morphInUse ?? 0 }
     public var isRepeating: Bool { loadedBuiltIn?.isRepeating ?? false }
+}
+
+/// The Record button, through the Recorder: a pass that writes the instrument stem alone.
+extension AudioEngine {
+    public func beginInstrumentRecording(to url: URL) throws { _ = try beginRecording([(kind: .instrument, url: url)]) }
+    public func endInstrumentRecording() -> Int { endRecording()[.instrument] ?? 0 }
+    public var recordingSeconds: Double { recorder?.seconds ?? 0 }
 }

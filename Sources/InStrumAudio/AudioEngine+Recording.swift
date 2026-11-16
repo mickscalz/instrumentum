@@ -62,11 +62,16 @@ extension AudioEngine {
     private func recordingBus(_ slot: WritableKeyPath<RecorderParts, AVAudioMixerNode?>, volume: Float) -> AVAudioMixerNode {
         if let bus = recorderParts[keyPath: slot] { return bus }
         let bus = AVAudioMixerNode()
+        // With the engine stopped, as a rebuild connects: of several buses connected to the main mixer while it runs,
+        // only the last one plays. A bus is attached once, on first use, so the restart is once per bus.
+        let running = engine.isRunning
+        if running { engine.stop() }
         engine.attach(bus)
         engine.connect(bus, to: engine.mainMixerNode, format: renderFormat())
         bus.outputVolume = volume
         bus.volume = sleepGain
         recorderParts[keyPath: slot] = bus
+        if running { try? engine.start() }
         return bus
     }
 

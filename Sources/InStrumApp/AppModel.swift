@@ -35,6 +35,16 @@ public final class AppModel: ObservableObject {
     public let presets: PresetStore
     /// Where kept takes go (`~/Music/In Strum Meants/Takes`; tests use their own folder).
     var takeStore = TakeStore(directory: TakeStore.defaultDirectory)
+    /// The Record button (`AppModel+Recording`): true while it records, and how long it has, in whole seconds.
+    @Published public internal(set) var isRecording = false
+    @Published public internal(set) var recordingSeconds: Double = 0
+    /// Where recordings go (`~/Music/In Strum Meants/Recordings`; tests use their own folder). Made on the first Record.
+    var recordingsDirectory = TakeStore.defaultDirectory.deletingLastPathComponent()
+        .appendingPathComponent("Recordings", isDirectory: true)
+    /// The file being recorded, its 0.5 s ticker and its quit observer (each nil while idle).
+    var recordingURL: URL?
+    var recordingTicker: Timer?
+    var recordingQuitObserver: NSObjectProtocol?
     /// Called just before the instrument changes (e.g. to close the old plugin's window).
     public var willChangeInstrument: (@MainActor () -> Void)?
     /// True when the previous run ended without settling (offer Safe Mode before launching).

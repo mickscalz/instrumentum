@@ -212,13 +212,15 @@ final class StemRecorderTests: XCTestCase {
         XCTAssertTrue(afterEnd.isEmpty)
     }
 
-    /// An hour of 512-frame buffers fed at up to 25× real time while the writer runs: not one buffer is lost.
+    /// An hour of 512-frame buffers fed at up to 25× real time while the writer runs: not one buffer is lost. The app's
+    /// 2 s ring gives the writer 2 s of slack at real time; fed 25× faster, the ring here is 60 s, the same 2.4 s of
+    /// slack (with the 2 s ring a shared CI machine's writer stalls overran it).
     func testOneHourOfFeedsNeverOverruns() throws {
         let values = try dir.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeAvailableCapacityKey])
         let free = values.volumeAvailableCapacityForImportantUsage ?? Int64(values.volumeAvailableCapacity ?? 0)
         if free < 3_000_000_000 { throw XCTSkip("an hour's stem needs 3 GB free; \(free / 1_000_000) MB here") }
         let rate = 48_000.0
-        let r = StemRecorder(sampleRate: rate)
+        let r = StemRecorder(sampleRate: rate, capacitySeconds: 60)
         let url = dir.appendingPathComponent("Layer 1 — One Hour.wav")
         try r.begin([(kind: .instrument, url: url)], atSampleTime: 0)
         let block = 512

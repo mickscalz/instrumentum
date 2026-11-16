@@ -1,3 +1,13 @@
+<!-- title: Record what you play -->
+**Install:** click the round-arrows button in the app's top bar (left of Keep); when it turns into an orange **Update**, click it and choose **Install Update**. Your settings, presets and keeps stay as they are.
+
+**A Record button.** The new circle next to Keep (or **⌘R**) records the instrument as you play. Click it again to stop. The recording is saved as a WAV file in **Music → In Strum Meants → Recordings**, named with the date, time and world. Right-click the button for **Show Recordings in Finder**.
+- It records the instrument only, at full quality, whatever the volume slider is set to. The world's ambience is not recorded.
+- A recording stops by itself after an hour.
+- This is the first piece of the Recorder. Recording over a recording, playing along with a track or Spotify, and recording microphones and other inputs come next.
+
+<!-- older -->
+
 <!-- title: A real eruption, a natural lava shore, and a clearer storm base -->
 **Install:** click the round-arrows button in the app's top bar (left of Keep); when it turns into an orange **Update**, click it and choose **Install Update**. Your settings, presets and keeps stay as they are. (No app yet on this Mac? Download the **.dmg** below, drag *In Strum Meants* onto *Applications*, then right-click the app → **Open** → **Open**.)
 
@@ -19,8 +29,6 @@ With **Gentle visuals** on, flashes remain slow glows.
 - In **Volcano Rim**, play a big chord and watch the whole eruption, then look at the lake's edge when it's calm.
 - In **Supercell Sky**, pick the storm at dusk and watch the base.
 - In **Lightning Plains** at dusk, look under the far clouds for the rain.
-
-<!-- older -->
 
 <!-- title: Bigger Bay, Coast Road and Reef, and every sound at the same loudness -->
 **Install:** click the round-arrows button in the app's top bar (left of Keep); when it turns into an orange **Update**, click it and choose **Install Update**. Your settings, presets and keeps stay as they are. (No app yet on this Mac? Download the **.dmg** below, drag *In Strum Meants* onto *Applications*, then right-click the app → **Open** → **Open**.)
