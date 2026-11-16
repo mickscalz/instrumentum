@@ -44,25 +44,28 @@ final class MixdownTests: XCTestCase {
     }
 
     func testNegativeOffsetDropsTheLead() {
-        let ramp = (0..<1000).map { Float($0) / 1000 }
+        // A ramp to 0.4995, well under the ceiling, so the headroom rule leaves every sample as it is.
+        let ramp = (0..<1000).map { Float($0) / 2000 }
         let early = Mixdown.Stem(left: ramp, right: ramp, gain: 1, offsetFrames: -100)
         let out = Mixdown.mix([early])
         let length = out.left.count
         XCTAssertEqual(length, 900, "the first 100 frames fall before the start")
+        XCTAssertEqual(out.gain, 1)
         let first = out.left[0]
-        XCTAssertEqual(first, 0.1, accuracy: 1e-6)
+        XCTAssertEqual(first, 0.05, accuracy: 1e-6)
         let last = out.right[899]
-        XCTAssertEqual(last, 0.999, accuracy: 1e-6)
+        XCTAssertEqual(last, 0.4995, accuracy: 1e-6)
 
         // With a stem at 0 beside it, the mix still starts at 0.
-        let other = stem(0.5, count: 200)
+        let other = stem(0.25, count: 200)
         let both = Mixdown.mix([early, other])
         let bothLength = both.left.count
         XCTAssertEqual(bothLength, 900)
+        XCTAssertEqual(both.gain, 1)
         let start = both.left[0]
-        XCTAssertEqual(start, 0.6, accuracy: 1e-6)
+        XCTAssertEqual(start, 0.3, accuracy: 1e-6)
         let later = both.left[300]
-        XCTAssertEqual(later, 0.4, accuracy: 1e-6)
+        XCTAssertEqual(later, 0.2, accuracy: 1e-6)
 
         // A stem wholly before the start adds nothing.
         let gone = stem(1, count: 3, offset: -10)
