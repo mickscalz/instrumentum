@@ -15,7 +15,7 @@ public final class AudioEngine {
 
     let engine = AVAudioEngine()
     /// The instrument plays into its own bus; the level and sound-character tap listen here, so ambience never counts.
-    private let instrumentBus = AVAudioMixerNode()
+    let instrumentBus = AVAudioMixerNode()
     /// Ambience plays on its own bus straight into the main mixer.
     let ambienceBus = AVAudioMixerNode()
     private var ambienceUnit: AVAudioUnit?

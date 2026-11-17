@@ -112,6 +112,9 @@ extension AudioEngine {
     /// The engine's sample clock now, the clock the taps stamp their buffers with.
     var currentSampleTime: Int64 {
         if manualRendering { return engine.manualRenderingSampleTime }
+        // The instrument bus's own clock first: its tap stamps the instrument stem's buffers on that timeline, so a
+        // pass that starts there can never sit before or far after what the tap delivers.
+        if let bus = instrumentBus.lastRenderTime, bus.isSampleTimeValid { return bus.sampleTime }
         guard let now = engine.outputNode.lastRenderTime, now.isSampleTimeValid else { return 0 }
         return now.sampleTime
     }
