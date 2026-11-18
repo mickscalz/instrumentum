@@ -27,7 +27,7 @@ public struct ReactionPreset: Codable, Equatable, Identifiable {
 
 /// Saves presets as small JSON files under look/ and reaction/.
 public final class PresetStore {
-    private let lookDir: URL, reactionDir: URL
+    private let lookDir: URL, reactionDir: URL, soundDir: URL
     /// File names that couldn't be read during the last listing.
     public private(set) var unreadable: [String] = []
 
@@ -36,6 +36,7 @@ public final class PresetStore {
         reactionDir = directory.appendingPathComponent("reaction", isDirectory: true)
         try? FileManager.default.createDirectory(at: lookDir, withIntermediateDirectories: true)
         try? FileManager.default.createDirectory(at: reactionDir, withIntermediateDirectories: true)
+        soundDir = directory.appendingPathComponent("sound", isDirectory: true)
     }
 
     static func fileName(_ name: String) -> String {
@@ -80,6 +81,18 @@ public final class PresetStore {
     }
     public func delete(reaction name: String) throws {
         try FileManager.default.removeItem(at: reactionDir.appendingPathComponent(Self.fileName(name)))
+    }
+
+    /// Saved sounds, by name (the folder is made the first time one is saved).
+    public func sounds() -> [SoundPreset] {
+        list(soundDir, SoundPreset.self).sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+    public func save(_ p: SoundPreset) throws {
+        try FileManager.default.createDirectory(at: soundDir, withIntermediateDirectories: true)
+        try write(p, to: soundDir.appendingPathComponent(Self.fileName(p.name)))
+    }
+    public func delete(sound name: String) throws {
+        try FileManager.default.removeItem(at: soundDir.appendingPathComponent(Self.fileName(name)))
     }
 }
 

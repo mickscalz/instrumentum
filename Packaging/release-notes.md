@@ -1,3 +1,22 @@
+<!-- title: Your DDJ-ERGO turns the sound: effects, tone, the instrument's dials, and saved sounds -->
+**Install:** click the round-arrows button in the app's top bar (left of Keep); when it turns into an orange **Update**, click it and choose **Install Update**. Your settings, presets and keeps stay as they are.
+
+**Plug in the DDJ-ERGO and its knobs work straight away.** There is a new **Decks** button in the top bar that shows every knob, what it moves and where it is.
+
+- **Left side: effects and tone.** FX1's knobs 1, 2 and 3 are **Echo**, **Reverb** and **Drive**; FX1's CONTROL knob is the echo's time. The left **HI / MID / LOW** shape the tone like a mixer (flat in the middle), and the left **FILTER** sweeps a low-pass one way and a high-pass the other.
+- **Right side: the instrument's own dials.** FX2's three knobs and CONTROL, then the right HI / MID / LOW and FILTER, are the instrument's first eight dials, in the order its panel shows them. Change instrument and they follow.
+- **Point any knob at anything.** In Decks, each knob has a menu: any effect, any dial, Echo repeats, Crush, the volume, the ambience volume, or nothing.
+- **Buttons.** FX1 ON switches all effects; FX1 1, 2, 3 switch Echo, Reverb, Drive (their lights follow). FX2 ON steps to your next saved sound; FX2 1 and 2 step through the instrument's presets; FX2 3 puts effects and tone back to neutral.
+- **Saved sounds.** In Decks, name a sound and press **Save**: it keeps the instrument, every one of its dials, and the effects and tone. Click a saved sound to bring it all back.
+- The controller's buttons and pads never play notes, and the sliders in Decks do everything the knobs do, so the effects work without the controller too.
+- With no controller and no effect turned up, the sound path is exactly as it was.
+
+**Not yet:** the jog wheels, faders, crossfader and pads do nothing.
+
+**Things to try, and tell me how they sound** (I can't hear them from here): Drive and Crush at a quarter, half and full; the tone knobs fully left and right; Echo with CONTROL short and long; a saved sound that switches instrument.
+
+<!-- older -->
+
 <!-- title: A real eruption, a natural lava shore, and a clearer storm base -->
 **Install:** click the round-arrows button in the app's top bar (left of Keep); when it turns into an orange **Update**, click it and choose **Install Update**. Your settings, presets and keeps stay as they are. (No app yet on this Mac? Download the **.dmg** below, drag *In Strum Meants* onto *Applications*, then right-click the app → **Open** → **Open**.)
 
@@ -19,8 +38,6 @@ With **Gentle visuals** on, flashes remain slow glows.
 - In **Volcano Rim**, play a big chord and watch the whole eruption, then look at the lake's edge when it's calm.
 - In **Supercell Sky**, pick the storm at dusk and watch the base.
 - In **Lightning Plains** at dusk, look under the far clouds for the rain.
-
-<!-- older -->
 
 <!-- title: Bigger Bay, Coast Road and Reef, and every sound at the same loudness -->
 **Install:** click the round-arrows button in the app's top bar (left of Keep); when it turns into an orange **Update**, click it and choose **Install Update**. Your settings, presets and keeps stay as they are. (No app yet on this Mac? Download the **.dmg** below, drag *In Strum Meants* onto *Applications*, then right-click the app → **Open** → **Open**.)

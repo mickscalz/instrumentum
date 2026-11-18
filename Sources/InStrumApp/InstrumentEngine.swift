@@ -50,6 +50,10 @@ public protocol InstrumentEngine: AnyObject {
     /// Built-in instruments only (Single Note Grand; false otherwise): the same key struck four or more times at 2 a
     /// second or faster.
     var isRepeating: Bool { get }
+    /// The effects and tone after the instrument (the controller's knobs). Any thread.
+    func setFX(_ settings: SoundFX)
+    /// Puts the effects in the instrument's path, once; until then the sound path is as it always was.
+    @MainActor func insertFX()
 }
 
 public extension InstrumentEngine {
@@ -72,6 +76,8 @@ public extension InstrumentEngine {
     func setForcedMorph(_ morph: Float?) {}
     var morphInUse: Float { 0 }
     var isRepeating: Bool { false }
+    func setFX(_ settings: SoundFX) {}
+    @MainActor func insertFX() {}
 }
 
 /// What the app model needs from the MIDI input (lets tests use a fake).
@@ -81,6 +87,12 @@ public protocol MIDIControlling: AnyObject {
     func rescan()
     /// When the input with this name last sent a note or controller (system uptime).
     func lastActivity(_ name: String) -> Double?
+    /// Lights the controller's buttons (three-byte MIDI messages to every output that is a controller).
+    func sendToController(_ messages: [[UInt8]])
+}
+
+public extension MIDIControlling {
+    func sendToController(_ messages: [[UInt8]]) {}
 }
 
 extension MIDIInput: MIDIControlling {}

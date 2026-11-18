@@ -9,6 +9,7 @@ struct MainView: View {
     @State private var volume: Float = 0.8
     @State private var showSettings = false
     @State private var showVisuals = false
+    @State private var showDecks = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -85,6 +86,9 @@ struct MainView: View {
             .disabled(!isPlaying)
             Button(role: .destructive) { model.panic() } label: { Label("Panic", systemImage: "speaker.slash.fill") }
                 .help("Silence everything")
+            Button { showDecks.toggle() } label: { Label("Decks", systemImage: "dial.medium") }
+                .help("The DDJ-ERGO's knobs, effects and tone, and your saved sounds")
+                .popover(isPresented: $showDecks, arrowEdge: .bottom) { ControllerPanel(model: model) }
             Button { showVisuals.toggle() } label: { Label("Visuals", systemImage: "sparkles") }
                 .help("Theme, look and display settings")
             Button { showSettings.toggle() } label: { Label("Sound & MIDI", systemImage: "gearshape") }

@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import AVFoundation
 import SwiftUI
 import InStrumAudio
@@ -79,6 +80,10 @@ struct BuiltInPanel: View {
         }
         .padding(20)
         .frame(width: 440)
+        // The controller's knobs turn these dials without going through the sliders: follow them while it's plugged in.
+        .onReceive(Timer.publish(every: 0.15, on: .main, in: .common).autoconnect()) { _ in
+            if model.controllerConnected { refresh += 1 }
+        }
     }
 
     // MARK: - The Arp row
