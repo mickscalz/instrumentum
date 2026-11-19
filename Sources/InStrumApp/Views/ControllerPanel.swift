@@ -257,7 +257,7 @@ struct ControllerPanel: View {
                     .frame(width: 180)
                 }
             }
-            Text("A jog wheel scrubs smoothly (a full turn is four hours of sky, or a quarter of the moon's cycle) and steps a list eight times a turn. A rotary moves one step a click. Turning the time or the moon freezes the sky's clock; the right deck's CUE button lets it run again.")
+            Text("A jog wheel on the time of day is speed-sensitive: about an hour a turn when turned slowly, several hours a turn when spun. On the moon a full turn is a quarter of its cycle, and on a list it steps eight times a turn. A rotary moves one step a click. Turning the time or the moon freezes the sky's clock; the right deck's CUE button lets it run again.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }

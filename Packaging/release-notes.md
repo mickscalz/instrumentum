@@ -1,3 +1,23 @@
+<!-- title: Your DDJ-ERGO layout: Feel on HI / MID / LOW, time of day on the crossfader and the right wheel, ambience on the faders -->
+**Install:** click the round-arrows button in the app's top bar (left of Keep); when it turns into an orange **Update**, click it and choose **Install Update**. Your settings, presets, saved sounds and keeps stay as they are.
+
+**The knobs you asked for:**
+
+- **The six HI / MID / LOW knobs are the Feel sliders**, top to bottom: left **HI** Intensity, **MID** Speed, **LOW** Density; right **HI** Glow, **MID** Calm ↔ Chaos, **LOW** Colour temperature. The middle of each knob is the look as designed.
+- **The crossfader is the time of day**: midnight at the far left, through the day, to late evening at the far right. Moving it switches Time to Frozen, as the slider does.
+- **The right deck's wheel is the time of day too**, top or edge, for fine work: about an hour for a full turn when you turn it slowly, several hours a turn when you spin it. The left wheel is now the moon.
+- **The channel faders are the ambience**: the left one its volume, the right one its closeness.
+
+**What moved to make room** (all still in every knob's menu in Decks):
+
+- The effects: left **GAIN** is Echo, right **GAIN** is Reverb, right **FILTER** is Drive, and left **FILTER** is still the filter sweep.
+- The mood: **HEADPHONES VOL** is its energy and **HEADPHONES MIX** its warmth; the TEMPO sliders are still brightness and motion.
+- No knob has these now, but any knob can: the three tone knobs, the echo's time and repeats, the mood's space, and the instrument's ninth dial.
+
+The eight FX knobs are still the instrument's dials, and the buttons are as before. If you changed a knob's menu in Decks yourself, that knob keeps your choice; **Default layout** in Decks puts everything on the layout above.
+
+<!-- older -->
+
 <!-- title: Sets, worlds, instruments and transpose on the main page; the instrument window fixed -->
 **Install:** click the round-arrows button in the app's top bar (left of Keep); when it turns into an orange **Update**, click it and choose **Install Update**. Your settings, presets, saved sounds and keeps stay as they are.
 
@@ -7,8 +27,6 @@
   - **Instrument**: previous and next instrument.
   - **Transpose**: minus and plus a semitone, up to an octave either way, and **0** to go back. Going up shows the capo fret ("+3 · capo 3"). It is the same transpose as in the instrument's own window, so it is saved with the instrument. It works with the app's own instruments; a plugin has its own.
 - **The instrument window is fixed.** Its title and preset menu were cut off at the top and the "inspired by" card was squashed at the bottom, on every instrument. The window is now exactly as tall as its contents, the card keeps its proper size, and on a screen too short for an instrument with many dials the window scrolls instead of cutting anything off.
-
-<!-- older -->
 
 <!-- title: The eight FX knobs are the instrument's dials, in order -->
 **Install:** click the round-arrows button in the app's top bar (left of Keep); when it turns into an orange **Update**, click it and choose **Install Update**. Your settings, presets, saved sounds and keeps stay as they are.

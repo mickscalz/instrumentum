@@ -496,7 +496,10 @@ extension AppModel {
                 break
             case .timeOfDay:
                 var sky = settings.sky
-                sky.frozenHour = WheelTarget.hour(sky.frozenHour, turnedBy: units)
+                // A jog wheel is speed-sensitive (fine when slow, far when spun); a rotary moves half an hour a click.
+                sky.frozenHour = wheel.kind == .jog
+                    ? WheelTarget.hour(sky.frozenHour, movedBy: WheelTarget.jogHours(units: units))
+                    : WheelTarget.hour(sky.frozenHour, turnedBy: units)
                 sky.timeMode = .frozen
                 setSkyFromController(sky)
             case .moonPhase:

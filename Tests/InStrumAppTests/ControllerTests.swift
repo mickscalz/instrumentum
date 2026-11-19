@@ -35,15 +35,17 @@ final class ControllerTests: XCTestCase {
         m.syncController()
     }
 
-    func testTheRightMixerKnobsAreTheEffects() {
+    func testTheGainAndFilterKnobsAreTheEffects() {
         let m = makeModel()
         XCTAssertEqual(m.soundFX[.echo], 0)
-        turnFully(m, status: 0xB6, controller: 8)      // right HI
+        turnFully(m, status: 0xB6, controller: 3)      // left GAIN
         XCTAssertEqual(m.soundFX[.echo], 1, accuracy: 0.0001)
-        turnFully(m, status: 0xB6, controller: 12)     // right MID
+        turnFully(m, status: 0xB6, controller: 4)      // right GAIN
         XCTAssertEqual(m.soundFX[.reverb], 1, accuracy: 0.0001)
-        turnFully(m, status: 0xB6, controller: 16)     // right LOW
+        turnFully(m, status: 0xB6, controller: 28)     // right FILTER
         XCTAssertEqual(m.soundFX[.drive], 1, accuracy: 0.0001)
+        turnFully(m, status: 0xB6, controller: 27)     // left FILTER
+        XCTAssertEqual(m.soundFX[.filter], 1, accuracy: 0.0001)
         turnFully(m, status: 0xB4, controller: 2)      // an effect-box knob is a dial now: no effect moves
         XCTAssertEqual(m.soundFX[.echoTime], FXParam.echoTime.neutral)
     }
@@ -75,14 +77,28 @@ final class ControllerTests: XCTestCase {
         XCTAssertEqual(first.value, first.maxValue, accuracy: 0.0001)
     }
 
-    func testLeftHighMidLowAreTheTone() {
+    /// Michael's layout (19 Nov): the six HI / MID / LOW knobs are the Feel sliders, top to bottom, left side first.
+    func testTheSixHighMidLowKnobsAreTheFeelSliders() {
         let m = makeModel()
-        turnFully(m, status: 0xB6, controller: 7)
-        turnFully(m, status: 0xB6, controller: 11)
-        turnFully(m, status: 0xB6, controller: 15)
-        XCTAssertEqual(m.soundFX[.eqHigh], 1, accuracy: 0.0001)
-        XCTAssertEqual(m.soundFX[.eqMid], 1, accuracy: 0.0001)
-        XCTAssertEqual(m.soundFX[.eqLow], 1, accuracy: 0.0001)
+        let controllers: [UInt8] = [7, 11, 15, 8, 12, 16]     // left HI, MID, LOW, then right HI, MID, LOW
+        let feel: [Macro] = [.intensity, .speed, .density, .glow, .chaos, .temperature]
+        for index in 0..<6 {
+            turnFully(m, status: 0xB6, controller: controllers[index])
+            let now = m.themeState(for: m.themeID).macros[feel[index]] ?? 0
+            XCTAssertEqual(now, 1, accuracy: 0.0001, feel[index].rawValue)
+        }
+        XCTAssertEqual(m.soundFX, SoundFX(), "and the tone is left alone")
+    }
+
+    func testTheCrossfaderIsTheTimeOfDayAndTheFadersTheAmbience() {
+        let m = makeModel()
+        send(m, [0xB6, 31, 64])                        // the crossfader at its middle
+        XCTAssertEqual(m.skySettings.timeMode, .frozen)
+        XCTAssertEqual(m.skySettings.frozenHour, 23.99 * Double(64 << 7) / 16383, accuracy: 0.001)
+        turnFully(m, status: 0xB6, controller: 19)     // left channel fader
+        XCTAssertEqual(engine.ambienceVolume, 1, accuracy: 0.0001)
+        turnFully(m, status: 0xB6, controller: 21)     // right channel fader
+        XCTAssertEqual(m.controlValue(.world(.closeness)) ?? 0, 1, accuracy: 0.0001)
     }
 
     func testTheControllerNeverPlaysTheInstrument() {
@@ -114,7 +130,7 @@ final class ControllerTests: XCTestCase {
         m.setControlTarget(DeckControl(.left, .hi), to: .fx(.crush))
         turnFully(m, status: 0xB6, controller: 7)
         XCTAssertEqual(m.soundFX[.crush], 1, accuracy: 0.0001)
-        XCTAssertEqual(m.soundFX[.eqHigh], 0.5)
+        XCTAssertNil(m.themeState(for: m.themeID).macros[.intensity], "no longer the Feel slider")
         m.resetControlLayout()
         XCTAssertTrue(m.controlLayout.isDefault)
     }
@@ -182,11 +198,11 @@ final class ControllerTests: XCTestCase {
         m.syncController()
     }
 
-    func testFadersSlidersAndCrossfaderAreTheMood() {
+    func testTheSlidersAndHeadphoneKnobsAreTheMood() {
         let m = makeModel()
-        turnFully(m, status: 0xB6, controller: 19)     // left channel fader
+        turnFully(m, status: 0xB6, controller: 2)      // HEADPHONES VOL
         XCTAssertEqual(m.mood.energy, 1, accuracy: 0.0001)
-        turnFully(m, status: 0xB6, controller: 31)     // crossfader
+        turnFully(m, status: 0xB6, controller: 1)      // HEADPHONES MIX
         XCTAssertEqual(m.mood.warmth, 1, accuracy: 0.0001)
         turnFully(m, status: 0xB1, controller: 0)      // right TEMPO slider
         XCTAssertEqual(m.mood.motion, 1, accuracy: 0.0001)
@@ -194,12 +210,10 @@ final class ControllerTests: XCTestCase {
         XCTAssertEqual(engine.moods.last?.energy ?? 0, 1, accuracy: 0.0001, "the instrument hears the mood too")
     }
 
-    func testMasterKnobIsTheVolumeAndHeadphoneKnobsTheAmbience() {
+    func testMasterKnobIsTheVolume() {
         let m = makeModel()
         send(m, [0xB6, 0, 64])
         XCTAssertEqual(engine.masterVolume, Float(64 << 7) / 16383, accuracy: 0.0001)
-        turnFully(m, status: 0xB6, controller: 2)      // HEADPHONES VOL
-        XCTAssertEqual(engine.ambienceVolume, 1, accuracy: 0.0001)
     }
 
     func testAKeyboardsVolumeKnobIsTheAppsVolume() {
@@ -257,16 +271,22 @@ final class ControllerTests: XCTestCase {
         XCTAssertEqual(m.themeID, worlds[(start - 1 + worlds.count) % worlds.count])
     }
 
-    func testTheLeftJogWheelScrubsTheTimeOfDay() {
+    /// Michael's layout (19 Nov): the right deck's wheel, its top (jog) and its edge (search) alike, is the time of day.
+    func testTheRightJogWheelScrubsTheTimeOfDay() {
         let m = makeModel()
         m.perform(.timeMidday)
-        m.handleController(bytes: [0xB0, 2, 0], time: 1)
-        m.handleController(bytes: [0xB0, 34, 100], time: 1)
+        m.handleController(bytes: [0xB1, 2, 0], time: 1)       // the top of the wheel
+        m.handleController(bytes: [0xB1, 34, 100], time: 1)
         m.syncController()
-        let turned = 100.0 / 2430 * 8 * WheelTarget.hoursPerUnit
+        let units = 100.0 / 2430 * 8
+        let turned = WheelTarget.jogHours(units: units)
         XCTAssertEqual(m.skySettings.frozenHour, 12.5 + turned, accuracy: 0.0001)
-        m.handleController(bytes: [0xB1, 2, 127], time: 1)     // the right wheel, backwards: the moon
-        m.handleController(bytes: [0xB1, 34, 28], time: 1)
+        m.handleController(bytes: [0xB1, 1, 0], time: 1)       // its outer edge does the same
+        m.handleController(bytes: [0xB1, 33, 100], time: 1)
+        m.syncController()
+        XCTAssertEqual(m.skySettings.frozenHour, 12.5 + 2 * turned, accuracy: 0.0001)
+        m.handleController(bytes: [0xB0, 2, 127], time: 1)     // the left wheel, backwards: the moon
+        m.handleController(bytes: [0xB0, 34, 28], time: 1)
         m.syncController()
         let back = -100.0 / 2430 * 8 * WheelTarget.phasePerUnit
         XCTAssertEqual(m.skySettings.frozenPhase, 0.5 + back, accuracy: 0.0001)
@@ -324,7 +344,7 @@ final class ControllerTests: XCTestCase {
         XCTAssertEqual(m.controllerLastTouched, "Left CUE: All notes off")
         XCTAssertEqual(engine.panicCount, 1)
         send(m, [0xB6, 31, 64])
-        XCTAssertEqual(m.controllerLastTouched, "Crossfader: Mood: warmth")
+        XCTAssertEqual(m.controllerLastTouched, "Crossfader: Time of day")
         send(m, [0x96, 1, 127])
         XCTAssertEqual(m.controllerLastTouched, "Not mapped: button 1 on channel 7")
     }

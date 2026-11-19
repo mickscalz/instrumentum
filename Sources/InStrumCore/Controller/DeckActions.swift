@@ -259,6 +259,21 @@ public enum WheelTarget: String, Codable, CaseIterable, Hashable {
     public static let phasePerUnit = 1.0 / 32
     public static let volumePerUnit = 0.03
 
+    /// Hours of sky for a jog wheel's turn since the last look at it (about a twentieth of a second ago), by how fast
+    /// it is turning: about an hour a full turn when turned slowly, for precision, rising to several hours a turn when
+    /// spun (never more than eight times the slow rate). `units` are eighths of a turn.
+    public static func jogHours(units: Double) -> Double {
+        let slowHoursPerUnit = 1.0 / 8
+        let faster = min(8, 1 + 6.25 * abs(units))
+        return units * slowHoursPerUnit * faster
+    }
+
+    /// The frozen hour moved on by this many hours (round the clock in either direction, always 0 ..< 24).
+    public static func hour(_ hour: Double, movedBy hours: Double) -> Double {
+        let h = (hour + hours).truncatingRemainder(dividingBy: 24)
+        return min(23.99, h < 0 ? h + 24 : h)
+    }
+
     /// The frozen hour after a wheel turned `units` (round the clock in either direction, always 0 ..< 24).
     public static func hour(_ hour: Double, turnedBy units: Double) -> Double {
         let h = (hour + units * hoursPerUnit).truncatingRemainder(dividingBy: 24)
@@ -365,12 +380,12 @@ public struct ButtonLayout: Codable, Equatable {
         }
     }
 
-    /// Out of the box: the left jog wheel scrubs the time of day and the right the moon; the left AUTO LOOP rotary
+    /// Out of the box: the right jog wheel scrubs the time of day and the left the moon; the left AUTO LOOP rotary
     /// steps the instrument's presets and the right the weather; the browser steps the worlds.
     public static func defaultTarget(_ wheel: DeckWheel) -> WheelTarget {
         switch (wheel.side, wheel.kind) {
-        case (.left, .jog): return .timeOfDay
-        case (.right, .jog): return .moonPhase
+        case (.left, .jog): return .moonPhase
+        case (.right, .jog): return .timeOfDay
         case (.left, .loop): return .presets
         case (.right, .loop): return .weather
         case (.centre, .browse): return .worlds

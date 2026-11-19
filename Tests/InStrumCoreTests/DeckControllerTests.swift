@@ -151,20 +151,25 @@ final class DeckControllerTests: XCTestCase {
         for (index, knob) in acrossTheController.enumerated() {
             XCTAssertEqual(layout[knob], .dial(index), knob.id)
         }
-        // The mixer knobs are the tone (left) and the effects (right).
-        XCTAssertEqual(layout[DeckControl(.left, .hi)], .fx(.eqHigh))
+        // The six HI / MID / LOW knobs are the Feel sliders, top to bottom: left side, then right.
+        XCTAssertEqual(layout[DeckControl(.left, .hi)], .world(.intensity))
+        XCTAssertEqual(layout[DeckControl(.left, .mid)], .world(.speed))
+        XCTAssertEqual(layout[DeckControl(.left, .low)], .world(.density))
+        XCTAssertEqual(layout[DeckControl(.right, .hi)], .world(.glow))
+        XCTAssertEqual(layout[DeckControl(.right, .mid)], .world(.chaos))
+        XCTAssertEqual(layout[DeckControl(.right, .low)], .world(.temperature))
+        // The crossfader is the time of day; the channel faders are the ambience's volume and closeness.
+        XCTAssertEqual(layout[DeckControl(.centre, .crossfader)], .world(.timeOfDay))
+        XCTAssertEqual(layout[DeckControl(.left, .fader)], .ambience)
+        XCTAssertEqual(layout[DeckControl(.right, .fader)], .world(.closeness))
+        // The effects are on what is left.
+        XCTAssertEqual(layout[DeckControl(.left, .gain)], .fx(.echo))
+        XCTAssertEqual(layout[DeckControl(.right, .gain)], .fx(.reverb))
         XCTAssertEqual(layout[DeckControl(.left, .filter)], .fx(.filter))
-        XCTAssertEqual(layout[DeckControl(.right, .hi)], .fx(.echo))
-        XCTAssertEqual(layout[DeckControl(.right, .mid)], .fx(.reverb))
-        XCTAssertEqual(layout[DeckControl(.right, .low)], .fx(.drive))
-        XCTAssertEqual(layout[DeckControl(.right, .filter)], .fx(.echoTime))
-        XCTAssertEqual(layout[DeckControl(.left, .gain)], .fx(.echoRepeats))
+        XCTAssertEqual(layout[DeckControl(.right, .filter)], .fx(.drive))
         // The faders, sliders and centre knobs are the world.
-        XCTAssertEqual(layout[DeckControl(.right, .gain)], .dial(8))
-        XCTAssertEqual(layout[DeckControl(.left, .fader)], .world(.moodEnergy))
-        XCTAssertEqual(layout[DeckControl(.centre, .crossfader)], .world(.moodWarmth))
         XCTAssertEqual(layout[DeckControl(.centre, .master)], .volume)
-        XCTAssertEqual(layout[DeckControl(.centre, .headphonesVolume)], .ambience)
+        XCTAssertEqual(layout[DeckControl(.centre, .headphonesVolume)], .world(.moodEnergy))
         XCTAssertEqual(DeckControl.all.count, 27)
         XCTAssertNil(DeckControl(id: "centre.hi"))
         XCTAssertNil(DeckControl(id: "left.crossfader"))
@@ -183,7 +188,8 @@ final class DeckControllerTests: XCTestCase {
         XCTAssertEqual(layout[DeckKey(.right, .hotCue1)], .timeMorning)
         XCTAssertEqual(layout[DeckKey(.right, .sampler3)], .weatherStorm)
         XCTAssertEqual(layout[DeckKey(.centre, .function)], .fullScreen)
-        XCTAssertEqual(layout[DeckWheel(.left, .jog)], .timeOfDay)
+        XCTAssertEqual(layout[DeckWheel(.right, .jog)], .timeOfDay)
+        XCTAssertEqual(layout[DeckWheel(.left, .jog)], .moonPhase)
         XCTAssertEqual(layout[DeckWheel(.centre, .browse)], .worlds)
         XCTAssertEqual(DeckKey.all.count, 50)
     }
@@ -211,7 +217,7 @@ final class DeckControllerTests: XCTestCase {
         let loaded = try JSONDecoder().decode(ButtonLayout.self, from: odd)
         XCTAssertEqual(loaded[DeckKey(.left, .cue)], .panic)          // unreadable: the default
         XCTAssertEqual(loaded[DeckKey(.right, .sync)], .panic)
-        XCTAssertEqual(loaded[DeckWheel(.left, .jog)], .timeOfDay)
+        XCTAssertEqual(loaded[DeckWheel(.left, .jog)], .moonPhase)
         XCTAssertEqual(try JSONDecoder().decode(ButtonLayout.self, from: Data("{}".utf8)), ButtonLayout())
     }
 
@@ -277,6 +283,21 @@ final class DeckControllerTests: XCTestCase {
         XCTAssertNil(WheelTarget.index(after: 0, by: 1, count: 0))
     }
 
+    func testTheJogWheelOnTheClockIsFineWhenSlowAndFarWhenSpun() {
+        // A slow turn: an eighth of a turn spread over a second (twenty looks) is about an eighth of an hour.
+        var slow = 0.0
+        for _ in 0..<20 { slow += WheelTarget.jogHours(units: 1.0 / 20) }
+        XCTAssertEqual(slow, 0.125 * (1 + 6.25 / 20), accuracy: 1e-9)
+        XCTAssertLessThan(slow * 8, 1.5, "a full slow turn is little more than an hour")
+        // Spun at two turns a second (0.8 units a look): six times the slow rate.
+        XCTAssertEqual(WheelTarget.jogHours(units: 0.8), 0.8 * 0.125 * 6, accuracy: 1e-9)
+        // Never more than eight times, and backwards is the mirror image.
+        XCTAssertEqual(WheelTarget.jogHours(units: 4), 4 * 0.125 * 8, accuracy: 1e-9)
+        XCTAssertEqual(WheelTarget.jogHours(units: -0.8), -WheelTarget.jogHours(units: 0.8), accuracy: 1e-12)
+        XCTAssertEqual(WheelTarget.hour(23.9, movedBy: 0.3), 0.2, accuracy: 1e-9)
+        XCTAssertEqual(WheelTarget.hour(0.1, movedBy: -0.3), 23.8, accuracy: 1e-9)
+    }
+
     func testKeyboardVolumeIsControllerSeven() {
         XCTAssertEqual(KeyboardVolume.volume(in: [0xB0, 7, 127]), 1)
         XCTAssertEqual(KeyboardVolume.volume(in: [0xB3, 7, 0]), 0)
@@ -293,7 +314,7 @@ final class DeckControllerTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(ControlLayout.self, from: data), layout)
         let odd = Data(#"{"right.hi":"fx.nothing","nowhere.knob":"volume","left.low":"dial.2"}"#.utf8)
         let loaded = try JSONDecoder().decode(ControlLayout.self, from: odd)
-        XCTAssertEqual(loaded[DeckControl(.right, .hi)], .fx(.echo))  // unreadable: the default
+        XCTAssertEqual(loaded[DeckControl(.right, .hi)], .world(.glow))  // unreadable: the default
         XCTAssertEqual(loaded[DeckControl(.left, .low)], .dial(2))
     }
 

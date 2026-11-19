@@ -495,25 +495,25 @@ public struct ControlLayout: Codable, Equatable {
         set { targets[control.id] = newValue }
     }
 
-    /// The layout out of the box: **the eight effect-box knobs are the instrument's own dials**, in the order they sit
-    /// on the controller (FX1 CONTROL, FX1 1, 2, 3, then FX2 CONTROL, FX2 1, 2, 3) and the order the instrument's
-    /// panel lists its dials, with the right GAIN as a ninth. **The mixer knobs are the effects and the tone**: the left
-    /// HI / MID / LOW / FILTER are the tone and the filter, the right ones are Echo, Reverb, Drive and the echo's time,
-    /// the left GAIN the echo's repeats. **The faders, sliders and centre knobs are the world**: its mood on the two
-    /// channel faders, the two TEMPO sliders and the crossfader, the ambience on the headphone knobs, the wind on
-    /// AUX / MIC, and the app's volume on MASTER.
+    /// The layout out of the box (Michael's, 19 Nov): **the eight effect-box knobs are the instrument's own dials**
+    /// (FX1 CONTROL, 1, 2, 3, then FX2's four, in its panel's order); **the six HI / MID / LOW knobs are the look's Feel
+    /// sliders** (left: Intensity, Speed, Density; right: Glow, Calm to Chaos, Colour temperature); **the crossfader is
+    /// the time of day; the channel faders are the ambience** (left its volume, right its closeness). The effects sit
+    /// on what is left: the GAIN knobs are Echo and Reverb, the FILTER knobs the filter sweep and Drive. The TEMPO
+    /// sliders and headphone knobs are the mood, AUX / MIC the wind, MASTER the app's volume. The tone, the echo's time
+    /// and repeats, and Crush are in every knob's menu.
     public static func defaultTarget(_ control: DeckControl) -> ControlTarget {
         switch (control.side, control.knob) {
-        case (.left, .gain): return .fx(.echoRepeats)
-        case (.right, .gain): return .dial(8)
-        case (.left, .fader): return .world(.moodEnergy)
-        case (.right, .fader): return .world(.moodSpace)
+        case (.left, .gain): return .fx(.echo)
+        case (.right, .gain): return .fx(.reverb)
+        case (.left, .fader): return .ambience
+        case (.right, .fader): return .world(.closeness)
         case (.left, .tempo): return .world(.moodBrightness)
         case (.right, .tempo): return .world(.moodMotion)
-        case (.centre, .crossfader): return .world(.moodWarmth)
+        case (.centre, .crossfader): return .world(.timeOfDay)
         case (.centre, .master): return .volume
-        case (.centre, .headphonesVolume): return .ambience
-        case (.centre, .headphonesMix): return .world(.closeness)
+        case (.centre, .headphonesVolume): return .world(.moodEnergy)
+        case (.centre, .headphonesMix): return .world(.moodWarmth)
         case (.centre, .auxVolume): return .world(.wind)
         // The eight effect-box knobs, left to right across the controller, are the instrument's dials top to bottom.
         case (.left, .fxControl): return .dial(0)
@@ -524,14 +524,15 @@ public struct ControlLayout: Codable, Equatable {
         case (.right, .fx1): return .dial(5)
         case (.right, .fx2): return .dial(6)
         case (.right, .fx3): return .dial(7)
-        case (.left, .hi): return .fx(.eqHigh)
-        case (.left, .mid): return .fx(.eqMid)
-        case (.left, .low): return .fx(.eqLow)
+        // The six HI / MID / LOW knobs are the look's six Feel sliders, top to bottom: left side first, then right.
+        case (.left, .hi): return .world(.intensity)
+        case (.left, .mid): return .world(.speed)
+        case (.left, .low): return .world(.density)
+        case (.right, .hi): return .world(.glow)
+        case (.right, .mid): return .world(.chaos)
+        case (.right, .low): return .world(.temperature)
         case (.left, .filter): return .fx(.filter)
-        case (.right, .hi): return .fx(.echo)
-        case (.right, .mid): return .fx(.reverb)
-        case (.right, .low): return .fx(.drive)
-        case (.right, .filter): return .fx(.echoTime)
+        case (.right, .filter): return .fx(.drive)
         default: return .none
         }
     }
