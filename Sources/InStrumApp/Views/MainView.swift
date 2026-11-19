@@ -74,6 +74,7 @@ struct MainView: View {
             Spacer()
             UpdateButton()
             KeepButton(model: model)
+            RecordButton(model: model)
             HoldPad(model: model)
             SleepMenu(model: model)
             Button("Choose Instrument") { showPicker = true }.disabled(model.isLoading)

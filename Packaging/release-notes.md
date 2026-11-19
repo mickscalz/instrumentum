@@ -1,3 +1,13 @@
+<!-- title: Record what you play -->
+**Install:** click the round-arrows button in the app's top bar (left of Keep); when it turns into an orange **Update**, click it and choose **Install Update**. Your settings, presets and keeps stay as they are.
+
+**A Record button.** The new circle next to Keep (or **⌘R**) records the instrument as you play. Click it again to stop. The recording is saved as a WAV file in **Music → In Strum Meants → Recordings**, named with the date, time and world. Right-click the button for **Show Recordings in Finder**.
+- It records the instrument only, at full quality, whatever the volume slider is set to. The world's ambience is not recorded.
+- A recording stops by itself after an hour.
+- This is the first piece of the Recorder. Recording over a recording, playing along with a track or Spotify, and recording microphones and other inputs come next.
+
+<!-- older -->
+
 <!-- title: SAMPLER buttons for sets, worlds, instruments and transpose; finer wheels -->
 **Install:** click the round-arrows button in the app's top bar (left of Keep); when it turns into an orange **Update**, click it and choose **Install Update**. Your settings, presets, saved sounds and keeps stay as they are.
 
@@ -15,8 +25,6 @@
 - The left wheel's top and edge are both the moon. Each of the four can be pointed at something else under Wheels in Decks.
 
 Saved sounds 5 to 8 and the four weathers that were on these buttons are still in every button's menu in Decks; saved sounds 1 to 4 are still on the left HOT CUE buttons. If a SAMPLER button does nothing, open Decks, press it, and tell me what the "Last touched" line says: these buttons' numbers come from Pioneer's manual and are the ones I'm least sure of.
-
-<!-- older -->
 
 <!-- title: Your DDJ-ERGO layout: Feel on HI / MID / LOW, time of day on the crossfader and the right wheel, ambience on the faders -->
 **Install:** click the round-arrows button in the app's top bar (left of Keep); when it turns into an orange **Update**, click it and choose **Install Update**. Your settings, presets, saved sounds and keeps stay as they are.

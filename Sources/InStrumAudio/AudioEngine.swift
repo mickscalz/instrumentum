@@ -13,14 +13,14 @@ public enum AudioEngineError: Error, Equatable {
 /// `send` is safe to call from the CoreMIDI thread.
 public final class AudioEngine {
 
-    private let engine = AVAudioEngine()
+    let engine = AVAudioEngine()
     /// The instrument plays into its own bus; the level and sound-character tap listen here, so ambience never counts.
-    private let instrumentBus = AVAudioMixerNode()
+    let instrumentBus = AVAudioMixerNode()
     /// Ambience plays on its own bus straight into the main mixer.
-    private let ambienceBus = AVAudioMixerNode()
+    let ambienceBus = AVAudioMixerNode()
     private var ambienceUnit: AVAudioUnit?
     private var ambienceScene = AmbienceScene.silent
-    private let manualRendering: Bool
+    let manualRendering: Bool
     private let manualSampleRate: Double
     private var instrument: AVAudioUnit?
     /// The effects and tone after the instrument (`FXChain`). They are only put into the signal path the first time
@@ -31,14 +31,18 @@ public final class AudioEngine {
     private var fxWanted = false
     /// Where the instrument plays into: the effects when they are in the path, else its bus.
     private var instrumentInput: AVAudioNode { fxInserted ? fx.input : instrumentBus }
-    private struct Shared {
+    struct Shared {
         var midiBlock: AUScheduleMIDIEventBlock?
         var level: Float = 0
         var analyzer: SoundCharacterAnalyzer?
         var held = Set<UInt16>()   // channel << 8 | note
         var ambience: AmbienceAU?
+        /// Set only while a pass records: the taps hand it their buffers (AudioEngine+Recording).
+        var recorder: StemRecorder?
     }
-    private let shared = OSAllocatedUnfairLock(uncheckedState: Shared())
+    let shared = OSAllocatedUnfairLock(uncheckedState: Shared())
+    /// The Recorder's buses, volumes and stem recorder: none made or attached until first used (AudioEngine+Recording).
+    var recorderParts = RecorderParts()
     private var configObserver: NSObjectProtocol?
 
     /// Output buffer size in frames (smaller = lower latency, larger = fewer glitches).
@@ -296,6 +300,7 @@ public final class AudioEngine {
     private func applySleepGain() {
         instrumentBus.volume = currentSleepGain
         ambienceBus.volume = currentSleepGain
+        applySleepGainToRecordingBuses()
     }
 
     /// The gain as the two buses carry it, and the ambience bus's own volume (tests).
@@ -312,7 +317,7 @@ public final class AudioEngine {
     // MARK: - Private
 
     /// Render the instrument at the output device's rate so nothing is resampled.
-    private func renderFormat() -> AVAudioFormat {
+    func renderFormat() -> AVAudioFormat {
         var rate = manualRendering ? engine.manualRenderingFormat.sampleRate
                                    : engine.outputNode.outputFormat(forBus: 0).sampleRate
         if rate <= 0 { rate = 44_100 }
@@ -332,16 +337,21 @@ public final class AudioEngine {
         let rate = mixer.outputFormat(forBus: 0).sampleRate
         let analyzer = SoundCharacterAnalyzer(sampleRate: rate > 0 ? rate : 44_100)
         shared.withLockUnchecked { $0.analyzer = analyzer }
-        mixer.installTap(onBus: 0, bufferSize: 512, format: nil) { [weak self] buffer, _ in
+        mixer.installTap(onBus: 0, bufferSize: 512, format: nil) { [weak self] buffer, when in
             guard let self, let data = buffer.floatChannelData else { return }
             let n = Int(buffer.frameLength)
             guard n > 0 else { return }
             var sum: Float = 0
             for i in 0..<n { sum += data[0][i] * data[0][i] }
             let rms = min(1, sqrtf(sum / Float(n)) * 2)
-            self.shared.withLockUnchecked { $0.level = rms }
+            // One lock, as before: the level goes in and the recorder (nil unless a pass records) comes out.
+            let recorder = self.shared.withLockUnchecked { s -> StemRecorder? in
+                s.level = rms
+                return s.recorder
+            }
             let right = buffer.format.channelCount > 1 ? data[1] : data[0]
             analyzer.process(left: data[0], right: right, frames: n)
+            recorder?.feed(.instrument, left: data[0], right: right, frames: n, sampleTime: when.sampleTime)
         }
     }
 
@@ -352,7 +362,7 @@ public final class AudioEngine {
     }
 
     /// Reconnects every bus at the output's (possibly new) rate, resets the buffer size and the level tap.
-    private func rebuildOutput() {
+    func rebuildOutput() {
         engine.disconnectNodeOutput(instrumentBus)
         engine.connect(instrumentBus, to: engine.mainMixerNode, format: renderFormat())
         if fxInserted {
@@ -369,9 +379,12 @@ public final class AudioEngine {
             engine.disconnectNodeOutput(unit)
             engine.connect(unit, to: ambienceBus, format: renderFormat())
         }
+        reconnectRecordingBuses()
         applySleepGain()
-        setOutputBufferSize()
-        installLevelTap()
+        if !manualRendering {   // offline rendering (tests only) has no device buffer, and taps don't run in it
+            setOutputBufferSize()
+            installLevelTap()
+        }
         engine.prepare()
     }
 
