@@ -23,7 +23,10 @@ final class AppContainer: ObservableObject {
             onBytes: { bytes, time in model.handleMIDI(bytes: bytes, time: time) },
             onSourcesChanged: { names, removed in
                 Task { @MainActor in model.midiSourcesChanged(names: names, removed: removed) }
-            })
+            },
+            // The DDJ-ERGO is a bank of knobs, not a keyboard: nothing it sends reaches the instrument as notes.
+            isController: { DDJErgoDecoder.isController(sourceName: $0) },
+            onControllerBytes: { bytes, time in model.handleController(bytes: bytes, time: time) })
         model.midi = midi   // hands over the keyboards switched off in Sound & MIDI
         model.startWatchingReduceMotion()   // the Mac's Reduce Motion, followed from the first frame
         if let names = midi?.sourceNames, !names.isEmpty { model.midiSourcesChanged(names: names, removed: false) }

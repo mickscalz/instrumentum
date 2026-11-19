@@ -8,6 +8,89 @@
 
 <!-- older -->
 
+<!-- title: Your DDJ-ERGO layout: Feel on HI / MID / LOW, time of day on the crossfader and the right wheel, ambience on the faders -->
+**Install:** click the round-arrows button in the app's top bar (left of Keep); when it turns into an orange **Update**, click it and choose **Install Update**. Your settings, presets, saved sounds and keeps stay as they are.
+
+**The knobs you asked for:**
+
+- **The six HI / MID / LOW knobs are the Feel sliders**, top to bottom: left **HI** Intensity, **MID** Speed, **LOW** Density; right **HI** Glow, **MID** Calm ↔ Chaos, **LOW** Colour temperature. The middle of each knob is the look as designed.
+- **The crossfader is the time of day**: midnight at the far left, through the day, to late evening at the far right. Moving it switches Time to Frozen, as the slider does.
+- **The right deck's wheel is the time of day too**, top or edge, for fine work: about an hour for a full turn when you turn it slowly, several hours a turn when you spin it. The left wheel is now the moon.
+- **The channel faders are the ambience**: the left one its volume, the right one its closeness.
+
+**What moved to make room** (all still in every knob's menu in Decks):
+
+- The effects: left **GAIN** is Echo, right **GAIN** is Reverb, right **FILTER** is Drive, and left **FILTER** is still the filter sweep.
+- The mood: **HEADPHONES VOL** is its energy and **HEADPHONES MIX** its warmth; the TEMPO sliders are still brightness and motion.
+- No knob has these now, but any knob can: the three tone knobs, the echo's time and repeats, the mood's space, and the instrument's ninth dial.
+
+The eight FX knobs are still the instrument's dials, and the buttons are as before. If you changed a knob's menu in Decks yourself, that knob keeps your choice; **Default layout** in Decks puts everything on the layout above.
+
+<!-- title: Sets, worlds, instruments and transpose on the main page; the instrument window fixed -->
+**Install:** click the round-arrows button in the app's top bar (left of Keep); when it turns into an orange **Update**, click it and choose **Install Update**. Your settings, presets, saved sounds and keeps stay as they are.
+
+- **A new row under the top bar** with arrows either side of each name:
+  - **Set**: previous and next set (its world, instrument, ambience and mood together).
+  - **World**: previous and next world.
+  - **Instrument**: previous and next instrument.
+  - **Transpose**: minus and plus a semitone, up to an octave either way, and **0** to go back. Going up shows the capo fret ("+3 · capo 3"). It is the same transpose as in the instrument's own window, so it is saved with the instrument. It works with the app's own instruments; a plugin has its own.
+- **The instrument window is fixed.** Its title and preset menu were cut off at the top and the "inspired by" card was squashed at the bottom, on every instrument. The window is now exactly as tall as its contents, the card keeps its proper size, and on a screen too short for an instrument with many dials the window scrolls instead of cutting anything off.
+
+<!-- title: The eight FX knobs are the instrument's dials, in order -->
+**Install:** click the round-arrows button in the app's top bar (left of Keep); when it turns into an orange **Update**, click it and choose **Install Update**. Your settings, presets, saved sounds and keeps stay as they are.
+
+**The FX1 group of four and the FX2 group of four now play the instrument**, left to right across the DDJ-ERGO, top to bottom in the instrument's panel:
+
+- **FX1 CONTROL** is the first dial, then **FX1 knobs 1, 2, 3** are the second, third and fourth.
+- **FX2 CONTROL** is the fifth, then **FX2 knobs 1, 2, 3** are the sixth, seventh and eighth. The right GAIN is a ninth, for instruments that have one.
+- On Orbit Pad that is Space, Bloom, Drift, Motion on FX1, and Shimmer, Brightness on FX2's first two (its last two knobs have no dial to turn there).
+
+**The effects moved to the right-hand mixer knobs** to make room: right **HI** is Echo, **MID** is Reverb, **LOW** is Drive and **FILTER** is the echo's time. The left HI / MID / LOW / FILTER are still the tone and the filter, and the left GAIN the echo's repeats. Buttons, faders and wheels are as in the last build.
+
+If you changed any knob's menu in Decks yourself, that knob keeps your choice; **Default layout** in Decks puts everything on the layout above.
+
+<!-- title: The whole DDJ-ERGO now plays: the world on the faders, buttons for everything, and your keyboard's volume knob -->
+**Install:** click the round-arrows button in the app's top bar (left of Keep); when it turns into an orange **Update**, click it and choose **Install Update**. Your settings, presets, saved sounds and keeps stay as they are.
+
+**Every knob, fader, wheel and button on the DDJ-ERGO now does something**, and **Decks** (top bar) shows what each one does, lets you change it, and names the control you last touched.
+
+- **The instrument's dials: the right side.** FX2's knobs and CONTROL, the right HI / MID / LOW / FILTER and now the right **GAIN** are the instrument's first nine dials, whichever instrument is loaded.
+- **Effects and tone: the left side**, as before, and the left **GAIN** is now the echo's repeats.
+- **The world: the faders and the centre.**
+  - The two **channel faders** are the mood's energy and space; the two **TEMPO sliders** its brightness and motion; the **crossfader** its warmth (cool on the left, warm on the right). The mood shapes the world, the instrument and the ambience together.
+  - **HEADPHONES VOL** is the ambience's volume and **HEADPHONES MIX** how close it is. **AUX / MIC VOL** is the wind.
+  - **MASTER VOL** is the app's volume.
+  - Any knob can instead be the time of day, the moon, clouds, stars, rain, snow, mist, lightning, the moon's size, Excitement's energy, or one of the look's six macros (intensity, speed, density, glow, calm to chaos, colour temperature).
+- **The jog wheels** scrub the sky: the left one the time of day, the right one the moon. Turning either freezes the clock where you leave it.
+- **The rotaries:** the left AUTO LOOP steps through the instrument's presets, the right one through the weathers, and the browser steps through the worlds.
+- **Left deck buttons, the instrument and your playing:** PLAY holds the moment, CUE is all notes off, SYNC is Keep that. IN and OUT are the previous and next instrument. HOT CUE 1 to 4 and SAMPLER 1 to 4 recall your saved sounds 1 to 8 (they are numbered in Decks). KEYLOCK saves the sound you have now, VINYL goes back a saved sound, pressing AUTO LOOP puts the dials back to the preset.
+- **Right deck buttons, the world and its sky:** PLAY turns random weather on and off, CUE steps the clock between quick day, real time and frozen, SYNC is Surprise me. IN and OUT are the previous and next world. HOT CUE 1 to 4 jump to morning, midday, evening and night; SAMPLER 1 to 4 pick clear, rain, storm and snow. KEYLOCK steps the reaction style, VINYL puts the set back as designed, pressing AUTO LOOP puts the mood back.
+- **The rest:** LOAD A and B are the previous and next set. The headphone CUE buttons play a test note and keep the last ten minutes. The channel FX1 / FX2 buttons switch the ambience, gentle visuals, the sleep timer (30 minutes) and mute. FUNCTION is full screen, and pressing the browser is Surprise me. FX1's and FX2's own buttons are as before.
+- **Every button and wheel has a menu in Decks** (51 actions to choose from), and buttons that are switches light up while they are on.
+- **Your keyboard's volume knob or slider now sets the app's volume** (it used to go to the instrument). The volume slider in the top bar follows it.
+- Each button says what it did in a small message at the top, since your hands are on the controller.
+
+**If a control does nothing or the wrong thing:** open Decks, touch it, and read the "Last touched" line. If it says "Not mapped", tell me what it says and I'll map it. The sampler buttons' numbers are the ones I'm least sure of.
+
+**Still to hear:** Drive and Crush, and how strongly the mood faders change each world.
+
+<!-- title: Your DDJ-ERGO turns the sound: effects, tone, the instrument's dials, and saved sounds -->
+**Install:** click the round-arrows button in the app's top bar (left of Keep); when it turns into an orange **Update**, click it and choose **Install Update**. Your settings, presets and keeps stay as they are.
+
+**Plug in the DDJ-ERGO and its knobs work straight away.** There is a new **Decks** button in the top bar that shows every knob, what it moves and where it is.
+
+- **Left side: effects and tone.** FX1's knobs 1, 2 and 3 are **Echo**, **Reverb** and **Drive**; FX1's CONTROL knob is the echo's time. The left **HI / MID / LOW** shape the tone like a mixer (flat in the middle), and the left **FILTER** sweeps a low-pass one way and a high-pass the other.
+- **Right side: the instrument's own dials.** FX2's three knobs and CONTROL, then the right HI / MID / LOW and FILTER, are the instrument's first eight dials, in the order its panel shows them. Change instrument and they follow.
+- **Point any knob at anything.** In Decks, each knob has a menu: any effect, any dial, Echo repeats, Crush, the volume, the ambience volume, or nothing.
+- **Buttons.** FX1 ON switches all effects; FX1 1, 2, 3 switch Echo, Reverb, Drive (their lights follow). FX2 ON steps to your next saved sound; FX2 1 and 2 step through the instrument's presets; FX2 3 puts effects and tone back to neutral.
+- **Saved sounds.** In Decks, name a sound and press **Save**: it keeps the instrument, every one of its dials, and the effects and tone. Click a saved sound to bring it all back.
+- The controller's buttons and pads never play notes, and the sliders in Decks do everything the knobs do, so the effects work without the controller too.
+- With no controller and no effect turned up, the sound path is exactly as it was.
+
+**Not yet:** the jog wheels, faders, crossfader and pads do nothing.
+
+**Things to try, and tell me how they sound** (I can't hear them from here): Drive and Crush at a quarter, half and full; the tone knobs fully left and right; Echo with CONTROL short and long; a saved sound that switches instrument.
+
 <!-- title: A real eruption, a natural lava shore, and a clearer storm base -->
 **Install:** click the round-arrows button in the app's top bar (left of Keep); when it turns into an orange **Update**, click it and choose **Install Update**. Your settings, presets and keeps stay as they are. (No app yet on this Mac? Download the **.dmg** below, drag *In Strum Meants* onto *Applications*, then right-click the app → **Open** → **Open**.)
 

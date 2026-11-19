@@ -23,6 +23,14 @@ public final class AudioEngine {
     let manualRendering: Bool
     private let manualSampleRate: Double
     private var instrument: AVAudioUnit?
+    /// The effects and tone after the instrument (`FXChain`). They are only put into the signal path the first time
+    /// they are wanted (`insertFX`): until then the graph is exactly as it always was.
+    private let fx = FXChain()
+    private var fxInserted = false
+    /// Asked for before the engine first started: `start` puts them in.
+    private var fxWanted = false
+    /// Where the instrument plays into: the effects when they are in the path, else its bus.
+    private var instrumentInput: AVAudioNode { fxInserted ? fx.input : instrumentBus }
     struct Shared {
         var midiBlock: AUScheduleMIDIEventBlock?
         var level: Float = 0
@@ -72,6 +80,10 @@ public final class AudioEngine {
             engine.attach(instrumentBus)
             engine.connect(instrumentBus, to: engine.mainMixerNode, format: renderFormat())
         }
+        if fxWanted {
+            fxWanted = false
+            insertFXNow()
+        }
         applySleepGain()
         if !manualRendering { installLevelTap() }   // taps don't run in offline manual rendering
         engine.prepare()
@@ -107,12 +119,43 @@ public final class AudioEngine {
         ambience?.setPlaying(false)
         if let old = instrument { engine.detach(old) }
         engine.attach(unit)
-        engine.connect(unit, to: instrumentBus, format: renderFormat())
+        engine.connect(unit, to: instrumentInput, format: renderFormat())
         instrument = unit
         let block = unit.auAudioUnit.scheduleMIDIEventBlock
         shared.withLockUnchecked { $0.midiBlock = block }
         if !engine.isRunning { try engine.start() }
     }
+
+    // MARK: - Effects and tone (the controller's knobs)
+
+    /// Sets the effects and tone. Any thread; it only moves the effect units' own controls. Nothing is heard until
+    /// `insertFX` has put them in the path.
+    public func setFX(_ settings: SoundFX) { fx.apply(settings) }
+
+    /// The effects' settings in use (tests).
+    var fxInUse: SoundFX { fx.current }
+
+    /// Puts the effects between the instrument and its bus: instrument → drive → crush → tone → echo → reverb → bus.
+    /// The level and sound-character tap, the sleep fade and the master volume all stay after them, as they were for the
+    /// bare instrument. Once, on the main thread; safe to call again and before the engine has started.
+    @MainActor
+    public func insertFX() {
+        guard instrumentBus.engine != nil else { fxWanted = true; return }
+        insertFXNow()
+    }
+
+    private func insertFXNow() {
+        guard !fxInserted else { return }
+        fx.apply(fx.current)   // the units' fixed settings, before any sound goes through them
+        for node in fx.nodes { engine.attach(node) }
+        if let unit = instrument { engine.disconnectNodeOutput(unit) }
+        fx.connect(in: engine, to: instrumentBus, format: renderFormat())
+        fxInserted = true
+        if let unit = instrument { engine.connect(unit, to: instrumentInput, format: renderFormat()) }
+    }
+
+    /// Whether the effects are in the instrument's path (tests).
+    var fxInPath: Bool { fxInserted }
 
     /// The loaded instrument when it's one of the app's own.
     public var loadedBuiltIn: BuiltInInstrumentAU? { instrument?.auAudioUnit as? BuiltInInstrumentAU }
@@ -322,9 +365,13 @@ public final class AudioEngine {
     func rebuildOutput() {
         engine.disconnectNodeOutput(instrumentBus)
         engine.connect(instrumentBus, to: engine.mainMixerNode, format: renderFormat())
+        if fxInserted {
+            for node in fx.nodes { engine.disconnectNodeOutput(node) }
+            fx.connect(in: engine, to: instrumentBus, format: renderFormat())
+        }
         if let unit = instrument {
             engine.disconnectNodeOutput(unit)
-            engine.connect(unit, to: instrumentBus, format: renderFormat())
+            engine.connect(unit, to: instrumentInput, format: renderFormat())
         }
         if let unit = ambienceUnit {
             engine.disconnectNodeOutput(ambienceBus)

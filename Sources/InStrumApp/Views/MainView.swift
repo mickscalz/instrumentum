@@ -9,10 +9,12 @@ struct MainView: View {
     @State private var volume: Float = 0.8
     @State private var showSettings = false
     @State private var showVisuals = false
+    @State private var showDecks = false
 
     var body: some View {
         VStack(spacing: 0) {
             topBar
+            StepBar(model: model)
             HStack(spacing: 0) {
                 MetalCanvas(model: model)
                     .overlay(alignment: .top) { ToastBanner(model: model) }
@@ -86,13 +88,16 @@ struct MainView: View {
             .disabled(!isPlaying)
             Button(role: .destructive) { model.panic() } label: { Label("Panic", systemImage: "speaker.slash.fill") }
                 .help("Silence everything")
+            Button { showDecks.toggle() } label: { Label("Decks", systemImage: "dial.medium") }
+                .help("The DDJ-ERGO's knobs, effects and tone, and your saved sounds")
+                .popover(isPresented: $showDecks, arrowEdge: .bottom) { ControllerPanel(model: model) }
             Button { showVisuals.toggle() } label: { Label("Visuals", systemImage: "sparkles") }
                 .help("Theme, look and display settings")
             Button { showSettings.toggle() } label: { Label("Sound & MIDI", systemImage: "gearshape") }
                 .help("Output, buffer, restart audio, MIDI keyboards and channel, touch")
                 .popover(isPresented: $showSettings, arrowEdge: .bottom) { SettingsPopover(model: model) }
             Image(systemName: "speaker.wave.2.fill").foregroundStyle(.secondary)
-            Slider(value: Binding(get: { Double(volume) },
+            Slider(value: Binding(get: { Double(model.volume) },   // the controller and a keyboard's knob move it too
                                   set: { volume = Float($0); model.setVolume(volume) }), in: 0...1)
                 .frame(width: 110)
         }

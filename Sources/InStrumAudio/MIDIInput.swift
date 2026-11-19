@@ -25,33 +25,47 @@ public final class MIDIInput {
     private let onSourcesChanged: ([String], Bool) -> Void
     /// When each source last sent a note or controller (system uptime), written on the CoreMIDI thread.
     private let activity = OSAllocatedUnfairLock(initialState: [Int: Double]())
+    /// The tags of the sources that are a controller (a bank of knobs, not a keyboard): read on the CoreMIDI thread.
+    private let controllerTags = OSAllocatedUnfairLock(initialState: Set<Int>())
+    private let isController: (String) -> Bool
+    /// For lighting the controller's buttons.
+    private var outPort = MIDIPortRef()
 
     /// - onBytes: raw bytes plus a timestamp in seconds (system uptime), on the CoreMIDI thread.
     /// - onSourcesChanged: current source names, and whether a source was removed.
+    /// - isController: whether the input with this name is a controller; its bytes then go to `onControllerBytes` (on
+    ///   the CoreMIDI thread) and never to `onBytes`, so its buttons and knobs can't play or disturb the instrument.
     public init(onBytes: @escaping ([UInt8], Double) -> Void,
-                onSourcesChanged: @escaping (_ names: [String], _ sourceRemoved: Bool) -> Void) throws {
+                onSourcesChanged: @escaping (_ names: [String], _ sourceRemoved: Bool) -> Void,
+                isController: @escaping (String) -> Bool = { _ in false },
+                onControllerBytes: @escaping ([UInt8], Double) -> Void = { _, _ in }) throws {
         self.onSourcesChanged = onSourcesChanged
+        self.isController = isController
         var status = MIDIClientCreateWithBlock("In Strum Meants" as CFString, &client) { [weak self] note in
             let id = note.pointee.messageID
             if Thread.isMainThread { self?.handle(id) } else { DispatchQueue.main.async { self?.handle(id) } }
         }
         guard status == noErr else { throw MIDIInputError.clientFailed(status) }
         let activity = self.activity
+        let controllerTags = self.controllerTags
         status = MIDIInputPortCreateWithProtocol(client, "In Strum Meants In" as CFString, ._1_0, &port) { list, refCon in
             let time = ProcessInfo.processInfo.systemUptime
             let tag = Int(bitPattern: refCon)
+            let fromController = tag != 0 && controllerTags.withLock { $0.contains(tag) }
             for bytes in MIDIInput.messages(in: list) where !bytes.isEmpty {
                 // Notes and controllers light the activity dot (clock and active sensing don't).
                 if tag != 0, let status = bytes.first, status >= 0x80, status < 0xF0 { activity.withLock { $0[tag] = time } }
-                onBytes(bytes, time)
+                if fromController { onControllerBytes(bytes, time) } else { onBytes(bytes, time) }
             }
         }
         guard status == noErr else { throw MIDIInputError.portFailed(status) }
+        MIDIOutputPortCreate(client, "In Strum Meants Out" as CFString, &outPort)   // lights only: fine to go without
         refresh()
     }
 
     deinit {
         MIDIPortDispose(port)
+        if outPort != 0 { MIDIPortDispose(outPort) }
         MIDIClientDispose(client)
     }
 
@@ -106,6 +120,10 @@ public final class MIDIInput {
             let tag: Int
             if let t = tags[uid] { tag = t } else { nextTag += 1; tag = nextTag; tags[uid] = tag }
             tagNames[tag] = name
+            let controller = isController(name)
+            controllerTags.withLock { tags in
+                if controller { tags.insert(tag) } else { tags.remove(tag) }
+            }
             if !disabled.contains(name) {
                 if connected[uid] == nil, MIDIPortConnectSource(port, src, UnsafeMutableRawPointer(bitPattern: tag)) == noErr {
                     connected[uid] = src
@@ -121,6 +139,25 @@ public final class MIDIInput {
         guard names != sourceNames || removed || force else { return }
         sourceNames = names
         onSourcesChanged(names, removed)
+    }
+
+    // MARK: - The controller's lights
+
+    /// Sends short MIDI messages (three bytes each: a status and two data bytes) to every MIDI output that is a
+    /// controller, to light its buttons. Main thread. Does nothing when there is none.
+    public func sendToController(_ messages: [[UInt8]]) {
+        guard outPort != 0, !messages.isEmpty else { return }
+        for i in 0..<MIDIGetNumberOfDestinations() {
+            let destination = MIDIGetDestination(i)
+            guard destination != 0, isController(Self.name(of: destination)) else { continue }
+            for bytes in messages where bytes.count == 3 {
+                var word: UInt32 = 0x2000_0000 | UInt32(bytes[0]) << 16 | UInt32(bytes[1] & 0x7F) << 8 | UInt32(bytes[2] & 0x7F)
+                var list = MIDIEventList()
+                let packet = MIDIEventListInit(&list, ._1_0)
+                _ = MIDIEventListAdd(&list, MemoryLayout<MIDIEventList>.size, packet, 0, 1, &word)
+                MIDISendEventList(outPort, destination, &list)
+            }
+        }
     }
 
     private static func name(of endpoint: MIDIEndpointRef) -> String {

@@ -56,6 +56,10 @@ public protocol InstrumentEngine: AnyObject {
     func endInstrumentRecording() -> Int
     /// How long the current (or last) recording has run, in seconds.
     var recordingSeconds: Double { get }
+    /// The effects and tone after the instrument (the controller's knobs). Any thread.
+    func setFX(_ settings: SoundFX)
+    /// Puts the effects in the instrument's path, once; until then the sound path is as it always was.
+    @MainActor func insertFX()
 }
 
 public extension InstrumentEngine {
@@ -81,6 +85,8 @@ public extension InstrumentEngine {
     func beginInstrumentRecording(to url: URL) throws {}
     func endInstrumentRecording() -> Int { 0 }
     var recordingSeconds: Double { 0 }
+    func setFX(_ settings: SoundFX) {}
+    @MainActor func insertFX() {}
 }
 
 /// What the app model needs from the MIDI input (lets tests use a fake).
@@ -90,6 +96,12 @@ public protocol MIDIControlling: AnyObject {
     func rescan()
     /// When the input with this name last sent a note or controller (system uptime).
     func lastActivity(_ name: String) -> Double?
+    /// Lights the controller's buttons (three-byte MIDI messages to every output that is a controller).
+    func sendToController(_ messages: [[UInt8]])
+}
+
+public extension MIDIControlling {
+    func sendToController(_ messages: [[UInt8]]) {}
 }
 
 extension MIDIInput: MIDIControlling {}

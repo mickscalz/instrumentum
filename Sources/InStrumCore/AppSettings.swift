@@ -60,6 +60,14 @@ public struct AppSettings: Codable, Equatable {
     /// sets it held. A build with a newer newest set, or more sets, opens on its newest once (`opensOnWhatsNew`). Settings
     /// saved before the rule have neither (nil), so they open on it once too; a first install starts with this build's
     /// own, as it has nothing it hasn't seen.
+    /// The effects and tone after the instrument, and which of the controller's knobs moves what (the DDJ-ERGO). The
+    /// app's, not a set's; saved before they existed, they load as neutral and the default layout.
+    public var soundFX = SoundFX()
+    public var controlLayout = ControlLayout()
+    /// Which of the controller's buttons does what and which wheel turns what.
+    public var buttonLayout = ButtonLayout()
+    /// The saved sound last chosen (the controller's "next sound" button steps on from it).
+    public var soundPresetName: String?
     public var lastNewestSetID: String? = SetLibrary.newest.id
     public var lastSetCount: Int? = SetLibrary.all.count
 
@@ -72,6 +80,7 @@ public struct AppSettings: Codable, Equatable {
              qualityVersion, sky, ambience, activeSetID, outputDeviceUID, midiChannel, disabledMIDISources
         case holdPedal, keyboardRange, breath, followReduceMotion, excitement
         case lastNewestSetID, lastSetCount
+        case soundFX, controlLayout, soundPresetName, buttonLayout
     }
 
     /// True when this build's gallery holds something the last launch didn't see: a newer newest set, or more sets than
@@ -114,6 +123,10 @@ public struct AppSettings: Codable, Equatable {
         breath = (try? c.decodeIfPresent(AmbienceBreathSettings.self, forKey: .breath)) ?? d.breath
         followReduceMotion = (try? c.decodeIfPresent(Bool.self, forKey: .followReduceMotion)) ?? d.followReduceMotion
         excitement = (try? c.decodeIfPresent(ExcitementSettings.self, forKey: .excitement)) ?? d.excitement
+        soundFX = (try? c.decodeIfPresent(SoundFX.self, forKey: .soundFX)) ?? d.soundFX
+        controlLayout = (try? c.decodeIfPresent(ControlLayout.self, forKey: .controlLayout)) ?? d.controlLayout
+        buttonLayout = (try? c.decodeIfPresent(ButtonLayout.self, forKey: .buttonLayout)) ?? d.buttonLayout
+        soundPresetName = (try? c.decodeIfPresent(String.self, forKey: .soundPresetName)) ?? nil
         // Absent (saved before "opens on what's new"): nil, not this build's, so the next launch opens on the newest once.
         lastNewestSetID = (try? c.decodeIfPresent(String.self, forKey: .lastNewestSetID)) ?? nil
         lastSetCount = (try? c.decodeIfPresent(Int.self, forKey: .lastSetCount)) ?? nil
