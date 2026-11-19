@@ -214,6 +214,7 @@ final class LayerPlayerTests: XCTestCase {
         let middle = Array(out.left[(first + 6000)..<(first + 42_000)])
         let pitch = DSPTestKit.fundamental(middle, sampleRate: 48_000, near: 1000)
         let level = PlaybackAudio.peak(out.left[...])
+        player.stop()
         XCTAssertEqual(duration, 1, accuracy: 0.001, "one second at 48 kHz")
         XCTAssertEqual(Double(heardFrames), 48_000, accuracy: 48, "heard for one second, within 1 ms")
         XCTAssertEqual(pitch, 1000, accuracy: 1, "still 1 kHz")

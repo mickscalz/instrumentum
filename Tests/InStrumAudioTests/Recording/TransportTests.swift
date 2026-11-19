@@ -132,6 +132,7 @@ final class TransportTests: XCTestCase {
         let freeWraps = wraps(freeFrames).count
         let furthest = freeFrames.max() ?? 0
         let ranOn = Int(again - run.start)
+        _ = e.transportPause()   // stop reading the file before it is deleted
 
         XCTAssertEqual(ranOn, 512)
         XCTAssertEqual(pressed, 1.3, accuracy: 1e-9)
@@ -169,6 +170,7 @@ final class TransportTests: XCTestCase {
         let from = max(0, first) * 48 + 14_400
         let middle = Array(out.left[from..<min(out.left.count, from + 48_000)])
         let pitch = DSPTestKit.fundamental(middle, sampleRate: rate, near: 1000)
+        _ = e.transportPause()
 
         XCTAssertGreaterThan(loudest, 0.3)
         XCTAssertEqual(heard, 2 / 0.9, accuracy: 0.02, "1/0.9 as long, within 20 ms")
