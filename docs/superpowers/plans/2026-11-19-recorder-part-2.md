@@ -91,3 +91,10 @@ A layout he changed by hand keeps his choices, as today.
 
 **Tests:** each default above resolves to its action/target; each action calls the model (stub engine); each light follows its state (`DDJErgoDecoder.light` messages sent on a state change, including the blink at 2 Hz through the count-in); the tempo slider's centre is exactly 100%; scrubbing while recording does nothing and toasts; `Default layout` applies the table; a saved layout from build 247 still decodes.
 **Release note must say** which buttons changed, and that everything can be put back in Decks.
+
+## Task 7, added 19 Nov (Michael: the right TEMPO slider "could be how long the day is … not the time of day, that's a different setting")
+- **New knob target `dayLength`** ("Day length") in `WorldParam`: quick mode's day length (`SkyClock`'s "one day lasts this many minutes", 2…60). The slider's centre is the designed default; slower (longer day) toward the top as a DJ tempo slider slows a track, on a curve that gives the short days room (geometric between 2 and 60 minutes).
+- Moving it switches Time to **Quick** if it was real time or frozen (as the time-of-day knob switches to Frozen), and shows a small message "Day: 12 minutes".
+- **Default: the right TEMPO slider is Day length** (it was mood motion, which stays in every knob's menu). The left TEMPO slider is the track's tempo.
+- Time of day stays where he put it: the crossfader and the right wheel. Do not move or duplicate it.
+- Tests: the slider's ends give 2 and 60 minutes; the centre gives the default; moving it from Frozen switches to Quick; a layout saved in build 247 that had the right TEMPO on mood motion by hand keeps it.
