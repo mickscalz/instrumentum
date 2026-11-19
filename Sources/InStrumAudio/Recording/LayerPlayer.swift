@@ -205,35 +205,6 @@ final class PlaybackFile: @unchecked Sendable {
     }
 }
 
-/// Keeps a looping player's copies coming (from its completion handlers, off the main thread) only while its pass is the
-/// current one: every stop starts a new pass first, under the same lock, so a copy can never be scheduled onto a
-/// stopped player.
-final class LoopFeed: @unchecked Sendable {
-    private let lock = NSRecursiveLock()
-    private var pass = 0
-
-    /// Ends the current pass; returns the new one.
-    func next() -> Int {
-        lock.lock()
-        defer { lock.unlock() }
-        pass += 1
-        return pass
-    }
-
-    var current: Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return pass
-    }
-
-    /// Runs `body` only while `token` is the current pass, holding the lock throughout.
-    func ifCurrent(_ token: Int, _ body: () -> Void) {
-        lock.lock()
-        defer { lock.unlock() }
-        if pass == token { body() }
-    }
-}
-
 /// Plays files on a bus (Recorder spec §4, §5.1, §7): one `AVAudioPlayerNode` per file, all started at one sample time,
 /// each with its gain (0…2) and its offset (where its first frame sits on the recording's clock; negative is earlier).
 /// A file at another rate is resampled on load. The players are attached on the first load and stay attached (a rebuild
@@ -250,7 +221,9 @@ public final class LayerPlayer {
     private var files: [PlaybackFile] = []
     private var offsets: [Int] = []
     private var gains: [Float] = []
-    private let feed = LoopFeed()
+    /// Each file's part of the loop, as a buffer the loop's length, and the loop it was read for.
+    private var loopBuffers: [AVAudioPCMBuffer?] = []
+    private var loopBuffersFor: Range<Int>?
     private var playing = false
     private var startSample: Int64 = 0
     private var startFrame = 0
@@ -271,7 +244,6 @@ public final class LayerPlayer {
     }
 
     deinit {
-        _ = feed.next()
         for node in nodes {
             node.stop()
             engine.detach(node)
@@ -313,6 +285,8 @@ public final class LayerPlayer {
         offsets = items.map { $0.offsetFrames }
         gains = items.map { Self.held($0.gain) }
         for i in nodes.indices { nodes[i].volume = gains[i] }
+        loopBuffers = []
+        loopBuffersFor = nil
         stoppedFrame = 0
     }
 
@@ -325,7 +299,6 @@ public final class LayerPlayer {
 
     public func stop() {
         stoppedFrame = currentFrame
-        _ = feed.next()
         for node in nodes { node.stop() }
         playing = false
     }
@@ -367,24 +340,26 @@ public final class LayerPlayer {
     // MARK: - Scheduling (the transport's too)
 
     /// Stops, then schedules every file as heard from frame `from` of the recording's clock on, at player times counted
-    /// from the start plus `delay`; with `loop` (if `from` is before its end), up to the loop's end and then copies of the
-    /// loop back to back, kept a few seconds ahead. Then reads ahead.
+    /// from the start plus `delay`. With `loop` (if `from` is before its end): up to the loop's end as a file segment,
+    /// then the loop's part of the file as one buffer that loops on the sample until the player stops (no rescheduling).
+    /// Then reads ahead.
     func cue(from: Int, loop requested: Range<Int>?, delay: Int = 0) {
         stop()
-        let token = feed.current
         var active: Range<Int>?
         if let requested, requested.count > 0, from < requested.upperBound { active = requested }
+        if let active, loopBuffersFor != active || loopBuffers.count != files.count {
+            var buffers: [AVAudioPCMBuffer?] = []
+            for i in files.indices { buffers.append(Self.loopBuffer(files[i], offset: offsets[i], loop: active, format: format)) }
+            loopBuffers = buffers
+            loopBuffersFor = active
+        }
         for i in nodes.indices {
-            let node = nodes[i], file = files[i], offset = offsets[i]
+            let node = nodes[i]
             let headEnd = active?.upperBound ?? Int.max
-            Self.schedule(node, file, offset: offset, span: from..<headEnd, at: delay, rate: sampleRate, completion: nil)
-            if let active {
-                let firstCopy = delay + (active.upperBound - from)
-                let ahead = Self.copiesAhead(loopFrames: active.count, rate: sampleRate)
-                for k in 0..<ahead {
-                    Self.scheduleCopy(k, node: node, file: file, offset: offset, loop: active, firstAt: firstCopy,
-                                      ahead: ahead, rate: sampleRate, feed: feed, token: token)
-                }
+            Self.schedule(node, files[i], offset: offsets[i], span: from..<headEnd, at: delay, rate: sampleRate)
+            if let active, let buffer = loopBuffers[i] {
+                let when = AVAudioTime(sampleTime: AVAudioFramePosition(delay + active.upperBound - from), atRate: sampleRate)
+                node.scheduleBuffer(buffer, at: when, options: .loops, completionHandler: nil)
             }
         }
         if engine.isRunning {
@@ -406,37 +381,49 @@ public final class LayerPlayer {
         playing = true
     }
 
-    /// Copies of a loop to keep scheduled: at least 4 s of them, at least two.
-    static func copiesAhead(loopFrames: Int, rate: Double) -> Int {
-        guard loopFrames > 0 else { return 2 }
-        return max(2, min(200, Int((4 * rate / Double(loopFrames)).rounded(.up)) + 1))
-    }
-
     /// Schedules the part of `file` heard while frames `span` of the recording's clock play, the first of them at player
     /// time `at`. False when none of the file falls in the span.
     @discardableResult
     static func schedule(_ node: AVAudioPlayerNode, _ file: PlaybackFile, offset: Int, span: Range<Int>, at time: Int,
-                         rate: Double, completion: AVAudioPlayerNodeCompletionHandler?) -> Bool {
+                         rate: Double) -> Bool {
         let first = max(span.lowerBound, offset)
         let end = min(span.upperBound, offset + file.frames)
         guard end > first else { return false }
         let when = AVAudioTime(sampleTime: AVAudioFramePosition(time + (first - span.lowerBound)), atRate: rate)
         node.scheduleSegment(file.file, startingFrame: AVAudioFramePosition(first - offset), frameCount: AVAudioFrameCount(end - first),
-                             at: when, completionCallbackType: .dataConsumed, completionHandler: completion)
+                             at: when, completionHandler: nil)
         return true
     }
 
-    /// Schedules copy `k` of the loop; when its data has been taken, copy `k + ahead` follows (while the pass lasts).
-    static func scheduleCopy(_ k: Int, node: AVAudioPlayerNode, file: PlaybackFile, offset: Int, loop: Range<Int>, firstAt: Int,
-                             ahead: Int, rate: Double, feed: LoopFeed, token: Int) {
-        feed.ifCurrent(token) {
-            let at = firstAt + k * loop.count
-            schedule(node, file, offset: offset, span: loop, at: at, rate: rate) { [weak node] _ in
-                guard let node else { return }
-                scheduleCopy(k + ahead, node: node, file: file, offset: offset, loop: loop, firstAt: firstAt, ahead: ahead,
-                             rate: rate, feed: feed, token: token)
-            }
+    /// The part of `file` that falls in `loop` (frames on the recording's clock), in a buffer the loop's length with
+    /// silence where the file has nothing; nil when none of it falls there or it can't be read. Read through a handle of
+    /// its own, so a player reading the same file is never disturbed.
+    static func loopBuffer(_ file: PlaybackFile, offset: Int, loop: Range<Int>, format: AVAudioFormat) -> AVAudioPCMBuffer? {
+        let first = max(loop.lowerBound, offset)
+        let end = min(loop.upperBound, offset + file.frames)
+        guard end > first,
+              let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(loop.count)),
+              let channels = buffer.floatChannelData,
+              let reader = try? AVAudioFile(forReading: file.file.url),
+              reader.processingFormat.channelCount == 2,
+              let part = AVAudioPCMBuffer(pcmFormat: reader.processingFormat, frameCapacity: AVAudioFrameCount(end - first)) else {
+            return nil
         }
+        buffer.frameLength = AVAudioFrameCount(loop.count)
+        channels[0].update(repeating: 0, count: loop.count)
+        channels[1].update(repeating: 0, count: loop.count)
+        reader.framePosition = AVAudioFramePosition(first - offset)
+        do {
+            try reader.read(into: part, frameCount: AVAudioFrameCount(end - first))
+        } catch {
+            return nil
+        }
+        guard let source = part.floatChannelData else { return nil }
+        let count = min(Int(part.frameLength), end - first)
+        let at = first - loop.lowerBound
+        (channels[0] + at).update(from: source[0], count: count)
+        (channels[1] + at).update(from: source[1], count: count)
+        return buffer
     }
 
     private static func held(_ g: Float) -> Float { g.isFinite ? min(max(g, 0), 2) : 0 }

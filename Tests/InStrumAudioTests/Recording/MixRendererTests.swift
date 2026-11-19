@@ -1,5 +1,6 @@
 import XCTest
 import AVFoundation
+import AudioToolbox
 @testable import InStrumAudio
 @testable import InStrumCore
 
@@ -16,6 +17,22 @@ final class MixRendererTests: XCTestCase {
 
     override func tearDownWithError() throws {
         try? FileManager.default.removeItem(at: dir)
+    }
+
+    /// The audio data's size (without the file's headers), its declared bit rate and its packets, as Core Audio reads them.
+    private func audioData(_ url: URL) -> (bytes: UInt64, bitRate: UInt32, packets: UInt64) {
+        var id: AudioFileID?
+        guard AudioFileOpenURL(url as CFURL, .readPermission, 0, &id) == noErr, let file = id else { return (0, 0, 0) }
+        defer { AudioFileClose(file) }
+        var bytes: UInt64 = 0, packets: UInt64 = 0
+        var bitRate: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt64>.size)
+        AudioFileGetProperty(file, kAudioFilePropertyAudioDataByteCount, &size, &bytes)
+        size = UInt32(MemoryLayout<UInt64>.size)
+        AudioFileGetProperty(file, kAudioFilePropertyAudioDataPacketCount, &size, &packets)
+        size = UInt32(MemoryLayout<UInt32>.size)
+        AudioFileGetProperty(file, kAudioFilePropertyBitRate, &size, &bitRate)
+        return (bytes, bitRate, packets)
     }
 
     private func rms(_ x: [Float]) -> Double {
@@ -69,8 +86,12 @@ final class MixRendererTests: XCTestCase {
         try m4a.read(into: decoded)
         let m4aLeft = Array(UnsafeBufferPointer(start: decoded.floatChannelData![0], count: Int(decoded.frameLength)))
         let levelDifference = 20 * log10(rms(m4aLeft) / rms(wav.left))
-        let bytes = (try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.doubleValue ?? 0
-        let kbps = bytes * 8 / m4aSeconds / 1000
+        let fileBytes = (try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.doubleValue ?? 0
+        let audio = audioData(url)
+        let kbps = Double(audio.bytes) * 8 / m4aSeconds / 1000
+        let declaredKbps = Double(audio.bitRate) / 1000
+        let numbers = "audio data \(audio.bytes) bytes = \(kbps) kbps; declared \(declaredKbps) kbps; file \(fileBytes) bytes; "
+            + "\(audio.packets) packets; \(m4aSeconds) s; settings \(m4a.fileFormat.settings)"
         let headroom = expected.gain
 
         XCTAssertEqual(url.lastPathComponent, "Mix.m4a")
@@ -85,7 +106,8 @@ final class MixRendererTests: XCTestCase {
         XCTAssertEqual(format.mChannelsPerFrame, 2)
         XCTAssertEqual(m4aSeconds, wavSeconds, accuracy: 0.05)
         XCTAssertEqual(levelDifference, 0, accuracy: 1, "within 1 dB")
-        XCTAssertEqual(kbps, 256, accuracy: 40, "AAC at 256 kbps")
+        XCTAssertEqual(kbps, 256, accuracy: 40, "AAC at 256 kbps: " + numbers)
+        XCTAssertEqual(declaredKbps, 256, accuracy: 40, "AAC at 256 kbps: " + numbers)
     }
 
     func testMutedLayersAreLeftOut() throws {
