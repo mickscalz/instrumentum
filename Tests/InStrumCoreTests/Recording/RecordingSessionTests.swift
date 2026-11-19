@@ -135,4 +135,25 @@ final class RecordingSessionTests: XCTestCase {
         s.layers[0].offsetFrames = -480
         XCTAssertEqual(s.duration, 0, "a layer that ends before the start adds no length")
     }
+
+    /// Recorder part 2: the track's speed the layers were recorded at. A new recording, and one saved before the tempo
+    /// existed, play the track at full speed.
+    func testTrackRateDefaultsToOneAndOldFilesReadAtFullSpeed() throws {
+        var s = session()
+        let fresh = s.trackRate
+        s.trackRate = 0.95
+        let data = try JSONEncoder().encode(s)
+        let back = try JSONDecoder().decode(RecordingSession.self, from: data)
+        let old = Data("""
+        {"title": "Old Lake", "sampleRate": 44100, "appVersion": "1.0",
+         "layers": [{"id": 1, "kind": "instrument", "name": "Felt Glass", "fileName": "Layer 1 — Felt Glass.wav"}]}
+        """.utf8)
+        let read = try JSONDecoder().decode(RecordingSession.self, from: old)
+        let readLayers = read.layers.count
+        XCTAssertEqual(fresh, 1)
+        XCTAssertEqual(back.trackRate, 0.95)
+        XCTAssertEqual(back, s, "it reads back as written")
+        XCTAssertEqual(read.trackRate, 1, "a file from before the tempo reads at full speed")
+        XCTAssertEqual(readLayers, 1)
+    }
 }
