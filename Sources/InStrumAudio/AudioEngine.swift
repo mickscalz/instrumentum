@@ -379,6 +379,7 @@ public final class AudioEngine {
             engine.disconnectNodeOutput(unit)
             engine.connect(unit, to: ambienceBus, format: renderFormat())
         }
+        reconnectInputs()
         reconnectRecordingBuses()
         applySleepGain()
         if !manualRendering {   // offline rendering (tests only) has no device buffer, and taps don't run in it
@@ -400,6 +401,8 @@ public final class AudioEngine {
     public private(set) var usingFallback = false
     /// How many times the sound had to be restarted.
     public private(set) var restarts = 0
+    /// The Recorder's inputs (Play along from BlackHole, Live input): none made until one is chosen (AudioEngine+Inputs).
+    var inputParts = InputParts()
 
     public var isRunning: Bool { manualRendering || engine.isRunning }
 
@@ -408,8 +411,8 @@ public final class AudioEngine {
         manualRendering ? manualSampleRate : engine.outputNode.outputFormat(forBus: 0).sampleRate
     }
 
-    /// The device the output is really playing to.
-    private func currentDeviceID() -> AudioDeviceID? {
+    /// The device the output is really playing to (also the Recorder's no-howl rule, AudioEngine+Inputs).
+    func currentDeviceID() -> AudioDeviceID? {
         guard let unit = engine.outputNode.audioUnit else { return nil }
         var id = AudioDeviceID(0)
         var size = UInt32(MemoryLayout<AudioDeviceID>.size)
