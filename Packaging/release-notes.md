@@ -1,3 +1,15 @@
+<!-- title: Sets, worlds, instruments and transpose on the main page; the instrument window fixed -->
+**Install:** click the round-arrows button in the app's top bar (left of Keep); when it turns into an orange **Update**, click it and choose **Install Update**. Your settings, presets, saved sounds and keeps stay as they are.
+
+- **A new row under the top bar** with arrows either side of each name:
+  - **Set**: previous and next set (its world, instrument, ambience and mood together).
+  - **World**: previous and next world.
+  - **Instrument**: previous and next instrument.
+  - **Transpose**: minus and plus a semitone, up to an octave either way, and **0** to go back. Going up shows the capo fret ("+3 · capo 3"). It is the same transpose as in the instrument's own window, so it is saved with the instrument. It works with the app's own instruments; a plugin has its own.
+- **The instrument window is fixed.** Its title and preset menu were cut off at the top and the "inspired by" card was squashed at the bottom, on every instrument. The window is now exactly as tall as its contents, the card keeps its proper size, and on a screen too short for an instrument with many dials the window scrolls instead of cutting anything off.
+
+<!-- older -->
+
 <!-- title: The eight FX knobs are the instrument's dials, in order -->
 **Install:** click the round-arrows button in the app's top bar (left of Keep); when it turns into an orange **Update**, click it and choose **Install Update**. Your settings, presets, saved sounds and keeps stay as they are.
 
@@ -10,8 +22,6 @@
 **The effects moved to the right-hand mixer knobs** to make room: right **HI** is Echo, **MID** is Reverb, **LOW** is Drive and **FILTER** is the echo's time. The left HI / MID / LOW / FILTER are still the tone and the filter, and the left GAIN the echo's repeats. Buttons, faders and wheels are as in the last build.
 
 If you changed any knob's menu in Decks yourself, that knob keeps your choice; **Default layout** in Decks puts everything on the layout above.
-
-<!-- older -->
 
 <!-- title: The whole DDJ-ERGO now plays: the world on the faders, buttons for everything, and your keyboard's volume knob -->
 **Install:** click the round-arrows button in the app's top bar (left of Keep); when it turns into an orange **Update**, click it and choose **Install Update**. Your settings, presets, saved sounds and keeps stay as they are.

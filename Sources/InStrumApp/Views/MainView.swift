@@ -14,6 +14,7 @@ struct MainView: View {
     var body: some View {
         VStack(spacing: 0) {
             topBar
+            StepBar(model: model)
             HStack(spacing: 0) {
                 MetalCanvas(model: model)
                     .overlay(alignment: .top) { ToastBanner(model: model) }

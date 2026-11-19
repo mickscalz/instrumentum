@@ -9,6 +9,8 @@ import InStrumCore
 struct BuiltInPanel: View {
     @ObservedObject var model: AppModel
     let unit: BuiltInInstrumentAU
+    /// False only for measuring the panel's full height (the window scrolls when the screen is shorter than that).
+    var scrolls = true
     @State private var refresh = 0
 
     private var allParameters: [AUParameter] { unit.parameterTree?.allParameters ?? [] }
@@ -41,6 +43,17 @@ struct BuiltInPanel: View {
     private var currentPatch: Patch? { model.builtInPatch }
 
     var body: some View {
+        if scrolls {
+            ScrollView(.vertical) { content }
+        } else {
+            content
+        }
+    }
+
+    /// The card's size, fixed: left to fit itself it shrinks when the window is short, and its words pile up.
+    static let cardSize = CGSize(width: 400, height: 240)
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .firstTextBaseline) {
                 Text(unit.engine.displayName).font(.title2.weight(.semibold))
@@ -75,11 +88,12 @@ struct BuiltInPanel: View {
             }
             .help("Fine tune locks onto a recording that sits slightly off standard pitch.")
             if let credit = currentPatch?.credit ?? PatchLibrary.defaultPatch(for: unit.engine).credit {
-                InspiredByCard(credit: credit).frame(width: 400)
+                InspiredByCard(credit: credit).frame(width: Self.cardSize.width, height: Self.cardSize.height)
             }
         }
         .padding(20)
         .frame(width: 440)
+        .fixedSize(horizontal: false, vertical: true)   // every row at its full height, never squeezed by the window
         // The controller's knobs turn these dials without going through the sliders: follow them while it's plugged in.
         .onReceive(Timer.publish(every: 0.15, on: .main, in: .common).autoconnect()) { _ in
             if model.controllerConnected { refresh += 1 }
@@ -176,15 +190,24 @@ final class BuiltInPanelController: NSObject, NSWindowDelegate {
     func show(model: AppModel, unit: BuiltInInstrumentAU) {
         if let window, window.isVisible { window.makeKeyAndOrderFront(nil); return }
         onClose = { model.autosave() }
+        // The window is exactly as tall as the panel, or as tall as the screen allows with the panel scrolling inside.
+        let full = NSHostingController(rootView: BuiltInPanel(model: model, unit: unit, scrolls: false)).view.fittingSize
+        let room = (NSScreen.main?.visibleFrame.height ?? 800) - 60
         let host = NSHostingController(rootView: BuiltInPanel(model: model, unit: unit))
         let w = NSWindow(contentViewController: host)
         w.styleMask = [.titled, .closable, .miniaturizable]
+        w.setContentSize(Self.windowSize(panel: full, room: room))
         w.title = unit.engine.displayName
         w.isReleasedWhenClosed = false
         w.delegate = self
         w.center()
         w.makeKeyAndOrderFront(nil)
         window = w
+    }
+
+    /// The window's content size for a panel of this full size on a screen with this much room.
+    nonisolated static func windowSize(panel: CGSize, room: CGFloat) -> CGSize {
+        CGSize(width: max(440, panel.width), height: max(200, min(panel.height, room)))
     }
 
     func owns(_ window: NSWindow?) -> Bool { window != nil && window === self.window }
