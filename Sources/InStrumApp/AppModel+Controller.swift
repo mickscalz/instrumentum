@@ -560,6 +560,8 @@ extension AppModel {
         case .presetReload: reloadPatch()
         case .instrumentNext: stepInstrument(by: 1)
         case .instrumentPrevious: stepInstrument(by: -1)
+        case .transposeUp: transposeFromController(by: 1)
+        case .transposeDown: transposeFromController(by: -1)
         case .hold:
             toggleHold()
             showToast(holdLatched ? "Holding the moment" : "Hold off", symbol: "hourglass")
@@ -638,6 +640,16 @@ extension AppModel {
             toggleFullScreen()
         }
         lightController()
+    }
+
+    /// Transposes a semitone from a button and says where it is now (a capo fret when it's up).
+    func transposeFromController(by step: Int) {
+        guard transpose != nil else {
+            showToast("Transpose works with the app's own instruments", symbol: "dial.medium")
+            return
+        }
+        stepTranspose(by: step)
+        showToast("Transpose \(StepBar.transposeText(transpose))", symbol: "arrow.up.arrow.down")
     }
 
     /// The sleep timer a button starts.

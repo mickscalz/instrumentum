@@ -252,13 +252,33 @@ final class ControllerTests: XCTestCase {
         XCTAssertEqual(m.skySettings.frozenHour, 6.75, accuracy: 0.0001)
         send(m, [0x91, 49, 127])                       // right HOT CUE 4
         XCTAssertEqual(m.skySettings.frozenHour, 23.5, accuracy: 0.0001)
-        send(m, [0x91, 62, 127])                       // right SAMPLER 2
+        m.perform(.weatherRain)
         XCTAssertEqual(m.skySettings.weather, .rain)
         XCTAssertEqual(m.skySettings.weatherMode, .pick)
         send(m, [0x91, 11, 127])                       // right PLAY
         XCTAssertEqual(m.skySettings.weatherMode, .randomBeautiful)
         send(m, [0x91, 12, 127])                       // right CUE: the clock runs again
         XCTAssertNotEqual(m.skySettings.timeMode, .frozen)
+    }
+
+    /// Michael's layout (19 Nov): SAMPLER 3 and 4 step the world back and on; 7 and 8 transpose down and up.
+    func testTheSamplerButtonsStepTheWorldAndTranspose() async throws {
+        let unit = try BuiltInInstrumentAU(componentDescription: BuiltInCatalog.description(for: .orbitPad), options: [])
+        engine.unit = unit
+        let pad = try XCTUnwrap(BuiltInCatalog.instruments.first { $0.name == BuiltInEngine.orbitPad.displayName })
+        let m = makeModel()
+        await m.choose(pad)
+        let worlds = ThemeRegistry.all.map(\.id)
+        let start = worlds.firstIndex(of: m.themeID) ?? 0
+        send(m, [0x90, 66, 127])                       // left SAMPLER 4: next world
+        XCTAssertEqual(m.themeID, worlds[(start + 1) % worlds.count])
+        send(m, [0x90, 64, 127])                       // left SAMPLER 3: previous world
+        XCTAssertEqual(m.themeID, worlds[start])
+        send(m, [0x91, 66, 127])                       // right SAMPLER 4: transpose up
+        send(m, [0x91, 66, 127])
+        XCTAssertEqual(m.transpose, 2)
+        send(m, [0x91, 64, 127])                       // right SAMPLER 3: transpose down
+        XCTAssertEqual(m.transpose, 1)
     }
 
     func testTheBrowserStepsThroughTheWorlds() {

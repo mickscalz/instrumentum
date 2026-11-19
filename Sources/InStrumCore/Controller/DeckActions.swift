@@ -95,6 +95,7 @@ public enum DeckAction: String, Codable, CaseIterable, Hashable {
     case sound1, sound2, sound3, sound4, sound5, sound6, sound7, sound8
     // The instrument.
     case presetNext, presetPrevious, presetReload, instrumentNext, instrumentPrevious
+    case transposeUp, transposeDown
     // Playing.
     case hold, panic, keepThat, keepTenMinutes, testNote, mute
     // The world.
@@ -116,7 +117,9 @@ public enum DeckAction: String, Codable, CaseIterable, Hashable {
         case .fxAll, .fxEcho, .fxReverb, .fxDrive, .fxReset: return .effects
         case .soundNext, .soundPrevious, .soundSave, .sound1, .sound2, .sound3, .sound4, .sound5, .sound6, .sound7, .sound8:
             return .sounds
-        case .presetNext, .presetPrevious, .presetReload, .instrumentNext, .instrumentPrevious: return .instrument
+        case .presetNext, .presetPrevious, .presetReload, .instrumentNext, .instrumentPrevious, .transposeUp,
+             .transposeDown:
+            return .instrument
         case .hold, .panic, .keepThat, .keepTenMinutes, .testNote, .mute: return .playing
         case .worldNext, .worldPrevious, .setNext, .setPrevious, .setRestore, .surprise, .reactionNext, .moodReset: return .world
         case .weatherNext, .weatherPrevious, .weatherRandom, .weatherClear, .weatherRain, .weatherStorm, .weatherSnow,
@@ -150,6 +153,8 @@ public enum DeckAction: String, Codable, CaseIterable, Hashable {
         case .presetReload: return "Dials back to the preset"
         case .instrumentNext: return "Next instrument"
         case .instrumentPrevious: return "Previous instrument"
+        case .transposeUp: return "Transpose up a semitone"
+        case .transposeDown: return "Transpose down a semitone"
         case .hold: return "Hold the moment on / off"
         case .panic: return "All notes off"
         case .keepThat: return "Keep that"
@@ -344,10 +349,12 @@ public struct ButtonLayout: Codable, Equatable {
         case (.left, .hotCue2): return .sound2
         case (.left, .hotCue3): return .sound3
         case (.left, .hotCue4): return .sound4
-        case (.left, .sampler1): return .sound5
-        case (.left, .sampler2): return .sound6
-        case (.left, .sampler3): return .sound7
-        case (.left, .sampler4): return .sound8
+        // The eight SAMPLER buttons, left to right across the controller (Michael's, 19 Nov): previous and next set,
+        // world and instrument, then transpose down and up.
+        case (.left, .sampler1): return .setPrevious
+        case (.left, .sampler2): return .setNext
+        case (.left, .sampler3): return .worldPrevious
+        case (.left, .sampler4): return .worldNext
         case (.left, .load): return .setPrevious
         case (.left, .headphoneCue): return .testNote
         case (.left, .assignFX1): return .ambience
@@ -365,10 +372,10 @@ public struct ButtonLayout: Codable, Equatable {
         case (.right, .hotCue2): return .timeMidday
         case (.right, .hotCue3): return .timeEvening
         case (.right, .hotCue4): return .timeNight
-        case (.right, .sampler1): return .weatherClear
-        case (.right, .sampler2): return .weatherRain
-        case (.right, .sampler3): return .weatherStorm
-        case (.right, .sampler4): return .weatherSnow
+        case (.right, .sampler1): return .instrumentPrevious
+        case (.right, .sampler2): return .instrumentNext
+        case (.right, .sampler3): return .transposeDown
+        case (.right, .sampler4): return .transposeUp
         case (.right, .load): return .setNext
         case (.right, .headphoneCue): return .keepTenMinutes
         case (.right, .assignFX1): return .sleepTimer

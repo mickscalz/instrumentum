@@ -1,3 +1,17 @@
+<!-- title: The eight SAMPLER buttons: sets, worlds, instruments and transpose -->
+**Install:** click the round-arrows button in the app's top bar (left of Keep); when it turns into an orange **Update**, click it and choose **Install Update**. Your settings, presets, saved sounds and keeps stay as they are.
+
+**The eight SAMPLER buttons**, the left deck's four and then the right deck's four:
+
+- **1 and 2:** previous and next set.
+- **3 and 4:** previous and next world.
+- **5 and 6:** previous and next instrument.
+- **7 and 8:** transpose down and up a semitone (a small message shows where it is, with the capo fret when it's up).
+
+Saved sounds 5 to 8 and the four weathers that were on these buttons are still in every button's menu in Decks; saved sounds 1 to 4 are still on the left HOT CUE buttons. If a SAMPLER button does nothing, open Decks, press it, and tell me what the "Last touched" line says: these buttons' numbers come from Pioneer's manual and are the ones I'm least sure of.
+
+<!-- older -->
+
 <!-- title: Your DDJ-ERGO layout: Feel on HI / MID / LOW, time of day on the crossfader and the right wheel, ambience on the faders -->
 **Install:** click the round-arrows button in the app's top bar (left of Keep); when it turns into an orange **Update**, click it and choose **Install Update**. Your settings, presets, saved sounds and keeps stay as they are.
 
@@ -15,8 +29,6 @@
 - No knob has these now, but any knob can: the three tone knobs, the echo's time and repeats, the mood's space, and the instrument's ninth dial.
 
 The eight FX knobs are still the instrument's dials, and the buttons are as before. If you changed a knob's menu in Decks yourself, that knob keeps your choice; **Default layout** in Decks puts everything on the layout above.
-
-<!-- older -->
 
 <!-- title: Sets, worlds, instruments and transpose on the main page; the instrument window fixed -->
 **Install:** click the round-arrows button in the app's top bar (left of Keep); when it turns into an orange **Update**, click it and choose **Install Update**. Your settings, presets, saved sounds and keeps stay as they are.

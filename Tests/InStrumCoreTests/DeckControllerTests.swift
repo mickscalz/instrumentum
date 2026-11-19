@@ -184,9 +184,15 @@ final class DeckControllerTests: XCTestCase {
         XCTAssertEqual(layout[DeckKey(.left, .play)], .hold)
         XCTAssertEqual(layout[DeckKey(.left, .cue)], .panic)
         XCTAssertEqual(layout[DeckKey(.left, .hotCue1)], .sound1)
-        XCTAssertEqual(layout[DeckKey(.left, .sampler4)], .sound8)
+        // The eight SAMPLER buttons across the controller: set, world, instrument, transpose.
+        let samplers = [DeckKey(.left, .sampler1), DeckKey(.left, .sampler2), DeckKey(.left, .sampler3), DeckKey(.left, .sampler4),
+                        DeckKey(.right, .sampler1), DeckKey(.right, .sampler2), DeckKey(.right, .sampler3), DeckKey(.right, .sampler4)]
+        let actions: [DeckAction] = [.setPrevious, .setNext, .worldPrevious, .worldNext,
+                                     .instrumentPrevious, .instrumentNext, .transposeDown, .transposeUp]
+        for index in 0..<8 {
+            XCTAssertEqual(layout[samplers[index]], actions[index], samplers[index].id)
+        }
         XCTAssertEqual(layout[DeckKey(.right, .hotCue1)], .timeMorning)
-        XCTAssertEqual(layout[DeckKey(.right, .sampler3)], .weatherStorm)
         XCTAssertEqual(layout[DeckKey(.centre, .function)], .fullScreen)
         XCTAssertEqual(layout[DeckWheel(.right, .jog)], .timeOfDay)
         XCTAssertEqual(layout[DeckWheel(.left, .jog)], .moonPhase)
