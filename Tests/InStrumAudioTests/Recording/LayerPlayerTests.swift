@@ -121,14 +121,18 @@ final class LayerPlayerTests: XCTestCase {
         let start = t0 + 512
         player.start(atSampleTime: start)
         let playing = player.isPlaying
-        let out = try PlaybackAudio.render(e, frames: 12_000)
-        let hits = PlaybackAudio.loud(out.left, above: 0.01)
+        let head = try PlaybackAudio.render(e, frames: 4_000)
+        let midway = player.positionSeconds
+        let tail = try PlaybackAudio.render(e, frames: 8_000)
+        let atEnd = player.positionSeconds
+        let ended = player.isPlaying
+        let left = head.left + tail.left, right = head.right + tail.right
+        let hits = PlaybackAudio.loud(left, above: 0.01)
         let hitCount = hits.count
         let at = hits.first ?? -1
-        let value: Float = at >= 0 ? out.left[at] : 0
-        let rightValue: Float = at >= 0 ? out.right[at] : 0
-        let expected = Int(start - out.start) + 4800
-        let position = player.positionSeconds
+        let value: Float = at >= 0 ? left[at] : 0
+        let rightValue: Float = at >= 0 ? right[at] : 0
+        let expected = Int(start - head.start) + 4800
         player.stop()
         let stopped = player.isPlaying
         let after = try PlaybackAudio.render(e, frames: 4096)
@@ -140,7 +144,9 @@ final class LayerPlayerTests: XCTestCase {
         XCTAssertEqual(at, expected, "at the sample time asked for")
         XCTAssertEqual(value, 0.75, accuracy: 1e-6, "0.25 + 0.5")
         XCTAssertEqual(rightValue, 0.75, accuracy: 1e-6)
-        XCTAssertEqual(position, Double(12_000 - 512) / 48_000, accuracy: 1e-9)
+        XCTAssertEqual(midway, Double(4_000 - 512) / 48_000, accuracy: 1e-9)
+        XCTAssertEqual(atEnd, 0.2, accuracy: 1e-9, "held at the end")
+        XCTAssertFalse(ended, "played to its end")
         XCTAssertFalse(stopped)
         XCTAssertEqual(silence, 0)
     }

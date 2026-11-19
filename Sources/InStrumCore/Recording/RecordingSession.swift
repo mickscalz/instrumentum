@@ -71,6 +71,9 @@ public struct RecordingSession: Codable, Equatable, Sendable {
     public var sampleRate: Double
     public var layers: [RecordingLayer]
     public var appVersion: String
+    /// The play-along track's speed its layers were recorded at (Recorder plan part 2: once there is a layer the tempo
+    /// is locked, so the layers always fit the track). 1 in a file saved before the tempo existed.
+    public var trackRate: Double = 1
 
     public init(title: String, sampleRate: Double, appVersion: String) {
         self.title = title
@@ -140,7 +143,7 @@ public struct RecordingSession: Codable, Equatable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case title, sampleRate, layers, appVersion
+        case title, sampleRate, layers, appVersion, trackRate
     }
 
     public init(from decoder: Decoder) throws {
@@ -149,5 +152,6 @@ public struct RecordingSession: Codable, Equatable, Sendable {
         sampleRate = try c.decode(Double.self, forKey: .sampleRate)
         layers = try c.decodeIfPresent([RecordingLayer].self, forKey: .layers) ?? []
         appVersion = (try? c.decodeIfPresent(String.self, forKey: .appVersion)) ?? ""
+        trackRate = (try? c.decodeIfPresent(Double.self, forKey: .trackRate)) ?? 1
     }
 }

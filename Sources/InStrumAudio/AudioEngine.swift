@@ -18,6 +18,8 @@ public final class AudioEngine {
     let instrumentBus = AVAudioMixerNode()
     /// Ambience plays on its own bus straight into the main mixer.
     let ambienceBus = AVAudioMixerNode()
+    /// The Recorder's track and layer players and their timeline: nil until first used (AudioEngine+Playback).
+    var playback: Transport?
     private var ambienceUnit: AVAudioUnit?
     private var ambienceScene = AmbienceScene.silent
     let manualRendering: Bool
