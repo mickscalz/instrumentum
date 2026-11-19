@@ -299,12 +299,14 @@ final class ControllerTests: XCTestCase {
         m.handleController(bytes: [0xB1, 34, 100], time: 1)
         m.syncController()
         let units = 100.0 / 2430 * 8
-        let turned = WheelTarget.jogHours(units: units)
-        XCTAssertEqual(m.skySettings.frozenHour, 12.5 + turned, accuracy: 0.0001)
-        m.handleController(bytes: [0xB1, 1, 0], time: 1)       // its outer edge does the same
+        let fine = WheelTarget.jogHours(units: units, search: false)
+        XCTAssertEqual(m.skySettings.frozenHour, 12.5 + fine, accuracy: 0.0001)
+        m.handleController(bytes: [0xB1, 1, 0], time: 1)       // its outer edge, spun: the same turn goes further
         m.handleController(bytes: [0xB1, 33, 100], time: 1)
         m.syncController()
-        XCTAssertEqual(m.skySettings.frozenHour, 12.5 + 2 * turned, accuracy: 0.0001)
+        let far = WheelTarget.jogHours(units: units, search: true)
+        XCTAssertGreaterThan(far, fine * 2.5)
+        XCTAssertEqual(m.skySettings.frozenHour, 12.5 + fine + far, accuracy: 0.0001)
         m.handleController(bytes: [0xB0, 2, 127], time: 1)     // the left wheel, backwards: the moon
         m.handleController(bytes: [0xB0, 34, 28], time: 1)
         m.syncController()

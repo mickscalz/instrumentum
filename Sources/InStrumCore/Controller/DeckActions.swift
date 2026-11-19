@@ -267,9 +267,14 @@ public enum WheelTarget: String, Codable, CaseIterable, Hashable {
     /// Hours of sky for a jog wheel's turn since the last look at it (about a twentieth of a second ago), by how fast
     /// it is turning: about an hour a full turn when turned slowly, for precision, rising to several hours a turn when
     /// spun (never more than eight times the slow rate). `units` are eighths of a turn.
-    public static func jogHours(units: Double) -> Double {
-        let slowHoursPerUnit = 1.0 / 8
-        let faster = min(8, 1 + 6.25 * abs(units))
+    ///
+    /// The top of the wheel (a hand on the disc, `search` false) is the precise one: ten minutes a full turn when
+    /// turned slowly, at most three times that. The outer edge (`search` true) covers ground: half an hour a turn
+    /// slowly, up to three hours a turn when spun.
+    public static func jogHours(units: Double, search: Bool) -> Double {
+        let slowHoursPerUnit = search ? 0.5 / 8 : (1.0 / 6) / 8
+        let most = search ? 6.0 : 3.0
+        let faster = min(most, 1 + 6.25 * abs(units))
         return units * slowHoursPerUnit * faster
     }
 
@@ -391,8 +396,8 @@ public struct ButtonLayout: Codable, Equatable {
     /// steps the instrument's presets and the right the weather; the browser steps the worlds.
     public static func defaultTarget(_ wheel: DeckWheel) -> WheelTarget {
         switch (wheel.side, wheel.kind) {
-        case (.left, .jog): return .moonPhase
-        case (.right, .jog): return .timeOfDay
+        case (.left, .jog), (.left, .search): return .moonPhase
+        case (.right, .jog), (.right, .search): return .timeOfDay
         case (.left, .loop): return .presets
         case (.right, .loop): return .weather
         case (.centre, .browse): return .worlds

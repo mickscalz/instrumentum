@@ -161,9 +161,10 @@ public struct DeckKey: Hashable, Codable, Identifiable {
     public static let all: [DeckKey] = DeckSide.allCases.flatMap { of($0) }
 }
 
-/// The things that turn without end: the jog wheels, the AUTO LOOP rotaries, the browser's rotary selector.
+/// The things that turn without end: a jog wheel's top (a hand on the disc, as when scratching) and its outer edge
+/// (spun without pressing down, as when searching), the AUTO LOOP rotaries, the browser's rotary selector.
 public enum DeckWheelKind: String, Codable, CaseIterable, Hashable {
-    case jog, loop, browse
+    case jog, search, loop, browse
 }
 
 public struct DeckWheel: Hashable, Codable, Identifiable {
@@ -181,14 +182,16 @@ public struct DeckWheel: Hashable, Codable, Identifiable {
 
     public var displayName: String {
         switch kind {
-        case .jog: return "\(side.displayName) jog wheel"
+        case .jog: return "\(side.displayName) wheel, top (scratch)"
+        case .search: return "\(side.displayName) wheel, edge (search)"
         case .loop: return "\(side.displayName) AUTO LOOP (turn)"
         case .browse: return "Browser (turn)"
         }
     }
 
     public static let all: [DeckWheel] = [
-        DeckWheel(.left, .jog), DeckWheel(.right, .jog), DeckWheel(.left, .loop), DeckWheel(.right, .loop),
+        DeckWheel(.left, .jog), DeckWheel(.left, .search), DeckWheel(.right, .jog), DeckWheel(.right, .search),
+        DeckWheel(.left, .loop), DeckWheel(.right, .loop),
         DeckWheel(.centre, .browse),
     ]
 }
@@ -225,7 +228,7 @@ public struct DDJErgoDecoder {
     private var coarse: [DeckControl: UInt8] = [:]
     private var fine: [DeckControl: UInt8] = [:]
     /// The coarse half of each side's jog count (it arrives before the fine half).
-    private var jogCoarse: [DeckSide: UInt8] = [:]
+    private var jogCoarse: [DeckWheel: UInt8] = [:]
 
     public init() {}
 
@@ -278,16 +281,20 @@ public struct DDJErgoDecoder {
         switch controller {
         case 0, 5: return absolute(DeckControl(side, .tempo), isFine: false, value)
         case 32, 37: return absolute(DeckControl(side, .tempo), isFine: true, value)
-        case 1, 2, 3, 6, 39:
-            jogCoarse[side] = value
+        case 1, 6:
+            jogCoarse[DeckWheel(side, .search)] = value   // the outer edge
+            return nil
+        case 2, 3, 39:
+            jogCoarse[DeckWheel(side, .jog)] = value      // the top, with a hand on it
             return nil
         case 33, 34, 35, 38, 7:
             // A difference since the last message: clockwise counts up from 1, counter-clockwise down from 16383.
-            let high = jogCoarse[side] ?? (value >= 64 ? 127 : 0)
+            let wheel = DeckWheel(side, controller == 33 || controller == 38 ? .search : .jog)
+            let high = jogCoarse[wheel] ?? (value >= 64 ? 127 : 0)
             let raw = (Int(high) << 7) | Int(value)
             let counts = max(-300, min(300, raw < 8192 ? raw : raw - 16384))
             guard counts != 0 else { return nil }
-            return .turn(DeckWheel(side, .jog), Double(counts) / Self.jogCountsPerTurn * Self.jogUnitsPerTurn)
+            return .turn(wheel, Double(counts) / Self.jogCountsPerTurn * Self.jogUnitsPerTurn)
         case 19, 79: return .turn(DeckWheel(side, .loop), Self.clicks(value))
         default: return .unknown("controller \(controller) on deck channel \(side == .left ? "A/C" : "B/D")")
         }

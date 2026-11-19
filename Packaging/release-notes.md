@@ -1,4 +1,4 @@
-<!-- title: The eight SAMPLER buttons: sets, worlds, instruments and transpose -->
+<!-- title: SAMPLER buttons for sets, worlds, instruments and transpose; finer wheels -->
 **Install:** click the round-arrows button in the app's top bar (left of Keep); when it turns into an orange **Update**, click it and choose **Install Update**. Your settings, presets, saved sounds and keeps stay as they are.
 
 **The eight SAMPLER buttons**, the left deck's four and then the right deck's four:
@@ -7,6 +7,12 @@
 - **3 and 4:** previous and next world.
 - **5 and 6:** previous and next instrument.
 - **7 and 8:** transpose down and up a semitone (a small message shows where it is, with the capo fret when it's up).
+
+**The deck wheels are slower and more precise, and the top and the edge are now two separate controls:**
+
+- **The top of the right wheel** (your hand on the disc, as when scratching) is the precise one: a full slow turn moves the time ten minutes.
+- **The outer edge of the right wheel** (spun without pressing down) covers ground: half an hour for a slow turn, up to three hours a turn when you spin it.
+- The left wheel's top and edge are both the moon. Each of the four can be pointed at something else under Wheels in Decks.
 
 Saved sounds 5 to 8 and the four weathers that were on these buttons are still in every button's menu in Decks; saved sounds 1 to 4 are still on the left HOT CUE buttons. If a SAMPLER button does nothing, open Decks, press it, and tell me what the "Last touched" line says: these buttons' numbers come from Pioneer's manual and are the ones I'm least sure of.
 

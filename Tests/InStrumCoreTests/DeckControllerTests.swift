@@ -93,12 +93,12 @@ final class DeckControllerTests: XCTestCase {
         // Clockwise: coarse 0, fine the count. 2430 counts are one turn, worth eight units.
         XCTAssertNil(d.decode(cc(0, 2, 0)))
         guard case let .turn(wheel, units)? = d.decode(cc(0, 34, 10)) else { return XCTFail("no turn") }
-        XCTAssertEqual(wheel, DeckWheel(.left, .jog))
+        XCTAssertEqual(wheel, DeckWheel(.left, .jog), "controller 2 is the top of the wheel")
         XCTAssertEqual(units, 10.0 / 2430 * 8, accuracy: 1e-9)
         // Counter-clockwise counts down from 16383.
         XCTAssertNil(d.decode(cc(1, 1, 127)))
         guard case let .turn(other, back)? = d.decode(cc(1, 33, 125)) else { return XCTFail("no turn") }
-        XCTAssertEqual(other, DeckWheel(.right, .jog))
+        XCTAssertEqual(other, DeckWheel(.right, .search), "controller 1 is its outer edge")
         XCTAssertEqual(back, -3.0 / 2430 * 8, accuracy: 1e-9)
     }
 
@@ -195,6 +195,8 @@ final class DeckControllerTests: XCTestCase {
         XCTAssertEqual(layout[DeckKey(.right, .hotCue1)], .timeMorning)
         XCTAssertEqual(layout[DeckKey(.centre, .function)], .fullScreen)
         XCTAssertEqual(layout[DeckWheel(.right, .jog)], .timeOfDay)
+        XCTAssertEqual(layout[DeckWheel(.right, .search)], .timeOfDay)
+        XCTAssertEqual(layout[DeckWheel(.left, .search)], .moonPhase)
         XCTAssertEqual(layout[DeckWheel(.left, .jog)], .moonPhase)
         XCTAssertEqual(layout[DeckWheel(.centre, .browse)], .worlds)
         XCTAssertEqual(DeckKey.all.count, 50)
@@ -291,15 +293,19 @@ final class DeckControllerTests: XCTestCase {
 
     func testTheJogWheelOnTheClockIsFineWhenSlowAndFarWhenSpun() {
         // A slow turn: an eighth of a turn spread over a second (twenty looks) is about an eighth of an hour.
-        var slow = 0.0
-        for _ in 0..<20 { slow += WheelTarget.jogHours(units: 1.0 / 20) }
-        XCTAssertEqual(slow, 0.125 * (1 + 6.25 / 20), accuracy: 1e-9)
-        XCTAssertLessThan(slow * 8, 1.5, "a full slow turn is little more than an hour")
-        // Spun at two turns a second (0.8 units a look): six times the slow rate.
-        XCTAssertEqual(WheelTarget.jogHours(units: 0.8), 0.8 * 0.125 * 6, accuracy: 1e-9)
-        // Never more than eight times, and backwards is the mirror image.
-        XCTAssertEqual(WheelTarget.jogHours(units: 4), 4 * 0.125 * 8, accuracy: 1e-9)
-        XCTAssertEqual(WheelTarget.jogHours(units: -0.8), -WheelTarget.jogHours(units: 0.8), accuracy: 1e-12)
+        // The top, turned slowly: a full turn (eight units) spread over eight seconds is about ten minutes.
+        var top = 0.0
+        for _ in 0..<160 { top += WheelTarget.jogHours(units: 8.0 / 160, search: false) }
+        XCTAssertEqual(top * 60, 10 * (1 + 6.25 / 20), accuracy: 1e-6)
+        // The edge, the same slow turn: about half an hour.
+        var edge = 0.0
+        for _ in 0..<160 { edge += WheelTarget.jogHours(units: 8.0 / 160, search: true) }
+        XCTAssertEqual(edge * 60, 30 * (1 + 6.25 / 20), accuracy: 1e-6)
+        // Spun: the edge never more than six times its slow rate (three hours a turn), the top never more than three.
+        XCTAssertEqual(WheelTarget.jogHours(units: 4, search: true), 4 * (0.5 / 8) * 6, accuracy: 1e-9)
+        XCTAssertEqual(WheelTarget.jogHours(units: 4, search: false), 4 * (1.0 / 48) * 3, accuracy: 1e-9)
+        // Backwards is the mirror image.
+        XCTAssertEqual(WheelTarget.jogHours(units: -0.8, search: true), -WheelTarget.jogHours(units: 0.8, search: true), accuracy: 1e-12)
         XCTAssertEqual(WheelTarget.hour(23.9, movedBy: 0.3), 0.2, accuracy: 1e-9)
         XCTAssertEqual(WheelTarget.hour(0.1, movedBy: -0.3), 23.8, accuracy: 1e-9)
     }

@@ -257,7 +257,7 @@ struct ControllerPanel: View {
                     .frame(width: 180)
                 }
             }
-            Text("A jog wheel on the time of day is speed-sensitive: about an hour a turn when turned slowly, several hours a turn when spun. On the moon a full turn is a quarter of its cycle, and on a list it steps eight times a turn. A rotary moves one step a click. Turning the time or the moon freezes the sky's clock; the right deck's CUE button lets it run again.")
+            Text("Each deck's wheel is two controls: its top (a hand on the disc, as when scratching) and its outer edge (spun without pressing down). On the time of day the top is the precise one, ten minutes a full turn, and the edge covers ground, half an hour a turn slowly and up to three hours a turn when spun. On the moon a full turn is a quarter of its cycle, and on a list it steps eight times a turn. A rotary moves one step a click. Turning the time or the moon freezes the sky's clock; the right deck's CUE button lets it run again.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }

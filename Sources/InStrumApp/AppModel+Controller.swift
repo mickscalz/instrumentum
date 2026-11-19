@@ -497,8 +497,9 @@ extension AppModel {
             case .timeOfDay:
                 var sky = settings.sky
                 // A jog wheel is speed-sensitive (fine when slow, far when spun); a rotary moves half an hour a click.
-                sky.frozenHour = wheel.kind == .jog
-                    ? WheelTarget.hour(sky.frozenHour, movedBy: WheelTarget.jogHours(units: units))
+                let onADisc = wheel.kind == .jog || wheel.kind == .search
+                sky.frozenHour = onADisc
+                    ? WheelTarget.hour(sky.frozenHour, movedBy: WheelTarget.jogHours(units: units, search: wheel.kind == .search))
                     : WheelTarget.hour(sky.frozenHour, turnedBy: units)
                 sky.timeMode = .frozen
                 setSkyFromController(sky)
