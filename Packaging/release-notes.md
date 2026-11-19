@@ -15,7 +15,7 @@
 - **Left deck buttons, the instrument and your playing:** PLAY holds the moment, CUE is all notes off, SYNC is Keep that. IN and OUT are the previous and next instrument. HOT CUE 1 to 4 and SAMPLER 1 to 4 recall your saved sounds 1 to 8 (they are numbered in Decks). KEYLOCK saves the sound you have now, VINYL goes back a saved sound, pressing AUTO LOOP puts the dials back to the preset.
 - **Right deck buttons, the world and its sky:** PLAY turns random weather on and off, CUE steps the clock between quick day, real time and frozen, SYNC is Surprise me. IN and OUT are the previous and next world. HOT CUE 1 to 4 jump to morning, midday, evening and night; SAMPLER 1 to 4 pick clear, rain, storm and snow. KEYLOCK steps the reaction style, VINYL puts the set back as designed, pressing AUTO LOOP puts the mood back.
 - **The rest:** LOAD A and B are the previous and next set. The headphone CUE buttons play a test note and keep the last ten minutes. The channel FX1 / FX2 buttons switch the ambience, gentle visuals, the sleep timer (30 minutes) and mute. FUNCTION is full screen, and pressing the browser is Surprise me. FX1's and FX2's own buttons are as before.
-- **Every button and wheel has a menu in Decks** (47 actions to choose from), and buttons that are switches light up while they are on.
+- **Every button and wheel has a menu in Decks** (51 actions to choose from), and buttons that are switches light up while they are on.
 - **Your keyboard's volume knob or slider now sets the app's volume** (it used to go to the instrument). The volume slider in the top bar follows it.
 - Each button says what it did in a small message at the top, since your hands are on the controller.
 
