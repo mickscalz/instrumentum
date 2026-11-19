@@ -30,7 +30,7 @@ public enum DeckKnob: String, Codable, CaseIterable, Hashable {
     case crossfader, master, headphonesMix, headphonesVolume, auxVolume
 
     /// The knobs each deck side has, top to bottom, and the centre's.
-    public static let ofASide: [DeckKnob] = [.fx1, .fx2, .fx3, .fxControl, .gain, .hi, .mid, .low, .filter, .fader, .tempo]
+    public static let ofASide: [DeckKnob] = [.fxControl, .fx1, .fx2, .fx3, .gain, .hi, .mid, .low, .filter, .fader, .tempo]
     public static let ofTheCentre: [DeckKnob] = [.master, .crossfader, .headphonesMix, .headphonesVolume, .auxVolume]
 }
 
@@ -495,10 +495,13 @@ public struct ControlLayout: Codable, Equatable {
         set { targets[control.id] = newValue }
     }
 
-    /// The layout out of the box: **the left side's knobs are the effects and the tone, the right side's are the
-    /// instrument's own dials** (its first nine, in its panel's order), **and the faders, sliders and centre knobs are
-    /// the world**: its mood on the two channel faders, the two TEMPO sliders and the crossfader, the ambience on the
-    /// headphone knobs, the wind on AUX / MIC, and the app's volume on MASTER.
+    /// The layout out of the box: **the eight effect-box knobs are the instrument's own dials**, in the order they sit
+    /// on the controller (FX1 CONTROL, FX1 1, 2, 3, then FX2 CONTROL, FX2 1, 2, 3) and the order the instrument's
+    /// panel lists its dials, with the right GAIN as a ninth. **The mixer knobs are the effects and the tone**: the left
+    /// HI / MID / LOW / FILTER are the tone and the filter, the right ones are Echo, Reverb, Drive and the echo's time,
+    /// the left GAIN the echo's repeats. **The faders, sliders and centre knobs are the world**: its mood on the two
+    /// channel faders, the two TEMPO sliders and the crossfader, the ambience on the headphone knobs, the wind on
+    /// AUX / MIC, and the app's volume on MASTER.
     public static func defaultTarget(_ control: DeckControl) -> ControlTarget {
         switch (control.side, control.knob) {
         case (.left, .gain): return .fx(.echoRepeats)
@@ -512,22 +515,23 @@ public struct ControlLayout: Codable, Equatable {
         case (.centre, .headphonesVolume): return .ambience
         case (.centre, .headphonesMix): return .world(.closeness)
         case (.centre, .auxVolume): return .world(.wind)
-        case (.left, .fx1): return .fx(.echo)
-        case (.left, .fx2): return .fx(.reverb)
-        case (.left, .fx3): return .fx(.drive)
-        case (.left, .fxControl): return .fx(.echoTime)
+        // The eight effect-box knobs, left to right across the controller, are the instrument's dials top to bottom.
+        case (.left, .fxControl): return .dial(0)
+        case (.left, .fx1): return .dial(1)
+        case (.left, .fx2): return .dial(2)
+        case (.left, .fx3): return .dial(3)
+        case (.right, .fxControl): return .dial(4)
+        case (.right, .fx1): return .dial(5)
+        case (.right, .fx2): return .dial(6)
+        case (.right, .fx3): return .dial(7)
         case (.left, .hi): return .fx(.eqHigh)
         case (.left, .mid): return .fx(.eqMid)
         case (.left, .low): return .fx(.eqLow)
         case (.left, .filter): return .fx(.filter)
-        case (.right, .fx1): return .dial(0)
-        case (.right, .fx2): return .dial(1)
-        case (.right, .fx3): return .dial(2)
-        case (.right, .fxControl): return .dial(3)
-        case (.right, .hi): return .dial(4)
-        case (.right, .mid): return .dial(5)
-        case (.right, .low): return .dial(6)
-        case (.right, .filter): return .dial(7)
+        case (.right, .hi): return .fx(.echo)
+        case (.right, .mid): return .fx(.reverb)
+        case (.right, .low): return .fx(.drive)
+        case (.right, .filter): return .fx(.echoTime)
         default: return .none
         }
     }

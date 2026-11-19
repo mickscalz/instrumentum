@@ -1,3 +1,18 @@
+<!-- title: The eight FX knobs are the instrument's dials, in order -->
+**Install:** click the round-arrows button in the app's top bar (left of Keep); when it turns into an orange **Update**, click it and choose **Install Update**. Your settings, presets, saved sounds and keeps stay as they are.
+
+**The FX1 group of four and the FX2 group of four now play the instrument**, left to right across the DDJ-ERGO, top to bottom in the instrument's panel:
+
+- **FX1 CONTROL** is the first dial, then **FX1 knobs 1, 2, 3** are the second, third and fourth.
+- **FX2 CONTROL** is the fifth, then **FX2 knobs 1, 2, 3** are the sixth, seventh and eighth. The right GAIN is a ninth, for instruments that have one.
+- On Orbit Pad that is Space, Bloom, Drift, Motion on FX1, and Shimmer, Brightness on FX2's first two (its last two knobs have no dial to turn there).
+
+**The effects moved to the right-hand mixer knobs** to make room: right **HI** is Echo, **MID** is Reverb, **LOW** is Drive and **FILTER** is the echo's time. The left HI / MID / LOW / FILTER are still the tone and the filter, and the left GAIN the echo's repeats. Buttons, faders and wheels are as in the last build.
+
+If you changed any knob's menu in Decks yourself, that knob keeps your choice; **Default layout** in Decks puts everything on the layout above.
+
+<!-- older -->
+
 <!-- title: The whole DDJ-ERGO now plays: the world on the faders, buttons for everything, and your keyboard's volume knob -->
 **Install:** click the round-arrows button in the app's top bar (left of Keep); when it turns into an orange **Update**, click it and choose **Install Update**. Your settings, presets, saved sounds and keeps stay as they are.
 
@@ -22,8 +37,6 @@
 **If a control does nothing or the wrong thing:** open Decks, touch it, and read the "Last touched" line. If it says "Not mapped", tell me what it says and I'll map it. The sampler buttons' numbers are the ones I'm least sure of.
 
 **Still to hear:** Drive and Crush, and how strongly the mood faders change each world.
-
-<!-- older -->
 
 <!-- title: Your DDJ-ERGO turns the sound: effects, tone, the instrument's dials, and saved sounds -->
 **Install:** click the round-arrows button in the app's top bar (left of Keep); when it turns into an orange **Update**, click it and choose **Install Update**. Your settings, presets and keeps stay as they are.

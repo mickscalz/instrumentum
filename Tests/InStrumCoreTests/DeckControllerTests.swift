@@ -140,14 +140,25 @@ final class DeckControllerTests: XCTestCase {
         XCTAssertEqual(DDJErgoDecoder.light(.centre, .function, on: false), [[0x96, 101, 0]])
     }
 
-    func testDefaultLayoutLeftEffectsRightDials() {
+    func testDefaultLayoutEffectBoxKnobsAreTheDialsInOrder() {
         let layout = ControlLayout()
         XCTAssertTrue(layout.isDefault)
+        // Left to right across the controller: FX1 CONTROL, 1, 2, 3, then FX2 CONTROL, 1, 2, 3.
+        let acrossTheController = [
+            DeckControl(.left, .fxControl), DeckControl(.left, .fx1), DeckControl(.left, .fx2), DeckControl(.left, .fx3),
+            DeckControl(.right, .fxControl), DeckControl(.right, .fx1), DeckControl(.right, .fx2), DeckControl(.right, .fx3),
+        ]
+        for (index, knob) in acrossTheController.enumerated() {
+            XCTAssertEqual(layout[knob], .dial(index), knob.id)
+        }
+        // The mixer knobs are the tone (left) and the effects (right).
         XCTAssertEqual(layout[DeckControl(.left, .hi)], .fx(.eqHigh))
-        XCTAssertEqual(layout[DeckControl(.left, .fx1)], .fx(.echo))
         XCTAssertEqual(layout[DeckControl(.left, .filter)], .fx(.filter))
-        XCTAssertEqual(layout[DeckControl(.right, .fx1)], .dial(0))
-        XCTAssertEqual(layout[DeckControl(.right, .filter)], .dial(7))
+        XCTAssertEqual(layout[DeckControl(.right, .hi)], .fx(.echo))
+        XCTAssertEqual(layout[DeckControl(.right, .mid)], .fx(.reverb))
+        XCTAssertEqual(layout[DeckControl(.right, .low)], .fx(.drive))
+        XCTAssertEqual(layout[DeckControl(.right, .filter)], .fx(.echoTime))
+        XCTAssertEqual(layout[DeckControl(.left, .gain)], .fx(.echoRepeats))
         // The faders, sliders and centre knobs are the world.
         XCTAssertEqual(layout[DeckControl(.right, .gain)], .dial(8))
         XCTAssertEqual(layout[DeckControl(.left, .fader)], .world(.moodEnergy))
@@ -282,7 +293,7 @@ final class DeckControllerTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(ControlLayout.self, from: data), layout)
         let odd = Data(#"{"right.hi":"fx.nothing","nowhere.knob":"volume","left.low":"dial.2"}"#.utf8)
         let loaded = try JSONDecoder().decode(ControlLayout.self, from: odd)
-        XCTAssertEqual(loaded[DeckControl(.right, .hi)], .dial(4))    // unreadable: the default
+        XCTAssertEqual(loaded[DeckControl(.right, .hi)], .fx(.echo))  // unreadable: the default
         XCTAssertEqual(loaded[DeckControl(.left, .low)], .dial(2))
     }
 

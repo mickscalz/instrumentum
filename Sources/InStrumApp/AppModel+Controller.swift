@@ -35,11 +35,12 @@ struct ControllerLive {
 
 /// The controller (a Pioneer DDJ-ERGO as a control surface), the effects and tone it turns, and saved sounds.
 ///
-/// Out of the box: **the left side's knobs are the effects and the tone, the right side's are the instrument's own
-/// dials, and the faders, sliders and centre knobs are the world** (its mood, its ambience, the wind, and the app's
-/// volume on MASTER). **The left deck's buttons are the instrument and the playing, the right deck's are the world and
-/// its sky**; the jog wheels scrub the time of day and the moon. Every knob, button and wheel can be pointed at
-/// something else in the Decks panel (`ControlLayout`, `ButtonLayout`).
+/// Out of the box: **the eight effect-box knobs are the instrument's own dials** (FX1's four, then FX2's four, in the
+/// order its panel lists them), **the mixer knobs are the effects and the tone, and the faders, sliders and centre
+/// knobs are the world** (its mood, its ambience, the wind, and the app's volume on MASTER). **The left deck's buttons
+/// are the instrument and the playing, the right deck's are the world and its sky**; the jog wheels scrub the time of
+/// day and the moon. Every knob, button and wheel can be pointed at something else in the Decks panel
+/// (`ControlLayout`, `ButtonLayout`).
 extension AppModel {
 
     // MARK: - From the controller (CoreMIDI thread)

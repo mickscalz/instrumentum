@@ -35,11 +35,44 @@ final class ControllerTests: XCTestCase {
         m.syncController()
     }
 
-    func testFX1KnobOneIsTheEcho() {
+    func testTheRightMixerKnobsAreTheEffects() {
         let m = makeModel()
         XCTAssertEqual(m.soundFX[.echo], 0)
-        turnFully(m, status: 0xB4, controller: 2)
+        turnFully(m, status: 0xB6, controller: 8)      // right HI
         XCTAssertEqual(m.soundFX[.echo], 1, accuracy: 0.0001)
+        turnFully(m, status: 0xB6, controller: 12)     // right MID
+        XCTAssertEqual(m.soundFX[.reverb], 1, accuracy: 0.0001)
+        turnFully(m, status: 0xB6, controller: 16)     // right LOW
+        XCTAssertEqual(m.soundFX[.drive], 1, accuracy: 0.0001)
+        turnFully(m, status: 0xB4, controller: 2)      // an effect-box knob is a dial now: no effect moves
+        XCTAssertEqual(m.soundFX[.echoTime], FXParam.echoTime.neutral)
+    }
+
+    /// Michael's layout (19 Nov): the FX1 group of four, then the FX2 group of four, left to right across the
+    /// controller, are the instrument's dials top to bottom in its panel.
+    func testTheEightEffectBoxKnobsAreTheInstrumentsDialsInOrder() async throws {
+        let unit = try BuiltInInstrumentAU(componentDescription: BuiltInCatalog.description(for: .orbitPad), options: [])
+        engine.unit = unit
+        let pad = try XCTUnwrap(BuiltInCatalog.instruments.first { $0.name == BuiltInEngine.orbitPad.displayName })
+        let m = makeModel()
+        await m.choose(pad)
+        let all = unit.parameterTree?.allParameters ?? []
+        let shown = BuiltInPanel.layout(all.map(\.identifier), engine: .orbitPad).dials
+        XCTAssertGreaterThanOrEqual(shown.count, 6)
+        XCTAssertEqual(m.controllerDials.count, shown.count)
+        // FX1 CONTROL, 1, 2, 3, then FX2 CONTROL, 1, 2, 3: each one's status byte and coarse controller.
+        let statuses: [UInt8] = [0xB4, 0xB4, 0xB4, 0xB4, 0xB5, 0xB5, 0xB5, 0xB5]
+        let controllers: [UInt8] = [0, 2, 4, 6, 0, 2, 4, 6]
+        for index in 0..<min(8, shown.count) {
+            let identifier = shown[index]
+            let parameter = try XCTUnwrap(all.first { $0.identifier == identifier })
+            turnFully(m, status: statuses[index], controller: controllers[index])
+            let now = parameter.value
+            XCTAssertEqual(now, parameter.maxValue, accuracy: 0.0001, identifier)
+        }
+        // And only those: the first dial is still where the first knob left it.
+        let first = try XCTUnwrap(all.first { $0.identifier == shown[0] })
+        XCTAssertEqual(first.value, first.maxValue, accuracy: 0.0001)
     }
 
     func testLeftHighMidLowAreTheTone() {

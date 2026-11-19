@@ -63,3 +63,14 @@ Drive and Crush set Apple's distortion unit by its raw parameters; their loudnes
 
 ## Not checked by hand
 The sampler buttons' note numbers (60 to 67) and the jog wheels' count format come from Pioneer's list and haven't been seen on the real controller. "Last touched" in Decks is how a mismatch shows.
+
+---
+
+# Part 3 (19 Nov, afternoon): Michael's knob order
+
+"The first 8 FX knobs should work from left to right on the ERGO and top to bottom [in the instrument's panel], so FX1 CONTROL does the top one, then FX1-1 gets the next one down, and so on … FX1 group of 4 and the FX2 group of 4, these control the instrument."
+
+- Default knob layout changed: FX1 CONTROL, 1, 2, 3 = dials 1 to 4; FX2 CONTROL, 1, 2, 3 = dials 5 to 8; right GAIN = dial 9.
+- The effects moved to the right mixer knobs: HI = Echo, MID = Reverb, LOW = Drive, FILTER = echo time. Left mixer knobs unchanged (tone, filter; GAIN = echo repeats).
+- Decks lists each side's knobs with CONTROL first, as they sit on the controller.
+- A saved layout holds only the knobs he changed by hand, so everyone else's knobs take the new defaults without a migration.
