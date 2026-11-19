@@ -64,6 +64,8 @@ public struct AppSettings: Codable, Equatable {
     /// app's, not a set's; saved before they existed, they load as neutral and the default layout.
     public var soundFX = SoundFX()
     public var controlLayout = ControlLayout()
+    /// Which of the controller's buttons does what and which wheel turns what.
+    public var buttonLayout = ButtonLayout()
     /// The saved sound last chosen (the controller's "next sound" button steps on from it).
     public var soundPresetName: String?
     public var lastNewestSetID: String? = SetLibrary.newest.id
@@ -78,7 +80,7 @@ public struct AppSettings: Codable, Equatable {
              qualityVersion, sky, ambience, activeSetID, outputDeviceUID, midiChannel, disabledMIDISources
         case holdPedal, keyboardRange, breath, followReduceMotion, excitement
         case lastNewestSetID, lastSetCount
-        case soundFX, controlLayout, soundPresetName
+        case soundFX, controlLayout, soundPresetName, buttonLayout
     }
 
     /// True when this build's gallery holds something the last launch didn't see: a newer newest set, or more sets than
@@ -123,6 +125,7 @@ public struct AppSettings: Codable, Equatable {
         excitement = (try? c.decodeIfPresent(ExcitementSettings.self, forKey: .excitement)) ?? d.excitement
         soundFX = (try? c.decodeIfPresent(SoundFX.self, forKey: .soundFX)) ?? d.soundFX
         controlLayout = (try? c.decodeIfPresent(ControlLayout.self, forKey: .controlLayout)) ?? d.controlLayout
+        buttonLayout = (try? c.decodeIfPresent(ButtonLayout.self, forKey: .buttonLayout)) ?? d.buttonLayout
         soundPresetName = (try? c.decodeIfPresent(String.self, forKey: .soundPresetName)) ?? nil
         // Absent (saved before "opens on what's new"): nil, not this build's, so the next launch opens on the newest once.
         lastNewestSetID = (try? c.decodeIfPresent(String.self, forKey: .lastNewestSetID)) ?? nil

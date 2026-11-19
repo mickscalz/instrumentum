@@ -33,6 +33,7 @@ final class SoundPresetStoreTests: XCTestCase {
         s.soundFX[.drive] = 0.25
         s.controlLayout[DeckControl(.right, .hi)] = .ambience
         s.soundPresetName = "A side"
+        s.buttonLayout[DeckKey(.left, .play)] = .mute
         let store = SettingsStore(directory: dir)
         try store.save(s)
         XCTAssertEqual(store.load(), s)
@@ -44,5 +45,6 @@ final class SoundPresetStoreTests: XCTestCase {
         XCTAssertTrue(s.soundFX.isNeutral)
         XCTAssertTrue(s.controlLayout.isDefault)
         XCTAssertNil(s.soundPresetName)
+        XCTAssertTrue(s.buttonLayout.isDefault)
     }
 }

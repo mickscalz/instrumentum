@@ -1,3 +1,4 @@
+import AppKit
 import AVFoundation
 import Foundation
 import InStrumAudio
@@ -15,37 +16,36 @@ struct ControllerLive {
     var parser = MIDIParser()
     var decoder = DDJErgoDecoder()
     var layout = ControlLayout()
+    var buttons = ButtonLayout()
     var fx = SoundFX()
     /// The instrument's dials, in the knobs' order.
     var dialParams: [AUParameter] = []
-    /// Waiting for the main actor: the effects moved, a volume knob moved, buttons were pressed.
+    /// Waiting for the main actor: the effects moved; a volume moved; world knobs moved (their positions); wheels
+    /// turned (their units so far); buttons were pressed; the control last touched.
     var fxMoved = false
     var volume: Double?
     var ambience: Double?
-    var presses: [DeckPress] = []
+    var world: [WorldParam: Double] = [:]
+    var turns: [DeckWheel: Double] = [:]
+    var presses: [DeckKey] = []
+    var last: DeckEvent?
     /// A visit to the main actor is already on its way.
     var syncQueued = false
 }
 
-struct DeckPress: Equatable {
-    let side: DeckSide
-    let button: DeckButton
-}
-
-/// The controller (a Pioneer DDJ-ERGO as a bank of knobs), the effects and tone it turns, and saved sounds.
+/// The controller (a Pioneer DDJ-ERGO as a control surface), the effects and tone it turns, and saved sounds.
 ///
-/// By default **the left side is the effects and the tone** (FX1: Echo, Reverb, Drive, with CONTROL as the echo's time;
-/// HI / MID / LOW and FILTER as on a mixer) and **the right side is the instrument's own dials** (FX2's knobs and the
-/// right HI / MID / LOW / FILTER are its first eight). Every knob can be pointed at something else in the panel.
-/// Buttons: FX1's ON switches all effects, its 1 / 2 / 3 switch Echo / Reverb / Drive; FX2's ON steps to the next saved
-/// sound, its 1 and 2 step back and forward through the instrument's presets, its 3 puts the effects and tone back to
-/// neutral.
+/// Out of the box: **the left side's knobs are the effects and the tone, the right side's are the instrument's own
+/// dials, and the faders, sliders and centre knobs are the world** (its mood, its ambience, the wind, and the app's
+/// volume on MASTER). **The left deck's buttons are the instrument and the playing, the right deck's are the world and
+/// its sky**; the jog wheels scrub the time of day and the moon. Every knob, button and wheel can be pointed at
+/// something else in the Decks panel (`ControlLayout`, `ButtonLayout`).
 extension AppModel {
 
     // MARK: - From the controller (CoreMIDI thread)
 
     /// Sound first: an effect knob moves its effect and a dial knob moves the instrument's dial here, on the CoreMIDI
-    /// thread. The panel, the settings and the buttons follow on the main actor a moment later.
+    /// thread. The world, the panel, the settings, the wheels and the buttons follow on the main actor a moment later.
     public nonisolated func handleController(bytes: [UInt8], time: Double) {
         struct Work {
             var fx: SoundFX?
@@ -58,6 +58,7 @@ extension AppModel {
             for message in l.parser.parse(bytes) {
                 guard let event = l.decoder.decode(message) else { continue }
                 heard = true
+                l.last = event
                 switch event {
                 case let .knob(control, value):
                     switch l.layout[control] {
@@ -73,9 +74,15 @@ extension AppModel {
                         l.volume = value
                     case .ambience:
                         l.ambience = value
+                    case let .world(param):
+                        l.world[param] = value
                     }
                 case let .press(side, button):
-                    l.presses.append(DeckPress(side: side, button: button))
+                    l.presses.append(DeckKey(side, button))
+                case let .turn(wheel, units):
+                    l.turns[wheel, default: 0] += units
+                case .unknown:
+                    break
                 }
             }
             if heard && !l.syncQueued {
@@ -88,8 +95,26 @@ extension AppModel {
         for (parameter, value) in work.dials { Self.setDial(parameter, to: value) }
         guard work.sync else { return }
         noteUserActivity(at: time)
+        queueControllerSync()
+    }
+
+    /// A keyboard's volume knob or slider (controller 7), on the CoreMIDI thread: the app's volume follows on the main
+    /// actor, and the message never reaches the instrument (or it would be turned down twice).
+    nonisolated func keyboardVolume(_ volume: Double, time: Double) {
+        let sync: Bool = controllerLive.withLockUnchecked { l in
+            l.volume = volume
+            guard !l.syncQueued else { return false }
+            l.syncQueued = true
+            return true
+        }
+        guard sync else { return }
+        noteUserActivity(at: time)
+        queueControllerSync()
+    }
+
+    /// A knob sends hundreds of messages a second; the main actor follows twenty times a second.
+    private nonisolated func queueControllerSync() {
         Task { @MainActor [weak self] in
-            // A knob sends hundreds of messages a second; the panel and the settings follow twenty times a second.
             try? await Task.sleep(nanoseconds: 50_000_000)
             self?.syncController()
         }
@@ -101,24 +126,33 @@ extension AppModel {
         parameter.value = parameter.minValue + v * (parameter.maxValue - parameter.minValue)
     }
 
-    /// The main actor catches up with what the controller did.
+    /// The main actor catches up with what the controller (or a keyboard's volume knob) did.
     func syncController() {
         struct Pending {
             var fx: SoundFX?
             var volume: Double?
             var ambience: Double?
-            var presses: [DeckPress] = []
+            var world: [WorldParam: Double] = [:]
+            var turns: [DeckWheel: Double] = [:]
+            var presses: [DeckKey] = []
+            var last: DeckEvent?
         }
         let pending: Pending = controllerLive.withLockUnchecked { l in
             var p = Pending()
             if l.fxMoved { p.fx = l.fx }
             p.volume = l.volume
             p.ambience = l.ambience
+            p.world = l.world
+            p.turns = l.turns
             p.presses = l.presses
+            p.last = l.last
             l.fxMoved = false
             l.volume = nil
             l.ambience = nil
+            l.world = [:]
+            l.turns = [:]
             l.presses = []
+            l.last = nil
             l.syncQueued = false
             return p
         }
@@ -127,26 +161,44 @@ extension AppModel {
             settings.soundFX = fx
             scheduleSave()
         }
-        if let v = pending.volume {
-            objectWillChange.send()
-            engine.masterVolume = Float(v)
-            settings.masterVolume = engine.masterVolume
-            scheduleSave()
-        }
+        if let v = pending.volume { applyVolume(v) }
         if let a = pending.ambience { setAmbienceVolume(a) }
-        for press in pending.presses { controllerPressed(press) }
+        if !pending.world.isEmpty { applyWorld(pending.world) }
+        if !pending.turns.isEmpty { applyTurns(pending.turns) }
+        for key in pending.presses { perform(buttonLayout[key]) }
+        if let last = pending.last {
+            let text = describe(last)
+            if text != controllerLastTouched { controllerLastTouched = text }
+        }
     }
 
-    private func controllerPressed(_ press: DeckPress) {
-        switch (press.side, press.button) {
-        case (.left, .on): toggleFXSwitch(.all)
-        case (.left, .one): toggleFXSwitch(.echo)
-        case (.left, .two): toggleFXSwitch(.reverb)
-        case (.left, .three): toggleFXSwitch(.drive)
-        case (.right, .on): Task { await nextSound() }
-        case (.right, .one): stepPatch(by: -1)
-        case (.right, .two): stepPatch(by: 1)
-        case (.right, .three): resetFX()
+    /// What the panel says was last touched.
+    func describe(_ event: DeckEvent) -> String {
+        func place(_ side: DeckSide, _ name: String) -> String { side == .centre ? name : "\(side.displayName) \(name)" }
+        switch event {
+        case let .knob(control, _):
+            return "\(place(control.side, control.displayName)): \(targetName(controlLayout[control]))"
+        case let .press(side, button):
+            let key = DeckKey(side, button)
+            return "\(place(side, key.displayName)): \(buttonLayout[key].displayName)"
+        case let .turn(wheel, _):
+            return "\(wheel.displayName): \(buttonLayout[wheel].displayName)"
+        case let .unknown(what):
+            return "Not mapped: \(what)"
+        }
+    }
+
+    /// A knob target's name, with the dial's own name when the instrument has it.
+    public func targetName(_ target: ControlTarget) -> String {
+        switch target {
+        case .none: return "Nothing"
+        case let .fx(param): return param.displayName
+        case let .dial(index):
+            guard let dial = controllerDials.first(where: { $0.index == index }) else { return "Dial \(index + 1)" }
+            return "Dial \(index + 1) · \(dial.name)"
+        case .volume: return "Volume"
+        case .ambience: return "Ambience volume"
+        case let .world(param): return param.displayName
         }
     }
 
@@ -166,19 +218,39 @@ extension AppModel {
         controllerConnected = connected
         guard connected else { return }
         engine.insertFX()
+        controllerLit = [:]   // a controller just plugged in has every light off
         lightController()
         showToast("DDJ-ERGO connected", symbol: "dial.medium")
     }
 
-    /// The effect box's lights follow the switches.
+    /// Whether a button's light should be on, for the actions that are a switch; nil for the rest (their lights are
+    /// left alone).
+    func isLit(_ action: DeckAction) -> Bool? {
+        switch action {
+        case .fxAll: return soundFX.isOn(.all)
+        case .fxEcho: return soundFX.isOn(.echo)
+        case .fxReverb: return soundFX.isOn(.reverb)
+        case .fxDrive: return soundFX.isOn(.drive)
+        case .hold: return holdLatched
+        case .mute: return mutedVolume != nil
+        case .ambience: return settings.ambience.enabled
+        case .gentle: return gentleVisuals
+        case .weatherRandom: return settings.sky.weatherMode == .randomBeautiful
+        case .sleepTimer: return sleepTimerRunning
+        default: return nil
+        }
+    }
+
+    /// The controller's lights follow the switches: only the lights that changed are sent.
     func lightController() {
         guard controllerConnected else { return }
         var messages: [[UInt8]] = []
-        messages += DDJErgoDecoder.light(.left, .on, on: soundFX.isOn(.all))
-        messages += DDJErgoDecoder.light(.left, .one, on: soundFX.isOn(.echo))
-        messages += DDJErgoDecoder.light(.left, .two, on: soundFX.isOn(.reverb))
-        messages += DDJErgoDecoder.light(.left, .three, on: soundFX.isOn(.drive))
-        midi?.sendToController(messages)
+        for key in DeckKey.all {
+            guard let on = isLit(buttonLayout[key]), controllerLit[key.id] != on else { continue }
+            controllerLit[key.id] = on
+            messages += DDJErgoDecoder.light(key.side, key.button, on: on)
+        }
+        if !messages.isEmpty { midi?.sendToController(messages) }
     }
 
     /// The knobs count the new instrument's dials: a built-in instrument's as its panel lists them (no tuning, no
@@ -234,20 +306,42 @@ extension AppModel {
         showToast("Effects and tone reset", symbol: "dial.medium")
     }
 
-    // MARK: - Which knob moves what
+    // MARK: - Which knob, button and wheel does what
 
     public func setControlTarget(_ control: DeckControl, to target: ControlTarget) {
         var layout = controlLayout
         layout[control] = target
-        setControlLayout(layout)
+        setLayouts(knobs: layout, buttons: buttonLayout)
     }
 
-    public func resetControlLayout() { setControlLayout(ControlLayout()) }
+    public func setButtonAction(_ key: DeckKey, to action: DeckAction) {
+        var layout = buttonLayout
+        layout[key] = action
+        setLayouts(knobs: controlLayout, buttons: layout)
+    }
 
-    private func setControlLayout(_ layout: ControlLayout) {
-        controlLayout = layout
-        controllerLive.withLockUnchecked { $0.layout = layout }
-        settings.controlLayout = layout
+    public func setWheelTarget(_ wheel: DeckWheel, to target: WheelTarget) {
+        var layout = buttonLayout
+        layout[wheel] = target
+        wheelResidue[wheel.id] = nil
+        setLayouts(knobs: controlLayout, buttons: layout)
+    }
+
+    /// Every knob, button and wheel back to how it came.
+    public func resetControlLayout() { setLayouts(knobs: ControlLayout(), buttons: ButtonLayout()) }
+
+    public var layoutsAreDefault: Bool { controlLayout.isDefault && buttonLayout.isDefault }
+
+    private func setLayouts(knobs: ControlLayout, buttons: ButtonLayout) {
+        controlLayout = knobs
+        buttonLayout = buttons
+        controllerLive.withLockUnchecked { l in
+            l.layout = knobs
+            l.buttons = buttons
+        }
+        settings.controlLayout = knobs
+        settings.buttonLayout = buttons
+        lightController()
         scheduleSave()
     }
 
@@ -270,6 +364,8 @@ extension AppModel {
             return Double(engine.masterVolume)
         case .ambience:
             return settings.ambience.volume
+        case let .world(param):
+            return param.knob(value: worldValue(param))
         }
     }
 
@@ -287,16 +383,291 @@ extension AppModel {
             if let parameter { Self.setDial(parameter, to: value) }
             objectWillChange.send()
         case .volume:
-            objectWillChange.send()
-            engine.masterVolume = Float(value)
-            settings.masterVolume = engine.masterVolume
-            scheduleSave()
+            applyVolume(value)
         case .ambience:
             setAmbienceVolume(value)
+        case let .world(param):
+            applyWorld([param: value])
         }
     }
 
-    // MARK: - The instrument's presets from the controller
+    /// The app's volume from a knob, a wheel or a keyboard: it ends a mute, and the save waits for the knob to settle.
+    func applyVolume(_ value: Double) {
+        objectWillChange.send()
+        mutedVolume = nil
+        engine.masterVolume = Float(max(0, min(1, value)))
+        settings.masterVolume = engine.masterVolume
+        lightController()
+        scheduleSave()
+    }
+
+    // MARK: - The world from the knobs
+
+    /// A world setting as it is now, in its own units.
+    func worldValue(_ param: WorldParam) -> Double {
+        let sky = settings.sky
+        switch param {
+        case .moodEnergy: return mood.energy
+        case .moodWarmth: return mood.warmth
+        case .moodBrightness: return mood.brightness
+        case .moodSpace: return mood.space
+        case .moodMotion: return mood.motion
+        case .timeOfDay: return sky.frozenHour
+        case .moonPhase: return sky.frozenPhase
+        case .wind: return sky.windScale
+        case .mist: return sky.mistScale
+        case .clouds: return sky.cloudScale
+        case .stars: return sky.starScale
+        case .rain: return sky.rainScale
+        case .snow: return sky.snowScale
+        case .lightning: return sky.lightningFrequency
+        case .moonSize: return sky.moonSize
+        case .closeness: return settings.ambience.closeness
+        case .energy: return Double(excitementSettings.manualEnergy)
+        case .intensity, .speed, .density, .glow, .chaos, .temperature:
+            guard let macro = param.macro else { return 0 }
+            return themeState(for: themeID).macros[macro] ?? 0
+        }
+    }
+
+    /// Knob positions (0…1) for world settings, applied together: the mood once, the sky once, the look once. Turning
+    /// the time of day or the moon freezes the sky's clock, so it stays where the knob put it.
+    func applyWorld(_ knobs: [WorldParam: Double]) {
+        var nextMood = mood
+        var moodChanged = false
+        var sky = settings.sky
+        var skyChanged = false
+        var look: ThemeState?
+        for (param, knob) in knobs {
+            let value = param.value(knob: knob)
+            switch param {
+            case .moodEnergy: nextMood.energy = value; moodChanged = true
+            case .moodWarmth: nextMood.warmth = value; moodChanged = true
+            case .moodBrightness: nextMood.brightness = value; moodChanged = true
+            case .moodSpace: nextMood.space = value; moodChanged = true
+            case .moodMotion: nextMood.motion = value; moodChanged = true
+            case .timeOfDay: sky.frozenHour = value; sky.timeMode = .frozen; skyChanged = true
+            case .moonPhase: sky.frozenPhase = value; sky.timeMode = .frozen; skyChanged = true
+            case .wind: sky.windScale = value; skyChanged = true
+            case .mist: sky.mistScale = value; skyChanged = true
+            case .clouds: sky.cloudScale = value; skyChanged = true
+            case .stars: sky.starScale = value; skyChanged = true
+            case .rain: sky.rainScale = value; skyChanged = true
+            case .snow: sky.snowScale = value; skyChanged = true
+            case .lightning: sky.lightningFrequency = value; skyChanged = true
+            case .moonSize: sky.moonSize = value; skyChanged = true
+            case .closeness: setAmbienceCloseness(value)
+            case .energy:
+                var excitement = excitementSettings
+                excitement.autoEnergy = false
+                excitement.manualEnergy = Float(value)
+                setExcitementSettings(excitement)
+            case .intensity, .speed, .density, .glow, .chaos, .temperature:
+                guard let macro = param.macro else { break }
+                var state = look ?? themeState(for: themeID)
+                state.macros[macro] = value
+                look = state
+            }
+        }
+        if moodChanged { setMood(nextMood) }
+        if skyChanged { setSkyFromController(sky) }
+        if let look { saveThemeState(look, for: themeID) }
+    }
+
+    /// The sky from the controller: says so once when the clock stops, so a frozen sky is never a surprise.
+    private func setSkyFromController(_ sky: SkySettings) {
+        let froze = sky.timeMode == .frozen && settings.sky.timeMode != .frozen
+        objectWillChange.send()   // `settings` isn't published: tell the panels
+        setSky(sky)
+        if froze { showToast("Time frozen: the right CUE button lets it run again", symbol: "clock") }
+        lightController()
+    }
+
+    // MARK: - Wheels
+
+    /// What the wheels turned since the last visit: scrubbing targets move by the units turned, list targets take
+    /// their whole steps and keep the rest for next time.
+    func applyTurns(_ turns: [DeckWheel: Double]) {
+        for (wheel, units) in turns {
+            let target = buttonLayout[wheel]
+            switch target {
+            case .none:
+                break
+            case .timeOfDay:
+                var sky = settings.sky
+                sky.frozenHour = WheelTarget.hour(sky.frozenHour, turnedBy: units)
+                sky.timeMode = .frozen
+                setSkyFromController(sky)
+            case .moonPhase:
+                var sky = settings.sky
+                sky.frozenPhase = WheelTarget.phase(sky.frozenPhase, turnedBy: units)
+                sky.timeMode = .frozen
+                setSkyFromController(sky)
+            case .volume:
+                applyVolume(Double(engine.masterVolume) + units * WheelTarget.volumePerUnit)
+            case .ambience:
+                setAmbienceVolume(settings.ambience.volume + units * WheelTarget.volumePerUnit)
+            case .presets, .instruments, .sounds, .worlds, .sets, .weather:
+                let turned = WheelTarget.steps(from: (wheelResidue[wheel.id] ?? 0) + units)
+                wheelResidue[wheel.id] = turned.left
+                if turned.steps != 0 { step(target, by: turned.steps) }
+            }
+        }
+    }
+
+    /// Steps a list target on by `count` (round its ends).
+    func step(_ target: WheelTarget, by count: Int) {
+        switch target {
+        case .presets: stepPatch(by: count)
+        case .instruments: stepInstrument(by: count)
+        case .sounds: stepSound(by: count)
+        case .worlds: stepWorld(by: count)
+        case .sets: stepSet(by: count)
+        case .weather: stepWeather(by: count)
+        case .none, .timeOfDay, .moonPhase, .volume, .ambience: break
+        }
+    }
+
+    // MARK: - Buttons
+
+    /// Does what a button asks. Every action says what it did in a toast, since the hands are on the controller.
+    func perform(_ action: DeckAction) {
+        switch action {
+        case .none:
+            break
+        case .fxAll: toggleFXSwitch(.all)
+        case .fxEcho: toggleFXSwitch(.echo)
+        case .fxReverb: toggleFXSwitch(.reverb)
+        case .fxDrive: toggleFXSwitch(.drive)
+        case .fxReset: resetFX()
+        case .soundNext: stepSound(by: 1)
+        case .soundPrevious: stepSound(by: -1)
+        case .soundSave: saveSound(named: "")
+        case .sound1, .sound2, .sound3, .sound4, .sound5, .sound6, .sound7, .sound8:
+            guard let slot = action.soundSlot else { break }
+            guard slot < soundPresets.count else {
+                showToast("No saved sound \(slot + 1) yet: save one in Decks", symbol: "dial.medium")
+                break
+            }
+            let preset = soundPresets[slot]
+            Task { await applySound(preset) }
+        case .presetNext: stepPatch(by: 1)
+        case .presetPrevious: stepPatch(by: -1)
+        case .presetReload: reloadPatch()
+        case .instrumentNext: stepInstrument(by: 1)
+        case .instrumentPrevious: stepInstrument(by: -1)
+        case .hold:
+            toggleHold()
+            showToast(holdLatched ? "Holding the moment" : "Hold off", symbol: "hourglass")
+        case .panic:
+            panic()
+            showToast("All notes off", symbol: "speaker.slash")
+        case .keepThat: keepThat()
+        case .keepTenMinutes: keepLastTenMinutes()
+        case .testNote: playTestNote()
+        case .mute: toggleMute()
+        case .worldNext: stepWorld(by: 1)
+        case .worldPrevious: stepWorld(by: -1)
+        case .setNext: stepSet(by: 1)
+        case .setPrevious: stepSet(by: -1)
+        case .setRestore:
+            guard let set = activeSetID.flatMap({ SetLibrary.set(id: $0) }) else {
+                showToast("No set chosen yet", symbol: "square.grid.2x2")
+                break
+            }
+            Task { await restoreSet() }
+            showToast("\(set.name), as designed", symbol: "square.grid.2x2")
+        case .surprise:
+            surprise()
+            showToast("A new look", symbol: "sparkles")
+        case .reactionNext:
+            let all = allReactions()
+            let current = all.firstIndex { $0.name == reactionName }
+            guard let next = WheelTarget.index(after: current, by: 1, count: all.count) else { break }
+            setReaction(all[next])
+            showToast("Reaction: \(all[next].name)", symbol: "sparkles")
+        case .moodReset:
+            let designed = activeSetID.flatMap { SetLibrary.set(id: $0) }?.mood ?? .neutral
+            setMood(designed)
+            showToast("Mood back to the set's", symbol: "dial.medium")
+        case .weatherNext: stepWeather(by: 1)
+        case .weatherPrevious: stepWeather(by: -1)
+        case .weatherRandom:
+            var sky = settings.sky
+            sky.weatherMode = sky.weatherMode == .randomBeautiful ? .pick : .randomBeautiful
+            setSkyFromController(sky)
+            showToast(sky.weatherMode == .randomBeautiful ? "Weather: random, beautiful" : "Weather: staying as it is", symbol: "cloud.sun")
+        case .weatherClear, .weatherRain, .weatherStorm, .weatherSnow:
+            if let kind = action.weather { pickWeather(kind) }
+        case .timeMode:
+            var sky = settings.sky
+            let modes = TimeMode.allCases
+            let current = modes.firstIndex(of: sky.timeMode)
+            guard let next = WheelTarget.index(after: current, by: 1, count: modes.count) else { break }
+            sky.timeMode = modes[next]
+            objectWillChange.send()
+            setSky(sky)
+            showToast("Time: \(Self.timeModeName(sky.timeMode))", symbol: "clock")
+        case .timeMorning, .timeMidday, .timeEvening, .timeNight:
+            guard let hour = action.hour else { break }
+            var sky = settings.sky
+            sky.frozenHour = hour
+            sky.timeMode = .frozen
+            objectWillChange.send()
+            setSky(sky)
+            showToast(action.displayName, symbol: "clock")
+        case .ambience:
+            setAmbienceEnabled(!settings.ambience.enabled)
+            showToast(settings.ambience.enabled ? "Ambience on" : "Ambience off", symbol: "leaf")
+        case .gentle:
+            setGentleVisuals(!gentleVisuals)
+            showToast(gentleVisuals ? "Gentle visuals on" : "Gentle visuals off", symbol: "sparkles")
+        case .sleepTimer:
+            if sleepTimerRunning {
+                setSleepTimer(minutes: nil)
+                showToast("Sleep timer off", symbol: "moon")
+            } else {
+                setSleepTimer(minutes: Self.controllerSleepMinutes)
+                showToast("Sleep timer: \(Self.controllerSleepMinutes) minutes", symbol: "moon")
+            }
+        case .fullScreen:
+            toggleFullScreen()
+        }
+        lightController()
+    }
+
+    /// The sleep timer a button starts.
+    static let controllerSleepMinutes = 30
+
+    static func timeModeName(_ mode: TimeMode) -> String {
+        switch mode {
+        case .quick: return "quick day"
+        case .realTime: return "real time"
+        case .frozen: return "frozen"
+        }
+    }
+
+    /// Silences the app, or brings the volume back to where it was. The saved volume is never the muted one.
+    func toggleMute() {
+        objectWillChange.send()
+        if let was = mutedVolume {
+            mutedVolume = nil
+            engine.masterVolume = was
+            showToast("Sound on", symbol: "speaker.wave.2")
+        } else {
+            mutedVolume = engine.masterVolume
+            engine.masterVolume = 0
+            showToast("Muted", symbol: "speaker.slash")
+        }
+    }
+
+    /// The app's window in and out of full screen (nothing to do when there is no window, as in tests).
+    func toggleFullScreen() {
+        guard let app = NSApp, let window = app.mainWindow ?? app.keyWindow ?? app.windows.first else { return }
+        window.toggleFullScreen(nil)
+    }
+
+    // MARK: - Stepping through the lists
 
     /// Steps through a built-in instrument's presets (wrapping round). Plugins keep their presets to themselves.
     func stepPatch(by step: Int) {
@@ -305,11 +676,80 @@ extension AppModel {
             return
         }
         let patches = PatchLibrary.patches(for: kind)
-        guard !patches.isEmpty else { return }
-        let current = patches.firstIndex { $0.id == builtInPatch?.id } ?? 0
-        let next = patches[((current + step) % patches.count + patches.count) % patches.count]
-        applyPatch(next)
-        showToast(next.name, symbol: "pianokeys")
+        let current = patches.firstIndex { $0.id == builtInPatch?.id }
+        guard let next = WheelTarget.index(after: current, by: step, count: patches.count) else { return }
+        applyPatch(patches[next])
+        showToast(patches[next].name, symbol: "pianokeys")
+    }
+
+    /// The instrument's dials back to its preset's.
+    func reloadPatch() {
+        guard let choice = settings.instrument, let kind = BuiltInCatalog.engine(for: choice),
+              let patch = Patch.builtIn(id: builtInPatch?.id, engine: kind) else {
+            showToast("Preset buttons work with the app's own instruments", symbol: "dial.medium")
+            return
+        }
+        applyPatch(patch)
+        showToast("\(patch.name), as it came", symbol: "pianokeys")
+    }
+
+    /// Steps through the app's own instruments (wrapping round). A step asked for while one is loading is dropped.
+    func stepInstrument(by step: Int) {
+        guard !isLoading else { return }
+        let instruments = BuiltInCatalog.instruments
+        let current = instruments.firstIndex { $0.name == settings.instrument?.name }
+        guard let next = WheelTarget.index(after: current, by: step, count: instruments.count) else { return }
+        let instrument = instruments[next]
+        showToast(instrument.name, symbol: "pianokeys")
+        Task { await choose(instrument) }
+    }
+
+    /// Steps through the saved sounds (wrapping round).
+    func stepSound(by step: Int) {
+        let current = soundPresets.firstIndex { $0.name == soundPresetName }
+        guard let next = WheelTarget.index(after: current, by: step, count: soundPresets.count) else {
+            showToast("No saved sounds yet: save one in Decks", symbol: "dial.medium")
+            return
+        }
+        let preset = soundPresets[next]
+        Task { await applySound(preset) }
+    }
+
+    /// Steps through the worlds (wrapping round).
+    func stepWorld(by step: Int) {
+        let worlds = ThemeRegistry.all
+        let current = worlds.firstIndex { $0.id == themeID }
+        guard let next = WheelTarget.index(after: current, by: step, count: worlds.count) else { return }
+        setTheme(worlds[next].id)
+        showToast(worlds[next].name, symbol: "globe")
+    }
+
+    /// Steps through the sets (wrapping round): the world, its instrument, its ambience and its mood together.
+    func stepSet(by step: Int) {
+        guard !isLoading else { return }
+        let sets = SetLibrary.all
+        let current = sets.firstIndex { $0.id == activeSetID }
+        guard let next = WheelTarget.index(after: current, by: step, count: sets.count) else { return }
+        let set = sets[next]
+        showToast(set.name, symbol: "square.grid.2x2")
+        Task { await applySet(set.id) }
+    }
+
+    /// Steps through the weathers the app offers (wrapping round), and stops the random weather so it stays.
+    func stepWeather(by step: Int) {
+        let kinds = WeatherKind.offered
+        let current = kinds.firstIndex(of: settings.sky.weather)
+        guard let next = WheelTarget.index(after: current, by: step, count: kinds.count) else { return }
+        pickWeather(kinds[next])
+    }
+
+    func pickWeather(_ kind: WeatherKind) {
+        var sky = settings.sky
+        sky.weather = kind
+        sky.weatherMode = .pick
+        objectWillChange.send()
+        setSky(sky)
+        showToast("Weather: \(SkyControls.weatherName(kind).lowercased())", symbol: "cloud.sun")
     }
 
     // MARK: - Saved sounds
@@ -379,14 +819,5 @@ extension AppModel {
             settings.soundPresetName = nil
             scheduleSave()
         }
-    }
-
-    /// The saved sound after the one last chosen (the controller's FX2 ON button).
-    func nextSound() async {
-        guard let next = SoundPreset.next(after: soundPresetName, in: soundPresets) else {
-            showToast("No saved sounds yet: save one in Decks", symbol: "dial.medium")
-            return
-        }
-        await applySound(next)
     }
 }

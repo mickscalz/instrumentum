@@ -61,6 +61,16 @@ public final class AppModel: ObservableObject {
     /// The sounds you saved, by name, and the one last chosen.
     @Published public internal(set) var soundPresets: [SoundPreset] = []
     @Published public internal(set) var soundPresetName: String?
+    /// Which button does what and which wheel turns what.
+    @Published public internal(set) var buttonLayout: ButtonLayout
+    /// The control last touched on the controller, as the panel names it (or what it sent, when it isn't mapped).
+    @Published public internal(set) var controllerLastTouched: String?
+    /// The volume to come back to while Mute is on (nil when it's off).
+    @Published public internal(set) var mutedVolume: Float?
+    /// What a list-stepping wheel has turned short of a whole step, by wheel.
+    var wheelResidue: [String: Double] = [:]
+    /// The button lights last sent to the controller, by button.
+    var controllerLit: [String: Bool] = [:]
     /// What the CoreMIDI thread and the main actor share about the controller.
     nonisolated let controllerLive = OSAllocatedUnfairLock(uncheckedState: ControllerLive())
     public var volume: Float { engine.masterVolume }
@@ -151,6 +161,7 @@ public final class AppModel: ObservableObject {
         self.soundFX = loaded.soundFX
         self.controlLayout = loaded.controlLayout
         self.soundPresetName = loaded.soundPresetName
+        self.buttonLayout = loaded.buttonLayout
         outputDeviceUID = loaded.outputDeviceUID
         midiChannel = loaded.midiChannel
         live.withLockUnchecked { l in
@@ -167,6 +178,7 @@ public final class AppModel: ObservableObject {
         controllerLive.withLockUnchecked { l in
             l.fx = loaded.soundFX
             l.layout = loaded.controlLayout
+            l.buttons = loaded.buttonLayout
         }
     }
 
@@ -249,6 +261,11 @@ public final class AppModel: ObservableObject {
     public nonisolated func handleMIDI(bytes raw: [UInt8], time: Double) {
         let channel = live.withLockUnchecked { $0.channel }
         guard MIDIChannelFilter.passes(raw, channel: channel) else { return }
+        // A keyboard's volume knob or slider (controller 7) is the app's volume, not the instrument's own.
+        if let volume = KeyboardVolume.volume(in: raw) {
+            keyboardVolume(volume, time: time)
+            return
+        }
         perform(raw, time: time)
     }
 
@@ -416,6 +433,7 @@ public final class AppModel: ObservableObject {
     // MARK: - Settings
 
     public func setVolume(_ v: Float) {
+        mutedVolume = nil   // moving the volume ends a mute
         engine.masterVolume = v
         settings.masterVolume = engine.masterVolume
         autosave()
@@ -889,7 +907,7 @@ public final class AppModel: ObservableObject {
         if settings.instrument != nil, case .playing = status {
             settings.instrument?.stateData = engine.currentInstrumentState()
         }
-        settings.masterVolume = engine.masterVolume
+        settings.masterVolume = mutedVolume ?? engine.masterVolume   // a mute is never what's saved
         try? store.save(settings)
     }
 

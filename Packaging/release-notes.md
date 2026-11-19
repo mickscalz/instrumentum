@@ -1,3 +1,30 @@
+<!-- title: The whole DDJ-ERGO now plays: the world on the faders, buttons for everything, and your keyboard's volume knob -->
+**Install:** click the round-arrows button in the app's top bar (left of Keep); when it turns into an orange **Update**, click it and choose **Install Update**. Your settings, presets, saved sounds and keeps stay as they are.
+
+**Every knob, fader, wheel and button on the DDJ-ERGO now does something**, and **Decks** (top bar) shows what each one does, lets you change it, and names the control you last touched.
+
+- **The instrument's dials: the right side.** FX2's knobs and CONTROL, the right HI / MID / LOW / FILTER and now the right **GAIN** are the instrument's first nine dials, whichever instrument is loaded.
+- **Effects and tone: the left side**, as before, and the left **GAIN** is now the echo's repeats.
+- **The world: the faders and the centre.**
+  - The two **channel faders** are the mood's energy and space; the two **TEMPO sliders** its brightness and motion; the **crossfader** its warmth (cool on the left, warm on the right). The mood shapes the world, the instrument and the ambience together.
+  - **HEADPHONES VOL** is the ambience's volume and **HEADPHONES MIX** how close it is. **AUX / MIC VOL** is the wind.
+  - **MASTER VOL** is the app's volume.
+  - Any knob can instead be the time of day, the moon, clouds, stars, rain, snow, mist, lightning, the moon's size, Excitement's energy, or one of the look's six macros (intensity, speed, density, glow, calm to chaos, colour temperature).
+- **The jog wheels** scrub the sky: the left one the time of day, the right one the moon. Turning either freezes the clock where you leave it.
+- **The rotaries:** the left AUTO LOOP steps through the instrument's presets, the right one through the weathers, and the browser steps through the worlds.
+- **Left deck buttons, the instrument and your playing:** PLAY holds the moment, CUE is all notes off, SYNC is Keep that. IN and OUT are the previous and next instrument. HOT CUE 1 to 4 and SAMPLER 1 to 4 recall your saved sounds 1 to 8 (they are numbered in Decks). KEYLOCK saves the sound you have now, VINYL goes back a saved sound, pressing AUTO LOOP puts the dials back to the preset.
+- **Right deck buttons, the world and its sky:** PLAY turns random weather on and off, CUE steps the clock between quick day, real time and frozen, SYNC is Surprise me. IN and OUT are the previous and next world. HOT CUE 1 to 4 jump to morning, midday, evening and night; SAMPLER 1 to 4 pick clear, rain, storm and snow. KEYLOCK steps the reaction style, VINYL puts the set back as designed, pressing AUTO LOOP puts the mood back.
+- **The rest:** LOAD A and B are the previous and next set. The headphone CUE buttons play a test note and keep the last ten minutes. The channel FX1 / FX2 buttons switch the ambience, gentle visuals, the sleep timer (30 minutes) and mute. FUNCTION is full screen, and pressing the browser is Surprise me. FX1's and FX2's own buttons are as before.
+- **Every button and wheel has a menu in Decks** (47 actions to choose from), and buttons that are switches light up while they are on.
+- **Your keyboard's volume knob or slider now sets the app's volume** (it used to go to the instrument). The volume slider in the top bar follows it.
+- Each button says what it did in a small message at the top, since your hands are on the controller.
+
+**If a control does nothing or the wrong thing:** open Decks, touch it, and read the "Last touched" line. If it says "Not mapped", tell me what it says and I'll map it. The sampler buttons' numbers are the ones I'm least sure of.
+
+**Still to hear:** Drive and Crush, and how strongly the mood faders change each world.
+
+<!-- older -->
+
 <!-- title: Your DDJ-ERGO turns the sound: effects, tone, the instrument's dials, and saved sounds -->
 **Install:** click the round-arrows button in the app's top bar (left of Keep); when it turns into an orange **Update**, click it and choose **Install Update**. Your settings, presets and keeps stay as they are.
 
@@ -14,8 +41,6 @@
 **Not yet:** the jog wheels, faders, crossfader and pads do nothing.
 
 **Things to try, and tell me how they sound** (I can't hear them from here): Drive and Crush at a quarter, half and full; the tone knobs fully left and right; Echo with CONTROL short and long; a saved sound that switches instrument.
-
-<!-- older -->
 
 <!-- title: A real eruption, a natural lava shore, and a clearer storm base -->
 **Install:** click the round-arrows button in the app's top bar (left of Keep); when it turns into an orange **Update**, click it and choose **Install Update**. Your settings, presets and keeps stay as they are. (No app yet on this Mac? Download the **.dmg** below, drag *In Strum Meants* onto *Applications*, then right-click the app → **Open** → **Open**.)

@@ -35,3 +35,31 @@
 
 ## To check by ear (nobody has heard this yet)
 Drive and Crush set Apple's distortion unit by its raw parameters; their loudness and character need his ear. The tone's corner frequencies (180 Hz, 1 kHz, 4.5 kHz), the reverb preset (Large Hall) and the echo's darkness (6 kHz) are first guesses.
+
+---
+
+# Part 2 (19 Nov): the whole controller, the world, and the keyboard's volume knob
+
+**What Michael asked for (19 Nov):** "don't stop until this is completed and I can use the dials to change every instrument sound and the left over dials for the world and environment, or whatever you think. Also volume knob on keyboard for volume in app, and also buttons to do things that make sense, for as many actions as possible; feel free to add functions to suit."
+
+## What it adds
+- **Every control decoded** (`DDJErgoDecoder`): the channel faders, GAIN knobs, TEMPO sliders, crossfader, MASTER, both headphone knobs and AUX / MIC as knobs; the jog wheels (14-bit relative counts, 2430 a turn, 8 units a turn) and the three rotaries (clicks) as wheels; 50 buttons. Decks C and D and SHIFT fold onto the same controls. What isn't mapped is reported (`.unknown`) and shown in Decks as "Last touched".
+- **Knob targets** gain `.world(WorldParam)`: the five mood values, time of day and moon (both freeze the clock), the sky's scales (wind, mist, clouds, stars, rain, snow, lightning, moon size; the designed value sits at the knob's centre), ambience closeness, Excitement's manual energy, and the look's six macros.
+- **Buttons** run a `DeckAction` (47 of them, grouped Effects / Saved sounds / Instrument / Playing / World / Sky / App) and **wheels** turn a `WheelTarget`; both are in `ButtonLayout`, saved in the settings, editable in Decks.
+- **Default layout:** right side knobs = the instrument's dials (nine), left side knobs = effects and tone, faders and centre = the world; left deck buttons = instrument and playing, right deck buttons = world and sky.
+- **Lights:** buttons whose action is a switch (effects, hold, mute, ambience, gentle, random weather, sleep timer) are lit while on; only changes are sent.
+- **Keyboard volume:** controller 7 from any keyboard sets the app's volume and is not passed to the instrument.
+- **Mute** remembers the volume and is never what gets saved.
+
+## Choices made without asking
+| Choice | Instead of | Cost to change |
+|---|---|---|
+| Mood on the faders, sliders and crossfader | weather scales there | none: menus in Decks |
+| Jog wheels scrub time and moon, freezing the clock | leaving the clock running | none: menus |
+| A keyboard's controller 7 always sets the app volume | a setting for it | small |
+| SHIFT does nothing | a second layer of 50 actions | medium |
+| No learn mode; unmapped controls are named in Decks | MIDI learn | medium |
+| The button toast names what happened | silent buttons | trivial |
+
+## Not checked by hand
+The sampler buttons' note numbers (60 to 67) and the jog wheels' count format come from Pioneer's list and haven't been seen on the real controller. "Last touched" in Decks is how a mismatch shows.

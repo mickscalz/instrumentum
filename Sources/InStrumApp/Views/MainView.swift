@@ -95,7 +95,7 @@ struct MainView: View {
                 .help("Output, buffer, restart audio, MIDI keyboards and channel, touch")
                 .popover(isPresented: $showSettings, arrowEdge: .bottom) { SettingsPopover(model: model) }
             Image(systemName: "speaker.wave.2.fill").foregroundStyle(.secondary)
-            Slider(value: Binding(get: { Double(volume) },
+            Slider(value: Binding(get: { Double(model.volume) },   // the controller and a keyboard's knob move it too
                                   set: { volume = Float($0); model.setVolume(volume) }), in: 0...1)
                 .frame(width: 110)
         }
