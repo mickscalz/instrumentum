@@ -48,23 +48,23 @@ final class TransportTests: XCTestCase {
         let after = e.transportPosition
 
         let lead = Int(start - t0)
-        let firstTrack = PlaybackAudio.frame(of: first.left[lead])
-        let firstLayer = PlaybackAudio.frame(of: first.right[lead])
+        let firstTrack = PlaybackAudio.frame(of: first.left[lead + 16])   // 16 in: a start's first sample is now and then silent
+        let firstLayer = PlaybackAudio.frame(of: first.right[lead + 16])
         let gap = PlaybackAudio.peak(second.left[0..<lead])
-        let seekTrack = PlaybackAudio.frame(of: second.left[lead])
-        let seekLayer = PlaybackAudio.frame(of: second.right[lead])
+        let seekTrack = PlaybackAudio.frame(of: second.left[lead + 16])
+        let seekLayer = PlaybackAudio.frame(of: second.right[lead + 16])
         let endTrack = PlaybackAudio.frame(of: second.left[23_999])
         let endLayer = PlaybackAudio.frame(of: second.right[23_999])
         _ = e.transportPause()
 
         XCTAssertEqual(duration, 4, accuracy: 1e-9)
         XCTAssertEqual(lead, 512, "two buffers from now")
-        XCTAssertEqual(firstTrack, 0, accuracy: 0.5, "the track starts at its first frame")
-        XCTAssertEqual(firstLayer, 0, accuracy: 0.5, "with the layer")
+        XCTAssertEqual(firstTrack, 16, accuracy: 0.5, "the track starts at its first frame")
+        XCTAssertEqual(firstLayer, 16, accuracy: 0.5, "with the layer")
         XCTAssertEqual(before, Double(24_000 - 512) / rate, accuracy: 1e-9)
         XCTAssertEqual(gap, 0, "the old place stops at once")
-        XCTAssertEqual(seekTrack, 96_000, accuracy: 0.5, "from 2 s, to the frame")
-        XCTAssertEqual(seekLayer, 96_000, accuracy: 0.5, "the layer moved with it")
+        XCTAssertEqual(seekTrack, 96_016, accuracy: 0.5, "from 2 s, to the frame")
+        XCTAssertEqual(seekLayer, 96_016, accuracy: 0.5, "the layer moved with it")
         XCTAssertEqual(endTrack, Double(96_000 + 23_999 - 512), accuracy: 0.5, "and it carries on")
         XCTAssertEqual(endLayer, Double(96_000 + 23_999 - 512), accuracy: 0.5)
         XCTAssertEqual(after, 2 + Double(24_000 - 512) / rate, accuracy: 1e-9)
@@ -96,13 +96,13 @@ final class TransportTests: XCTestCase {
         let f = frames(out.left, from: lead)
         let w = wraps(f)
         let count = w.count
-        let firstHeard = f.first ?? -1
+        let firstHeard = f.count > 16 ? f[16] : -1   // 16 in: a start's first sample is now and then silent
         let firstWrap = w.first ?? (index: -1, before: -1, after: -1)
         var worstPeriod = 0
         for k in 1..<max(1, w.count) { worstPeriod = max(worstPeriod, abs(w[k].index - w[k - 1].index - 24_000)) }
         let position = e.transportPosition
 
-        XCTAssertEqual(firstHeard, 43_200, accuracy: 0.5, "from 0.9 s")
+        XCTAssertEqual(firstHeard, 43_216, accuracy: 0.5, "from 0.9 s")
         XCTAssertEqual(count, 4, "0.6 s to the first wrap, then every 0.5 s of 2.5 s")
         XCTAssertEqual(Double(firstWrap.index), 28_800, accuracy: 480, "at 1.5 s, within 10 ms")
         XCTAssertEqual(firstWrap.before, 71_999, accuracy: 480)
@@ -120,7 +120,7 @@ final class TransportTests: XCTestCase {
         let looped = try PlaybackAudio.render(e, frames: 512 + 48_000)
         let loopFrames = frames(looped.left, from: 512)
         let loopWraps = wraps(loopFrames)
-        let loopStart = loopFrames.first ?? -1
+        let loopStart = loopFrames.count > 16 ? loopFrames[16] : -1
         var worstShort = 0
         for k in 1..<max(1, loopWraps.count) { worstShort = max(worstShort, abs(loopWraps[k].index - loopWraps[k - 1].index - 14_400)) }
         let shortCount = loopWraps.count
@@ -136,7 +136,7 @@ final class TransportTests: XCTestCase {
 
         XCTAssertEqual(ranOn, 512)
         XCTAssertEqual(pressed, 1.3, accuracy: 1e-9)
-        XCTAssertEqual(loopStart, 48_000, accuracy: 0.5, "back to IN")
+        XCTAssertEqual(loopStart, 48_016, accuracy: 0.5, "back to IN")
         XCTAssertEqual(shortCount, 3, "every 0.3 s for 1 s")
         XCTAssertLessThanOrEqual(worstShort, 480)
         XCTAssertEqual(freeWraps, 0)
@@ -190,7 +190,7 @@ final class TransportTests: XCTestCase {
         let resumed = e.transportPlay(from: paused, rate: 1)
         let more = try PlaybackAudio.render(e, frames: 1_024)
         let resumedLead = Int(resumed - more.start)
-        let resumedAt = PlaybackAudio.frame(of: more.left[resumedLead])
+        let resumedAt = PlaybackAudio.frame(of: more.left[resumedLead + 16])   // 16 in: see testSeekWhilePlayingCarriesOn
         let lead = Int(start - out.start)
         _ = e.transportPause()
 
@@ -199,6 +199,6 @@ final class TransportTests: XCTestCase {
         XCTAssertEqual(lastHeard, 71_999, accuracy: 0.5)
         XCTAssertEqual(silence, 0, "paused is silent")
         XCTAssertEqual(still, 1.5, accuracy: 1e-9, "and stays where it stopped")
-        XCTAssertEqual(resumedAt, 72_000, accuracy: 0.5, "and plays on from there, to the frame")
+        XCTAssertEqual(resumedAt, 72_016, accuracy: 0.5, "and plays on from there, to the frame")
     }
 }
