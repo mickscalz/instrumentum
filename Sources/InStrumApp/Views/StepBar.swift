@@ -14,9 +14,10 @@ struct StepBar: View {
             stepper("Set", model.currentSetName, help: "set (its world, instrument, ambience and mood together)") { model.stepSet(by: $0) }
                 .disabled(model.isLoading)
             stepper("World", model.currentWorldName, help: "world") { model.stepWorld(by: $0) }
+            Spacer(minLength: 8)
+            // The instrument sits beside its transpose (Michael, 20 Nov): the two things that change what the keys play.
             stepper("Instrument", model.currentInstrumentName, help: "instrument") { model.stepInstrument(by: $0) }
                 .disabled(model.isLoading)
-            Spacer(minLength: 8)
             transpose
         }
         .font(.system(size: 12))

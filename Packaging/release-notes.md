@@ -1,3 +1,10 @@
+<!-- title: The instrument switcher sits beside Transpose -->
+**Install:** click the round-arrows button in the app's top bar (left of Keep); when it turns into an orange **Update**, click it and choose **Install Update**. Your settings, presets and keeps stay as they are.
+
+**The Instrument switcher has moved to the right of the bar under the top bar, next to Transpose.** Set and World stay on the left. Nothing else changes.
+
+<!-- older -->
+
 <!-- title: Record what you play -->
 **Install:** click the round-arrows button in the app's top bar (left of Keep); when it turns into an orange **Update**, click it and choose **Install Update**. Your settings, presets and keeps stay as they are.
 
@@ -5,8 +12,6 @@
 - It records the instrument only, at full quality, whatever the volume slider is set to. The world's ambience is not recorded.
 - A recording stops by itself after an hour.
 - This is the first piece of the Recorder. Recording over a recording, playing along with a track or Spotify, and recording microphones and other inputs come next.
-
-<!-- older -->
 
 <!-- title: SAMPLER buttons for sets, worlds, instruments and transpose; finer wheels -->
 **Install:** click the round-arrows button in the app's top bar (left of Keep); when it turns into an orange **Update**, click it and choose **Install Update**. Your settings, presets, saved sounds and keeps stay as they are.
