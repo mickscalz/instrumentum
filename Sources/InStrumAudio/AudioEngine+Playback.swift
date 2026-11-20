@@ -132,7 +132,7 @@ extension AudioEngine {
     /// buffer. Zero when rendering offline.
     public func outputLatency() -> RecordingLatency.Device {
         if let injected = playback?.injectedOutputLatency { return injected }
-        guard !manualRendering, let device = playingOutputDevice() else {
+        guard !manualRendering, let device = currentDeviceID() else {
             return RecordingLatency.Device(latencyFrames: 0, safetyFrames: 0, bufferFrames: 0)
         }
         let scope = kAudioDevicePropertyScopeOutput
@@ -142,16 +142,6 @@ extension AudioEngine {
         let stream = Self.firstStreamLatency(device, scope)
         return RecordingLatency.Device(latencyFrames: latency + stream, safetyFrames: safety,
                                        bufferFrames: buffer > 0 ? buffer : Int(bufferFrames))
-    }
-
-    /// The device the output unit plays to.
-    private func playingOutputDevice() -> AudioDeviceID? {
-        guard let unit = engine.outputNode.audioUnit else { return nil }
-        var id = AudioDeviceID(0)
-        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
-        guard AudioUnitGetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &id, &size) == noErr,
-              id != 0 else { return nil }
-        return id
     }
 
     private static func halFrames(_ object: AudioObjectID, _ selector: AudioObjectPropertySelector,
